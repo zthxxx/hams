@@ -1,0 +1,98 @@
+version: "3"
+
+vars:
+  APP_NAME: hams
+  BUILD_DIR: bin
+
+tasks:
+  default:
+    desc: Show available tasks
+    cmds:
+      - task --list-all
+
+  build:
+    desc: Build the application
+    cmds:
+      - go build -o {{.BUILD_DIR}}/{{.APP_NAME}} ./cmd/hams
+    sources:
+      - ./**/*.go
+      - go.mod
+      - go.sum
+    generates:
+      - "{{.BUILD_DIR}}/{{.APP_NAME}}"
+
+  run:
+    desc: Run the application
+    cmds:
+      - go run ./cmd/hams
+
+  test:
+    desc: Run tests with race detection
+    cmds:
+      - go test -race -count=1 -coverprofile=coverage.out ./...
+
+  test:cover:
+    desc: Show test coverage in browser
+    deps: [test]
+    cmds:
+      - go tool cover -html=coverage.out -o coverage.html
+      - open coverage.html
+
+  lint:
+    desc: Run all linters
+    cmds:
+      - task: lint:go
+      - task: lint:md
+      - task: lint:spell
+
+  lint:go:
+    desc: Run golangci-lint
+    cmds:
+      - golangci-lint run ./...
+
+  lint:go:fix:
+    desc: Run golangci-lint with auto-fix
+    cmds:
+      - golangci-lint run --fix ./...
+
+  lint:md:
+    desc: Run markdownlint
+    cmds:
+      - bun markdownlint-cli2 "**/*.md" "#node_modules"
+
+  lint:spell:
+    desc: Run cspell spell checker
+    cmds:
+      - bun cspell lint --no-progress "**"
+
+  fmt:
+    desc: Format Go source files
+    cmds:
+      - gofmt -w .
+      - goimports -w -local github.com/zthxxx/hams .
+
+  tidy:
+    desc: Tidy go modules
+    cmds:
+      - go mod tidy
+
+  check:
+    desc: Run all checks (fmt, lint, test)
+    cmds:
+      - task: fmt
+      - task: lint
+      - task: test
+
+  clean:
+    desc: Clean build artifacts
+    cmds:
+      - rm -rf {{.BUILD_DIR}}
+      - rm -f coverage.out coverage.html
+
+  setup:
+    desc: Install development tools
+    cmds:
+      - pnpm install
+      - go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
+      - go install golang.org/x/tools/cmd/goimports@latest
+      - lefthook install

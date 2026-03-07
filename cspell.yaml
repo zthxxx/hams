@@ -1,0 +1,77 @@
+version: "0.2"
+language: en
+
+ignorePaths:
+  - .git/
+  - .task/
+  - .specstory/
+  - .playwright-cli/
+  - node_modules/
+  - vendor/
+  - bin/
+  - dist/
+  - go.sum
+  - "*.lock"
+  - coverage.*
+
+dictionaries:
+  - en_us
+  - en-gb
+  - golang
+  - softwareTerms
+  - software-term-suggestions
+  - coding-compound-terms
+  - computing-acronyms
+  - software-tools
+  - fullstack
+  - companies
+  - misc
+
+words:
+  # project
+  - hams
+  - zthxxx
+
+  # go ecosystem
+  - govet
+  - golangci
+  - gofmt
+  - goimports
+  - gocritic
+  - gosec
+  - goconst
+  - godot
+  - revive
+  - errcheck
+  - errname
+  - nilerr
+  - noctx
+  - nolintlint
+  - staticcheck
+  - bodyclose
+  - nestif
+  - tparallel
+  - rowserrcheck
+  - sqlclosecheck
+  - makezero
+  - prealloc
+  - wastedassign
+  - predeclared
+  - unparam
+  - unconvert
+  - nakedret
+  - copyloopvar
+  - intrange
+  - modernize
+  - usestdlibvars
+
+  # libraries
+  - uber
+
+  # tools
+  - lefthook
+  - markdownlint
+  - cspell
+  - editorconfig
+
+enableGlobDot: false

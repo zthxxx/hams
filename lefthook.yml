@@ -1,0 +1,26 @@
+min_version: 1.11.0
+
+pre-commit:
+  parallel: true
+  commands:
+    gofmt-check:
+      glob: "*.go"
+      run: >-
+        gofmt -l {staged_files}
+        | grep .
+        && echo "Please run 'gofmt -w .' to format your code"
+        && exit 1
+        || exit 0
+    lint:
+      glob: "*.go"
+      run: golangci-lint run --new-from-rev=HEAD
+    markdownlint:
+      glob: "*.md"
+      run: bun markdownlint-cli2 {staged_files}
+    cspell:
+      run: bun cspell lint --no-progress --no-must-find-files {staged_files}
+
+pre-push:
+  commands:
+    test:
+      run: go test -race -count=1 ./...

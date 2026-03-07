@@ -1,0 +1,35 @@
+schema: spec-driven
+
+context: |
+  hams is a declarative IaC environment management tool for macOS/Linux workstations.
+  It wraps existing package managers (Homebrew, pnpm, npm, apt, etc.) to auto-record
+  installations into YAML config files ("Hamsfiles"), enabling one-command environment
+  restoration on new machines.
+
+  Tech stack: Go 1.24, Uber Fx (DI), Cobra (CLI), Bun/pnpm (JS tooling), Nextra (docs).
+  Full design decisions are documented in CLAUDE.md (AGENTS.md).
+
+  Key constraints:
+  - Static binary, no dynamic libs (ARM64 OpenWrt, Apple Silicon macOS, x86_64 Debian/Alpine)
+  - Terraform-style local state model (.state/<machine-id>/<Provider>.state.yaml)
+  - Provider architecture: builtins compiled in (Go), externals via hashicorp/go-plugin
+  - YAML read/write must preserve comments
+  - Property-based testing preferred
+  - i18n support (en_US default, extensible)
+  - TUI with alternate screen, collapsible logs, interactive popup for stdin
+  - OTel trace + metrics (local file exporter)
+  - Docs site: Nextra on GitHub Pages (hams.zthxxx.me)
+
+rules:
+  proposal:
+    - Reference all Q1-Q19 design decisions from CLAUDE.md
+    - Include comparison to NixOS/Terraform/Pulumi/Ansible/chezmoi
+    - Scope the 9 orthogonal specs clearly
+  design:
+    - This is the umbrella design; detailed designs live in individual specs
+    - Focus on cross-cutting concerns and spec interdependencies
+    - Include the full spec dependency graph
+  tasks:
+    - Tasks should map to the 9 orthogonal specs
+    - Each spec is independently writable by a subagent
+    - Include a parallel execution plan for subagents

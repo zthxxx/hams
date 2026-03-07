@@ -1,0 +1,33 @@
+{
+  "name": "harms",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/zthxxx/hams.git"
+  },
+  "license": "UNLICENSED",
+  "engines": {
+    "bun": ">=1.2",
+    "pnpm": ">=10"
+  },
+  "packageManager": "pnpm@10.8.1",
+  "pnpm": {
+    "saveExact": true
+  },
+  "scripts": {
+    "lint": "eslint .",
+    "lint:fix": "eslint --fix .",
+    "lint:md": "markdownlint-cli2 '**/*.md' '#node_modules'",
+    "lint:spell": "cspell lint --no-progress '**'"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9",
+    "cspell": "^8",
+    "eslint": "^9",
+    "globals": "^16",
+    "markdownlint-cli2": "^0.17"
+  }
+}

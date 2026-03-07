@@ -1,0 +1,57 @@
+# Binaries
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+/bin/
+/dist/
+
+# Test
+*.test
+coverage.out
+coverage.html
+
+# Dependency
+/vendor/
+node_modules/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Debug
+__debug_bin*
+*.log
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+*.local.*
+
+# go-task
+.task/
+
+# Playwright
+.playwright-cli/
+
+# SpecStory
+.specstory/.project.json
+.specstory/history/
+
+# Node.js
+*.tsbuildinfo
+.eslintcache
+
+# build bin
+hams
+
