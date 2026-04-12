@@ -36,7 +36,11 @@ __debug_bin*
 .env.local
 .env.*.local
 
+# hams local overrides (machine-specific, not tracked)
 *.local.*
+
+# hams state directory
+.state/
 
 # go-task
 .task/
