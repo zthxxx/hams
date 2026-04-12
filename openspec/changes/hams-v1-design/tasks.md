@@ -18,7 +18,7 @@ _Specs: `code-standards`, `project-structure` — no cross-spec dependencies, ca
 
 _Spec: `schema-design` — depends on project structure (1.1). Core dependency for all other specs._
 
-- [ ] 2.1 Implement `internal/urn/` package: parse, validate, format `urn:hams:<provider>:<resource-id>`
+- [x] 2.1 Implement `internal/urn/` package: parse, validate, format `urn:hams:<provider>:<resource-id>`
 - [ ] 2.2 Implement `internal/config/` package: load global config (`~/.config/hams/hams.config.yaml`), project-level config, `.local.yaml` merge with 4-level precedence
 - [ ] 2.3 Implement `internal/hamsfile/` package: YAML read/write with go-yaml v3 `yaml.Node` for comment preservation
 - [ ] 2.4 Implement hamsfile `.local.yaml` merge engine with provider-registered merge strategies (append for lists, override for same-URN)
