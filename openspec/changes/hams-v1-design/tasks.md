@@ -60,7 +60,7 @@ _Spec: `provider-system` — depends on schema (2.x) and CLI (3.1-3.3). Core fra
 - [x] 4.4 Implement provider execution priority: DAG-level then priority-list ordering (configurable in hams.config.yaml)
 - [x] 4.5 Implement probe dispatcher: parallel probe across providers (errgroup), 4 resource class strategies
 - [x] 4.6 Implement plan engine: desired (hamsfile) vs observed (state) diff → action list (install/update/remove/skip)
-- [ ] 4.7 Implement apply executor: sequential per-provider, sequential per-resource within provider, write-serial global mutex
+- [x] 4.7 Implement apply executor: sequential per-provider, sequential per-resource within provider, write-serial global mutex
 - [ ] 4.8 Implement hook engine: pre/post-install hooks, `defer: true` batching (within current provider), nested provider calls, hook-failed state tracking
 - [ ] 4.9 Implement remove flow: delete hamsfile entry → execute remove command → state marked `Removed` (kept for audit)
 - [ ] 4.10 Implement provider CLI wrapping framework: verb routing (hams-interpreted vs passthrough), auto-inject flag engine, `--hams:` prefix extraction
