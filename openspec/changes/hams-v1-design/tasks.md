@@ -108,12 +108,12 @@ _Docker E2E tests develop incrementally alongside each provider. Local safe-test
 - [ ] 7.2d Docker E2E: Debian container — Homebrew provider self-bootstraps + installs `bat`, verifies state
 - [ ] 7.3 Implement `apt` provider: auto-inject `-y`, sudo-required, Linux-only platform filter
 - [ ] 7.3d Docker E2E: Debian container — `hams apt install curl`, verify installed + state recorded
-- [ ] 7.4 Implement `pnpm` provider: auto-inject `--global`, depend-on npm for pnpm install
+- [x] 7.4 Implement `pnpm` provider: auto-inject `--global`, depend-on npm for pnpm install
 - [ ] 7.4e Local verification: `hams pnpm install serve` / `hams pnpm remove serve` round-trip
 - [ ] 7.4d Docker E2E: Debian container — pnpm provider installs `serve` globally, verifies
-- [ ] 7.5 Implement `npm` provider: auto-inject `--global`
+- [x] 7.5 Implement `npm` provider: auto-inject `--global`
 - [ ] 7.5d Docker E2E: Debian container — npm provider installs a package globally
-- [ ] 7.6 Implement `git config` provider: KV config class, `--global`/`--file` support, check via `git config --get`, conditional includes
+- [x] 7.6 Implement `git config` provider: KV config class, `--global`/`--file` support, check via `git config --get`, conditional includes
 - [ ] 7.6e Local verification: `hams git config --global rerere.autoUpdate true` check round-trip
 - [ ] 7.6d Docker E2E: Debian container — git config provider sets+checks config values
 - [ ] 7.7 Implement `git clone` provider: record remote→local-path→default-branch, check = path exists only

@@ -49,7 +49,8 @@ func AddProviderCommands(root *cobra.Command, flags *cliutil.GlobalFlags) {
 }
 
 // routeToProvider dispatches args to the provider handler.
-// It handles --help interception before forwarding to the provider.
+// It strips global flags from args (since DisableFlagParsing prevents Cobra from parsing them),
+// and handles --help interception before forwarding to the provider.
 func routeToProvider(handler ProviderHandler, args []string, flags *cliutil.GlobalFlags) error {
 	// --help has highest priority: intercept before provider sees it.
 	for _, arg := range args {
@@ -58,7 +59,32 @@ func routeToProvider(handler ProviderHandler, args []string, flags *cliutil.Glob
 		}
 	}
 
-	return handler.HandleCommand(args, flags)
+	// Strip global flags that Cobra couldn't parse due to DisableFlagParsing.
+	cleaned := stripGlobalFlags(args, flags)
+
+	return handler.HandleCommand(cleaned, flags)
+}
+
+// stripGlobalFlags removes hams global flags from args and applies them to flags struct.
+// This is needed because DisableFlagParsing on provider commands prevents Cobra from
+// parsing persistent flags on the parent.
+func stripGlobalFlags(args []string, flags *cliutil.GlobalFlags) []string {
+	var cleaned []string
+	for _, arg := range args {
+		switch arg {
+		case "--debug":
+			flags.Debug = true
+		case "--dry-run":
+			flags.DryRun = true
+		case "--json":
+			flags.JSON = true
+		case "--no-color":
+			flags.NoColor = true
+		default:
+			cleaned = append(cleaned, arg)
+		}
+	}
+	return cleaned
 }
 
 // showProviderHelp displays help for a provider.
