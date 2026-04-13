@@ -2,14 +2,13 @@
 package notify
 
 import (
-	"context"
 	"fmt"
 	"log/slog"
 	"net/http"
-	"os/exec"
-	"runtime"
 	"strings"
 	"time"
+
+	"github.com/gen2brain/beeep"
 )
 
 // Channel is the interface for notification delivery.
@@ -29,8 +28,8 @@ type Manager struct {
 func NewManager(barkToken string) *Manager {
 	m := &Manager{}
 
-	// terminal-notifier is mandatory (macOS) / notify-send (Linux).
-	m.channels = append(m.channels, &terminalNotifier{})
+	// Desktop notification is mandatory (uses beeep for cross-platform support).
+	m.channels = append(m.channels, &desktopNotifier{})
 
 	// Bark is optional.
 	if barkToken != "" {
@@ -65,19 +64,14 @@ func (m *Manager) NotifyInteractionRequired(providerName, operation string) {
 		fmt.Sprintf("Provider %s needs attention: %s", providerName, operation))
 }
 
-// terminalNotifier uses macOS terminal-notifier or Linux notify-send.
-type terminalNotifier struct{}
+// desktopNotifier uses gen2brain/beeep for cross-platform desktop notifications.
+// Supports macOS (terminal-notifier/osascript), Linux (notify-send/dbus), Windows (toast).
+type desktopNotifier struct{}
 
-func (t *terminalNotifier) Name() string { return "terminal-notifier" }
+func (d *desktopNotifier) Name() string { return "desktop" }
 
-func (t *terminalNotifier) Send(title, message string) error {
-	if runtime.GOOS == "darwin" {
-		cmd := exec.CommandContext(context.Background(), "terminal-notifier", "-title", title, "-message", message, "-group", "hams") //nolint:gosec // title/message are hams-generated
-		return cmd.Run()
-	}
-	// Linux: use notify-send.
-	cmd := exec.CommandContext(context.Background(), "notify-send", title, message) //nolint:gosec // title/message are hams-generated
-	return cmd.Run()
+func (d *desktopNotifier) Send(title, message string) error {
+	return beeep.Notify(title, message, "")
 }
 
 // barkChannel sends push notifications via Bark app (iOS).

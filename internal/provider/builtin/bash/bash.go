@@ -6,8 +6,9 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
-	"os/exec"
 	"strings"
+
+	"github.com/bitfield/script"
 
 	"github.com/zthxxx/hams/internal/hamsfile"
 	"github.com/zthxxx/hams/internal/provider"
@@ -94,25 +95,23 @@ func (p *Provider) List(_ context.Context, _ *hamsfile.File, sf *state.File) (st
 }
 
 // RunCheck executes a check command and returns (stdout, exit code 0 = ok).
-func RunCheck(ctx context.Context, checkCmd string) (string, bool) {
+// Uses bitfield/script for shell execution.
+func RunCheck(_ context.Context, checkCmd string) (string, bool) {
 	if checkCmd == "" {
 		return "", false
 	}
 
-	cmd := exec.CommandContext(ctx, "sh", "-c", checkCmd) //nolint:gosec // check commands are user-defined in hamsfile
-	output, err := cmd.CombinedOutput()
+	output, err := script.Exec(checkCmd).String()
 	if err != nil {
-		return string(output), false
+		return output, false
 	}
-	return strings.TrimSpace(string(output)), true
+	return strings.TrimSpace(output), true
 }
 
-func runBash(ctx context.Context, command string) error {
-	cmd := exec.CommandContext(ctx, "sh", "-c", command) //nolint:gosec // bash commands are user-defined in hamsfile
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-
-	if err := cmd.Run(); err != nil {
+func runBash(_ context.Context, command string) error {
+	p := script.Exec(command).WithStdout(os.Stdout).WithStderr(os.Stderr)
+	_, err := p.String()
+	if err != nil {
 		return fmt.Errorf("bash command failed: %w\n  command: %s", err, command)
 	}
 	return nil
