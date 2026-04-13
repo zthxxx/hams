@@ -139,9 +139,9 @@ _Spec: `builtin-providers` — can start after Phase 1 establishes the pattern._
 
 _Cross-cutting — depends on provider system (4.x) and hamsfile SDK (2.x)._
 
-- [ ] 9.1 Implement LLM subprocess caller: invoke configured CLI (claude/codex) from `hams.config.yaml`, timeout handling, graceful degradation
-- [ ] 9.2 Implement tag recommendation: pass package name + desc + existing tags to LLM, parse response
-- [ ] 9.3 Implement intro generation: pass package name + desc to LLM, parse response
+- [x] 9.1 Implement LLM subprocess caller: invoke configured CLI (claude/codex) from `hams.config.yaml`, timeout handling, graceful degradation
+- [x] 9.2 Implement tag recommendation: pass package name + desc + existing tags to LLM, parse response
+- [x] 9.3 Implement intro generation: pass package name + desc to LLM, parse response
 - [ ] 9.4 Implement async enrichment flow: parallel goroutine during install, write back to hamsfile via SDK, error reporting at apply end
 - [ ] 9.5 Implement `--hams:lucky` flag: auto-accept all LLM recommendations without TUI picker
 - [ ] 9.6 Implement per-provider `enrich` standalone command (e.g., `hams brew enrich <app>`)
