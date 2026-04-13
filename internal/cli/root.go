@@ -68,6 +68,11 @@ func Execute() {
 
 	// Add subcommands.
 	root.AddCommand(NewApplyCmd(flags, registry))
+	root.AddCommand(NewRefreshCmd(flags, registry))
+	root.AddCommand(NewConfigCmd(flags))
+	root.AddCommand(NewStoreCmd(flags))
+	root.AddCommand(NewListCmd(flags, registry))
+	root.AddCommand(NewSelfUpgradeCmd())
 	AddProviderCommands(root, flags)
 
 	if err := root.Execute(); err != nil {
