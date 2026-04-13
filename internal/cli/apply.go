@@ -2,10 +2,13 @@ package cli
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"log/slog"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/urfave/cli/v3"
@@ -177,6 +180,10 @@ func runApply(ctx context.Context, flags *cliutil.GlobalFlags, registry *provide
 		result := provider.Execute(ctx, p, actions, sf)
 		allResults = append(allResults, result)
 
+		if result.Failed == 0 {
+			sf.ConfigHash = configHashForHamsfile(hf)
+		}
+
 		if saveErr := sf.Save(statePath); saveErr != nil {
 			slog.Error("failed to save state", "provider", name, "error", saveErr)
 		}
@@ -205,6 +212,14 @@ func manifestFilePrefix(m provider.Manifest) string {
 		return m.FilePrefix
 	}
 	return m.Name
+}
+
+func configHashForHamsfile(hf *hamsfile.File) string {
+	appIDs := hf.ListApps()
+	slices.Sort(appIDs)
+
+	sum := sha256.Sum256([]byte(strings.Join(appIDs, "\n")))
+	return hex.EncodeToString(sum[:])
 }
 
 func filterProviders(providers []provider.Provider, only, except string) []provider.Provider {
