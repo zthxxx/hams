@@ -1,0 +1,121 @@
+import { Callout } from 'nextra/components'
+
+# CLI Reference
+
+hams commands follow a consistent routing pattern:
+
+```
+hams [global-flags] <command> [args] [--hams:flags] [-- <passthrough>]
+```
+
+- **Global flags** must appear between `hams` and the command name.
+- **`--hams:` flags** are provider-scoped flags intercepted by hams before the underlying tool sees them.
+- **`--` separator** forces all subsequent arguments to be forwarded verbatim to the wrapped tool.
+
+## Command Categories
+
+### Core Commands
+
+| Command | Description |
+|---------|-------------|
+| [`hams apply`](/docs/cli/apply) | Apply all Hamsfiles to the current machine (install/remove/update) |
+| [`hams refresh`](/docs/cli/refresh) | Probe installed state and update state files |
+| [`hams list`](/docs/cli/list) | List all resources managed by hams |
+| [`hams config`](/docs/cli/config) | Read and write hams configuration |
+| [`hams store`](/docs/cli/store) | Manage the store repository |
+| [`hams self-upgrade`](/docs/cli/self-upgrade) | Upgrade the hams binary |
+
+### Provider Commands
+
+Provider commands follow the pattern `hams <provider> <verb> [args]`:
+
+```bash
+hams brew install bat
+hams pnpm add serve
+hams npm install --global prettier
+hams brew remove htop
+hams brew list
+hams brew enrich bat
+```
+
+See [Provider Commands](/docs/cli/provider-commands) for the full verb reference, and the
+[Providers](/docs/providers) chapter for provider-specific documentation.
+
+## Global Flags
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--debug` | bool | `false` | Enable debug-level logging |
+| `--dry-run` | bool | `false` | Show planned actions without executing |
+| `--json` | bool | `false` | Output in JSON format for machine/AI parsing |
+| `--no-color` | bool | `false` | Disable ANSI color codes |
+| `--config=<path>` | string | `~/.config/hams/hams.config.yaml` | Override config file path |
+| `--store=<path>` | string | from config | Override store directory path |
+| `--profile=<tag>` | string | from config | Override active profile tag |
+| `--help` | bool | `false` | Display help text |
+| `--version` | bool | `false` | Display version and build info |
+
+See [Global Flags](/docs/cli/global-flags) for detailed descriptions and examples.
+
+## Exit Codes
+
+| Code | Meaning |
+|------|---------|
+| `0` | Success |
+| `1` | General error |
+| `2` | Usage / argument error (invalid flags, missing args) |
+| `3` | Lock conflict (another hams process is running) |
+| `4` | Partial failure (some resources succeeded, some failed) |
+| `10` | Sudo required but not granted or timed out |
+| `11–19` | Provider-specific errors |
+| `126` | Command not executable (POSIX) |
+| `127` | Command not found (POSIX) |
+
+## AI-Agent Friendly Errors
+
+All error output is structured for machine parsing. In text mode:
+
+```
+ERROR LOCK_CONFLICT: Another hams session is running.
+  PID: 42567  command: apply  started: 20260412T143022
+  Suggestions:
+    - Wait for the existing session to complete
+    - Run: kill 42567  (if the process is stuck)
+```
+
+With `--json`:
+
+```json
+{
+  "code": "LOCK_CONFLICT",
+  "message": "Another hams session is running. PID: 42567, command: apply, started: 20260412T143022.",
+  "suggestions": [
+    "Wait for the existing session to complete",
+    "kill 42567"
+  ]
+}
+```
+
+<Callout type="info">
+  The `--hams:` prefix convention lets you pass hams-specific flags alongside provider passthrough arguments.
+  For example, `hams brew install bat --hams:tag=cli` records `bat` under the `cli` tag without forwarding
+  `--hams:tag=cli` to `brew`.
+</Callout>
+
+## The `--hams:` Flag Convention
+
+Provider-scoped hams flags use the `--hams:` prefix so they cannot collide with the wrapped tool's own flags:
+
+| Flag | Description |
+|------|-------------|
+| `--hams:tag=<tags>` | Comma-separated tags to assign to the recorded resource |
+| `--hams:intro=<text>` | One-line description to store in the Hamsfile |
+| `--hams:local` | Write to `<Provider>.hams.local.yaml` instead of the main Hamsfile |
+
+```bash
+# Install ripgrep, tag it as 'search,cli', and add a description
+hams brew install ripgrep --hams:tag=search,cli --hams:intro="Fast recursive grep alternative"
+
+# Install a work-only tool into the local (non-committed) Hamsfile
+hams brew install zoom --hams:local
+```
