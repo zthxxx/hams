@@ -7,6 +7,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/zthxxx/hams/internal/provider"
 	"github.com/zthxxx/hams/internal/version"
 )
 
@@ -58,11 +59,19 @@ Use 'hams apply' to replay all installations from config.`,
 	return root, flags
 }
 
-// Execute runs the root command.
+// Execute runs the root command with all subcommands wired up.
 func Execute() {
-	root, _ := NewRootCmd()
+	root, flags := NewRootCmd()
+
+	// Create provider registry (builtins will register themselves).
+	registry := provider.NewRegistry()
+
+	// Add subcommands.
+	root.AddCommand(NewApplyCmd(flags, registry))
+	AddProviderCommands(root, flags)
+
 	if err := root.Execute(); err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-		os.Exit(1)
+		PrintError(err, flags.JSON)
+		os.Exit(ExitGeneralError)
 	}
 }
