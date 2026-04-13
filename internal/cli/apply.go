@@ -207,7 +207,7 @@ func runApply(ctx context.Context, flags *cliutil.GlobalFlags, registry *provide
 	return nil
 }
 
-func manifestFilePrefix(m provider.Manifest) string {
+func manifestFilePrefix(m provider.Manifest) string { //nolint:gocritic // simple helper, copy is acceptable
 	if m.FilePrefix != "" {
 		return m.FilePrefix
 	}

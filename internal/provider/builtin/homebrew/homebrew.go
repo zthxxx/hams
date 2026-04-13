@@ -7,21 +7,28 @@ import (
 	"fmt"
 	"log/slog"
 	"maps"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 
+	"gopkg.in/yaml.v3"
+
 	"github.com/zthxxx/hams/internal/cliutil"
+	"github.com/zthxxx/hams/internal/config"
 	"github.com/zthxxx/hams/internal/hamsfile"
 	"github.com/zthxxx/hams/internal/provider"
 	"github.com/zthxxx/hams/internal/state"
 )
 
 // Provider implements the Homebrew package manager provider.
-type Provider struct{}
+type Provider struct {
+	cfg *config.Config
+}
 
 // New creates a new Homebrew provider.
-func New() *Provider {
-	return &Provider{}
+func New(cfg *config.Config) *Provider {
+	return &Provider{cfg: cfg}
 }
 
 // Manifest returns the Homebrew provider metadata.
@@ -149,14 +156,34 @@ func (p *Provider) handleInstall(args []string, flags *cliutil.GlobalFlags) erro
 	}
 
 	hamsFlags, brewArgs := cliutil.SplitHamsFlags(args)
-	_ = hamsFlags // TODO: use tag, local, lucky flags.
+	tag := parseInstallTag(hamsFlags)
+	packages := packageArgs(brewArgs)
+	if len(packages) == 0 {
+		return cliutil.NewUserError(cliutil.ExitUsageError,
+			"brew install requires at least one package name",
+			"Usage: hams brew install <package> [--cask] [--hams:tag=<tag>]",
+		)
+	}
 
 	if flags.DryRun {
 		fmt.Printf("[dry-run] Would install: brew install %s\n", strings.Join(brewArgs, " "))
 		return nil
 	}
 
-	return provider.WrapExecPassthrough(context.Background(), "brew", append([]string{"install"}, brewArgs...), nil)
+	if err := provider.WrapExecPassthrough(context.Background(), "brew", append([]string{"install"}, brewArgs...), nil); err != nil {
+		return err
+	}
+
+	hf, err := p.loadOrCreateHamsfile(flags)
+	if err != nil {
+		return err
+	}
+
+	for _, pkg := range packages {
+		hf.AddApp(tag, pkg, "")
+	}
+
+	return hf.Write()
 }
 
 func (p *Provider) handleRemove(args []string, flags *cliutil.GlobalFlags) error {
@@ -167,12 +194,33 @@ func (p *Provider) handleRemove(args []string, flags *cliutil.GlobalFlags) error
 		)
 	}
 
+	packages := packageArgs(args)
+	if len(packages) == 0 {
+		return cliutil.NewUserError(cliutil.ExitUsageError,
+			"brew remove requires at least one package name",
+			"Usage: hams brew remove <package>",
+		)
+	}
+
 	if flags.DryRun {
 		fmt.Printf("[dry-run] Would remove: brew uninstall %s\n", strings.Join(args, " "))
 		return nil
 	}
 
-	return provider.WrapExecPassthrough(context.Background(), "brew", append([]string{"uninstall"}, args...), nil)
+	if err := provider.WrapExecPassthrough(context.Background(), "brew", append([]string{"uninstall"}, args...), nil); err != nil {
+		return err
+	}
+
+	hf, err := p.loadOrCreateHamsfile(flags)
+	if err != nil {
+		return err
+	}
+
+	for _, pkg := range packages {
+		hf.RemoveApp(pkg)
+	}
+
+	return hf.Write()
 }
 
 // listInstalled returns a map of installed package name → version.
@@ -233,4 +281,87 @@ func listByType(ctx context.Context, typeFlag string) (map[string]string, error)
 	}
 
 	return result, nil
+}
+
+func (p *Provider) loadOrCreateHamsfile(flags *cliutil.GlobalFlags) (*hamsfile.File, error) {
+	path, err := p.hamsfilePath(flags)
+	if err != nil {
+		return nil, err
+	}
+
+	if _, err := os.Stat(path); err == nil {
+		return hamsfile.Read(path)
+	} else if !os.IsNotExist(err) {
+		return nil, fmt.Errorf("stat hamsfile %s: %w", path, err)
+	}
+
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return nil, fmt.Errorf("create profile dir for %s: %w", path, err)
+	}
+
+	return &hamsfile.File{
+		Path: path,
+		Root: &yaml.Node{
+			Kind: yaml.DocumentNode,
+			Content: []*yaml.Node{
+				{Kind: yaml.MappingNode, Tag: "!!map"},
+			},
+		},
+	}, nil
+}
+
+func (p *Provider) hamsfilePath(flags *cliutil.GlobalFlags) (string, error) {
+	cfg := p.effectiveConfig(flags)
+	if cfg.StorePath == "" {
+		return "", cliutil.NewUserError(cliutil.ExitUsageError,
+			"no store directory configured",
+			"Set store_path in hams config or pass --store",
+		)
+	}
+
+	return filepath.Join(cfg.ProfileDir(), p.Manifest().FilePrefix+".hams.yaml"), nil
+}
+
+func (p *Provider) effectiveConfig(flags *cliutil.GlobalFlags) *config.Config {
+	if p.cfg == nil {
+		p.cfg = &config.Config{}
+	}
+
+	cfg := *p.cfg
+	if flags == nil {
+		return &cfg
+	}
+
+	if flags.Store != "" {
+		cfg.StorePath = flags.Store
+	}
+	if flags.Profile != "" {
+		cfg.ProfileTag = flags.Profile
+	}
+
+	return &cfg
+}
+
+func parseInstallTag(hamsFlags map[string]string) string {
+	tag := "cli"
+	if raw := strings.TrimSpace(hamsFlags["tag"]); raw != "" {
+		tag = strings.TrimSpace(strings.Split(raw, ",")[0])
+	}
+
+	if tag == "" {
+		return "cli"
+	}
+
+	return tag
+}
+
+func packageArgs(args []string) []string {
+	var packages []string
+	for _, arg := range args {
+		if strings.HasPrefix(arg, "-") {
+			continue
+		}
+		packages = append(packages, arg)
+	}
+	return packages
 }
