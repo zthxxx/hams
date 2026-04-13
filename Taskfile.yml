@@ -1,4 +1,21 @@
+# Usage: https://taskfile.dev/usage/
+# Schema Reference: https://taskfile.dev/reference/schema
+# yaml-language-server: $schema=https://taskfile.dev/schema.json
+#
+# Note:
+#   - To override variables when calling another task,
+#     you need to pass the variable with `vars` key everytime.
+#   - shell command run in [`gosh`](https://github.com/mvdan/sh) shell,
+#     interpreter with bash support
+---
+
 version: "3"
+
+# https://taskfile.dev/usage/#set-and-shopt
+set: [pipefail]
+shopt: [globstar]
+
+silent: false
 
 vars:
   APP_NAME: hams

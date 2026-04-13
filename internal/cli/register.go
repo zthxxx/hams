@@ -20,10 +20,18 @@ import (
 	"github.com/zthxxx/hams/internal/provider/builtin/vscodeext"
 )
 
+// cliProvider is a provider that also implements ProviderHandler for CLI routing.
+type cliProvider interface {
+	provider.Provider
+	ProviderHandler
+}
+
 // registerBuiltins registers all builtin providers in the registry.
+// Each provider is instantiated once and used for both the provider registry
+// and CLI handler routing (avoiding double instantiation).
 func registerBuiltins(registry *provider.Registry) {
-	builtins := []provider.Provider{
-		bash.New(),
+	// Providers that implement both Provider and ProviderHandler.
+	cliProviders := []cliProvider{
 		homebrew.New(),
 		apt.New(),
 		npm.New(),
@@ -40,30 +48,23 @@ func registerBuiltins(registry *provider.Registry) {
 		ansible.New(),
 	}
 
-	for _, p := range builtins {
+	// Providers that only implement Provider (no CLI handler).
+	providerOnly := []provider.Provider{
+		bash.New(),
+	}
+
+	// Register all into the provider registry.
+	for _, p := range cliProviders {
 		if err := registry.Register(p); err != nil {
 			slog.Warn("failed to register provider", "provider", p.Manifest().Name, "error", err)
 		}
+		// Same instance for CLI routing.
+		RegisterProvider(p)
 	}
 
-	// Register CLI handlers for providers that implement ProviderHandler.
-	cliHandlers := []ProviderHandler{
-		homebrew.New(),
-		apt.New(),
-		npm.New(),
-		pnpm.New(),
-		uv.New(),
-		goinstall.New(),
-		cargo.New(),
-		git.NewConfigProvider(),
-		git.NewCloneProvider(),
-		defaults.New(),
-		duti.New(),
-		mas.New(),
-		vscodeext.New(),
-		ansible.New(),
-	}
-	for _, h := range cliHandlers {
-		RegisterProvider(h)
+	for _, p := range providerOnly {
+		if err := registry.Register(p); err != nil {
+			slog.Warn("failed to register provider", "provider", p.Manifest().Name, "error", err)
+		}
 	}
 }

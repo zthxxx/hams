@@ -1,0 +1,5 @@
+setup:
+  - urn: "urn:hams:bash:test-echo"
+    step: "Echo test message"
+    run: "echo 'hams e2e test passed'"
+    check: "true"

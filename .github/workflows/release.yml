@@ -1,0 +1,76 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build (${{ matrix.goos }}/${{ matrix.goarch }})
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - goos: darwin
+            goarch: arm64
+          - goos: linux
+            goarch: amd64
+          - goos: linux
+            goarch: arm64
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.24"
+
+      - name: Build
+        env:
+          CGO_ENABLED: "0"
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+        run: |
+          VERSION="${GITHUB_REF_NAME}"
+          COMMIT="$(git rev-parse --short HEAD)"
+          DATE="$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+          LDFLAGS="-s -w \
+            -X github.com/zthxxx/hams/internal/version.version=${VERSION} \
+            -X github.com/zthxxx/hams/internal/version.commit=${COMMIT} \
+            -X github.com/zthxxx/hams/internal/version.date=${DATE}"
+          go build -ldflags "${LDFLAGS}" -o hams-${{ matrix.goos }}-${{ matrix.goarch }} ./cmd/hams
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: hams-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: hams-${{ matrix.goos }}-${{ matrix.goarch }}
+
+  release:
+    name: Create Release
+    runs-on: ubuntu-latest
+    needs: [build]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist/
+
+      - name: Prepare release files
+        run: |
+          mkdir -p release
+          find dist -type f -name 'hams-*' -exec cp {} release/ \;
+          cd release && sha256sum hams-* > checksums.txt
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: release/*
+          generate_release_notes: true

@@ -36,20 +36,36 @@ func TestSplitHamsFlags_BooleanFlag(t *testing.T) {
 	}
 }
 
-func TestSplitHamsFlags_MultipleValues(t *testing.T) {
-	hams, _ := cliutil.SplitHamsFlags([]string{"install", "--hams:tag=dev,network"})
-	if hams["tag"] != "dev,network" {
-		t.Errorf("hams[tag] = %q, want 'dev,network'", hams["tag"])
+func TestStripGlobalFlags_DryRun(t *testing.T) {
+	flags := &cliutil.GlobalFlags{}
+	cleaned := stripGlobalFlags([]string{"install", "htop", "--dry-run"}, flags)
+	if !flags.DryRun {
+		t.Error("DryRun should be set")
+	}
+	if len(cleaned) != 2 || cleaned[0] != "install" || cleaned[1] != "htop" {
+		t.Errorf("cleaned = %v, want [install htop]", cleaned)
 	}
 }
 
-func TestSplitHamsFlags_NoHamsFlags(t *testing.T) {
-	hams, pass := cliutil.SplitHamsFlags([]string{"install", "htop", "--cask"})
-	if len(hams) != 0 {
-		t.Errorf("hams flags should be empty, got %v", hams)
+func TestStripGlobalFlags_ConfigWithValue(t *testing.T) {
+	flags := &cliutil.GlobalFlags{}
+	cleaned := stripGlobalFlags([]string{"install", "--config", "/tmp/cfg.yaml", "htop"}, flags)
+	if flags.Config != "/tmp/cfg.yaml" {
+		t.Errorf("Config = %q, want /tmp/cfg.yaml", flags.Config)
 	}
-	if len(pass) != 3 {
-		t.Errorf("passthrough = %v, want 3 items", pass)
+	if len(cleaned) != 2 || cleaned[0] != "install" || cleaned[1] != "htop" {
+		t.Errorf("cleaned = %v, want [install htop]", cleaned)
+	}
+}
+
+func TestStripGlobalFlags_ConfigEquals(t *testing.T) {
+	flags := &cliutil.GlobalFlags{}
+	cleaned := stripGlobalFlags([]string{"install", "--config=/tmp/cfg.yaml", "htop"}, flags)
+	if flags.Config != "/tmp/cfg.yaml" {
+		t.Errorf("Config = %q, want /tmp/cfg.yaml", flags.Config)
+	}
+	if len(cleaned) != 2 {
+		t.Errorf("cleaned = %v, want 2 items", cleaned)
 	}
 }
 
@@ -69,43 +85,14 @@ func (m *mockProvider) HandleCommand(args []string, flags *cliutil.GlobalFlags) 
 	return nil
 }
 
-func TestRegisterProvider_And_Route(t *testing.T) {
-	// Save and restore registry.
-	old := providerRegistry
-	providerRegistry = make(map[string]ProviderHandler)
-	defer func() { providerRegistry = old }()
-
-	mock := &mockProvider{name: "brew", displayName: "Homebrew"}
-	RegisterProvider(mock)
-
-	flags := &cliutil.GlobalFlags{Debug: true}
-	root, _ := NewRootCmd()
-	AddProviderCommands(root, flags)
-
-	root.SetArgs([]string{"brew", "install", "htop"})
-	err := root.Execute()
-	if err != nil {
-		t.Fatalf("Execute error: %v", err)
-	}
-
-	if len(mock.lastArgs) != 2 || mock.lastArgs[0] != "install" || mock.lastArgs[1] != "htop" {
-		t.Errorf("lastArgs = %v, want [install htop]", mock.lastArgs)
-	}
-	if !mock.lastFlags.Debug {
-		t.Error("Debug flag should be propagated")
-	}
-}
-
 func TestRouteToProvider_HelpIntercept(t *testing.T) {
 	mock := &mockProvider{name: "brew", displayName: "Homebrew"}
 
-	// --help should be intercepted, not forwarded to provider.
 	err := routeToProvider(mock, []string{"install", "--help"}, &cliutil.GlobalFlags{})
 	if err != nil {
 		t.Fatalf("routeToProvider --help error: %v", err)
 	}
 
-	// Provider should NOT have received the command.
 	if mock.lastArgs != nil {
 		t.Error("provider should not receive args when --help is present")
 	}

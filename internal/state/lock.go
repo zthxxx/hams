@@ -35,16 +35,6 @@ func (l *Lock) Acquire(command string) error {
 		return fmt.Errorf("creating lock directory: %w", err)
 	}
 
-	// Check for existing lock.
-	if info, err := l.Read(); err == nil {
-		if isProcessAlive(info.PID) {
-			return fmt.Errorf("hams is already running (PID %d, command: %s, started: %s). "+
-				"If this is stale, remove %s",
-				info.PID, info.Command, info.StartedAt, l.path)
-		}
-		// Stale lock — process is dead, reclaim it.
-	}
-
 	info := LockInfo{
 		PID:       os.Getpid(),
 		Command:   command,
@@ -56,8 +46,34 @@ func (l *Lock) Acquire(command string) error {
 		return fmt.Errorf("marshaling lock info: %w", err)
 	}
 
-	if err := os.WriteFile(l.path, data, 0o600); err != nil {
-		return fmt.Errorf("writing lock file: %w", err)
+	// Atomic lock acquisition using O_CREATE|O_EXCL to avoid TOCTOU race.
+	f, createErr := os.OpenFile(l.path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+	if createErr != nil {
+		// Lock file exists. Check if the holder is still alive.
+		existing, readErr := l.Read()
+		if readErr != nil {
+			return fmt.Errorf("lock file exists but is unreadable: %w (remove %s manually)", readErr, l.path)
+		}
+		if isProcessAlive(existing.PID) {
+			return fmt.Errorf("hams is already running (PID %d, command: %s, started: %s). "+
+				"If this is stale, remove %s",
+				existing.PID, existing.Command, existing.StartedAt, l.path)
+		}
+		// Stale lock — reclaim by overwriting.
+		if writeErr := os.WriteFile(l.path, data, 0o600); writeErr != nil {
+			return fmt.Errorf("reclaiming stale lock: %w", writeErr)
+		}
+		return nil
+	}
+
+	// New lock created atomically.
+	if _, writeErr := f.Write(data); writeErr != nil {
+		f.Close()         //nolint:errcheck,gosec // best-effort cleanup
+		os.Remove(l.path) //nolint:errcheck,gosec // best-effort cleanup
+		return fmt.Errorf("writing lock: %w", writeErr)
+	}
+	if closeErr := f.Close(); closeErr != nil {
+		return fmt.Errorf("closing lock file: %w", closeErr)
 	}
 
 	return nil

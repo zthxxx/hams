@@ -4,8 +4,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/spf13/cobra"
-
 	"github.com/zthxxx/hams/internal/cliutil"
 )
 
@@ -17,8 +15,6 @@ type ProviderHandler interface {
 	// DisplayName returns the provider's display name (e.g., "Homebrew", "pnpm").
 	DisplayName() string
 	// HandleCommand receives the full args after the provider name.
-	// It is responsible for parsing subcommands, extracting --hams: flags,
-	// and forwarding remaining args to the wrapped CLI.
 	HandleCommand(args []string, flags *cliutil.GlobalFlags) error
 }
 
@@ -31,63 +27,19 @@ func RegisterProvider(handler ProviderHandler) {
 	providerRegistry[name] = handler
 }
 
-// AddProviderCommands creates Cobra commands for all registered providers
-// and attaches them to the root command.
-func AddProviderCommands(root *cobra.Command, flags *cliutil.GlobalFlags) {
-	for _, handler := range providerRegistry {
-		h := handler // capture for closure
-		cmd := &cobra.Command{
-			Use:                h.Name() + " [subcommand] [args...]",
-			Short:              fmt.Sprintf("Manage %s packages", h.DisplayName()),
-			DisableFlagParsing: true, // Provider handles its own flag parsing.
-			RunE: func(_ *cobra.Command, args []string) error {
-				return routeToProvider(h, args, flags)
-			},
-		}
-		root.AddCommand(cmd)
-	}
-}
-
 // routeToProvider dispatches args to the provider handler.
-// It strips global flags from args (since DisableFlagParsing prevents Cobra from parsing them),
-// and handles --help interception before forwarding to the provider.
+// It strips global flags from args and handles --help interception.
 func routeToProvider(handler ProviderHandler, args []string, flags *cliutil.GlobalFlags) error {
-	// --help has highest priority: intercept before provider sees it.
 	for _, arg := range args {
 		if arg == "--help" || arg == "-h" {
 			return showProviderHelp(handler)
 		}
 	}
 
-	// Strip global flags that Cobra couldn't parse due to DisableFlagParsing.
 	cleaned := stripGlobalFlags(args, flags)
-
 	return handler.HandleCommand(cleaned, flags)
 }
 
-// stripGlobalFlags removes hams global flags from args and applies them to flags struct.
-// This is needed because DisableFlagParsing on provider commands prevents Cobra from
-// parsing persistent flags on the parent.
-func stripGlobalFlags(args []string, flags *cliutil.GlobalFlags) []string {
-	var cleaned []string
-	for _, arg := range args {
-		switch arg {
-		case "--debug":
-			flags.Debug = true
-		case "--dry-run":
-			flags.DryRun = true
-		case "--json":
-			flags.JSON = true
-		case "--no-color":
-			flags.NoColor = true
-		default:
-			cleaned = append(cleaned, arg)
-		}
-	}
-	return cleaned
-}
-
-// showProviderHelp displays help for a provider.
 func showProviderHelp(handler ProviderHandler) error {
 	fmt.Printf("hams %s — Manage %s packages\n\n", handler.Name(), handler.DisplayName())
 	fmt.Printf("Usage:\n")
@@ -96,4 +48,43 @@ func showProviderHelp(handler ProviderHandler) error {
 	fmt.Printf("Flags with --hams: prefix are consumed by hams, all others are forwarded.\n")
 	fmt.Printf("Use -- to force-forward all subsequent args to the underlying command.\n")
 	return nil
+}
+
+func stripGlobalFlags(args []string, flags *cliutil.GlobalFlags) []string {
+	var cleaned []string
+	skip := false
+	for i, arg := range args {
+		if skip {
+			skip = false
+			continue
+		}
+		switch {
+		case arg == "--debug":
+			flags.Debug = true
+		case arg == "--dry-run":
+			flags.DryRun = true
+		case arg == "--json":
+			flags.JSON = true
+		case arg == "--no-color":
+			flags.NoColor = true
+		case strings.HasPrefix(arg, "--config="):
+			flags.Config = strings.TrimPrefix(arg, "--config=")
+		case arg == "--config" && i+1 < len(args):
+			flags.Config = args[i+1]
+			skip = true
+		case strings.HasPrefix(arg, "--store="):
+			flags.Store = strings.TrimPrefix(arg, "--store=")
+		case arg == "--store" && i+1 < len(args):
+			flags.Store = args[i+1]
+			skip = true
+		case strings.HasPrefix(arg, "--profile="):
+			flags.Profile = strings.TrimPrefix(arg, "--profile=")
+		case arg == "--profile" && i+1 < len(args):
+			flags.Profile = args[i+1]
+			skip = true
+		default:
+			cleaned = append(cleaned, arg)
+		}
+	}
+	return cleaned
 }

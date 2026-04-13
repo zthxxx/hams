@@ -63,6 +63,14 @@ observability ──────── (independent, integrates into cli-archite
 docs-site ─────────── (independent, written after all other specs are stable)
 ```
 
+### D1b. CLI Framework: urfave/cli over spf13/cobra
+
+**Decision**: Use `urfave/cli` (v3) instead of `spf13/cobra` for CLI command definitions.
+
+**Rationale**: urfave/cli uses declarative struct-based command definitions (`*cli.Command` structs with `Commands` slices) which are easier to compose dynamically — critical for hams where provider commands are registered at runtime. Cobra requires imperative `AddCommand` calls and has a more complex flag inheritance model that conflicts with `DisableFlagParsing` needed for provider passthrough. urfave/cli's `SkipFlagParsing` is cleaner.
+
+**Alternatives considered**: Cobra (original implementation) — worked but required manual global flag stripping and had awkward persistent flag inheritance with disabled flag parsing on child commands.
+
 ### D2. Module Architecture (Go packages)
 
 **Decision**: Clean architecture with dependency inversion.

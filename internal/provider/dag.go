@@ -3,6 +3,7 @@ package provider
 import (
 	"fmt"
 	"runtime"
+	"sort"
 	"strings"
 )
 
@@ -42,12 +43,14 @@ func ResolveDAG(providers []Provider) ([]Provider, error) {
 	}
 
 	// Kahn's algorithm for topological sort.
+	// Sort initial zero-indegree nodes for deterministic ordering.
 	var queue []string
 	for name, degree := range inDegree {
 		if degree == 0 {
 			queue = append(queue, name)
 		}
 	}
+	sort.Strings(queue)
 
 	var sorted []string
 	for len(queue) > 0 {
