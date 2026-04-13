@@ -3,6 +3,17 @@ version: "3"
 vars:
   APP_NAME: hams
   BUILD_DIR: bin
+  VERSION:
+    sh: git describe --tags --always --dirty 2>/dev/null || echo "dev"
+  COMMIT:
+    sh: git rev-parse --short HEAD 2>/dev/null || echo "unknown"
+  DATE:
+    sh: date -u '+%Y-%m-%dT%H:%M:%SZ'
+  LDFLAGS: >-
+    -s -w
+    -X github.com/zthxxx/hams/internal/version.version={{.VERSION}}
+    -X github.com/zthxxx/hams/internal/version.commit={{.COMMIT}}
+    -X github.com/zthxxx/hams/internal/version.date={{.DATE}}
 
 tasks:
   default:
@@ -13,7 +24,7 @@ tasks:
   build:
     desc: Build the application
     cmds:
-      - go build -o {{.BUILD_DIR}}/{{.APP_NAME}} ./cmd/hams
+      - go build -ldflags "{{.LDFLAGS}}" -o {{.BUILD_DIR}}/{{.APP_NAME}} ./cmd/hams
     sources:
       - ./**/*.go
       - go.mod
@@ -21,10 +32,24 @@ tasks:
     generates:
       - "{{.BUILD_DIR}}/{{.APP_NAME}}"
 
+  build:all:
+    desc: Cross-compile for all target platforms (CGO_ENABLED=0)
+    cmds:
+      - bash scripts/build-all.sh
+
+  build:release:
+    desc: Build release binaries with checksums
+    cmds:
+      - bash scripts/build-all.sh
+      - cd {{.BUILD_DIR}} && sha256sum hams-* > checksums.txt
+    generates:
+      - "{{.BUILD_DIR}}/hams-*"
+      - "{{.BUILD_DIR}}/checksums.txt"
+
   run:
     desc: Run the application
     cmds:
-      - go run ./cmd/hams
+      - go run -ldflags "{{.LDFLAGS}}" ./cmd/hams
 
   test:
     desc: Run tests with race detection
@@ -37,6 +62,16 @@ tasks:
     cmds:
       - go tool cover -html=coverage.out -o coverage.html
       - open coverage.html
+
+  test:property:
+    desc: Run property-based tests only
+    cmds:
+      - go test -race -count=1 -run "TestProperty" ./...
+
+  test:e2e:
+    desc: Run e2e tests in Docker containers
+    cmds:
+      - docker compose -f e2e/docker-compose.yml up --build --abort-on-container-exit
 
   lint:
     desc: Run all linters

@@ -30,3 +30,5 @@ globs: ["**/*"]
     - `pnpm`: `serve`
     - `bash`: `git config --global rerere.autoUpdate true`
   - Prioritize implementing the smallest verifiable slice first.
+
+- **Local/CI isomorphism**: code style checks (golangci-lint), unit tests, and Docker-based E2E tests MUST all run identically on a developer's local machine and in GitHub Actions CI. No CI-only or local-only test paths. Use the same commands (Taskfile tasks) in both environments.

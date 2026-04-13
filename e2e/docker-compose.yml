@@ -1,0 +1,21 @@
+services:
+  debian:
+    build:
+      context: ..
+      dockerfile: e2e/debian/Dockerfile
+    volumes:
+      - ./fixtures:/fixtures:ro
+
+  alpine:
+    build:
+      context: ..
+      dockerfile: e2e/alpine/Dockerfile
+    volumes:
+      - ./fixtures:/fixtures:ro
+
+  openwrt:
+    build:
+      context: ..
+      dockerfile: e2e/openwrt/Dockerfile
+    volumes:
+      - ./fixtures:/fixtures:ro
