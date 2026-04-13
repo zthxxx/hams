@@ -7,7 +7,6 @@ import (
 )
 
 // Build-time variables injected via -ldflags.
-// Example: go build -ldflags "-X github.com/zthxxx/hams/internal/version.version=1.0.0"
 var (
 	version = "dev"
 	commit  = "unknown"

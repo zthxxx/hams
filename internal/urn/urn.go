@@ -6,8 +6,8 @@ import (
 	"strings"
 )
 
-// URN represents a parsed hams resource identifier.
-// Format: urn:hams:<provider>:<resource-id>
+// URN represents a parsed hams resource identifier
+// in the format urn:hams:<provider>:<resource-id>.
 type URN struct {
 	Provider   string
 	ResourceID string
