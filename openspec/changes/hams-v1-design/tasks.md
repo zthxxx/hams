@@ -56,8 +56,8 @@ _Spec: `provider-system` — depends on schema (2.x) and CLI (3.1-3.3). Core fra
 
 - [x] 4.1 Define `Provider` interface: Register, Bootstrap, Probe, Plan, Apply, Remove, List, Enrich methods
 - [x] 4.2 Implement provider registry: registration, discovery, manifest validation
-- [ ] 4.3 Implement depend-on DAG resolver: topological sort, platform-conditional filtering, cycle detection with error reporting
-- [ ] 4.4 Implement provider execution priority: DAG-level then priority-list ordering (configurable in hams.config.yaml)
+- [x] 4.3 Implement depend-on DAG resolver: topological sort, platform-conditional filtering, cycle detection with error reporting
+- [x] 4.4 Implement provider execution priority: DAG-level then priority-list ordering (configurable in hams.config.yaml)
 - [ ] 4.5 Implement probe dispatcher: parallel probe across providers (errgroup), 4 resource class strategies
 - [ ] 4.6 Implement plan engine: desired (hamsfile) vs observed (state) diff → action list (install/update/remove/skip)
 - [ ] 4.7 Implement apply executor: sequential per-provider, sequential per-resource within provider, write-serial global mutex
