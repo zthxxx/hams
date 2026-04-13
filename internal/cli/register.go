@@ -4,6 +4,7 @@ import (
 	"log/slog"
 
 	"github.com/zthxxx/hams/internal/provider"
+	"github.com/zthxxx/hams/internal/provider/builtin/apt"
 	"github.com/zthxxx/hams/internal/provider/builtin/bash"
 	"github.com/zthxxx/hams/internal/provider/builtin/git"
 	"github.com/zthxxx/hams/internal/provider/builtin/homebrew"
@@ -16,9 +17,11 @@ func registerBuiltins(registry *provider.Registry) {
 	builtins := []provider.Provider{
 		bash.New(),
 		homebrew.New(),
+		apt.New(),
 		npm.New(),
 		pnpm.New(),
 		git.NewConfigProvider(),
+		git.NewCloneProvider(),
 	}
 
 	for _, p := range builtins {
@@ -30,9 +33,11 @@ func registerBuiltins(registry *provider.Registry) {
 	// Register CLI handlers for providers that implement ProviderHandler.
 	cliHandlers := []ProviderHandler{
 		homebrew.New(),
+		apt.New(),
 		npm.New(),
 		pnpm.New(),
 		git.NewConfigProvider(),
+		git.NewCloneProvider(),
 	}
 	for _, h := range cliHandlers {
 		RegisterProvider(h)

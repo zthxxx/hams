@@ -101,12 +101,12 @@ _Spec: `builtin-providers` — depends on provider system (4.x). Priority order 
 _Docker E2E tests develop incrementally alongside each provider. Local safe-test packages: brew=`bat`, pnpm=`serve`, bash=`git config --global rerere.autoUpdate true`._
 
 - [x] 7.1 Implement `bash` provider: URN-based scripts, `check:` field, `bash.hams/` subdirectory support, step/description naming
-- [ ] 7.1e Local verification: `hams bash` with `git config --global rerere.autoUpdate true` check/apply round-trip
+- [x] 7.1e Local verification: `hams bash` with `git config --global rerere.autoUpdate true` check/apply round-trip
 - [ ] 7.1d Docker E2E: Debian container — bash provider runs a script, verifies check idempotency
 - [x] 7.2 Implement `Homebrew` provider: core + cask + tap in one file, `--cask` flag handling, formula `desc` fetching for LLM enrichment, depend-on bash (curl|bash installer)
 - [ ] 7.2e Local verification: `hams brew install bat` / `hams brew remove bat` round-trip
 - [ ] 7.2d Docker E2E: Debian container — Homebrew provider self-bootstraps + installs `bat`, verifies state
-- [ ] 7.3 Implement `apt` provider: auto-inject `-y`, sudo-required, Linux-only platform filter
+- [x] 7.3 Implement `apt` provider: auto-inject `-y`, sudo-required, Linux-only platform filter
 - [ ] 7.3d Docker E2E: Debian container — `hams apt install curl`, verify installed + state recorded
 - [x] 7.4 Implement `pnpm` provider: auto-inject `--global`, depend-on npm for pnpm install
 - [ ] 7.4e Local verification: `hams pnpm install serve` / `hams pnpm remove serve` round-trip
@@ -114,9 +114,9 @@ _Docker E2E tests develop incrementally alongside each provider. Local safe-test
 - [x] 7.5 Implement `npm` provider: auto-inject `--global`
 - [ ] 7.5d Docker E2E: Debian container — npm provider installs a package globally
 - [x] 7.6 Implement `git config` provider: KV config class, `--global`/`--file` support, check via `git config --get`, conditional includes
-- [ ] 7.6e Local verification: `hams git config --global rerere.autoUpdate true` check round-trip
+- [x] 7.6e Local verification: `hams git config --global rerere.autoUpdate true` check round-trip
 - [ ] 7.6d Docker E2E: Debian container — git config provider sets+checks config values
-- [ ] 7.7 Implement `git clone` provider: record remote→local-path→default-branch, check = path exists only
+- [x] 7.7 Implement `git clone` provider: record remote→local-path→default-branch, check = path exists only
 - [ ] 7.8 Implement `defaults` provider: `defaults write/read/delete`, macOS-only, killall post-hooks for Dock/Finder
 - [ ] 7.9 Property-based tests for each Phase 1 provider: probe round-trip, hamsfile serialization, idempotency
 - [ ] 7.10 Docker E2E: full Debian container — `hams apply` with fixture store containing bash + apt + npm + pnpm + git-config providers, verify all resources in state
