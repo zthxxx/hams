@@ -1,0 +1,126 @@
+package provider
+
+import (
+	"testing"
+
+	"github.com/zthxxx/hams/internal/state"
+
+	"pgregory.net/rapid"
+)
+
+func TestComputePlan_AllNew(t *testing.T) {
+	observed := state.New("brew", "test")
+	actions := ComputePlan([]string{"htop", "jq", "curl"}, observed, "")
+
+	installs := FilterActions(actions, ActionInstall)
+	if len(installs) != 3 {
+		t.Errorf("installs = %d, want 3", len(installs))
+	}
+}
+
+func TestComputePlan_AllInstalled(t *testing.T) {
+	observed := state.New("brew", "test")
+	observed.SetResource("htop", state.StateOK)
+	observed.SetResource("jq", state.StateOK)
+
+	actions := ComputePlan([]string{"htop", "jq"}, observed, "")
+	skips := FilterActions(actions, ActionSkip)
+	if len(skips) != 2 {
+		t.Errorf("skips = %d, want 2", len(skips))
+	}
+}
+
+func TestComputePlan_RetryFailed(t *testing.T) {
+	observed := state.New("brew", "test")
+	observed.SetResource("htop", state.StateOK)
+	observed.SetResource("jq", state.StateFailed)
+
+	actions := ComputePlan([]string{"htop", "jq"}, observed, "")
+	installs := FilterActions(actions, ActionInstall)
+	if len(installs) != 1 || installs[0].ID != "jq" {
+		t.Errorf("installs = %v, want [jq]", installs)
+	}
+}
+
+func TestComputePlan_RemoveFromConfig(t *testing.T) {
+	observed := state.New("brew", "test")
+	observed.SetResource("htop", state.StateOK)
+	observed.SetResource("jq", state.StateOK)
+	observed.SetResource("curl", state.StateOK)
+
+	// curl removed from config.
+	actions := ComputePlan([]string{"htop", "jq"}, observed, "previous-hash")
+	removes := FilterActions(actions, ActionRemove)
+	if len(removes) != 1 || removes[0].ID != "curl" {
+		t.Errorf("removes = %v, want [curl]", removes)
+	}
+}
+
+func TestComputePlan_NoRemoveWithoutBaseline(t *testing.T) {
+	observed := state.New("brew", "test")
+	observed.SetResource("htop", state.StateOK)
+	observed.SetResource("extra", state.StateOK)
+
+	// No baseline → no removes.
+	actions := ComputePlan([]string{"htop"}, observed, "")
+	removes := FilterActions(actions, ActionRemove)
+	if len(removes) != 0 {
+		t.Errorf("removes = %d, want 0 (no baseline)", len(removes))
+	}
+}
+
+func TestComputePlan_ReinstallRemoved(t *testing.T) {
+	observed := state.New("brew", "test")
+	observed.SetResource("htop", state.StateRemoved)
+
+	actions := ComputePlan([]string{"htop"}, observed, "")
+	installs := FilterActions(actions, ActionInstall)
+	if len(installs) != 1 {
+		t.Errorf("installs = %d, want 1 (reinstall removed)", len(installs))
+	}
+}
+
+func TestCountActions(t *testing.T) {
+	actions := []Action{
+		{ID: "a", Type: ActionInstall},
+		{ID: "b", Type: ActionInstall},
+		{ID: "c", Type: ActionSkip},
+		{ID: "d", Type: ActionRemove},
+	}
+
+	counts := CountActions(actions)
+	if counts[ActionInstall] != 2 {
+		t.Errorf("install count = %d, want 2", counts[ActionInstall])
+	}
+	if counts[ActionSkip] != 1 {
+		t.Errorf("skip count = %d, want 1", counts[ActionSkip])
+	}
+	if counts[ActionRemove] != 1 {
+		t.Errorf("remove count = %d, want 1", counts[ActionRemove])
+	}
+}
+
+// Property: every desired resource appears in the action list exactly once.
+func TestProperty_PlanCoversAllDesired(t *testing.T) {
+	rapid.Check(t, func(t *rapid.T) {
+		n := rapid.IntRange(1, 20).Draw(t, "n")
+		desired := make([]string, n)
+		for i := range n {
+			desired[i] = rapid.StringMatching(`[a-z]{3,10}`).Draw(t, "app")
+		}
+
+		observed := state.New("test", "test")
+		actions := ComputePlan(desired, observed, "")
+
+		actionIDs := make(map[string]bool)
+		for _, a := range actions {
+			actionIDs[a.ID] = true
+		}
+
+		for _, d := range desired {
+			if !actionIDs[d] {
+				t.Errorf("desired %q missing from actions", d)
+			}
+		}
+	})
+}
