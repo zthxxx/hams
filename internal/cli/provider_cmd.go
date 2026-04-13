@@ -70,16 +70,36 @@ func routeToProvider(handler ProviderHandler, args []string, flags *cliutil.Glob
 // parsing persistent flags on the parent.
 func stripGlobalFlags(args []string, flags *cliutil.GlobalFlags) []string {
 	var cleaned []string
-	for _, arg := range args {
-		switch arg {
-		case "--debug":
+	skip := false
+	for i, arg := range args {
+		if skip {
+			skip = false
+			continue
+		}
+		switch {
+		case arg == "--debug":
 			flags.Debug = true
-		case "--dry-run":
+		case arg == "--dry-run":
 			flags.DryRun = true
-		case "--json":
+		case arg == "--json":
 			flags.JSON = true
-		case "--no-color":
+		case arg == "--no-color":
 			flags.NoColor = true
+		case strings.HasPrefix(arg, "--config="):
+			flags.Config = strings.TrimPrefix(arg, "--config=")
+		case arg == "--config" && i+1 < len(args):
+			flags.Config = args[i+1]
+			skip = true
+		case strings.HasPrefix(arg, "--store="):
+			flags.Store = strings.TrimPrefix(arg, "--store=")
+		case arg == "--store" && i+1 < len(args):
+			flags.Store = args[i+1]
+			skip = true
+		case strings.HasPrefix(arg, "--profile="):
+			flags.Profile = strings.TrimPrefix(arg, "--profile=")
+		case arg == "--profile" && i+1 < len(args):
+			flags.Profile = args[i+1]
+			skip = true
 		default:
 			cleaned = append(cleaned, arg)
 		}

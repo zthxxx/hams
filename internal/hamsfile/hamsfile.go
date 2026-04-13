@@ -79,6 +79,44 @@ func (f *File) Tags() []string {
 	return tags
 }
 
+// ListApps returns all app/URN names from all tags in the Hamsfile.
+func (f *File) ListApps() []string {
+	if f.Root == nil || len(f.Root.Content) == 0 {
+		return nil
+	}
+
+	doc := f.Root
+	if doc.Kind == yaml.DocumentNode && len(doc.Content) > 0 {
+		doc = doc.Content[0]
+	}
+
+	if doc.Kind != yaml.MappingNode {
+		return nil
+	}
+
+	var apps []string
+	for i := 0; i < len(doc.Content)-1; i += 2 {
+		valNode := doc.Content[i+1]
+		if valNode.Kind != yaml.SequenceNode {
+			continue
+		}
+
+		for _, item := range valNode.Content {
+			if item.Kind != yaml.MappingNode {
+				continue
+			}
+			for k := 0; k < len(item.Content)-1; k += 2 {
+				key := item.Content[k].Value
+				if key == fieldApp || key == fieldURN {
+					apps = append(apps, item.Content[k+1].Value)
+					break
+				}
+			}
+		}
+	}
+	return apps
+}
+
 // FindApp searches all tags for a package entry with the given app name.
 // Returns the tag name and index within the tag's sequence, or -1 if not found.
 func (f *File) FindApp(appName string) (tag string, index int) {

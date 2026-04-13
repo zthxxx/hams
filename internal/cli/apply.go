@@ -133,10 +133,16 @@ func runApply(ctx context.Context, flags *cliutil.GlobalFlags, registry *provide
 		return fmt.Errorf("resolving provider dependencies: %w", dagErr)
 	}
 
-	// Refresh (probe environment).
+	// Refresh (probe environment) and save probed state.
 	if !noRefresh {
 		slog.Info("refreshing state")
-		provider.ProbeAll(ctx, sorted, stateDir, cfg.MachineID)
+		probeResults := provider.ProbeAll(ctx, sorted, stateDir, cfg.MachineID)
+		for name, sf := range probeResults {
+			statePath := filepath.Join(stateDir, name+".state.yaml")
+			if saveErr := sf.Save(statePath); saveErr != nil {
+				slog.Error("failed to save probed state", "provider", name, "error", saveErr)
+			}
+		}
 	}
 
 	if flags.DryRun {
@@ -204,16 +210,8 @@ func runApply(ctx context.Context, flags *cliutil.GlobalFlags, registry *provide
 	return nil
 }
 
-func extractApps(hf *hamsfile.File) []string { //nolint:unparam // will return real apps when hamsfile iteration is implemented
-	// Extract all app names from all tags in the hamsfile.
-	var apps []string
-	for _, tag := range hf.Tags() {
-		// FindApp iterates items; we need a list method.
-		// For now, tags serve as group names — actual app extraction
-		// will iterate the yaml.Node tree per tag.
-		_ = tag
-	}
-	return apps
+func extractApps(hf *hamsfile.File) []string {
+	return hf.ListApps()
 }
 
 func filterProviders(providers []provider.Provider, only, except string) []provider.Provider {

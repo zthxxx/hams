@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -85,7 +86,7 @@ func cloneRemoteRepo(repo string, paths config.Paths) (string, error) {
 		if wtErr != nil {
 			return clonePath, fmt.Errorf("getting worktree: %w", wtErr)
 		}
-		if pullErr := w.Pull(&gogit.PullOptions{}); pullErr != nil && pullErr.Error() != "already up-to-date" {
+		if pullErr := w.Pull(&gogit.PullOptions{}); pullErr != nil && !errors.Is(pullErr, gogit.NoErrAlreadyUpToDate) {
 			slog.Warn("pull failed, using existing state", "error", pullErr)
 		}
 		return clonePath, nil
