@@ -186,6 +186,18 @@ _Depends on all above being substantially complete._
 - [x] 12.7 Code review via Codex: review all packages for correctness, consistency, and test coverage
 - [x] 12.8 Fix issues found in code review
 
+## 13. Codex Review Fixes (base: 97cdb7b)
+
+_Detailed findings and fix plans: [`tasks/codex-review-97cdb7b.task.md`](tasks/codex-review-97cdb7b.task.md)_
+
+- [ ] 13.1 [P1] Use provider-specific planning during apply (`apply.go`)
+- [ ] 13.2 [P1] Locate Hamsfiles with manifest file prefix (`apply.go`)
+- [ ] 13.3 [P1] Bootstrap providers before probing or applying (`apply.go`)
+- [ ] 13.4 [P1] Persist CLI installs into the store (`homebrew.go`)
+- [ ] 13.5 [P2] Save refreshed state to disk (`commands.go`)
+- [ ] 13.6 [P2] Set ConfigHash after a successful apply (`apply.go`)
+- [ ] 13.7 [P2] Replace placeholder Homebrew checksums (`hams.rb`) — deferred to release automation
+
 ---
 
 ## Parallel Execution Plan for Subagents

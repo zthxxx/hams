@@ -33,6 +33,8 @@ globs: ["**/*"]
 
 - **Local/CI isomorphism**: code style checks (golangci-lint), unit tests, and Docker-based E2E tests MUST all run identically on a developer's local machine and in GitHub Actions CI. No CI-only or local-only test paths. Use the same commands (Taskfile tasks) in both environments.
 
+- **Review findings are tasks**: when a Codex Review (`/codex:review`) or OpenSpec Verify (`/opsx:verify`) produces findings, record each finding as a checklist item under `openspec/changes/<id>/tasks/<capability>.task.md`, link from `tasks.md`, then for each finding use `/codex:rescue` to discuss context and fix strategy with Codex before implementing. Each fix gets its own atomic commit.
+
 - **Prefer community packages over NIH**: before implementing any functionality, search for well-maintained open-source packages in the Go ecosystem that solve the same problem. Use established libraries instead of writing from scratch. Examples: prefer `bitfield/script` for shell execution, `charmbracelet/bubbletea` for TUI, `go-yaml/yaml` for YAML parsing, etc.
 
 - **Test repos for E2E**: `--from-repo` must accept both remote GitHub URLs and local `.git` repo paths (local paths resolved first). For unit/E2E tests, prepare a stable `.git` repo in `.gitignore`'d test fixtures via bash scripts. Available test repos:
