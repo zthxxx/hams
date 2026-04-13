@@ -8,8 +8,51 @@
 set -euo pipefail
 
 REPO="zthxxx/hams"
-INSTALL_DIR="${INSTALL_DIR:-/usr/local/bin}"
 GITHUB_API="https://api.github.com/repos/${REPO}/releases/latest"
+
+# Determine install directory with priority-based detection.
+# Priority: HAMS_INSTALL_DIR > ~/.local/bin > /usr/local/bin > /usr/bin > /bin > shortest $PATH entry.
+resolve_install_dir() {
+  # Priority 1: explicit env var.
+  if [ -n "${HAMS_INSTALL_DIR:-}" ] && [ -d "${HAMS_INSTALL_DIR}" ]; then
+    echo "${HAMS_INSTALL_DIR}"
+    return
+  fi
+
+  # Priority 2-5: well-known directories in order.
+  local candidates=(
+    "${HOME}/.local/bin"
+    "/usr/local/bin"
+    "/usr/bin"
+    "/bin"
+  )
+
+  for dir in "${candidates[@]}"; do
+    if [ -d "${dir}" ]; then
+      echo "${dir}"
+      return
+    fi
+  done
+
+  # Fallback: shortest directory in $PATH that exists.
+  local shortest=""
+  local shortest_len=9999
+  IFS=':' read -ra path_dirs <<< "${PATH}"
+  for dir in "${path_dirs[@]}"; do
+    if [ -d "${dir}" ] && [ ${#dir} -lt ${shortest_len} ]; then
+      shortest="${dir}"
+      shortest_len=${#dir}
+    fi
+  done
+
+  if [ -n "${shortest}" ]; then
+    echo "${shortest}"
+    return
+  fi
+
+  # Last resort.
+  echo "/usr/local/bin"
+}
 
 detect_platform() {
   local os arch
@@ -49,7 +92,7 @@ get_latest_version() {
 }
 
 download_binary() {
-  local version="$1" platform="$2"
+  local version="$1" platform="$2" install_dir="$3"
   local os="${platform%/*}"
   local arch="${platform#*/}"
   local filename="hams-${os}-${arch}"
@@ -69,11 +112,11 @@ download_binary() {
 
   chmod +x "${tmpdir}/hams"
 
-  echo "Installing to ${INSTALL_DIR}/hams..."
-  if [ -w "${INSTALL_DIR}" ]; then
-    mv "${tmpdir}/hams" "${INSTALL_DIR}/hams"
+  echo "Installing to ${install_dir}/hams..."
+  if [ -w "${install_dir}" ]; then
+    mv "${tmpdir}/hams" "${install_dir}/hams"
   else
-    sudo mv "${tmpdir}/hams" "${INSTALL_DIR}/hams"
+    sudo mv "${tmpdir}/hams" "${install_dir}/hams"
   fi
 }
 
@@ -81,9 +124,12 @@ main() {
   echo "hams installer"
   echo ""
 
-  local platform version
+  local platform version install_dir
   platform="$(detect_platform)"
   echo "Detected platform: ${platform}"
+
+  install_dir="$(resolve_install_dir)"
+  echo "Install directory: ${install_dir}"
 
   version="$(get_latest_version)"
   if [ -z "${version}" ]; then
@@ -92,11 +138,19 @@ main() {
   fi
   echo "Latest version: ${version}"
 
-  download_binary "${version}" "${platform}"
+  download_binary "${version}" "${platform}" "${install_dir}"
 
+  # Verify installation succeeded.
   echo ""
-  echo "hams installed successfully!"
-  echo "Run 'hams --help' to get started."
+  if command -v hams &>/dev/null; then
+    echo "hams installed successfully at: $(command -v hams)"
+    echo "Run 'hams --help' to get started."
+  else
+    echo "Error: hams was installed to ${install_dir}/hams but is not found in PATH." >&2
+    echo "  suggestion: Add '${install_dir}' to your PATH:" >&2
+    echo "    export PATH=\"${install_dir}:\$PATH\"" >&2
+    exit 1
+  fi
 }
 
 main "$@"

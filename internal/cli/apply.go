@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/spf13/cobra"
+	"github.com/urfave/cli/v3"
 
 	"github.com/zthxxx/hams/internal/cliutil"
 	"github.com/zthxxx/hams/internal/config"
@@ -19,34 +19,31 @@ import (
 	"github.com/zthxxx/hams/internal/sudo"
 )
 
-// NewApplyCmd creates the `hams apply` command.
-func NewApplyCmd(flags *cliutil.GlobalFlags, registry *provider.Registry) *cobra.Command {
-	var (
-		fromRepo  string
-		noRefresh bool
-		only      string
-		except    string
-	)
-
-	cmd := &cobra.Command{
-		Use:   "apply",
-		Short: "Apply all configurations from the store",
-		Long: `Apply reads all *.hams.yaml files from the active profile directory
+func applyCmd(registry *provider.Registry) *cli.Command {
+	return &cli.Command{
+		Name:  "apply",
+		Usage: "Apply all configurations from the store",
+		Description: `Apply reads all *.hams.yaml files from the active profile directory
 and installs/removes/updates resources to match the desired state.
 
 By default, apply runs a refresh first (probing environment for drift).
 Use --no-refresh to skip probing and apply based on state alone.`,
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			return runApply(cmd.Context(), flags, registry, fromRepo, noRefresh, only, except)
+		Flags: []cli.Flag{
+			&cli.StringFlag{Name: "from-repo", Usage: "Clone and apply from a GitHub repo (e.g., user/repo)"},
+			&cli.BoolFlag{Name: "no-refresh", Usage: "Skip environment probing before applying"},
+			&cli.StringFlag{Name: "only", Usage: "Only apply these providers (comma-separated)"},
+			&cli.StringFlag{Name: "except", Usage: "Skip these providers (comma-separated)"},
+		},
+		Action: func(ctx context.Context, cmd *cli.Command) error {
+			flags := globalFlags(cmd)
+			return runApply(ctx, flags, registry,
+				cmd.String("from-repo"),
+				cmd.Bool("no-refresh"),
+				cmd.String("only"),
+				cmd.String("except"),
+			)
 		},
 	}
-
-	cmd.Flags().StringVar(&fromRepo, "from-repo", "", "Clone and apply from a GitHub repo (e.g., user/repo)")
-	cmd.Flags().BoolVar(&noRefresh, "no-refresh", false, "Skip environment probing before applying")
-	cmd.Flags().StringVar(&only, "only", "", "Only apply these providers (comma-separated)")
-	cmd.Flags().StringVar(&except, "except", "", "Skip these providers (comma-separated)")
-
-	return cmd
 }
 
 func runApply(ctx context.Context, flags *cliutil.GlobalFlags, registry *provider.Registry, fromRepo string, noRefresh bool, only, except string) error {
@@ -54,7 +51,6 @@ func runApply(ctx context.Context, flags *cliutil.GlobalFlags, registry *provide
 		fmt.Println("[dry-run] Would apply configurations. No changes will be made.")
 	}
 
-	// Load configuration.
 	paths := config.ResolvePaths()
 	if flags.Config != "" {
 		paths.ConfigHome = filepath.Dir(flags.Config)
@@ -62,7 +58,6 @@ func runApply(ctx context.Context, flags *cliutil.GlobalFlags, registry *provide
 
 	storePath := flags.Store
 	if storePath == "" {
-		// Try to resolve from config.
 		cfg, err := config.Load(paths, "")
 		if err == nil && cfg.StorePath != "" {
 			storePath = cfg.StorePath
@@ -91,7 +86,6 @@ func runApply(ctx context.Context, flags *cliutil.GlobalFlags, registry *provide
 		return fmt.Errorf("loading config: %w", err)
 	}
 
-	// Check if profile is configured; prompt if not.
 	if cfg.ProfileTag == "" || cfg.MachineID == "" {
 		fmt.Println("Not Found Profile in config, init it at first")
 		tag, mid, promptErr := promptProfileInit()
@@ -102,7 +96,6 @@ func runApply(ctx context.Context, flags *cliutil.GlobalFlags, registry *provide
 		cfg.MachineID = mid
 	}
 
-	// Acquire lock.
 	stateDir := cfg.StateDir()
 	lock := state.NewLock(stateDir)
 	if !flags.DryRun {
@@ -118,22 +111,17 @@ func runApply(ctx context.Context, flags *cliutil.GlobalFlags, registry *provide
 		}()
 	}
 
-	// Acquire sudo if any provider needs it.
 	sudoMgr := sudo.NewManager()
 	defer sudoMgr.Stop()
-	// TODO: check which providers need sudo before prompting.
 
-	// Get providers in execution order.
 	allProviders := registry.Ordered(cfg.ProviderPriority)
 	providers := filterProviders(allProviders, only, except)
 
-	// Resolve DAG.
 	sorted, dagErr := provider.ResolveDAG(providers)
 	if dagErr != nil {
 		return fmt.Errorf("resolving provider dependencies: %w", dagErr)
 	}
 
-	// Refresh (probe environment) and save probed state.
 	if !noRefresh {
 		slog.Info("refreshing state")
 		probeResults := provider.ProbeAll(ctx, sorted, stateDir, cfg.MachineID)
@@ -149,7 +137,6 @@ func runApply(ctx context.Context, flags *cliutil.GlobalFlags, registry *provide
 		return printDryRunPlan(sorted, cfg)
 	}
 
-	// Execute providers sequentially.
 	var allResults []provider.ExecuteResult
 	for _, p := range sorted {
 		name := p.Manifest().Name
@@ -167,26 +154,18 @@ func runApply(ctx context.Context, flags *cliutil.GlobalFlags, registry *provide
 			continue
 		}
 
-		// Load state.
 		statePath := filepath.Join(stateDir, name+".state.yaml")
 		sf, loadErr := state.Load(statePath)
 		if loadErr != nil {
 			sf = state.New(name, cfg.MachineID)
 		}
 
-		// Compute plan.
-		desired := hf.Tags() // Simplified: use tags as resource IDs for now.
-		_ = desired
-		// TODO: extract actual resource IDs from hamsfile entries.
-
 		apps := extractApps(hf)
 		actions := provider.ComputePlan(apps, sf, sf.ConfigHash)
 
-		// Execute.
 		result := provider.Execute(ctx, p, actions, sf)
 		allResults = append(allResults, result)
 
-		// Save state.
 		if saveErr := sf.Save(statePath); saveErr != nil {
 			slog.Error("failed to save state", "provider", name, "error", saveErr)
 		}
