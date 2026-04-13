@@ -71,9 +71,9 @@ _Spec: `provider-system` — depends on schema (2.x) and CLI (3.1-3.3). Core fra
 
 _Spec: `tui-logging` — depends on CLI (3.1) for integration. Can be built in parallel with provider system._
 
-- [ ] 5.1 Implement `internal/logging/` package: structured slog setup, log file rotation (`HAMS_DATA_HOME/<YYYY-MM>/hams.YYYYMM.log`), session log linking
-- [ ] 5.2 Implement third-party session log manager: create `provider/<provider>.YYYYMMDDTHHmmss.session.log`, link from main log by session ID
-- [ ] 5.3 Implement output path tilde prefix: replace `$HOME` with `~/` in all displayed paths
+- [x] 5.1 Implement `internal/logging/` package: structured slog setup, log file rotation (`HAMS_DATA_HOME/<YYYY-MM>/hams.YYYYMM.log`), session log linking
+- [x] 5.2 Implement third-party session log manager: create `provider/<provider>.YYYYMMDDTHHmmss.session.log`, link from main log by session ID
+- [x] 5.3 Implement output path tilde prefix: replace `$HOME` with `~/` in all displayed paths
 - [ ] 5.4 Implement `internal/tui/` package: BubbleTea alternate screen with sticky top (log file path), provider step progress (current/total), current operation
 - [ ] 5.5 Implement collapsible log output sections in TUI
 - [ ] 5.6 Implement interactive popup (tmux-popup style): provider interactive API, stdin passthrough, popup lifecycle
