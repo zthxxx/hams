@@ -9,6 +9,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/zthxxx/hams/internal/cliutil"
 	"github.com/zthxxx/hams/internal/config"
 	"github.com/zthxxx/hams/internal/logging"
 	"github.com/zthxxx/hams/internal/provider"
@@ -16,7 +17,7 @@ import (
 )
 
 // NewRefreshCmd creates the `hams refresh` command.
-func NewRefreshCmd(flags *GlobalFlags, registry *provider.Registry) *cobra.Command {
+func NewRefreshCmd(flags *cliutil.GlobalFlags, registry *provider.Registry) *cobra.Command {
 	var only, except string
 
 	cmd := &cobra.Command{
@@ -35,7 +36,7 @@ Only resources already tracked in state are probed — no new resources are disc
 	return cmd
 }
 
-func runRefresh(ctx context.Context, flags *GlobalFlags, registry *provider.Registry, only, except string) error {
+func runRefresh(ctx context.Context, flags *cliutil.GlobalFlags, registry *provider.Registry, only, except string) error {
 	paths := config.ResolvePaths()
 	cfg, err := config.Load(paths, flags.Store)
 	if err != nil {
@@ -53,7 +54,7 @@ func runRefresh(ctx context.Context, flags *GlobalFlags, registry *provider.Regi
 }
 
 // NewConfigCmd creates the `hams config` command.
-func NewConfigCmd(flags *GlobalFlags) *cobra.Command {
+func NewConfigCmd(flags *cliutil.GlobalFlags) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "config",
 		Short: "View and manage hams configuration",
@@ -117,7 +118,7 @@ func printConfigKey(cfg *config.Config, paths config.Paths, key string) error {
 	case "data_home":
 		fmt.Println(logging.TildePath(paths.DataHome))
 	default:
-		return NewUserError(ExitUsageError,
+		return cliutil.NewUserError(cliutil.ExitUsageError,
 			fmt.Sprintf("unknown config key %q", key),
 			"Valid keys: profile_tag, machine_id, store_path, store_repo, llm_cli, config_home, data_home",
 		)
@@ -126,7 +127,7 @@ func printConfigKey(cfg *config.Config, paths config.Paths, key string) error {
 }
 
 // NewStoreCmd creates the `hams store` command.
-func NewStoreCmd(flags *GlobalFlags) *cobra.Command {
+func NewStoreCmd(flags *cliutil.GlobalFlags) *cobra.Command {
 	return &cobra.Command{
 		Use:   "store",
 		Short: "Show store directory path and status",
@@ -139,7 +140,7 @@ func NewStoreCmd(flags *GlobalFlags) *cobra.Command {
 
 			storePath := cfg.StorePath
 			if storePath == "" {
-				return NewUserError(ExitUsageError,
+				return cliutil.NewUserError(cliutil.ExitUsageError,
 					"no store directory configured",
 					"Set store_path in ~/.config/hams/hams.config.yaml",
 					"Or use 'hams apply --from-repo=<user/repo>' to set up a store",
@@ -172,7 +173,7 @@ func NewStoreCmd(flags *GlobalFlags) *cobra.Command {
 }
 
 // NewListCmd creates the `hams list` command.
-func NewListCmd(flags *GlobalFlags, registry *provider.Registry) *cobra.Command {
+func NewListCmd(flags *cliutil.GlobalFlags, registry *provider.Registry) *cobra.Command {
 	return &cobra.Command{
 		Use:   "list",
 		Short: "List all managed resources across providers",

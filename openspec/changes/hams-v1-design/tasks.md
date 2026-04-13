@@ -103,7 +103,7 @@ _Docker E2E tests develop incrementally alongside each provider. Local safe-test
 - [x] 7.1 Implement `bash` provider: URN-based scripts, `check:` field, `bash.hams/` subdirectory support, step/description naming
 - [ ] 7.1e Local verification: `hams bash` with `git config --global rerere.autoUpdate true` check/apply round-trip
 - [ ] 7.1d Docker E2E: Debian container — bash provider runs a script, verifies check idempotency
-- [ ] 7.2 Implement `Homebrew` provider: core + cask + tap in one file, `--cask` flag handling, formula `desc` fetching for LLM enrichment, depend-on bash (curl|bash installer)
+- [x] 7.2 Implement `Homebrew` provider: core + cask + tap in one file, `--cask` flag handling, formula `desc` fetching for LLM enrichment, depend-on bash (curl|bash installer)
 - [ ] 7.2e Local verification: `hams brew install bat` / `hams brew remove bat` round-trip
 - [ ] 7.2d Docker E2E: Debian container — Homebrew provider self-bootstraps + installs `bat`, verifies state
 - [ ] 7.3 Implement `apt` provider: auto-inject `-y`, sudo-required, Linux-only platform filter

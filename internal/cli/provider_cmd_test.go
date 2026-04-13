@@ -2,10 +2,12 @@ package cli
 
 import (
 	"testing"
+
+	"github.com/zthxxx/hams/internal/cliutil"
 )
 
 func TestSplitHamsFlags_Basic(t *testing.T) {
-	hams, pass := SplitHamsFlags([]string{"install", "htop", "--hams:tag=devtools", "--cask"})
+	hams, pass := cliutil.SplitHamsFlags([]string{"install", "htop", "--hams:tag=devtools", "--cask"})
 	if hams["tag"] != "devtools" {
 		t.Errorf("hams[tag] = %q, want 'devtools'", hams["tag"])
 	}
@@ -15,7 +17,7 @@ func TestSplitHamsFlags_Basic(t *testing.T) {
 }
 
 func TestSplitHamsFlags_ForceForward(t *testing.T) {
-	hams, pass := SplitHamsFlags([]string{"install", "--", "--hams:tag=foo", "--cask"})
+	hams, pass := cliutil.SplitHamsFlags([]string{"install", "--", "--hams:tag=foo", "--cask"})
 	if len(hams) != 0 {
 		t.Errorf("hams flags should be empty after --, got %v", hams)
 	}
@@ -25,7 +27,7 @@ func TestSplitHamsFlags_ForceForward(t *testing.T) {
 }
 
 func TestSplitHamsFlags_BooleanFlag(t *testing.T) {
-	hams, _ := SplitHamsFlags([]string{"install", "htop", "--hams:lucky", "--hams:local"})
+	hams, _ := cliutil.SplitHamsFlags([]string{"install", "htop", "--hams:lucky", "--hams:local"})
 	if _, ok := hams["lucky"]; !ok {
 		t.Error("hams[lucky] should exist")
 	}
@@ -35,14 +37,14 @@ func TestSplitHamsFlags_BooleanFlag(t *testing.T) {
 }
 
 func TestSplitHamsFlags_MultipleValues(t *testing.T) {
-	hams, _ := SplitHamsFlags([]string{"install", "--hams:tag=dev,network"})
+	hams, _ := cliutil.SplitHamsFlags([]string{"install", "--hams:tag=dev,network"})
 	if hams["tag"] != "dev,network" {
 		t.Errorf("hams[tag] = %q, want 'dev,network'", hams["tag"])
 	}
 }
 
 func TestSplitHamsFlags_NoHamsFlags(t *testing.T) {
-	hams, pass := SplitHamsFlags([]string{"install", "htop", "--cask"})
+	hams, pass := cliutil.SplitHamsFlags([]string{"install", "htop", "--cask"})
 	if len(hams) != 0 {
 		t.Errorf("hams flags should be empty, got %v", hams)
 	}
@@ -56,12 +58,12 @@ type mockProvider struct {
 	name        string
 	displayName string
 	lastArgs    []string
-	lastFlags   *GlobalFlags
+	lastFlags   *cliutil.GlobalFlags
 }
 
 func (m *mockProvider) Name() string        { return m.name }
 func (m *mockProvider) DisplayName() string { return m.displayName }
-func (m *mockProvider) HandleCommand(args []string, flags *GlobalFlags) error {
+func (m *mockProvider) HandleCommand(args []string, flags *cliutil.GlobalFlags) error {
 	m.lastArgs = args
 	m.lastFlags = flags
 	return nil
@@ -76,7 +78,7 @@ func TestRegisterProvider_And_Route(t *testing.T) {
 	mock := &mockProvider{name: "brew", displayName: "Homebrew"}
 	RegisterProvider(mock)
 
-	flags := &GlobalFlags{Debug: true}
+	flags := &cliutil.GlobalFlags{Debug: true}
 	root, _ := NewRootCmd()
 	AddProviderCommands(root, flags)
 
@@ -98,7 +100,7 @@ func TestRouteToProvider_HelpIntercept(t *testing.T) {
 	mock := &mockProvider{name: "brew", displayName: "Homebrew"}
 
 	// --help should be intercepted, not forwarded to provider.
-	err := routeToProvider(mock, []string{"install", "--help"}, &GlobalFlags{})
+	err := routeToProvider(mock, []string{"install", "--help"}, &cliutil.GlobalFlags{})
 	if err != nil {
 		t.Fatalf("routeToProvider --help error: %v", err)
 	}

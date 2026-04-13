@@ -5,6 +5,8 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
+
+	"github.com/zthxxx/hams/internal/cliutil"
 )
 
 // ProviderHandler is the interface that provider packages implement
@@ -17,7 +19,7 @@ type ProviderHandler interface {
 	// HandleCommand receives the full args after the provider name.
 	// It is responsible for parsing subcommands, extracting --hams: flags,
 	// and forwarding remaining args to the wrapped CLI.
-	HandleCommand(args []string, flags *GlobalFlags) error
+	HandleCommand(args []string, flags *cliutil.GlobalFlags) error
 }
 
 // providerRegistry holds registered provider handlers.
@@ -31,7 +33,7 @@ func RegisterProvider(handler ProviderHandler) {
 
 // AddProviderCommands creates Cobra commands for all registered providers
 // and attaches them to the root command.
-func AddProviderCommands(root *cobra.Command, flags *GlobalFlags) {
+func AddProviderCommands(root *cobra.Command, flags *cliutil.GlobalFlags) {
 	for _, handler := range providerRegistry {
 		h := handler // capture for closure
 		cmd := &cobra.Command{
@@ -48,7 +50,7 @@ func AddProviderCommands(root *cobra.Command, flags *GlobalFlags) {
 
 // routeToProvider dispatches args to the provider handler.
 // It handles --help interception before forwarding to the provider.
-func routeToProvider(handler ProviderHandler, args []string, flags *GlobalFlags) error {
+func routeToProvider(handler ProviderHandler, args []string, flags *cliutil.GlobalFlags) error {
 	// --help has highest priority: intercept before provider sees it.
 	for _, arg := range args {
 		if arg == "--help" || arg == "-h" {
@@ -68,42 +70,4 @@ func showProviderHelp(handler ProviderHandler) error {
 	fmt.Printf("Flags with --hams: prefix are consumed by hams, all others are forwarded.\n")
 	fmt.Printf("Use -- to force-forward all subsequent args to the underlying command.\n")
 	return nil
-}
-
-// SplitHamsFlags separates --hams: prefixed flags from passthrough args.
-// Also handles the -- separator: everything after -- goes to passthrough.
-// Returns (hamsFlags map, passthroughArgs).
-func SplitHamsFlags(args []string) (hamsFlags map[string]string, passthrough []string) {
-	hamsFlags = make(map[string]string)
-	forceForward := false
-
-	for _, arg := range args {
-		if forceForward {
-			passthrough = append(passthrough, arg)
-			continue
-		}
-
-		if arg == "--" {
-			forceForward = true
-			continue
-		}
-
-		if strings.HasPrefix(arg, "--hams:") {
-			key, value := parseFlag(arg[7:]) // strip "--hams:" prefix (7 chars)
-			hamsFlags[key] = value
-			continue
-		}
-
-		passthrough = append(passthrough, arg)
-	}
-
-	return hamsFlags, passthrough
-}
-
-// parseFlag splits "key=value" or returns key with empty value for boolean flags.
-func parseFlag(s string) (key, value string) {
-	if k, v, ok := strings.Cut(s, "="); ok {
-		return k, v
-	}
-	return s, ""
 }
