@@ -117,7 +117,7 @@ _Docker E2E tests develop incrementally alongside each provider. Local safe-test
 - [x] 7.6e Local verification: `hams git config --global rerere.autoUpdate true` check round-trip
 - [ ] 7.6d Docker E2E: Debian container — git config provider sets+checks config values
 - [x] 7.7 Implement `git clone` provider: record remote→local-path→default-branch, check = path exists only
-- [ ] 7.8 Implement `defaults` provider: `defaults write/read/delete`, macOS-only, killall post-hooks for Dock/Finder
+- [x] 7.8 Implement `defaults` provider: `defaults write/read/delete`, macOS-only, killall post-hooks for Dock/Finder
 - [ ] 7.9 Property-based tests for each Phase 1 provider: probe round-trip, hamsfile serialization, idempotency
 - [ ] 7.10 Docker E2E: full Debian container — `hams apply` with fixture store containing bash + apt + npm + pnpm + git-config providers, verify all resources in state
 

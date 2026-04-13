@@ -6,6 +6,7 @@ import (
 	"github.com/zthxxx/hams/internal/provider"
 	"github.com/zthxxx/hams/internal/provider/builtin/apt"
 	"github.com/zthxxx/hams/internal/provider/builtin/bash"
+	"github.com/zthxxx/hams/internal/provider/builtin/defaults"
 	"github.com/zthxxx/hams/internal/provider/builtin/git"
 	"github.com/zthxxx/hams/internal/provider/builtin/homebrew"
 	"github.com/zthxxx/hams/internal/provider/builtin/npm"
@@ -22,6 +23,7 @@ func registerBuiltins(registry *provider.Registry) {
 		pnpm.New(),
 		git.NewConfigProvider(),
 		git.NewCloneProvider(),
+		defaults.New(),
 	}
 
 	for _, p := range builtins {
@@ -38,6 +40,7 @@ func registerBuiltins(registry *provider.Registry) {
 		pnpm.New(),
 		git.NewConfigProvider(),
 		git.NewCloneProvider(),
+		defaults.New(),
 	}
 	for _, h := range cliHandlers {
 		RegisterProvider(h)
