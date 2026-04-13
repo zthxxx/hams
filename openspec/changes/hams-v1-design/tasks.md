@@ -98,16 +98,28 @@ _Spec: `observability` — depends on CLI (3.1) for Fx init. Integrates into pro
 ## 7. Builtin Providers (Phase 1: Core)
 
 _Spec: `builtin-providers` — depends on provider system (4.x). Priority order for implementation._
+_Docker E2E tests develop incrementally alongside each provider. Local safe-test packages: brew=`bat`, pnpm=`serve`, bash=`git config --global rerere.autoUpdate true`._
 
 - [ ] 7.1 Implement `bash` provider: URN-based scripts, `check:` field, `bash.hams/` subdirectory support, step/description naming
+- [ ] 7.1e Local verification: `hams bash` with `git config --global rerere.autoUpdate true` check/apply round-trip
+- [ ] 7.1d Docker E2E: Debian container — bash provider runs a script, verifies check idempotency
 - [ ] 7.2 Implement `Homebrew` provider: core + cask + tap in one file, `--cask` flag handling, formula `desc` fetching for LLM enrichment, depend-on bash (curl|bash installer)
+- [ ] 7.2e Local verification: `hams brew install bat` / `hams brew remove bat` round-trip
+- [ ] 7.2d Docker E2E: Debian container — Homebrew provider self-bootstraps + installs `bat`, verifies state
 - [ ] 7.3 Implement `apt` provider: auto-inject `-y`, sudo-required, Linux-only platform filter
+- [ ] 7.3d Docker E2E: Debian container — `hams apt install curl`, verify installed + state recorded
 - [ ] 7.4 Implement `pnpm` provider: auto-inject `--global`, depend-on npm for pnpm install
+- [ ] 7.4e Local verification: `hams pnpm install serve` / `hams pnpm remove serve` round-trip
+- [ ] 7.4d Docker E2E: Debian container — pnpm provider installs `serve` globally, verifies
 - [ ] 7.5 Implement `npm` provider: auto-inject `--global`
+- [ ] 7.5d Docker E2E: Debian container — npm provider installs a package globally
 - [ ] 7.6 Implement `git config` provider: KV config class, `--global`/`--file` support, check via `git config --get`, conditional includes
+- [ ] 7.6e Local verification: `hams git config --global rerere.autoUpdate true` check round-trip
+- [ ] 7.6d Docker E2E: Debian container — git config provider sets+checks config values
 - [ ] 7.7 Implement `git clone` provider: record remote→local-path→default-branch, check = path exists only
 - [ ] 7.8 Implement `defaults` provider: `defaults write/read/delete`, macOS-only, killall post-hooks for Dock/Finder
 - [ ] 7.9 Property-based tests for each Phase 1 provider: probe round-trip, hamsfile serialization, idempotency
+- [ ] 7.10 Docker E2E: full Debian container — `hams apply` with fixture store containing bash + apt + npm + pnpm + git-config providers, verify all resources in state
 
 ## 8. Builtin Providers (Phase 2: Extended)
 
@@ -121,6 +133,7 @@ _Spec: `builtin-providers` — can start after Phase 1 establishes the pattern._
 - [ ] 8.6 Implement `duti` provider: default app associations, `duti -x` check, macOS-only
 - [ ] 8.7 Implement `Ansible` provider: playbook paths + categories, `ansible-playbook` wrapping, depend-on for ansible CLI
 - [ ] 8.8 Property-based tests for each Phase 2 provider
+- [ ] 8.9 Docker E2E: Alpine container — `hams apply` with fixture store covering Phase 1+2 providers available on Alpine
 
 ## 9. LLM Integration
 
@@ -134,19 +147,22 @@ _Cross-cutting — depends on provider system (4.x) and hamsfile SDK (2.x)._
 - [ ] 9.6 Implement per-provider `enrich` standalone command (e.g., `hams brew enrich <app>`)
 - [ ] 9.7 Implement tag TUI multi-select picker: LLM-recommended (pre-selected), existing tags, free-text input
 
-## 10. Documentation Site
+## 10. Documentation & README
 
 _Spec: `docs-site` — independent, can start after specs stabilize._
 
 - [ ] 10.1 Scaffold Nextra project in `docs/` with dark-mode theme, sidebar navigation, search (Flexsearch)
-- [ ] 10.2 Write "Why / Motivation" page: comparison table, "what hams is NOT" section
-- [ ] 10.3 Write "Quickstart / Install" page: curl|bash, brew tap, binary download, first `hams apply --from-repo=` walkthrough
-- [ ] 10.4 Write "CLI Reference" pages: every subcommand with syntax, flags, examples
-- [ ] 10.5 Write "Builtin Provider Catalog" pages: per-provider page with store schema, commands, examples
-- [ ] 10.6 Write "Schema Reference" page: annotated YAML examples for hams.config, hamsfile, state
-- [ ] 10.7 Write "Provider API" page: Go SDK guide, go-plugin extension, resource classes, minimal example
-- [ ] 10.8 Configure GitHub Pages deployment with CNAME `hams.zthxxx.me`
-- [ ] 10.9 Set up i18n structure for Chinese translation (extensible)
+- [ ] 10.2 Write homepage / landing page at `hams.zthxxx.me` (not under `/docs`)
+- [ ] 10.3 Write "Why / Motivation" page: comparison table, hamster branding, "what hams is NOT" section
+- [ ] 10.4 Write "Quickstart / Install" page: curl|bash, brew tap, binary download, first `hams apply --from-repo=` walkthrough
+- [ ] 10.5 Write "CLI Reference" pages: every subcommand with syntax, flags, examples
+- [ ] 10.6 Write "Builtin Provider Catalog" pages: per-provider page with store schema, commands, examples
+- [ ] 10.7 Write "Schema Reference" page: annotated YAML examples for hams.config, hamsfile, state
+- [ ] 10.8 Write "Provider API" page: Go SDK guide, go-plugin extension, resource classes, minimal example
+- [ ] 10.9 Configure GitHub Pages deployment with CNAME `hams.zthxxx.me`, docs at `/docs` subpath
+- [ ] 10.10 Set up i18n structure for Chinese translation (extensible)
+- [ ] 10.11 Write `README.md` (en-US): project overview, install methods, quick examples, badge links, license
+- [ ] 10.12 Write `README.zh-CN.md`: Chinese translation of README
 
 ## 11. E2E & Release
 
