@@ -1,0 +1,28 @@
+import { Callout } from 'nextra/components'
+
+# apt Provider
+
+Wraps `apt-get` to manage system packages on Debian-based Linux distributions.
+
+**Platforms:** Linux (Debian/Ubuntu)
+
+## Usage
+
+```bash
+hams apt install <package>
+hams apt remove <package>
+hams apt list
+```
+
+## Hamsfile Example
+
+```yaml
+- app: curl
+  intro: Command-line HTTP client.
+- app: build-essential
+  intro: C/C++ compiler and make utilities.
+```
+
+<Callout type="info">
+  Full documentation coming soon.
+</Callout>

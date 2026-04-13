@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 
+	"github.com/zthxxx/hams/internal/otel"
 	"github.com/zthxxx/hams/internal/state"
 )
 
@@ -19,14 +20,33 @@ type ExecuteResult struct {
 }
 
 // Execute runs actions sequentially for a single provider.
-// It updates the state file after each action.
-func Execute(ctx context.Context, p Provider, actions []Action, sf *state.File) ExecuteResult {
+// It updates the state file after each action. If otelSession is non-nil, provider
+// and resource-level spans are recorded.
+func Execute(ctx context.Context, p Provider, actions []Action, sf *state.File, otelSession ...*otel.Session) ExecuteResult {
 	var result ExecuteResult
+	var session *otel.Session
+	if len(otelSession) > 0 {
+		session = otelSession[0]
+	}
+
+	name := p.Manifest().Name
+
+	// Provider-level span.
+	var providerSpan *otel.Span
+	if session != nil {
+		providerSpan = session.StartSpan("hams.provider."+name, "", map[string]string{
+			"provider": name,
+			"actions":  fmt.Sprintf("%d", len(actions)),
+		})
+	}
 
 	for _, action := range actions {
 		select {
 		case <-ctx.Done():
 			result.Errors = append(result.Errors, ctx.Err())
+			if session != nil && providerSpan != nil {
+				session.EndSpan(providerSpan, "cancelled")
+			}
 			return result
 		default:
 		}
@@ -36,19 +56,37 @@ func Execute(ctx context.Context, p Provider, actions []Action, sf *state.File) 
 			result.Skipped++
 			continue
 		case ActionInstall:
-			executeInstall(ctx, p, action, sf, &result)
+			executeInstall(ctx, p, action, sf, &result, session)
 		case ActionUpdate:
-			executeUpdate(ctx, p, action, sf, &result)
+			executeUpdate(ctx, p, action, sf, &result, session)
 		case ActionRemove:
-			executeRemove(ctx, p, action, sf, &result)
+			executeRemove(ctx, p, action, sf, &result, session)
 		}
+	}
+
+	if session != nil && providerSpan != nil {
+		status := "ok"
+		if result.Failed > 0 {
+			status = "error"
+		}
+		session.EndSpan(providerSpan, status)
+
+		session.RecordMetric("hams.provider.failures", float64(result.Failed), "count", map[string]string{"provider": name})
+		session.RecordMetric("hams.resources.total", float64(result.Installed+result.Updated+result.Removed+result.Skipped+result.Failed), "count", map[string]string{"provider": name})
 	}
 
 	return result
 }
 
-func executeInstall(ctx context.Context, p Provider, action Action, sf *state.File, result *ExecuteResult) {
+func executeInstall(ctx context.Context, p Provider, action Action, sf *state.File, result *ExecuteResult, session *otel.Session) {
 	name := p.Manifest().Name
+
+	var span *otel.Span
+	if session != nil {
+		span = session.StartSpan("hams.resource.install", "", map[string]string{
+			"provider": name, "resource": action.ID,
+		})
+	}
 
 	// Set state to pending before executing.
 	sf.SetResource(action.ID, state.StatePending)
@@ -59,16 +97,29 @@ func executeInstall(ctx context.Context, p Provider, action Action, sf *state.Fi
 		sf.SetResource(action.ID, state.StateFailed, state.WithError(err.Error()))
 		result.Failed++
 		result.Errors = append(result.Errors, fmt.Errorf("%s: install %s: %w", name, action.ID, err))
+		if session != nil {
+			session.EndSpan(span, "error")
+		}
 		return
 	}
 
 	sf.SetResource(action.ID, state.StateOK)
 	result.Installed++
 	slog.Info("installed", "provider", name, "resource", action.ID)
+	if session != nil {
+		session.EndSpan(span, "ok")
+	}
 }
 
-func executeUpdate(ctx context.Context, p Provider, action Action, sf *state.File, result *ExecuteResult) {
+func executeUpdate(ctx context.Context, p Provider, action Action, sf *state.File, result *ExecuteResult, session *otel.Session) {
 	name := p.Manifest().Name
+
+	var span *otel.Span
+	if session != nil {
+		span = session.StartSpan("hams.resource.update", "", map[string]string{
+			"provider": name, "resource": action.ID,
+		})
+	}
 
 	slog.Info("updating", "provider", name, "resource", action.ID)
 	if err := p.Apply(ctx, action); err != nil {
@@ -76,16 +127,29 @@ func executeUpdate(ctx context.Context, p Provider, action Action, sf *state.Fil
 		sf.SetResource(action.ID, state.StateFailed, state.WithError(err.Error()))
 		result.Failed++
 		result.Errors = append(result.Errors, fmt.Errorf("%s: update %s: %w", name, action.ID, err))
+		if session != nil {
+			session.EndSpan(span, "error")
+		}
 		return
 	}
 
 	sf.SetResource(action.ID, state.StateOK)
 	result.Updated++
 	slog.Info("updated", "provider", name, "resource", action.ID)
+	if session != nil {
+		session.EndSpan(span, "ok")
+	}
 }
 
-func executeRemove(ctx context.Context, p Provider, action Action, sf *state.File, result *ExecuteResult) {
+func executeRemove(ctx context.Context, p Provider, action Action, sf *state.File, result *ExecuteResult, session *otel.Session) {
 	name := p.Manifest().Name
+
+	var span *otel.Span
+	if session != nil {
+		span = session.StartSpan("hams.resource.remove", "", map[string]string{
+			"provider": name, "resource": action.ID,
+		})
+	}
 
 	slog.Info("removing", "provider", name, "resource", action.ID)
 	if err := p.Remove(ctx, action.ID); err != nil {
@@ -93,12 +157,18 @@ func executeRemove(ctx context.Context, p Provider, action Action, sf *state.Fil
 		sf.SetResource(action.ID, state.StateFailed, state.WithError(err.Error()))
 		result.Failed++
 		result.Errors = append(result.Errors, fmt.Errorf("%s: remove %s: %w", name, action.ID, err))
+		if session != nil {
+			session.EndSpan(span, "error")
+		}
 		return
 	}
 
 	sf.SetResource(action.ID, state.StateRemoved)
 	result.Removed++
 	slog.Info("removed", "provider", name, "resource", action.ID)
+	if session != nil {
+		session.EndSpan(span, "ok")
+	}
 }
 
 // MergeResults combines multiple ExecuteResults into one.

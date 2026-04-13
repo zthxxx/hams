@@ -36,7 +36,7 @@ func (r *Registry) Register(p Provider) error {
 	}
 
 	// Check platform compatibility.
-	if !isPlatformMatch(m.Platform) {
+	if !isPlatformsMatch(m.Platforms) {
 		return nil // Silently skip providers for other platforms.
 	}
 
@@ -111,9 +111,14 @@ func (r *Registry) Ordered(priority []string) []Provider {
 	return result
 }
 
-func isPlatformMatch(platform Platform) bool {
-	if platform == PlatformAll || platform == "" {
+func isPlatformsMatch(platforms []Platform) bool {
+	if len(platforms) == 0 {
 		return true
 	}
-	return string(platform) == runtime.GOOS
+	for _, p := range platforms {
+		if p == PlatformAll || p == "" || string(p) == runtime.GOOS {
+			return true
+		}
+	}
+	return false
 }

@@ -28,6 +28,8 @@
     "cspell": "^8",
     "eslint": "^9",
     "globals": "^16",
-    "markdownlint-cli2": "^0.17"
+    "jiti": "^2.6.1",
+    "markdownlint-cli2": "^0.17",
+    "typescript": "^6.0.2"
   }
 }

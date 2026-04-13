@@ -85,6 +85,18 @@ func NewUpdater() *Updater {
 	return &Updater{HTTPClient: http.DefaultClient}
 }
 
+// ReleaseInfo holds the version and assets of a GitHub release.
+type ReleaseInfo struct {
+	Version string
+	Assets  []Asset
+}
+
+// Asset is a public view of a release asset.
+type Asset struct {
+	Name        string
+	DownloadURL string
+}
+
 // LatestVersion queries GitHub Releases for the latest tag name.
 func (u *Updater) LatestVersion(ctx context.Context) (string, error) {
 	rel, err := u.latestRelease(ctx)
@@ -92,6 +104,22 @@ func (u *Updater) LatestVersion(ctx context.Context) (string, error) {
 		return "", err
 	}
 	return strings.TrimPrefix(rel.TagName, "v"), nil
+}
+
+// LatestRelease queries GitHub Releases and returns the latest release info including assets.
+func (u *Updater) LatestRelease(ctx context.Context) (*ReleaseInfo, error) {
+	rel, err := u.latestRelease(ctx)
+	if err != nil {
+		return nil, err
+	}
+	assets := make([]Asset, len(rel.Assets))
+	for i, a := range rel.Assets {
+		assets[i] = Asset{Name: a.Name, DownloadURL: a.BrowserDownloadURL}
+	}
+	return &ReleaseInfo{
+		Version: strings.TrimPrefix(rel.TagName, "v"),
+		Assets:  assets,
+	}, nil
 }
 
 func (u *Updater) latestRelease(ctx context.Context) (*ghRelease, error) {

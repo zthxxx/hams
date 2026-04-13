@@ -1,7 +1,6 @@
 package state
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -9,13 +8,15 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	"gopkg.in/yaml.v3"
 )
 
 // LockInfo describes the current lock holder.
 type LockInfo struct {
-	PID       int    `json:"pid"`
-	Command   string `json:"command"`
-	StartedAt string `json:"started_at"`
+	PID       int    `yaml:"pid"`
+	Command   string `yaml:"command"`
+	StartedAt string `yaml:"started_at"`
 }
 
 // Lock represents a single-writer lock file.
@@ -41,7 +42,7 @@ func (l *Lock) Acquire(command string) error {
 		StartedAt: time.Now().UTC().Format("20060102T150405"),
 	}
 
-	data, err := json.Marshal(info)
+	data, err := yaml.Marshal(info)
 	if err != nil {
 		return fmt.Errorf("marshaling lock info: %w", err)
 	}
@@ -95,7 +96,7 @@ func (l *Lock) Read() (*LockInfo, error) {
 	}
 
 	var info LockInfo
-	if err := json.Unmarshal(data, &info); err != nil {
+	if err := yaml.Unmarshal(data, &info); err != nil {
 		return nil, fmt.Errorf("parsing lock file: %w", err)
 	}
 

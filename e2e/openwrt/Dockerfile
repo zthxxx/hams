@@ -5,10 +5,9 @@ FROM alpine:3.20
 RUN apk add --no-cache ca-certificates bash git
 
 COPY bin/hams-linux-amd64 /usr/local/bin/hams
-RUN chmod +x /usr/local/bin/hams
-
-COPY e2e/run-tests.sh /run-tests.sh
-RUN chmod +x /run-tests.sh
+COPY e2e/lib/ /e2e/lib/
+COPY e2e/openwrt/run-tests.sh /run-tests.sh
+RUN chmod +x /usr/local/bin/hams /run-tests.sh
 
 WORKDIR /workspace
 

@@ -78,7 +78,7 @@ func TestRunApply_UsesFilePrefixStatePathAndProviderPlan(t *testing.T) {
 		manifest: provider.Manifest{
 			Name:        "brew",
 			DisplayName: "Homebrew",
-			Platform:    provider.PlatformAll,
+			Platforms:   []provider.Platform{provider.PlatformAll},
 			FilePrefix:  "Homebrew",
 		},
 		planFn: func(_ context.Context, desired *hamsfile.File, observed *state.File) ([]provider.Action, error) {
@@ -157,7 +157,7 @@ func TestRunApply_PersistsConfigHashAndRemovesOnNextRun(t *testing.T) {
 		manifest: provider.Manifest{
 			Name:        "brew",
 			DisplayName: "Homebrew",
-			Platform:    provider.PlatformAll,
+			Platforms:   []provider.Platform{provider.PlatformAll},
 			FilePrefix:  "Homebrew",
 		},
 		planFn: func(_ context.Context, desired *hamsfile.File, observed *state.File) ([]provider.Action, error) {
@@ -215,7 +215,7 @@ func TestRunApply_BootstrapsProvidersInDAGOrderBeforePlanning(t *testing.T) {
 		manifest: provider.Manifest{
 			Name:        "bash",
 			DisplayName: "bash",
-			Platform:    provider.PlatformAll,
+			Platforms:   []provider.Platform{provider.PlatformAll},
 			FilePrefix:  "bash",
 		},
 		bootstrapFn: func(context.Context) error {
@@ -228,7 +228,7 @@ func TestRunApply_BootstrapsProvidersInDAGOrderBeforePlanning(t *testing.T) {
 		manifest: provider.Manifest{
 			Name:        "brew",
 			DisplayName: "Homebrew",
-			Platform:    provider.PlatformAll,
+			Platforms:   []provider.Platform{provider.PlatformAll},
 			FilePrefix:  "Homebrew",
 			DependsOn: []provider.DependOn{
 				{Provider: "bash"},

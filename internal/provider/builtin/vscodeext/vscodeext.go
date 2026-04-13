@@ -25,7 +25,7 @@ func (p *Provider) Manifest() provider.Manifest {
 	return provider.Manifest{
 		Name:          "code-ext",
 		DisplayName:   "VS Code Extensions",
-		Platform:      provider.PlatformAll,
+		Platforms:     []provider.Platform{provider.PlatformAll},
 		ResourceClass: provider.ClassPackage,
 		DependsOn: []provider.DependOn{
 			{

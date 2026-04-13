@@ -1,8 +1,10 @@
 package state
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
+	"sync/atomic"
 	"testing"
 
 	"pgregory.net/rapid"
@@ -117,17 +119,18 @@ func TestSaveAndLoad_Roundtrip(t *testing.T) {
 }
 
 func TestProperty_SaveLoadRoundtrip(t *testing.T) {
+	baseDir := t.TempDir()
+	var counter atomic.Int64
 	rapid.Check(t, func(t *rapid.T) {
 		provider := rapid.StringMatching(`[a-z]{3,10}`).Draw(t, "provider")
 		machineID := rapid.StringMatching(`[A-Za-z0-9]{3,15}`).Draw(t, "machineID")
 		appName := rapid.StringMatching(`[a-z][a-z0-9\-]{1,20}`).Draw(t, "app")
 		version := rapid.StringMatching(`[0-9]+\.[0-9]+\.[0-9]+`).Draw(t, "version")
 
-		dir, mkErr := os.MkdirTemp("", "state-prop-*")
-		if mkErr != nil {
-			t.Fatalf("MkdirTemp: %v", mkErr)
+		dir := filepath.Join(baseDir, fmt.Sprintf("run-%d", counter.Add(1)))
+		if mkErr := os.MkdirAll(dir, 0o750); mkErr != nil {
+			t.Fatalf("MkdirAll: %v", mkErr)
 		}
-		defer os.RemoveAll(dir) //nolint:errcheck // cleanup
 		path := filepath.Join(dir, "test.state.yaml")
 
 		f := New(provider, machineID)

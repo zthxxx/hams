@@ -57,6 +57,3 @@ __debug_bin*
 *.tsbuildinfo
 .eslintcache
 
-# build bin
-/hams
-

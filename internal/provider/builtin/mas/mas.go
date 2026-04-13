@@ -25,7 +25,7 @@ func (p *Provider) Manifest() provider.Manifest {
 	return provider.Manifest{
 		Name:          "mas",
 		DisplayName:   "Mac App Store",
-		Platform:      provider.PlatformDarwin,
+		Platforms:     []provider.Platform{provider.PlatformDarwin},
 		ResourceClass: provider.ClassPackage,
 		FilePrefix:    "mas",
 	}

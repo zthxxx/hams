@@ -18,6 +18,17 @@ into YAML config files ("Hamsfiles"), enabling one-command environment restorati
 | JS package manager | pnpm (`saveExact: true`) |
 | npm package name | `harms` |
 
+## First Principle: Isolated Verification
+
+hams is a real-world package management tool that modifies the host system. **You cannot trust any change to the host machine before development is complete and verification has passed.** Isolated verification is paramount.
+
+You MUST simulate real scenarios (install, download, update, config read/write, etc.) to prove the entire flow works end-to-end — in these two isolated environments ONLY:
+
+1. **DI-isolated unit tests** — inject mock boundaries for filesystem, exec, network. Zero side effects on the host.
+2. **Docker-containerized E2E tests** — run via `act` against `.github/workflows/ci.yml`. Real package managers, real filesystems, real commands — but inside throwaway containers.
+
+**Never run hams operations that mutate the host** (install packages, write config outside `t.TempDir()`, execute provider commands) during development or testing. If it touches the real machine, it belongs inside a container.
+
 ## Core Philosophy
 
 1. **Declarative serialization of host state** — record what's installed into YAML, replay on new machines.
@@ -43,7 +54,7 @@ Single test: `go test -race -run TestFuncName ./path/to/package/...`
 | Tool | Purpose | Config |
 |------|---------|--------|
 | golangci-lint v2 | Go linting (30+ linters, strict) | `.golangci.yml` |
-| ESLint 9 | JS/TS linting (flat config) | `eslint.config.js` |
+| ESLint 9 | JS/TS linting (flat config) | `eslint.config.ts` |
 | markdownlint-cli2 | Markdown linting | `.markdownlint.yaml` |
 | cspell | Spell checking | `cspell.yaml` |
 | lefthook | Git hooks (pre-commit: fmt+lint, pre-push: test) | `lefthook.yml` |

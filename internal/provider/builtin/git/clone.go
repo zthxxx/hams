@@ -25,7 +25,7 @@ func (p *CloneProvider) Manifest() provider.Manifest {
 	return provider.Manifest{
 		Name:          "git-clone",
 		DisplayName:   "git clone",
-		Platform:      provider.PlatformAll,
+		Platforms:     []provider.Platform{provider.PlatformAll},
 		ResourceClass: provider.ClassFilesystem,
 		FilePrefix:    "git-clone",
 	}

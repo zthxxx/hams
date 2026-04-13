@@ -1,0 +1,28 @@
+import { Callout } from 'nextra/components'
+
+# cargo Provider
+
+Wraps `cargo install` to manage Rust binaries installed from crates.io or git.
+
+**Platforms:** macOS, Linux
+
+## Usage
+
+```bash
+hams cargo install <crate>
+hams cargo uninstall <crate>
+hams cargo list
+```
+
+## Hamsfile Example
+
+```yaml
+- app: ripgrep
+  intro: Fast recursive grep.
+- app: fd-find
+  intro: Simple and fast alternative to find.
+```
+
+<Callout type="info">
+  Full documentation coming soon.
+</Callout>

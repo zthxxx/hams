@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"pgregory.net/rapid"
@@ -58,6 +59,33 @@ func TestDetectChannel_InvalidMarker_DefaultsBinary(t *testing.T) {
 	if got != ChannelBinary {
 		t.Errorf("DetectChannel() = %q, want %q", got, ChannelBinary)
 	}
+}
+
+func TestDetectChannel_Property_MarkerFileRoundTrip(t *testing.T) {
+	t.Parallel()
+	baseDir := t.TempDir()
+	var counter atomic.Int64
+	rapid.Check(t, func(t *rapid.T) {
+		channel := rapid.SampledFrom([]Channel{ChannelBinary, ChannelHomebrew}).Draw(t, "channel")
+		// Extra whitespace should be trimmed by DetectChannel.
+		padding := rapid.StringMatching(`[ \t\n]{0,5}`).Draw(t, "padding")
+
+		tmpDir := filepath.Join(baseDir, fmt.Sprintf("run-%d", counter.Add(1)))
+		if err := os.MkdirAll(tmpDir, 0o750); err != nil {
+			t.Fatal(err)
+		}
+
+		content := string(channel) + padding
+		if err := os.WriteFile(filepath.Join(tmpDir, channelFileName), []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+
+		paths := config.Paths{DataHome: tmpDir}
+		got := DetectChannel(paths)
+		if got != channel {
+			t.Errorf("DetectChannel() = %q, want %q (content=%q)", got, channel, content)
+		}
+	})
 }
 
 func TestIsUpToDate(t *testing.T) {
@@ -242,13 +270,13 @@ func TestReplaceBinary_ChecksumMismatch_OriginalIntact(t *testing.T) {
 
 func TestReplaceBinary_Property_AtomicOnFailure(t *testing.T) {
 	t.Parallel()
+	baseDir := t.TempDir()
+	var counter atomic.Int64
 	rapid.Check(t, func(t *rapid.T) {
-		dir := os.TempDir()
-		tmpDir, err := os.MkdirTemp(dir, "hams-test-*")
-		if err != nil {
+		tmpDir := filepath.Join(baseDir, fmt.Sprintf("run-%d", counter.Add(1)))
+		if err := os.MkdirAll(tmpDir, 0o750); err != nil {
 			t.Fatal(err)
 		}
-		defer os.RemoveAll(tmpDir) //nolint:errcheck // test cleanup
 
 		originalContent := rapid.SliceOfN(rapid.Byte(), 1, 256).Draw(t, "original")
 		exePath := filepath.Join(tmpDir, "hams")

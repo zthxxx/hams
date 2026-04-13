@@ -118,17 +118,46 @@ func runApply(ctx context.Context, flags *provider.GlobalFlags, registry *provid
 	defer sudoMgr.Stop()
 
 	allProviders := registry.Ordered(cfg.ProviderPriority)
-	providers := filterProviders(allProviders, only, except)
+	providers, filterErr := filterProviders(allProviders, only, except, registry.Names())
+	if filterErr != nil {
+		return filterErr
+	}
 
 	sorted, dagErr := provider.ResolveDAG(providers)
 	if dagErr != nil {
 		return fmt.Errorf("resolving provider dependencies: %w", dagErr)
 	}
 
+	// Bootstrap providers. If a provider has a hamsfile in the profile dir,
+	// bootstrap failure is fatal — the user explicitly declared resources for it.
+	// Providers without hamsfiles are silently skipped on failure.
+	profileDir := cfg.ProfileDir()
+	var bootstrapFailed []string
 	for _, p := range sorted {
 		if bootstrapErr := p.Bootstrap(ctx); bootstrapErr != nil {
-			slog.Warn("provider bootstrap failed", "provider", p.Manifest().Name, "error", bootstrapErr)
+			manifest := p.Manifest()
+			filePrefix := manifestFilePrefix(manifest)
+			hamsfilePath := filepath.Join(profileDir, filePrefix+".hams.yaml")
+			if _, statErr := os.Stat(hamsfilePath); statErr == nil {
+				slog.Error("provider bootstrap failed (hamsfile exists, cannot proceed)",
+					"provider", manifest.Name, "error", bootstrapErr)
+				bootstrapFailed = append(bootstrapFailed, manifest.Name)
+			} else {
+				slog.Debug("provider bootstrap skipped (no hamsfile)", "provider", manifest.Name, "error", bootstrapErr)
+			}
 		}
+	}
+	if len(bootstrapFailed) > 0 {
+		return hamserr.NewUserError(hamserr.ExitPartialFailure,
+			fmt.Sprintf("bootstrap failed for providers with hamsfiles: %s", strings.Join(bootstrapFailed, ", ")),
+			"Ensure required tools are installed or remove the hamsfile entries",
+			"Use '--only' / '--except' to skip specific providers",
+		)
+	}
+
+	// Acquire sudo credentials once before any provider operations.
+	if sudoErr := sudoMgr.Acquire(ctx); sudoErr != nil {
+		slog.Warn("sudo acquisition failed; some providers may fail", "error", sudoErr)
 	}
 
 	if !noRefresh {
@@ -151,7 +180,6 @@ func runApply(ctx context.Context, flags *provider.GlobalFlags, registry *provid
 		manifest := p.Manifest()
 		name := manifest.Name
 		filePrefix := manifestFilePrefix(manifest)
-		profileDir := cfg.ProfileDir()
 		hamsfilePath := filepath.Join(profileDir, filePrefix+".hams.yaml")
 
 		if _, statErr := os.Stat(hamsfilePath); os.IsNotExist(statErr) {
@@ -192,6 +220,14 @@ func runApply(ctx context.Context, flags *provider.GlobalFlags, registry *provid
 			"installed", result.Installed, "failed", result.Failed, "skipped", result.Skipped)
 	}
 
+	// Run async enrichment for providers that support it, non-blocking.
+	enrichErrors := runEnrichPhase(ctx, sorted, cfg)
+	if len(enrichErrors) > 0 {
+		for _, enrichErr := range enrichErrors {
+			slog.Warn("enrichment error", "error", enrichErr)
+		}
+	}
+
 	merged := provider.MergeResults(allResults)
 	fmt.Printf("\nhams apply complete: %d installed, %d updated, %d removed, %d skipped, %d failed\n",
 		merged.Installed, merged.Updated, merged.Removed, merged.Skipped, merged.Failed)
@@ -205,6 +241,35 @@ func runApply(ctx context.Context, flags *provider.GlobalFlags, registry *provid
 	}
 
 	return nil
+}
+
+// runEnrichPhase calls Enrich on providers that implement the Enricher interface.
+// This runs after all apply operations and is best-effort (errors are collected, not fatal).
+func runEnrichPhase(ctx context.Context, providers []provider.Provider, cfg *config.Config) []error {
+	var errs []error
+	for _, p := range providers {
+		enricher, ok := p.(provider.Enricher)
+		if !ok {
+			continue
+		}
+
+		// Enrich all resources that were just installed/updated.
+		name := p.Manifest().Name
+		filePrefix := manifestFilePrefix(p.Manifest())
+		hamsfilePath := filepath.Join(cfg.ProfileDir(), filePrefix+".hams.yaml")
+		hf, readErr := hamsfile.Read(hamsfilePath)
+		if readErr != nil {
+			continue
+		}
+
+		for _, appID := range hf.ListApps() {
+			if enrichErr := enricher.Enrich(ctx, appID); enrichErr != nil {
+				slog.Debug("enrich failed", "provider", name, "resource", appID, "error", enrichErr)
+				errs = append(errs, fmt.Errorf("%s: enrich %s: %w", name, appID, enrichErr))
+			}
+		}
+	}
+	return errs
 }
 
 func manifestFilePrefix(m provider.Manifest) string { //nolint:gocritic // simple helper, copy is acceptable
@@ -222,30 +287,64 @@ func configHashForHamsfile(hf *hamsfile.File) string {
 	return hex.EncodeToString(sum[:])
 }
 
-func filterProviders(providers []provider.Provider, only, except string) []provider.Provider {
+func filterProviders(providers []provider.Provider, only, except string, knownNames []string) ([]provider.Provider, error) {
 	if only == "" && except == "" {
-		return providers
+		return providers, nil
+	}
+
+	if only != "" && except != "" {
+		return nil, hamserr.NewUserError(hamserr.ExitUsageError,
+			"--only and --except are mutually exclusive",
+			"Use --only to include specific providers, or --except to exclude them",
+		)
+	}
+
+	knownSet := make(map[string]bool)
+	for _, n := range knownNames {
+		knownSet[strings.ToLower(n)] = true
 	}
 
 	if only != "" {
 		onlySet := parseCSV(only)
+		if err := validateProviderNames(onlySet, knownSet, knownNames); err != nil {
+			return nil, err
+		}
 		var filtered []provider.Provider
 		for _, p := range providers {
 			if onlySet[strings.ToLower(p.Manifest().Name)] {
 				filtered = append(filtered, p)
 			}
 		}
-		return filtered
+		return filtered, nil
 	}
 
 	exceptSet := parseCSV(except)
+	if err := validateProviderNames(exceptSet, knownSet, knownNames); err != nil {
+		return nil, err
+	}
 	var filtered []provider.Provider
 	for _, p := range providers {
 		if !exceptSet[strings.ToLower(p.Manifest().Name)] {
 			filtered = append(filtered, p)
 		}
 	}
-	return filtered
+	return filtered, nil
+}
+
+func validateProviderNames(requested map[string]bool, known map[string]bool, knownNames []string) error {
+	var unknown []string
+	for name := range requested {
+		if !known[name] {
+			unknown = append(unknown, name)
+		}
+	}
+	if len(unknown) > 0 {
+		return hamserr.NewUserError(hamserr.ExitUsageError,
+			fmt.Sprintf("unknown provider(s): %s", strings.Join(unknown, ", ")),
+			fmt.Sprintf("Available providers: %s", strings.Join(knownNames, ", ")),
+		)
+	}
+	return nil
 }
 
 func parseCSV(s string) map[string]bool {

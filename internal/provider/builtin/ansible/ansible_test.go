@@ -16,8 +16,8 @@ func TestManifest(t *testing.T) {
 	if m.DisplayName != "Ansible" {
 		t.Errorf("DisplayName = %q", m.DisplayName)
 	}
-	if m.Platform != provider.PlatformAll {
-		t.Errorf("Platform = %q", m.Platform)
+	if len(m.Platforms) != 1 || m.Platforms[0] != provider.PlatformAll {
+		t.Errorf("Platforms = %v", m.Platforms)
 	}
 	if m.ResourceClass != provider.ClassCheckBased {
 		t.Errorf("ResourceClass = %q", m.ResourceClass)

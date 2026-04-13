@@ -31,7 +31,16 @@ globs: ["**/*"]
     - `bash`: `git config --global rerere.autoUpdate true`
   - Prioritize implementing the smallest verifiable slice first.
 
-- **Local/CI isomorphism**: code style checks (golangci-lint), unit tests, and Docker-based E2E tests MUST all run identically on a developer's local machine and in GitHub Actions CI. No CI-only or local-only test paths. Use the same commands (Taskfile tasks) in both environments.
+- **Verification is the most important process** in hams development. It has three tiers:
+  1. **Code standards** (lint): `golangci-lint`, `eslint`, `markdownlint`, `cspell` — enforced by lefthook pre-commit and CI.
+  2. **Unit tests**: DI-isolated, no real filesystem or host environment impact. Pure parsing + mock tests. Commands that need real external execution (`hams config set`, `hams apply --from-repo`, `self-upgrade`) MUST design unit tests that run in isolated Docker containers.
+  3. **Integration E2E tests**: isomorphic with `.github/workflows/` CI. Use Dockerfiles to test across CPU platforms (amd64/arm64) and systems (Debian/Alpine/macOS). Dev machines have Docker installed; target runtime environments do NOT.
+
+- **DI boundary isolation principle**: code architecture MUST use dependency injection to isolate uncontrollable external boundaries (filesystem, network, package managers, OS APIs). Unit tests inject mock boundary-layer services and run without side effects on the host.
+
+- **Local/CI isomorphism**: code style checks (golangci-lint), unit tests, and Docker-based E2E tests MUST all run identically on a developer's local machine and in GitHub Actions CI. No CI-only or local-only test paths. Use the same commands (Taskfile tasks) in both environments. Use [nektos/act](https://github.com/nektos/act) to execute `.github/workflows/` locally for isomorphic validation.
+
+- **Integration & E2E tests run exclusively through `act`**: all integration and E2E tests MUST execute via `act` against `.github/workflows/ci.yml` — never by invoking `docker build`/`docker run` directly in Taskfile or scripts. This ensures the local execution path is byte-for-byte identical to the CI pipeline. Individual provider unit tests (non-Docker, DI-isolated) are the exception and run via `go test` directly. Taskfile entry points: `task ci:e2e` (all targets), `task ci:e2e:one TARGET=<target>` (single target), `task ci:integration`.
 
 - **Review findings are tasks**: when a Codex Review (`/codex:review`) or OpenSpec Verify (`/opsx:verify`) produces findings, record each finding as a checklist item under `openspec/changes/<id>/tasks/<capability>.task.md`, link from `tasks.md`, then for each finding use `/codex:rescue` to discuss context and fix strategy with Codex before implementing. Each fix gets its own atomic commit.
 

@@ -2,7 +2,6 @@ package cli
 
 import (
 	"os"
-	"os/exec"
 	"path/filepath"
 	"testing"
 
@@ -41,18 +40,15 @@ func TestResolveLocalRepo_NonExistent(t *testing.T) {
 }
 
 func TestResolveLocalRepo_TildeExpansion(t *testing.T) {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		t.Skip("cannot determine home dir")
-	}
+	// Use a fake HOME so we never touch the real home directory.
+	fakeHome := t.TempDir()
+	t.Setenv("HOME", fakeHome)
 
-	// Create a temp dir inside home to test ~ expansion.
-	testDir := filepath.Join(home, ".hams-test-resolve-local")
+	testDir := filepath.Join(fakeHome, ".hams-test-resolve-local")
 	gitDir := filepath.Join(testDir, ".git")
 	if mkErr := os.MkdirAll(gitDir, 0o750); mkErr != nil {
 		t.Fatalf("mkdir: %v", mkErr)
 	}
-	defer os.RemoveAll(testDir) //nolint:errcheck // test cleanup
 
 	path, resolveErr := resolveLocalRepo("~/.hams-test-resolve-local")
 	if resolveErr != nil {
@@ -91,10 +87,9 @@ func TestBootstrapFromRepo_LocalPath(t *testing.T) {
 		t.Fatalf("mkdir: %v", err)
 	}
 
-	// Initialize a real git repo.
-	cmd := exec.CommandContext(t.Context(), "git", "init", repoDir)
-	if err := cmd.Run(); err != nil {
-		t.Fatalf("git init: %v", err)
+	// Create a .git directory — bootstrapFromRepo only checks for its existence.
+	if err := os.Mkdir(filepath.Join(repoDir, ".git"), 0o750); err != nil {
+		t.Fatalf("mkdir .git: %v", err)
 	}
 
 	paths := config.Paths{DataHome: filepath.Join(dir, "data")}

@@ -16,8 +16,8 @@ func TestManifest(t *testing.T) {
 	if m.DisplayName != "VS Code Extensions" {
 		t.Errorf("DisplayName = %q", m.DisplayName)
 	}
-	if m.Platform != provider.PlatformAll {
-		t.Errorf("Platform = %q", m.Platform)
+	if len(m.Platforms) != 1 || m.Platforms[0] != provider.PlatformAll {
+		t.Errorf("Platforms = %v", m.Platforms)
 	}
 	if len(m.DependsOn) != 1 || m.DependsOn[0].Provider != "homebrew" {
 		t.Errorf("DependsOn = %v", m.DependsOn)

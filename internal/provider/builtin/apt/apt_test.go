@@ -13,8 +13,8 @@ func TestManifest(t *testing.T) {
 	if m.Name != "apt" {
 		t.Errorf("Name = %q, want apt", m.Name)
 	}
-	if m.Platform != provider.PlatformLinux {
-		t.Errorf("Platform = %q, want linux", m.Platform)
+	if len(m.Platforms) != 1 || m.Platforms[0] != provider.PlatformLinux {
+		t.Errorf("Platforms = %v, want [linux]", m.Platforms)
 	}
 	if m.ResourceClass != provider.ClassPackage {
 		t.Errorf("ResourceClass = %q, want package", m.ResourceClass)

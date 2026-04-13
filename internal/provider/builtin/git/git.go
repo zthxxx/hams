@@ -25,7 +25,7 @@ func (p *ConfigProvider) Manifest() provider.Manifest {
 	return provider.Manifest{
 		Name:          "git-config",
 		DisplayName:   "git config",
-		Platform:      provider.PlatformAll,
+		Platforms:     []provider.Platform{provider.PlatformAll},
 		ResourceClass: provider.ClassKVConfig,
 		FilePrefix:    "git-config",
 	}

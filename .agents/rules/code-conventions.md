@@ -12,7 +12,7 @@ globs: ["**/*.go", "**/*.js", "**/*.ts"]
 - `nolint` directives require both a specific linter name AND an explanation.
 - Comments on exported symbols must end with a period (godot).
 - Test files are exempt from gosec, goconst, and gocritic.
-- Dependency inversion: all major components accessed via interfaces, injected via Uber Fx. No package-level globals for stateful services.
+- Dependency inversion: all major components accessed via interfaces, injected via Uber Fx. No package-level globals for stateful services. Architecture MUST use DI to isolate uncontrollable external boundaries (filesystem, network, package managers, OS APIs) so that unit tests can inject mock boundary-layer services and run without side effects.
 - Context propagation: `context.Context` as first parameter for all blocking/cancellable operations.
 - Error handling: wrap with `fmt.Errorf("...: %w", err)`, sentinel errors for known conditions, structured `UserFacingError` for CLI output.
 - Logging: `log/slog` with structured fields. No `log.Fatal` outside `main`.
@@ -22,7 +22,7 @@ globs: ["**/*.go", "**/*.js", "**/*.ts"]
 ## JS/TS
 
 - JS tooling runs via `bun` (not `node`/`npx`). Dependencies installed via `pnpm`.
-- ESLint 9 flat config in `eslint.config.js`.
+- ESLint 9 flat config in `eslint.config.ts`.
 
 ## Full Details
 

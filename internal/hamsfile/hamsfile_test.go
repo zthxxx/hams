@@ -1,9 +1,11 @@
 package hamsfile
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"pgregory.net/rapid"
@@ -224,15 +226,16 @@ func TestAtomicWrite_NoTempFileOnSuccess(t *testing.T) {
 
 // Property-based: round-trip preserves all app names.
 func TestProperty_RoundtripPreservesApps(t *testing.T) {
+	baseDir := t.TempDir()
+	var counter atomic.Int64
 	rapid.Check(t, func(t *rapid.T) {
 		appName := rapid.StringMatching(`[a-z][a-z0-9\-]{1,20}`).Draw(t, "app")
 		tag := rapid.StringMatching(`[a-z][a-z\-]{2,15}`).Draw(t, "tag")
 
-		dir, mkErr := os.MkdirTemp("", "hamsfile-property-*")
-		if mkErr != nil {
-			t.Fatalf("MkdirTemp: %v", mkErr)
+		dir := filepath.Join(baseDir, fmt.Sprintf("run-%d", counter.Add(1)))
+		if mkErr := os.MkdirAll(dir, 0o750); mkErr != nil {
+			t.Fatalf("MkdirAll: %v", mkErr)
 		}
-		defer os.RemoveAll(dir) //nolint:errcheck // cleanup in property test
 		path := filepath.Join(dir, "test.hams.yaml")
 		writeErr := os.WriteFile(path, []byte("placeholder:\n  - app: keep\n"), 0o600)
 		if writeErr != nil {

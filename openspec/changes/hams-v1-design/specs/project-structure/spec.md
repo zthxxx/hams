@@ -33,7 +33,7 @@ hams/
   lefthook.yml            # Git hooks
   cspell.yaml             # Spell checking
   .markdownlint.yaml      # Markdown linting
-  eslint.config.js        # JS/TS linting (flat config)
+  eslint.config.ts        # JS/TS linting (flat config)
   .editorconfig           # Editor settings
   .gitignore              # Git ignore rules
   .gitattributes          # Git attributes
@@ -263,7 +263,7 @@ Go application code and JS/TS tooling (documentation site, linting configs, futu
 cmd/          internal/          pkg/          go.mod          go.sum
 
 # JS ecosystem
-docs/         package.json       pnpm-lock.yaml     eslint.config.js
+docs/         package.json       pnpm-lock.yaml     eslint.config.ts
 
 # Shared (configuration only)
 .editorconfig     .gitignore     .gitattributes     cspell.yaml

@@ -132,7 +132,7 @@ func (f *File) SetResource(id string, s ResourceState, opts ...ResourceOption) {
 	}
 
 	r.State = s
-	now := time.Now().UTC().Format("20060102T150405")
+	now := time.Now().Format("20060102T150405")
 
 	switch s {
 	case StateOK:

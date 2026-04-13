@@ -30,7 +30,7 @@ func (p *Provider) Manifest() provider.Manifest {
 	return provider.Manifest{
 		Name:          "apt",
 		DisplayName:   "apt",
-		Platform:      provider.PlatformLinux,
+		Platforms:     []provider.Platform{provider.PlatformLinux},
 		ResourceClass: provider.ClassPackage,
 		FilePrefix:    "apt",
 	}

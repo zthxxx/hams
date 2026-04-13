@@ -198,6 +198,44 @@ _Detailed findings and fix plans: [`tasks/codex-review-97cdb7b.task.md`](tasks/c
 - [x] 13.6 [P2] Set ConfigHash after a successful apply (`apply.go`)
 - [x] 13.7 [P2] Write example Homebrew Formula (`Formula/hams.rb`) — actual formula will lives in `zthxxx/homebrew-tap`, and update by GitHub Actions release workflow
 
+## 14. Verification Review Fixes
+
+_Findings from `/opsx:verify` review. Detailed breakdown: [`tasks/verify-review.task.md`](tasks/verify-review.task.md)_
+
+### CRITICAL
+
+- [x] 14.1 Call `sudoMgr.Acquire(ctx)` in apply flow before provider execution (`apply.go`)
+- [x] 14.2 Wire Enrich phase into apply lifecycle: call async after Apply (`apply.go` — `runEnrichPhase()`)
+- [x] 14.3 Validate `--only`/`--except` mutual exclusion in `filterProviders()` — exit code 2 (`apply.go`)
+- [x] 14.4 Validate unknown provider names in `filterProviders()` — error with available list (`apply.go`)
+
+### WARNING
+
+- [x] 14.5 Implement `hams self-upgrade`: detect install channel (binary marker vs brew path), GitHub Releases download or `brew upgrade` (`commands.go`, `internal/selfupdate/`)
+- [x] 14.6 Implement `hams config set <key> <value>` with `.local.yaml` for sensitive values (`commands.go`, `config.go`)
+- [x] 14.7 Implement `hams config edit` — open `$EDITOR` on config file (`commands.go`)
+- [x] 14.8 Implement `hams store init/push/pull` subcommands (`commands.go`)
+- [x] 14.9 Bash provider: wire `check:` field into Apply flow (skip if check passes), implement `remove:` execution, handle `sudo:` field (`bash.go`)
+- [x] 14.10 Homebrew: separate cask/formula sections in Hamsfile via tag-based classification, read cask tag during Apply to inject `--cask` (`homebrew.go`)
+- [x] 14.11 OTel: add provider/resource spans in executor, create Exporter interface for pluggability (`otel/`, `executor.go`)
+- [x] 14.12 Add machine-readable error code strings (`LOCK_CONFLICT`, `PROVIDER_NOT_FOUND`, etc.) to error types (`error/error.go`)
+- [x] 14.13 Add `--only`/`--except`/`--status`/`--json` flags to `hams list` command (`commands.go`)
+- [x] 14.14 Implement nested provider dispatch detection in hooks — log warning for `hams <provider>` prefix, execute via subprocess (`hooks.go`)
+- [x] 14.15 Create individual doc pages for CLI subcommands and builtin providers (`docs/pages/cli/`, `docs/pages/providers/`)
+
+### SUGGESTION
+
+- [x] 14.16 Add VerbRouting/AutoInject/HamsFlags fields to Manifest struct (`provider.go`)
+- [x] 14.17 Change lock file format from JSON to YAML for spec consistency (`lock.go`)
+- [x] 14.18 Use local timezone for state timestamps instead of UTC (`state.go`)
+- [x] 14.19 Replace `sync.WaitGroup` with `errgroup` in probe dispatcher (`probe.go`)
+- [x] 14.20 Change `Manifest.Platform` from single value to `[]Platform` slice (`provider.go`, all 15 providers)
+
+### DI Refactor
+
+- [x] 14.21 Create `internal/runner/` package with `Runner` interface for command execution boundary isolation; add DI-compatible `WrapExecWithRunner`/`WrapExecPassthroughWithRunner` to provider/wrap.go
+- [x] 14.22 Add property-based test for `DetectChannel` with mock boundaries (`selfupdate_test.go`); add `Runner` interface tests (`runner_test.go`)
+
 ---
 
 ## Parallel Execution Plan for Subagents

@@ -36,7 +36,7 @@ func (p *Provider) Manifest() provider.Manifest {
 	return provider.Manifest{
 		Name:          "brew",
 		DisplayName:   "Homebrew",
-		Platform:      provider.PlatformAll,
+		Platforms:     []provider.Platform{provider.PlatformAll},
 		ResourceClass: provider.ClassPackage,
 		DependsOn: []provider.DependOn{
 			{
@@ -89,16 +89,69 @@ func (p *Provider) Probe(ctx context.Context, sf *state.File) ([]provider.ProbeR
 }
 
 // Plan computes actions for Homebrew packages.
+// Tags named "cask" in the hamsfile are marked so Apply can inject --cask.
 func (p *Provider) Plan(_ context.Context, desired *hamsfile.File, observed *state.File) ([]provider.Action, error) {
 	apps := desired.ListApps()
-	return provider.ComputePlan(apps, observed, observed.ConfigHash), nil
+	caskSet := caskApps(desired)
+	actions := provider.ComputePlan(apps, observed, observed.ConfigHash)
+	for i := range actions {
+		if caskSet[actions[i].ID] {
+			actions[i].Resource = true // Marks this as a cask install.
+		}
+	}
+	return actions, nil
 }
 
-// Apply installs a brew package.
+// Apply installs a brew package. If the action is marked as a cask (Resource == true),
+// --cask is appended to the install command.
 func (p *Provider) Apply(ctx context.Context, action provider.Action) error {
-	args := []string{"install", action.ID}
-	slog.Info("brew install", "package", action.ID)
+	args := []string{"install"}
+	if isCask, ok := action.Resource.(bool); ok && isCask {
+		args = append(args, "--cask")
+	}
+	args = append(args, action.ID)
+	slog.Info("brew install", "package", action.ID, "args", args)
 	return provider.WrapExecPassthrough(ctx, "brew", args, nil)
+}
+
+// caskApps returns the set of app names that appear under a "cask" tag in the hamsfile.
+func caskApps(f *hamsfile.File) map[string]bool {
+	result := make(map[string]bool)
+	if f.Root == nil || len(f.Root.Content) == 0 {
+		return result
+	}
+
+	doc := f.Root
+	if doc.Kind == yaml.DocumentNode && len(doc.Content) > 0 {
+		doc = doc.Content[0]
+	}
+	if doc.Kind != yaml.MappingNode {
+		return result
+	}
+
+	for i := 0; i < len(doc.Content)-1; i += 2 {
+		tagName := doc.Content[i].Value
+		if tagName != "cask" {
+			continue
+		}
+		seq := doc.Content[i+1]
+		if seq.Kind != yaml.SequenceNode {
+			continue
+		}
+		for _, item := range seq.Content {
+			if item.Kind != yaml.MappingNode {
+				continue
+			}
+			for k := 0; k < len(item.Content)-1; k += 2 {
+				key := item.Content[k].Value
+				if key == "app" || key == "urn" {
+					result[item.Content[k+1].Value] = true
+					break
+				}
+			}
+		}
+	}
+	return result
 }
 
 // Remove uninstalls a brew package.
@@ -156,6 +209,10 @@ func (p *Provider) handleInstall(args []string, hamsFlags map[string]string, fla
 	}
 
 	tag := parseInstallTag(hamsFlags)
+	// If --cask is present in args and no explicit tag was set, use "cask" as the tag.
+	if tag == "cli" && hasCaskFlag(args) {
+		tag = "cask"
+	}
 	packages := packageArgs(args)
 	if len(packages) == 0 {
 		return hamserr.NewUserError(hamserr.ExitUsageError,
@@ -368,4 +425,13 @@ func packageArgs(args []string) []string {
 		packages = append(packages, arg)
 	}
 	return packages
+}
+
+func hasCaskFlag(args []string) bool {
+	for _, arg := range args {
+		if arg == "--cask" {
+			return true
+		}
+	}
+	return false
 }

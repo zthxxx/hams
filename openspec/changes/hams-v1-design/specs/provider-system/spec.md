@@ -178,6 +178,34 @@ THEN they SHALL be bootstrapped according to the provider execution priority lis
 
 ---
 
+### Requirement: Provider Runtime Auto-Bootstrap
+
+Providers that depend on external CLI tools (brew, pnpm, npm, cargo, uv, etc.) SHALL declare their runtime dependency via the `depend-on` mechanism in the manifest. The Bootstrap phase SHALL execute the depend-on chain to auto-install missing tools — providers MUST NOT assume their runtime is pre-installed on the host.
+
+When Bootstrap fails for a provider that has a corresponding hamsfile in the active profile directory, the apply command SHALL treat this as a fatal error and abort with a non-zero exit code. Providers without hamsfiles MAY fail silently during bootstrap (debug-level log).
+
+This ensures that `hams apply` on a fresh machine auto-installs all required toolchains in dependency order (e.g., bash -> homebrew -> pnpm) before applying the user's configuration.
+
+#### Scenario: Bootstrap failure is fatal when hamsfile exists
+
+WHEN the pnpm provider fails to bootstrap (npm not found)
+AND the active profile contains `pnpm.hams.yaml`
+THEN the apply command SHALL exit with a non-zero code and report the failure, NOT silently skip the provider.
+
+#### Scenario: Bootstrap failure is silent when no hamsfile
+
+WHEN the cargo provider fails to bootstrap (cargo not found)
+AND the active profile does NOT contain a `cargo.hams.yaml`
+THEN the apply command SHALL skip the provider at debug log level and continue normally.
+
+#### Scenario: Auto-install chain on fresh machine
+
+WHEN `hams apply` runs on a fresh machine with no Homebrew installed
+AND the Homebrew provider declares `depend-on: [{provider: bash, script: "install-homebrew"}]`
+THEN Bootstrap SHALL invoke the bash provider to run the install script before proceeding with Homebrew operations.
+
+---
+
 ### Requirement: Hook Model
 
 Providers SHALL support pre-install, post-install, pre-update, and post-update hooks attached to individual resource entries in the Hamsfile. Hooks are side effects of lifecycle actions and SHALL NOT be recorded as independent resources in the state file.

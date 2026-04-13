@@ -1,5 +1,2 @@
 configs:
-  - urn: "urn:hams:git-config:test.hams.e2e"
-    step: "Set test git config"
-    run: "git config --global test.hams.e2e true"
-    check: "git config --global --get test.hams.e2e"
+  - app: "e2e.hams.fixture=true"

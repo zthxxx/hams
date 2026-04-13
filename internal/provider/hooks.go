@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os/exec"
+	"strings"
 
 	"github.com/zthxxx/hams/internal/state"
 )
@@ -100,6 +101,14 @@ func RunDeferredHooks(ctx context.Context, deferred []DeferredHook, sf *state.Fi
 
 func runHook(ctx context.Context, h Hook, resourceID string) error {
 	slog.Debug("running hook", "type", h.Type, "resource", resourceID, "command", h.Command)
+
+	// Detect nested hams invocations. For now, log a warning and proceed
+	// via sh -c subprocess. Full in-process dispatch is not yet supported.
+	if strings.HasPrefix(strings.TrimSpace(h.Command), "hams ") {
+		slog.Warn("nested hams invocation detected in hook; running as subprocess (in-process dispatch not yet supported)",
+			"resource", resourceID, "command", h.Command)
+	}
+
 	cmd := exec.CommandContext(ctx, "sh", "-c", h.Command) //nolint:gosec // hook commands are user-defined in hamsfile, not external input
 	output, err := cmd.CombinedOutput()
 	if err != nil {

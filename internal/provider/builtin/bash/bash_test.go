@@ -31,7 +31,7 @@ func TestApply_SimpleCommand(t *testing.T) {
 	action := provider.Action{
 		ID:       "test-echo",
 		Type:     provider.ActionInstall,
-		Resource: "echo hello",
+		Resource: bashResource{Run: "echo hello"},
 	}
 
 	err := p.Apply(context.Background(), action)
@@ -45,7 +45,7 @@ func TestApply_FailingCommand(t *testing.T) {
 	action := provider.Action{
 		ID:       "test-fail",
 		Type:     provider.ActionInstall,
-		Resource: "exit 1",
+		Resource: bashResource{Run: "exit 1"},
 	}
 
 	err := p.Apply(context.Background(), action)
@@ -59,12 +59,82 @@ func TestApply_EmptyResource(t *testing.T) {
 	action := provider.Action{
 		ID:       "test-empty",
 		Type:     provider.ActionInstall,
-		Resource: "",
+		Resource: bashResource{},
 	}
 
 	err := p.Apply(context.Background(), action)
 	if err == nil {
 		t.Fatal("expected error for empty resource")
+	}
+}
+
+func TestApply_CheckPassesSkipsRun(t *testing.T) {
+	p := New()
+	action := provider.Action{
+		ID:   "test-check-pass",
+		Type: provider.ActionInstall,
+		Resource: bashResource{
+			Run:   "exit 1",           // Would fail if actually run.
+			Check: "echo already-ok",  // Passes → run is skipped.
+		},
+	}
+
+	err := p.Apply(context.Background(), action)
+	if err != nil {
+		t.Fatalf("Apply should skip run when check passes: %v", err)
+	}
+}
+
+func TestApply_CheckFailsRunsCommand(t *testing.T) {
+	p := New()
+	action := provider.Action{
+		ID:   "test-check-fail",
+		Type: provider.ActionInstall,
+		Resource: bashResource{
+			Run:   "echo running",
+			Check: "exit 1", // Fails → run proceeds.
+		},
+	}
+
+	err := p.Apply(context.Background(), action)
+	if err != nil {
+		t.Fatalf("Apply should proceed when check fails: %v", err)
+	}
+}
+
+func TestApply_SudoPrefix(t *testing.T) {
+	// We cannot actually run sudo in tests, but we can verify the command
+	// construction via maybeAddSudo.
+	cmd := maybeAddSudo("echo hello", true)
+	if cmd != "sudo echo hello" {
+		t.Errorf("maybeAddSudo(true) = %q, want %q", cmd, "sudo echo hello")
+	}
+
+	cmd = maybeAddSudo("echo hello", false)
+	if cmd != "echo hello" {
+		t.Errorf("maybeAddSudo(false) = %q, want %q", cmd, "echo hello")
+	}
+}
+
+func TestRemove_WithCommand(t *testing.T) {
+	p := New()
+	p.removeCommands["test-script"] = "echo removed"
+
+	err := p.Remove(context.Background(), "test-script")
+	if err != nil {
+		t.Fatalf("Remove with command should succeed: %v", err)
+	}
+}
+
+func TestRemove_WithSudoCommand(t *testing.T) {
+	p := New()
+	// Simulate what Plan does: store the already-prefixed command.
+	p.removeCommands["test-sudo-script"] = "sudo echo removed"
+
+	// We can't actually test sudo execution, but verify the command is stored.
+	cmd, ok := p.removeCommands["test-sudo-script"]
+	if !ok || cmd != "sudo echo removed" {
+		t.Errorf("removeCommands should contain sudo-prefixed command, got %q", cmd)
 	}
 }
 
@@ -92,11 +162,11 @@ func TestRunCheck_Empty(t *testing.T) {
 	}
 }
 
-func TestRemove_NoOp(t *testing.T) {
+func TestRemove_NoCommand(t *testing.T) {
 	p := New()
 	err := p.Remove(context.Background(), "some-script")
 	if err != nil {
-		t.Fatalf("Remove should be no-op: %v", err)
+		t.Fatalf("Remove without command should be no-op: %v", err)
 	}
 }
 

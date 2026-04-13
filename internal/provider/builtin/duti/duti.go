@@ -25,7 +25,7 @@ func (p *Provider) Manifest() provider.Manifest {
 	return provider.Manifest{
 		Name:          "duti",
 		DisplayName:   "duti",
-		Platform:      provider.PlatformDarwin,
+		Platforms:     []provider.Platform{provider.PlatformDarwin},
 		ResourceClass: provider.ClassKVConfig,
 		FilePrefix:    "duti",
 	}

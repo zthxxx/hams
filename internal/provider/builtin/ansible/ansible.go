@@ -26,7 +26,7 @@ func (p *Provider) Manifest() provider.Manifest {
 	return provider.Manifest{
 		Name:          "ansible",
 		DisplayName:   "Ansible",
-		Platform:      provider.PlatformAll,
+		Platforms:     []provider.Platform{provider.PlatformAll},
 		ResourceClass: provider.ClassCheckBased,
 		FilePrefix:    "ansible",
 	}

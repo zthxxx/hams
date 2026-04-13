@@ -13,8 +13,8 @@ func TestManifest(t *testing.T) {
 	if m.Name != "defaults" {
 		t.Errorf("Name = %q", m.Name)
 	}
-	if m.Platform != provider.PlatformDarwin {
-		t.Errorf("Platform = %q, want darwin", m.Platform)
+	if len(m.Platforms) != 1 || m.Platforms[0] != provider.PlatformDarwin {
+		t.Errorf("Platforms = %v, want [darwin]", m.Platforms)
 	}
 	if m.ResourceClass != provider.ClassKVConfig {
 		t.Errorf("ResourceClass = %q", m.ResourceClass)

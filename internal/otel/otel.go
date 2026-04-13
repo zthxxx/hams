@@ -11,10 +11,19 @@ import (
 	"time"
 )
 
+// Exporter writes collected trace spans and metrics to a backend.
+type Exporter interface {
+	// ExportSpans writes spans to the backend.
+	ExportSpans(spans []Span) error
+	// ExportMetrics writes metrics to the backend.
+	ExportMetrics(metrics []Metric) error
+}
+
 // Config holds OTel configuration.
 type Config struct {
 	DataHome string
 	Enabled  bool
+	Exporter Exporter // Optional custom exporter; defaults to local file exporter.
 }
 
 // Session holds the active OTel session for trace/metrics collection.
@@ -88,27 +97,48 @@ func (s *Session) RecordMetric(name string, value float64, unit string, attrs ma
 	})
 }
 
-// Flush writes all collected spans and metrics to local files.
+// Flush writes all collected spans and metrics via the configured exporter.
 func (s *Session) Flush() error {
-	if !s.config.Enabled || s.config.DataHome == "" {
+	if !s.config.Enabled {
 		return nil
 	}
 
-	otelDir := filepath.Join(s.config.DataHome, "otel")
+	exp := s.config.Exporter
+	if exp == nil {
+		if s.config.DataHome == "" {
+			return nil
+		}
+		exp = &LocalFileExporter{DataHome: s.config.DataHome}
+	}
 
 	if len(s.spans) > 0 {
-		if err := writeJSON(filepath.Join(otelDir, "traces"), s.spans); err != nil {
-			return fmt.Errorf("writing traces: %w", err)
+		if err := exp.ExportSpans(s.spans); err != nil {
+			return fmt.Errorf("exporting traces: %w", err)
 		}
 	}
 
 	if len(s.metrics) > 0 {
-		if err := writeJSON(filepath.Join(otelDir, "metrics"), s.metrics); err != nil {
-			return fmt.Errorf("writing metrics: %w", err)
+		if err := exp.ExportMetrics(s.metrics); err != nil {
+			return fmt.Errorf("exporting metrics: %w", err)
 		}
 	}
 
 	return nil
+}
+
+// LocalFileExporter writes spans/metrics as JSON to local files.
+type LocalFileExporter struct {
+	DataHome string
+}
+
+// ExportSpans writes spans to local JSON files.
+func (e *LocalFileExporter) ExportSpans(spans []Span) error {
+	return writeJSON(filepath.Join(e.DataHome, "otel", "traces"), spans)
+}
+
+// ExportMetrics writes metrics to local JSON files.
+func (e *LocalFileExporter) ExportMetrics(metrics []Metric) error {
+	return writeJSON(filepath.Join(e.DataHome, "otel", "metrics"), metrics)
 }
 
 // Shutdown flushes and cleans up the OTel session.

@@ -6,19 +6,21 @@ import (
 	"path/filepath"
 	"sync"
 
+	"golang.org/x/sync/errgroup"
+
 	"github.com/zthxxx/hams/internal/state"
 )
 
-// ProbeAll runs Probe on all given providers in parallel using errgroup-style coordination.
+// ProbeAll runs Probe on all given providers in parallel using errgroup coordination.
 // Results are merged into the corresponding state files. Probe errors are logged but do not
 // stop other providers from probing (best-effort).
 func ProbeAll(ctx context.Context, providers []Provider, stateDir, machineID string) map[string]*state.File {
 	results := make(map[string]*state.File)
 	var mu sync.Mutex
-	var wg sync.WaitGroup
+	g, ctx := errgroup.WithContext(ctx)
 
 	for _, p := range providers {
-		wg.Go(func() {
+		g.Go(func() error {
 			manifest := p.Manifest()
 			name := manifest.Name
 			filePrefix := manifest.FilePrefix
@@ -30,7 +32,7 @@ func ProbeAll(ctx context.Context, providers []Provider, stateDir, machineID str
 			probeResults, err := p.Probe(ctx, sf)
 			if err != nil {
 				slog.Warn("probe failed", "provider", name, "error", err)
-				return
+				return nil // Best-effort: log but don't abort other probes.
 			}
 
 			// Update state with probe results.
@@ -54,10 +56,11 @@ func ProbeAll(ctx context.Context, providers []Provider, stateDir, machineID str
 			mu.Lock()
 			results[filePrefix] = sf
 			mu.Unlock()
+			return nil
 		})
 	}
 
-	wg.Wait()
+	_ = g.Wait() // Errors already logged per-provider.
 	return results
 }
 
