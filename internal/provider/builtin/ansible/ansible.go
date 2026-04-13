@@ -54,7 +54,7 @@ func (p *Provider) Probe(_ context.Context, sf *state.File) ([]provider.ProbeRes
 
 // Plan computes actions for ansible playbooks.
 func (p *Provider) Plan(_ context.Context, desired *hamsfile.File, observed *state.File) ([]provider.Action, error) {
-	apps := desired.Tags()
+	apps := desired.ListApps()
 	return provider.ComputePlan(apps, observed, observed.ConfigHash), nil
 }
 

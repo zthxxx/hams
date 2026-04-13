@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/bitfield/script"
+	"gopkg.in/yaml.v3"
 
 	"github.com/zthxxx/hams/internal/hamsfile"
 	"github.com/zthxxx/hams/internal/provider"
@@ -63,9 +64,23 @@ func (p *Provider) Probe(_ context.Context, sf *state.File) ([]provider.ProbeRes
 }
 
 // Plan computes actions based on desired hamsfile vs state.
+// Enriches each action's Resource with the run command from the hamsfile.
 func (p *Provider) Plan(_ context.Context, desired *hamsfile.File, observed *state.File) ([]provider.Action, error) {
-	apps := desired.Tags() // For bash provider, tags are step groups.
-	return provider.ComputePlan(apps, observed, observed.ConfigHash), nil
+	runByID, err := bashRunCommands(desired)
+	if err != nil {
+		return nil, err
+	}
+
+	actions := provider.ComputePlan(desired.ListApps(), observed, observed.ConfigHash)
+	for i := range actions {
+		run, ok := runByID[actions[i].ID]
+		if !ok || run == "" {
+			continue
+		}
+		actions[i].Resource = run
+	}
+
+	return actions, nil
 }
 
 // Apply executes a bash command for the given action.
@@ -115,4 +130,52 @@ func runBash(_ context.Context, command string) error {
 		return fmt.Errorf("bash command failed: %w\n  command: %s", err, command)
 	}
 	return nil
+}
+
+func bashRunCommands(f *hamsfile.File) (map[string]string, error) {
+	if f.Root == nil || len(f.Root.Content) == 0 {
+		return map[string]string{}, nil
+	}
+
+	doc := f.Root
+	if doc.Kind == yaml.DocumentNode && len(doc.Content) > 0 {
+		doc = doc.Content[0]
+	}
+	if doc.Kind != yaml.MappingNode {
+		return nil, fmt.Errorf("bash provider: hamsfile root must be a mapping")
+	}
+
+	runByID := make(map[string]string)
+	for i := 1; i < len(doc.Content); i += 2 {
+		seq := doc.Content[i]
+		if seq.Kind != yaml.SequenceNode {
+			continue
+		}
+
+		for _, item := range seq.Content {
+			if item.Kind != yaml.MappingNode {
+				continue
+			}
+
+			var id string
+			var run string
+			for j := 0; j < len(item.Content)-1; j += 2 {
+				key := item.Content[j].Value
+				value := item.Content[j+1].Value
+				switch key {
+				case "urn":
+					id = value
+				case "run":
+					run = strings.TrimSpace(value)
+				}
+			}
+
+			if id == "" {
+				continue
+			}
+			runByID[id] = run
+		}
+	}
+
+	return runByID, nil
 }

@@ -168,8 +168,11 @@ func runApply(ctx context.Context, flags *cliutil.GlobalFlags, registry *provide
 			sf = state.New(name, cfg.MachineID)
 		}
 
-		apps := hf.ListApps()
-		actions := provider.ComputePlan(apps, sf, sf.ConfigHash)
+		actions, planErr := p.Plan(ctx, hf, sf)
+		if planErr != nil {
+			slog.Error("failed to plan provider actions", "provider", name, "error", planErr)
+			continue
+		}
 
 		result := provider.Execute(ctx, p, actions, sf)
 		allResults = append(allResults, result)

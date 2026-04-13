@@ -83,11 +83,7 @@ func (p *Provider) Probe(ctx context.Context, sf *state.File) ([]provider.ProbeR
 
 // Plan computes actions for Homebrew packages.
 func (p *Provider) Plan(_ context.Context, desired *hamsfile.File, observed *state.File) ([]provider.Action, error) {
-	var apps []string
-	for _, tag := range desired.Tags() {
-		_ = tag
-		// TODO: extract app names from each tag's sequence.
-	}
+	apps := desired.ListApps()
 	return provider.ComputePlan(apps, observed, observed.ConfigHash), nil
 }
 

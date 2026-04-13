@@ -60,7 +60,7 @@ func (p *ConfigProvider) Probe(ctx context.Context, sf *state.File) ([]provider.
 
 // Plan computes actions for git config entries.
 func (p *ConfigProvider) Plan(_ context.Context, desired *hamsfile.File, observed *state.File) ([]provider.Action, error) {
-	apps := desired.Tags()
+	apps := desired.ListApps()
 	return provider.ComputePlan(apps, observed, observed.ConfigHash), nil
 }
 
