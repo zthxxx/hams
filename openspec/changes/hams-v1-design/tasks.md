@@ -10,8 +10,8 @@ _Specs: `code-standards`, `project-structure` — no cross-spec dependencies, ca
 - [ ] 1.6 Configure Uber Fx module pattern: each internal package exports a `Module` variable
 - [x] 1.7 Add `scripts/install.sh` (platform-detection, GitHub Release download)
 - [x] 1.8 Add `scripts/build-all.sh` (CGO_ENABLED=0 cross-compile for darwin/arm64, linux/amd64, linux/arm64)
-- [ ] 1.9 Set up Docker Compose e2e infrastructure (`e2e/docker-compose.yml`, Dockerfiles for Debian, Alpine, OpenWrt-like)
-- [ ] 1.10 Update GitHub Actions CI with build matrix, e2e job, artifact passing
+- [x] 1.9 Set up Docker Compose e2e infrastructure (`e2e/docker-compose.yml`, Dockerfiles for Debian, Alpine, OpenWrt-like)
+- [x] 1.10 Update GitHub Actions CI with build matrix, e2e job, artifact passing
 - [x] 1.11 Update `.gitignore` with `.state/`, `*.local.*`, `e2e/`, coverage patterns
 
 ## 2. Schema Design & Hamsfile SDK

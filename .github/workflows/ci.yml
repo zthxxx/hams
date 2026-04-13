@@ -44,19 +44,6 @@ jobs:
         with:
           files: "**"
 
-  build:
-    name: Build
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-go@v5
-        with:
-          go-version: "1.24"
-
-      - name: Build
-        run: go build ./...
-
   test:
     name: Test
     runs-on: ubuntu-latest
@@ -75,3 +62,64 @@ jobs:
         with:
           name: coverage
           path: coverage.out
+
+  build:
+    name: Build (${{ matrix.goos }}/${{ matrix.goarch }})
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - goos: darwin
+            goarch: arm64
+          - goos: linux
+            goarch: amd64
+          - goos: linux
+            goarch: arm64
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.24"
+
+      - name: Build
+        env:
+          CGO_ENABLED: "0"
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+        run: |
+          VERSION="$(git describe --tags --always --dirty 2>/dev/null || echo 'dev')"
+          COMMIT="$(git rev-parse --short HEAD)"
+          DATE="$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+          LDFLAGS="-s -w \
+            -X github.com/zthxxx/hams/internal/version.version=${VERSION} \
+            -X github.com/zthxxx/hams/internal/version.commit=${COMMIT} \
+            -X github.com/zthxxx/hams/internal/version.date=${DATE}"
+          go build -ldflags "${LDFLAGS}" -o bin/hams-${{ matrix.goos }}-${{ matrix.goarch }} ./cmd/hams
+
+      - name: Upload binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: hams-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: bin/hams-${{ matrix.goos }}-${{ matrix.goarch }}
+
+  e2e:
+    name: E2E
+    runs-on: ubuntu-latest
+    needs: [build]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download linux/amd64 binary
+        uses: actions/download-artifact@v4
+        with:
+          name: hams-linux-amd64
+          path: bin/
+
+      - name: Make binary executable
+        run: chmod +x bin/hams-linux-amd64
+
+      - name: Run e2e tests
+        run: docker compose -f e2e/docker-compose.yml up --build --abort-on-container-exit
