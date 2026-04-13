@@ -40,7 +40,7 @@ _Spec: `cli-architecture` — depends on schema (2.x) and project structure (1.x
 - [x] 3.6 Implement `internal/i18n/` package: `LC_ALL`/`LC_CTYPE`/`LANG` parsing, message catalog loading, `en_US` default
 - [x] 3.7 Implement exit code semantics (0/1/2/3/4/10/11-19/126/127) and AI-agent friendly error format (`code`/`message`/`suggestions`, `--json` mode)
 - [x] 3.8 Implement `hams apply` command: lock → sudo → load config → refresh → diff → execute → update state → release lock
-- [ ] 3.9 Implement `hams apply --from-repo=<repo>` bootstrap flow: GitHub shorthand prefixing, go-git clone to `HAMS_DATA_HOME/repo/`, interactive profile init prompt
+- [x] 3.9 Implement `hams apply --from-repo=<repo>` bootstrap flow: GitHub shorthand prefixing, go-git clone to `HAMS_DATA_HOME/repo/`, interactive profile init prompt
 - [x] 3.10 Implement `hams refresh` command: probe known resources only, `--only`/`--except` provider filtering
 - [x] 3.11 Implement `hams apply --only`/`--except` provider filtering (mutually exclusive, case-insensitive)
 - [x] 3.12 Implement `hams config` subcommands: `get`, `set`, `list`, `edit` (sensitive values → `.local.yaml`/keychain)

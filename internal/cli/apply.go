@@ -71,9 +71,11 @@ func runApply(ctx context.Context, flags *cliutil.GlobalFlags, registry *provide
 
 	if fromRepo != "" {
 		slog.Info("from-repo specified", "repo", fromRepo)
-		// TODO: implement go-git clone in task 3.9.
-		fmt.Printf("Would clone %s to %s/repo/\n", fromRepo, paths.DataHome)
-		return nil
+		var cloneErr error
+		storePath, cloneErr = bootstrapFromRepo(fromRepo, paths)
+		if cloneErr != nil {
+			return fmt.Errorf("bootstrap from repo: %w", cloneErr)
+		}
 	}
 
 	if storePath == "" {
@@ -87,6 +89,17 @@ func runApply(ctx context.Context, flags *cliutil.GlobalFlags, registry *provide
 	cfg, err := config.Load(paths, storePath)
 	if err != nil {
 		return fmt.Errorf("loading config: %w", err)
+	}
+
+	// Check if profile is configured; prompt if not.
+	if cfg.ProfileTag == "" || cfg.MachineID == "" {
+		fmt.Println("Not Found Profile in config, init it at first")
+		tag, mid, promptErr := promptProfileInit()
+		if promptErr != nil {
+			return fmt.Errorf("profile init: %w", promptErr)
+		}
+		cfg.ProfileTag = tag
+		cfg.MachineID = mid
 	}
 
 	// Acquire lock.
