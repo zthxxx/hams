@@ -64,8 +64,8 @@ _Spec: `provider-system` — depends on schema (2.x) and CLI (3.1-3.3). Core fra
 - [x] 4.8 Implement hook engine: pre/post-install hooks, `defer: true` batching (within current provider), nested provider calls, hook-failed state tracking
 - [x] 4.9 Implement remove flow: delete hamsfile entry → execute remove command → state marked `Removed` (kept for audit)
 - [x] 4.10 Implement provider CLI wrapping framework: verb routing (hams-interpreted vs passthrough), auto-inject flag engine, `--hams:` prefix extraction
-- [ ] 4.11 Design go-plugin extension interface (`pkg/sdk/`): gRPC service definition, plugin discovery paths, subprocess lifecycle, crash handling with backoff
-- [ ] 4.12 Property-based tests: DAG resolution (acyclic/cyclic/single-node/diamond), hook nesting, plan diffing
+- [x] 4.11 Design go-plugin extension interface (`pkg/sdk/`): gRPC service definition, plugin discovery paths, subprocess lifecycle, crash handling with backoff
+- [x] 4.12 Property-based tests: DAG resolution (acyclic/cyclic/single-node/diamond), hook nesting, plan diffing
 
 ## 5. TUI & Logging
 
