@@ -100,7 +100,7 @@ _Spec: `observability` — depends on CLI (3.1) for Fx init. Integrates into pro
 _Spec: `builtin-providers` — depends on provider system (4.x). Priority order for implementation._
 _Docker E2E tests develop incrementally alongside each provider. Local safe-test packages: brew=`bat`, pnpm=`serve`, bash=`git config --global rerere.autoUpdate true`._
 
-- [ ] 7.1 Implement `bash` provider: URN-based scripts, `check:` field, `bash.hams/` subdirectory support, step/description naming
+- [x] 7.1 Implement `bash` provider: URN-based scripts, `check:` field, `bash.hams/` subdirectory support, step/description naming
 - [ ] 7.1e Local verification: `hams bash` with `git config --global rerere.autoUpdate true` check/apply round-trip
 - [ ] 7.1d Docker E2E: Debian container — bash provider runs a script, verifies check idempotency
 - [ ] 7.2 Implement `Homebrew` provider: core + cask + tap in one file, `--cask` flag handling, formula `desc` fetching for LLM enrichment, depend-on bash (curl|bash installer)
