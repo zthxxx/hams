@@ -44,7 +44,13 @@ func runRefresh(ctx context.Context, flags *cliutil.GlobalFlags, registry *provi
 	providers := filterProviders(registry.Ordered(cfg.ProviderPriority), only, except)
 
 	slog.Info("refreshing state", "providers", len(providers))
-	provider.ProbeAll(ctx, providers, stateDir, cfg.MachineID)
+	probeResults := provider.ProbeAll(ctx, providers, stateDir, cfg.MachineID)
+	for name, sf := range probeResults {
+		statePath := filepath.Join(stateDir, name+".state.yaml")
+		if saveErr := sf.Save(statePath); saveErr != nil {
+			slog.Error("failed to save probed state", "provider", name, "error", saveErr)
+		}
+	}
 
 	fmt.Printf("Refresh complete: %d providers probed\n", len(providers))
 	return nil
