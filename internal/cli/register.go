@@ -4,6 +4,7 @@ import (
 	"log/slog"
 
 	"github.com/zthxxx/hams/internal/provider"
+	"github.com/zthxxx/hams/internal/provider/builtin/ansible"
 	"github.com/zthxxx/hams/internal/provider/builtin/apt"
 	"github.com/zthxxx/hams/internal/provider/builtin/bash"
 	"github.com/zthxxx/hams/internal/provider/builtin/cargo"
@@ -36,6 +37,7 @@ func registerBuiltins(registry *provider.Registry) {
 		duti.New(),
 		mas.New(),
 		vscodeext.New(),
+		ansible.New(),
 	}
 
 	for _, p := range builtins {
@@ -59,6 +61,7 @@ func registerBuiltins(registry *provider.Registry) {
 		duti.New(),
 		mas.New(),
 		vscodeext.New(),
+		ansible.New(),
 	}
 	for _, h := range cliHandlers {
 		RegisterProvider(h)

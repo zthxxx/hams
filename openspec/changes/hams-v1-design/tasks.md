@@ -77,8 +77,8 @@ _Spec: `tui-logging` — depends on CLI (3.1) for integration. Can be built in p
 - [ ] 5.4 Implement `internal/tui/` package: BubbleTea alternate screen with sticky top (log file path), provider step progress (current/total), current operation
 - [ ] 5.5 Implement collapsible log output sections in TUI
 - [ ] 5.6 Implement interactive popup (tmux-popup style): provider interactive API, stdin passthrough, popup lifecycle
-- [ ] 5.7 Implement `internal/notify/` package: terminal-notifier (mandatory), Bark (optional, token from `.local.yaml`/keychain)
-- [ ] 5.8 Implement notification triggers: apply completion, blocking interactive action
+- [x] 5.7 Implement `internal/notify/` package: terminal-notifier (mandatory), Bark (optional, token from `.local.yaml`/keychain)
+- [x] 5.8 Implement notification triggers: apply completion, blocking interactive action
 - [ ] 5.9 Implement non-TUI fallback: detect non-TTY, plain text structured log output, no ANSI codes
 - [ ] 5.10 Implement `--debug` flag: verbose output (provider traces, state diffs, DAG resolution, hook lifecycle, LLM calls)
 - [ ] 5.11 Implement graceful Ctrl+C shutdown: context cancellation, 5-second timeout, state save, summary, terminal restore
@@ -131,7 +131,7 @@ _Spec: `builtin-providers` — can start after Phase 1 establishes the pattern._
 - [x] 8.4 Implement `vscode-ext` provider: `code --install-extension/--uninstall-extension`, depend-on Homebrew (visual-studio-code cask)
 - [x] 8.5 Implement `mas` provider: `mas install/uninstall`, numeric app IDs, macOS-only, signin handling via interactive popup
 - [x] 8.6 Implement `duti` provider: default app associations, `duti -x` check, macOS-only
-- [ ] 8.7 Implement `Ansible` provider: playbook paths + categories, `ansible-playbook` wrapping, depend-on for ansible CLI
+- [x] 8.7 Implement `Ansible` provider: playbook paths + categories, `ansible-playbook` wrapping, depend-on for ansible CLI
 - [ ] 8.8 Property-based tests for each Phase 2 provider
 - [ ] 8.9 Docker E2E: Alpine container — `hams apply` with fixture store covering Phase 1+2 providers available on Alpine
 
