@@ -32,7 +32,7 @@ _Spec: `schema-design` — depends on project structure (1.1). Core dependency f
 
 _Spec: `cli-architecture` — depends on schema (2.x) and project structure (1.x)._
 
-- [ ] 3.1 Implement Cobra root command with Fx integration, global flag parsing (`--debug`, `--dry-run`, `--json`, `--no-color`, `--config`, `--store`, `--profile`, `--help`, `--version`)
+- [x] 3.1 Implement Cobra root command with Fx integration, global flag parsing (`--debug`, `--dry-run`, `--json`, `--no-color`, `--config`, `--store`, `--profile`, `--help`, `--version`)
 - [ ] 3.2 Implement provider command routing: `hams <provider> <verb> <args>` dispatches to registered provider
 - [ ] 3.3 Implement `--hams:` prefix flag extraction and `--` force-forward separator
 - [ ] 3.4 Implement `--help` priority logic (position-dependent help display, highest priority)
