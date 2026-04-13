@@ -87,13 +87,13 @@ _Spec: `tui-logging` — depends on CLI (3.1) for integration. Can be built in p
 
 _Spec: `observability` — depends on CLI (3.1) for Fx init. Integrates into provider system._
 
-- [ ] 6.1 Implement `internal/otel/` package: Fx module for TracerProvider + MeterProvider init, no-op for non-instrumented commands
-- [ ] 6.2 Implement local file exporter: JSON-encoded OTLP to `HAMS_DATA_HOME/otel/{traces,metrics}/`
-- [ ] 6.3 Implement trace spans: root (apply/refresh), child (provider), grandchild (resource operation) with attributes
-- [ ] 6.4 Implement metrics: `hams.apply.duration`, `hams.provider.failures`, `hams.resources.total`, `hams.probe.duration`
-- [ ] 6.5 Implement graceful shutdown flush (Fx OnStop, 5-second hard timeout)
-- [ ] 6.6 Implement tail-sampling for large applies (threshold configurable, retain all failed spans)
-- [ ] 6.7 Design exporter interface for future OTLP extensibility
+- [x] 6.1 Implement `internal/otel/` package: Fx module for TracerProvider + MeterProvider init, no-op for non-instrumented commands
+- [x] 6.2 Implement local file exporter: JSON-encoded OTLP to `HAMS_DATA_HOME/otel/{traces,metrics}/`
+- [x] 6.3 Implement trace spans: root (apply/refresh), child (provider), grandchild (resource operation) with attributes
+- [x] 6.4 Implement metrics: `hams.apply.duration`, `hams.provider.failures`, `hams.resources.total`, `hams.probe.duration`
+- [x] 6.5 Implement graceful shutdown flush (Fx OnStop, 5-second hard timeout)
+- [x] 6.6 Implement tail-sampling for large applies (threshold configurable, retain all failed spans)
+- [x] 6.7 Design exporter interface for future OTLP extensibility
 
 ## 7. Builtin Providers (Phase 1: Core)
 
