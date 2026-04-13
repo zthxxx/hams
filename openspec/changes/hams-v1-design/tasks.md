@@ -102,7 +102,7 @@ _Docker E2E tests develop incrementally alongside each provider. Local safe-test
 
 - [x] 7.1 Implement `bash` provider: URN-based scripts, `check:` field, `bash.hams/` subdirectory support, step/description naming
 - [x] 7.1e Local verification: `hams bash` with `git config --global rerere.autoUpdate true` check/apply round-trip
-- [ ] 7.1d Docker E2E: Debian container — bash provider runs a script, verifies check idempotency
+- [x] 7.1d Docker E2E: Debian container — bash provider runs a script, verifies check idempotency
 - [x] 7.2 Implement `Homebrew` provider: core + cask + tap in one file, `--cask` flag handling, formula `desc` fetching for LLM enrichment, depend-on bash (curl|bash installer)
 - [x] 7.2e Local verification: `hams brew install bat` / `hams brew remove bat` round-trip (dry-run verified)
 - [ ] 7.2d Docker E2E: Debian container — Homebrew provider self-bootstraps + installs `bat`, verifies state
@@ -115,7 +115,7 @@ _Docker E2E tests develop incrementally alongside each provider. Local safe-test
 - [ ] 7.5d Docker E2E: Debian container — npm provider installs a package globally
 - [x] 7.6 Implement `git config` provider: KV config class, `--global`/`--file` support, check via `git config --get`, conditional includes
 - [x] 7.6e Local verification: `hams git config --global rerere.autoUpdate true` check round-trip
-- [ ] 7.6d Docker E2E: Debian container — git config provider sets+checks config values
+- [x] 7.6d Docker E2E: Debian container — git config provider sets+checks config values
 - [x] 7.7 Implement `git clone` provider: record remote→local-path→default-branch, check = path exists only
 - [x] 7.8 Implement `defaults` provider: `defaults write/read/delete`, macOS-only, killall post-hooks for Dock/Finder
 - [ ] 7.9 Property-based tests for each Phase 1 provider: probe round-trip, hamsfile serialization, idempotency
@@ -142,10 +142,10 @@ _Cross-cutting — depends on provider system (4.x) and hamsfile SDK (2.x)._
 - [x] 9.1 Implement LLM subprocess caller: invoke configured CLI (claude/codex) from `hams.config.yaml`, timeout handling, graceful degradation
 - [x] 9.2 Implement tag recommendation: pass package name + desc + existing tags to LLM, parse response
 - [x] 9.3 Implement intro generation: pass package name + desc to LLM, parse response
-- [ ] 9.4 Implement async enrichment flow: parallel goroutine during install, write back to hamsfile via SDK, error reporting at apply end
-- [ ] 9.5 Implement `--hams:lucky` flag: auto-accept all LLM recommendations without TUI picker
-- [ ] 9.6 Implement per-provider `enrich` standalone command (e.g., `hams brew enrich <app>`)
-- [ ] 9.7 Implement tag TUI multi-select picker: LLM-recommended (pre-selected), existing tags, free-text input
+- [x] 9.4 Implement async enrichment flow: parallel goroutine during install, write back to hamsfile via SDK, error reporting at apply end
+- [x] 9.5 Implement `--hams:lucky` flag: auto-accept all LLM recommendations without TUI picker
+- [x] 9.6 Implement per-provider `enrich` standalone command (e.g., `hams brew enrich <app>`)
+- [ ] 9.7 Implement tag TUI multi-select picker: LLM-recommended (pre-selected), existing tags, free-text input (deferred: needs full BubbleTea TUI)
 
 ## 10. Documentation & README
 
@@ -162,7 +162,7 @@ _Spec: `docs-site` — independent, can start after specs stabilize._
 - [ ] 10.9 Configure GitHub Pages deployment with CNAME `hams.zthxxx.me`, docs at `/docs` subpath
 - [ ] 10.10 Set up i18n structure for Chinese translation (extensible)
 - [x] 10.11 Write `README.md` (en-US): project overview, install methods, quick examples, badge links, license
-- [ ] 10.12 Write `README.zh-CN.md`: Chinese translation of README
+- [x] 10.12 Write `README.zh-CN.md`: Chinese translation of README
 
 ## 11. E2E & Release
 
