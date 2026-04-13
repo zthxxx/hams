@@ -9,6 +9,11 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+const (
+	fieldApp = "app"
+	fieldURN = "urn"
+)
+
 // File represents a loaded Hamsfile with its raw YAML node tree
 // for comment-preserving round-trip editing.
 type File struct {
@@ -103,7 +108,7 @@ func (f *File) FindApp(appName string) (tag string, index int) {
 				continue
 			}
 			for k := 0; k < len(item.Content)-1; k += 2 {
-				if item.Content[k].Value == "app" && item.Content[k+1].Value == appName {
+				if item.Content[k].Value == fieldApp && item.Content[k+1].Value == appName {
 					return keyNode.Value, j
 				}
 			}
@@ -177,7 +182,7 @@ func (f *File) RemoveApp(appName string) bool {
 				continue
 			}
 			for k := 0; k < len(item.Content)-1; k += 2 {
-				if item.Content[k].Value == "app" && item.Content[k+1].Value == appName {
+				if item.Content[k].Value == fieldApp && item.Content[k+1].Value == appName {
 					valNode.Content = append(valNode.Content[:j], valNode.Content[j+1:]...)
 					found = true
 				}

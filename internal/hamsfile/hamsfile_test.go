@@ -166,13 +166,14 @@ func TestWrite_PreservesComments(t *testing.T) {
 	}
 
 	// Write back without modifications.
-	if err := f.Write(); err != nil {
-		t.Fatalf("Write error: %v", err)
+	writeErr := f.Write()
+	if writeErr != nil {
+		t.Fatalf("Write error: %v", writeErr)
 	}
 
-	data, err := os.ReadFile(path) //nolint:gosec // test file path from TempDir
-	if err != nil {
-		t.Fatalf("ReadFile error: %v", err)
+	data, readErr := os.ReadFile(path)
+	if readErr != nil {
+		t.Fatalf("ReadFile error: %v", readErr)
 	}
 
 	content := string(data)
@@ -193,7 +194,7 @@ func TestAtomicWrite_CreatesFile(t *testing.T) {
 		t.Fatalf("atomicWrite error: %v", err)
 	}
 
-	data, err := os.ReadFile(path) //nolint:gosec // test file path from TempDir
+	data, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatalf("ReadFile error: %v", err)
 	}
@@ -210,7 +211,10 @@ func TestAtomicWrite_NoTempFileOnSuccess(t *testing.T) {
 		t.Fatalf("atomicWrite error: %v", err)
 	}
 
-	entries, _ := os.ReadDir(dir)
+	entries, readDirErr := os.ReadDir(dir)
+	if readDirErr != nil {
+		t.Fatalf("ReadDir error: %v", readDirErr)
+	}
 	for _, e := range entries {
 		if strings.HasPrefix(e.Name(), ".hams-") && strings.HasSuffix(e.Name(), ".tmp") {
 			t.Errorf("temp file %q still exists after successful write", e.Name())
@@ -224,29 +228,31 @@ func TestProperty_RoundtripPreservesApps(t *testing.T) {
 		appName := rapid.StringMatching(`[a-z][a-z0-9\-]{1,20}`).Draw(t, "app")
 		tag := rapid.StringMatching(`[a-z][a-z\-]{2,15}`).Draw(t, "tag")
 
-		dir, err := os.MkdirTemp("", "hamsfile-property-*")
-		if err != nil {
-			t.Fatalf("MkdirTemp: %v", err)
+		dir, mkErr := os.MkdirTemp("", "hamsfile-property-*")
+		if mkErr != nil {
+			t.Fatalf("MkdirTemp: %v", mkErr)
 		}
 		defer os.RemoveAll(dir) //nolint:errcheck // cleanup in property test
 		path := filepath.Join(dir, "test.hams.yaml")
-		if err := os.WriteFile(path, []byte("placeholder:\n  - app: keep\n"), 0o600); err != nil {
-			t.Fatalf("write: %v", err)
+		writeErr := os.WriteFile(path, []byte("placeholder:\n  - app: keep\n"), 0o600)
+		if writeErr != nil {
+			t.Fatalf("write: %v", writeErr)
 		}
 
-		f, err := Read(path)
-		if err != nil {
-			t.Fatalf("Read: %v", err)
+		f, readErr := Read(path)
+		if readErr != nil {
+			t.Fatalf("Read: %v", readErr)
 		}
 
 		f.AddApp(tag, appName, "test")
-		if err := f.Write(); err != nil {
-			t.Fatalf("Write: %v", err)
+		saveErr := f.Write()
+		if saveErr != nil {
+			t.Fatalf("Write: %v", saveErr)
 		}
 
-		f2, err := Read(path)
-		if err != nil {
-			t.Fatalf("re-Read: %v", err)
+		f2, reReadErr := Read(path)
+		if reReadErr != nil {
+			t.Fatalf("re-Read: %v", reReadErr)
 		}
 
 		foundTag, idx := f2.FindApp(appName)

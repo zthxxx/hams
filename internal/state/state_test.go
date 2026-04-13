@@ -123,9 +123,9 @@ func TestProperty_SaveLoadRoundtrip(t *testing.T) {
 		appName := rapid.StringMatching(`[a-z][a-z0-9\-]{1,20}`).Draw(t, "app")
 		version := rapid.StringMatching(`[0-9]+\.[0-9]+\.[0-9]+`).Draw(t, "version")
 
-		dir, err := os.MkdirTemp("", "state-prop-*")
-		if err != nil {
-			t.Fatalf("MkdirTemp: %v", err)
+		dir, mkErr := os.MkdirTemp("", "state-prop-*")
+		if mkErr != nil {
+			t.Fatalf("MkdirTemp: %v", mkErr)
 		}
 		defer os.RemoveAll(dir) //nolint:errcheck // cleanup
 		path := filepath.Join(dir, "test.state.yaml")
@@ -133,13 +133,14 @@ func TestProperty_SaveLoadRoundtrip(t *testing.T) {
 		f := New(provider, machineID)
 		f.SetResource(appName, StateOK, WithVersion(version))
 
-		if err := f.Save(path); err != nil {
-			t.Fatalf("Save: %v", err)
+		saveErr := f.Save(path)
+		if saveErr != nil {
+			t.Fatalf("Save: %v", saveErr)
 		}
 
-		loaded, err := Load(path)
-		if err != nil {
-			t.Fatalf("Load: %v", err)
+		loaded, loadErr := Load(path)
+		if loadErr != nil {
+			t.Fatalf("Load: %v", loadErr)
 		}
 
 		if loaded.Provider != provider {

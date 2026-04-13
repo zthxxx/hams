@@ -41,7 +41,7 @@ func ResolvePaths() Paths {
 	if configHome == "" {
 		xdgConfig := os.Getenv("XDG_CONFIG_HOME")
 		if xdgConfig == "" {
-			home, _ := os.UserHomeDir()
+			home, _ := os.UserHomeDir() //nolint:errcheck // best-effort home directory fallback
 			xdgConfig = filepath.Join(home, ".config")
 		}
 		configHome = filepath.Join(xdgConfig, "hams")
@@ -51,7 +51,7 @@ func ResolvePaths() Paths {
 	if dataHome == "" {
 		xdgData := os.Getenv("XDG_DATA_HOME")
 		if xdgData == "" {
-			home, _ := os.UserHomeDir()
+			home, _ := os.UserHomeDir() //nolint:errcheck // best-effort home directory fallback
 			xdgData = filepath.Join(home, ".local", "share")
 		}
 		dataHome = filepath.Join(xdgData, "hams")

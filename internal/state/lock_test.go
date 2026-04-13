@@ -57,7 +57,7 @@ func TestLock_DoubleAcquire_SamePID(t *testing.T) {
 		t.Fatal("second Acquire should fail when same process holds lock")
 	}
 
-	_ = lock.Release()
+	lock.Release() //nolint:errcheck // test cleanup
 }
 
 func TestLock_StaleRecovery(t *testing.T) {
@@ -76,7 +76,7 @@ func TestLock_StaleRecovery(t *testing.T) {
 		t.Fatalf("Acquire over stale lock should succeed: %v", err)
 	}
 
-	_ = lock.Release()
+	lock.Release() //nolint:errcheck // test cleanup
 }
 
 func TestLock_Release_NonExistent(t *testing.T) {

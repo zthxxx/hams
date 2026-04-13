@@ -15,7 +15,7 @@ func TestResolvePaths_Defaults(t *testing.T) {
 
 	paths := ResolvePaths()
 
-	home, _ := os.UserHomeDir()
+	home, _ := os.UserHomeDir() //nolint:errcheck // test fallback
 	wantConfig := filepath.Join(home, ".config", "hams")
 	wantData := filepath.Join(home, ".local", "share", "hams")
 

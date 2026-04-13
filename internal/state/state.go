@@ -101,8 +101,8 @@ func (f *File) Save(path string) error {
 	success := false
 	defer func() {
 		if !success {
-			_ = tmp.Close()
-			_ = os.Remove(tmpName)
+			tmp.Close()        //nolint:errcheck,gosec // best-effort cleanup on error path
+			os.Remove(tmpName) //nolint:errcheck,gosec // best-effort cleanup on error path
 		}
 	}()
 
