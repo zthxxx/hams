@@ -1,0 +1,73 @@
+# Schema Reference
+
+hams uses three types of YAML files. All files preserve comments across read/write cycles.
+
+## Global Config
+
+Located at `~/.config/hams/hams.config.yaml`:
+
+```yaml
+profile_tag: macOS
+machine_id: MacbookProM5X
+store_repo: zthxxx/hams-store
+store_path: ~/.local/share/hams/repo/zthxxx/hams-store
+llm_cli: claude
+provider_priority:
+  - homebrew
+  - apt
+  - pnpm
+  - npm
+  - bash
+```
+
+## Hamsfile
+
+### Package Providers (Homebrew, pnpm, npm, etc.)
+
+```yaml
+terminal-tool:
+  - app: lazygit
+    intro: Simple terminal UI for git commands
+  - app: htop
+    intro: Improved top (interactive process viewer)
+```
+
+### KV Config Providers (defaults, git config)
+
+```yaml
+configs:
+  - urn: "urn:hams:defaults:com.apple.dock.autohide"
+    args:
+      domain: com.apple.dock
+      key: autohide
+      type: bool
+      value: "true"
+    preview-cmd: "defaults write com.apple.dock autohide -bool true"
+    check: "defaults read com.apple.dock autohide"
+```
+
+### Bash Provider
+
+```yaml
+setup:
+  - urn: "urn:hams:bash:init-zsh"
+    step: "Install ZSH theme"
+    run: "curl -sSL .../installer.sh | bash"
+    check: "test -f ~/.oh-my-zsh/custom/themes/jovial.zsh-theme"
+```
+
+## State File
+
+Located at `<store>/.state/<machine-id>/<Provider>.state.yaml`:
+
+```yaml
+schema_version: 1
+provider: homebrew
+machine_id: MacbookProM5X
+last_apply_session: "20260413T100000"
+resources:
+  htop:
+    state: ok
+    version: "3.3.0"
+    install_at: "20260413T100000"
+```

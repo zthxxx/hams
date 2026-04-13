@@ -151,16 +151,16 @@ _Cross-cutting — depends on provider system (4.x) and hamsfile SDK (2.x)._
 
 _Spec: `docs-site` — independent, can start after specs stabilize._
 
-- [ ] 10.1 Scaffold Nextra project in `docs/` with dark-mode theme, sidebar navigation, search (Flexsearch)
-- [ ] 10.2 Write homepage / landing page at `hams.zthxxx.me` (not under `/docs`)
-- [ ] 10.3 Write "Why / Motivation" page: comparison table, hamster branding, "what hams is NOT" section
-- [ ] 10.4 Write "Quickstart / Install" page: curl|bash, brew tap, binary download, first `hams apply --from-repo=` walkthrough
-- [ ] 10.5 Write "CLI Reference" pages: every subcommand with syntax, flags, examples
-- [ ] 10.6 Write "Builtin Provider Catalog" pages: per-provider page with store schema, commands, examples
-- [ ] 10.7 Write "Schema Reference" page: annotated YAML examples for hams.config, hamsfile, state
-- [ ] 10.8 Write "Provider API" page: Go SDK guide, go-plugin extension, resource classes, minimal example
-- [ ] 10.9 Configure GitHub Pages deployment with CNAME `hams.zthxxx.me`, docs at `/docs` subpath
-- [ ] 10.10 Set up i18n structure for Chinese translation (extensible)
+- [x] 10.1 Scaffold Nextra project in `docs/` with dark-mode theme, sidebar navigation, search (Flexsearch)
+- [x] 10.2 Write homepage / landing page at `hams.zthxxx.me` (not under `/docs`)
+- [x] 10.3 Write "Why / Motivation" page: comparison table, hamster branding, "what hams is NOT" section
+- [x] 10.4 Write "Quickstart / Install" page: curl|bash, brew tap, binary download, first `hams apply --from-repo=` walkthrough
+- [x] 10.5 Write "CLI Reference" pages: every subcommand with syntax, flags, examples
+- [x] 10.6 Write "Builtin Provider Catalog" pages: per-provider page with store schema, commands, examples
+- [x] 10.7 Write "Schema Reference" page: annotated YAML examples for hams.config, hamsfile, state
+- [x] 10.8 Write "Provider API" page: Go SDK guide, go-plugin extension, resource classes, minimal example
+- [x] 10.9 Configure GitHub Pages deployment with CNAME `hams.zthxxx.me`, docs at `/docs` subpath
+- [x] 10.10 Set up i18n structure for Chinese translation (extensible)
 - [x] 10.11 Write `README.md` (en-US): project overview, install methods, quick examples, badge links, license
 - [x] 10.12 Write `README.zh-CN.md`: Chinese translation of README
 
