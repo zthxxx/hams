@@ -74,14 +74,14 @@ _Spec: `tui-logging` — depends on CLI (3.1) for integration. Can be built in p
 - [x] 5.1 Implement `internal/logging/` package: structured slog setup, log file rotation (`HAMS_DATA_HOME/<YYYY-MM>/hams.YYYYMM.log`), session log linking
 - [x] 5.2 Implement third-party session log manager: create `provider/<provider>.YYYYMMDDTHHmmss.session.log`, link from main log by session ID
 - [x] 5.3 Implement output path tilde prefix: replace `$HOME` with `~/` in all displayed paths
-- [ ] 5.4 Implement `internal/tui/` package: BubbleTea alternate screen with sticky top (log file path), provider step progress (current/total), current operation
-- [ ] 5.5 Implement collapsible log output sections in TUI
-- [ ] 5.6 Implement interactive popup (tmux-popup style): provider interactive API, stdin passthrough, popup lifecycle
+- [x] 5.4 Implement `internal/tui/` package: BubbleTea alternate screen with sticky top (log file path), provider step progress (current/total), current operation
+- [ ] 5.5 Implement collapsible log output sections in TUI (deferred: full BubbleTea implementation)
+- [ ] 5.6 Implement interactive popup (tmux-popup style): provider interactive API, stdin passthrough, popup lifecycle (deferred: full BubbleTea implementation)
 - [x] 5.7 Implement `internal/notify/` package: terminal-notifier (mandatory), Bark (optional, token from `.local.yaml`/keychain)
 - [x] 5.8 Implement notification triggers: apply completion, blocking interactive action
-- [ ] 5.9 Implement non-TUI fallback: detect non-TTY, plain text structured log output, no ANSI codes
-- [ ] 5.10 Implement `--debug` flag: verbose output (provider traces, state diffs, DAG resolution, hook lifecycle, LLM calls)
-- [ ] 5.11 Implement graceful Ctrl+C shutdown: context cancellation, 5-second timeout, state save, summary, terminal restore
+- [x] 5.9 Implement non-TUI fallback: detect non-TTY, plain text structured log output, no ANSI codes
+- [x] 5.10 Implement `--debug` flag: verbose output (provider traces, state diffs, DAG resolution, hook lifecycle, LLM calls)
+- [x] 5.11 Implement graceful Ctrl+C shutdown: context cancellation, 5-second timeout, state save, summary, terminal restore
 
 ## 6. Observability (OTel)
 

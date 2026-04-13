@@ -80,9 +80,7 @@ func (m *Manager) startHeartbeat(parentCtx context.Context) {
 	ctx, cancel := context.WithCancel(parentCtx)
 	m.cancel = cancel
 
-	m.wg.Add(1)
-	go func() {
-		defer m.wg.Done()
+	m.wg.Go(func() {
 		ticker := time.NewTicker(heartbeatInterval)
 		defer ticker.Stop()
 
@@ -96,7 +94,7 @@ func (m *Manager) startHeartbeat(parentCtx context.Context) {
 				}
 			}
 		}
-	}()
+	})
 }
 
 // RunWithSudo creates a command that runs with sudo.
