@@ -175,6 +175,17 @@ _Depends on all above being substantially complete._
 - [x] 11.5 Set up GitHub Actions release workflow: goreleaser / manual cross-compile → GitHub Releases with checksums
 - [ ] 11.6 Final integration test: macOS → `hams apply` with a real hams-store repo (manual, not CI)
 
+## 12. Refinements & Code Review
+
+- [ ] 12.1 Refactor `--from-repo` to support local `.git` repo paths (resolve local path first, then remote GitHub URL)
+- [ ] 12.2 Add unit tests for `--from-repo` with local test repo fixture (prepare `.git` repo via bash script in `.gitignore`)
+- [ ] 12.3 Add Docker E2E test using `--from-repo` with the fixture git repo inside container
+- [ ] 12.4 Refactor TUI to use `charmbracelet/bubbletea` for alternate screen, progress, collapsible logs
+- [ ] 12.5 Implement BubbleTea interactive popup for provider stdin (tmux-popup style)
+- [ ] 12.6 Implement BubbleTea tag multi-select picker with LLM-recommended pre-selection
+- [ ] 12.7 Code review via Codex: review all packages for correctness, consistency, and test coverage
+- [ ] 12.8 Fix issues found in code review
+
 ---
 
 ## Parallel Execution Plan for Subagents
