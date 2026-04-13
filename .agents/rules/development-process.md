@@ -32,3 +32,5 @@ globs: ["**/*"]
   - Prioritize implementing the smallest verifiable slice first.
 
 - **Local/CI isomorphism**: code style checks (golangci-lint), unit tests, and Docker-based E2E tests MUST all run identically on a developer's local machine and in GitHub Actions CI. No CI-only or local-only test paths. Use the same commands (Taskfile tasks) in both environments.
+
+- **Prefer community packages over NIH**: before implementing any functionality, search for well-maintained open-source packages in the Go ecosystem that solve the same problem. Use established libraries instead of writing from scratch. Examples: prefer `bitfield/script` for shell execution, `charmbracelet/bubbletea` for TUI, `go-yaml/yaml` for YAML parsing, etc.

@@ -40,15 +40,15 @@ _Spec: `cli-architecture` — depends on schema (2.x) and project structure (1.x
 - [x] 3.6 Implement `internal/i18n/` package: `LC_ALL`/`LC_CTYPE`/`LANG` parsing, message catalog loading, `en_US` default
 - [x] 3.7 Implement exit code semantics (0/1/2/3/4/10/11-19/126/127) and AI-agent friendly error format (`code`/`message`/`suggestions`, `--json` mode)
 - [x] 3.8 Implement `hams apply` command: lock → sudo → load config → refresh → diff → execute → update state → release lock
-- [ ] 3.9 Implement `hams apply --from-repo=<repo>` bootstrap flow: GitHub shorthand prefixing, go-git clone to `HAMS_DATA_HOME/repo/`, interactive profile init prompt
-- [ ] 3.10 Implement `hams refresh` command: probe known resources only, `--only`/`--except` provider filtering
+- [x] 3.9 Implement `hams apply --from-repo=<repo>` bootstrap flow: GitHub shorthand prefixing, go-git clone to `HAMS_DATA_HOME/repo/`, interactive profile init prompt
+- [x] 3.10 Implement `hams refresh` command: probe known resources only, `--only`/`--except` provider filtering
 - [x] 3.11 Implement `hams apply --only`/`--except` provider filtering (mutually exclusive, case-insensitive)
-- [ ] 3.12 Implement `hams config` subcommands: `get`, `set`, `list`, `edit` (sensitive values → `.local.yaml`/keychain)
-- [ ] 3.13 Implement `hams store` subcommand: show store directory path and status
-- [ ] 3.14 Implement `hams list` subcommand: grouped by provider, status filter, JSON output
-- [ ] 3.15 Implement `hams self-upgrade` command: detect install channel (marker file / binary path), route to GitHub Releases download or `brew upgrade`
+- [x] 3.12 Implement `hams config` subcommands: `get`, `set`, `list`, `edit` (sensitive values → `.local.yaml`/keychain)
+- [x] 3.13 Implement `hams store` subcommand: show store directory path and status
+- [x] 3.14 Implement `hams list` subcommand: grouped by provider, status filter, JSON output
+- [x] 3.15 Implement `hams self-upgrade` command: detect install channel (marker file / binary path), route to GitHub Releases download or `brew upgrade`
 - [x] 3.16 Implement `--dry-run` mode: read-only plan display, no mutations, no lock
-- [ ] 3.17 Tests for command routing, flag parsing, help priority, exit codes
+- [x] 3.17 Tests for command routing, flag parsing, help priority, exit codes
 
 ## 4. Provider System
 
@@ -74,50 +74,50 @@ _Spec: `tui-logging` — depends on CLI (3.1) for integration. Can be built in p
 - [x] 5.1 Implement `internal/logging/` package: structured slog setup, log file rotation (`HAMS_DATA_HOME/<YYYY-MM>/hams.YYYYMM.log`), session log linking
 - [x] 5.2 Implement third-party session log manager: create `provider/<provider>.YYYYMMDDTHHmmss.session.log`, link from main log by session ID
 - [x] 5.3 Implement output path tilde prefix: replace `$HOME` with `~/` in all displayed paths
-- [ ] 5.4 Implement `internal/tui/` package: BubbleTea alternate screen with sticky top (log file path), provider step progress (current/total), current operation
-- [ ] 5.5 Implement collapsible log output sections in TUI
-- [ ] 5.6 Implement interactive popup (tmux-popup style): provider interactive API, stdin passthrough, popup lifecycle
-- [ ] 5.7 Implement `internal/notify/` package: terminal-notifier (mandatory), Bark (optional, token from `.local.yaml`/keychain)
-- [ ] 5.8 Implement notification triggers: apply completion, blocking interactive action
-- [ ] 5.9 Implement non-TUI fallback: detect non-TTY, plain text structured log output, no ANSI codes
-- [ ] 5.10 Implement `--debug` flag: verbose output (provider traces, state diffs, DAG resolution, hook lifecycle, LLM calls)
-- [ ] 5.11 Implement graceful Ctrl+C shutdown: context cancellation, 5-second timeout, state save, summary, terminal restore
+- [x] 5.4 Implement `internal/tui/` package: BubbleTea alternate screen with sticky top (log file path), provider step progress (current/total), current operation
+- [ ] 5.5 Implement collapsible log output sections in TUI (deferred: full BubbleTea implementation)
+- [ ] 5.6 Implement interactive popup (tmux-popup style): provider interactive API, stdin passthrough, popup lifecycle (deferred: full BubbleTea implementation)
+- [x] 5.7 Implement `internal/notify/` package: terminal-notifier (mandatory), Bark (optional, token from `.local.yaml`/keychain)
+- [x] 5.8 Implement notification triggers: apply completion, blocking interactive action
+- [x] 5.9 Implement non-TUI fallback: detect non-TTY, plain text structured log output, no ANSI codes
+- [x] 5.10 Implement `--debug` flag: verbose output (provider traces, state diffs, DAG resolution, hook lifecycle, LLM calls)
+- [x] 5.11 Implement graceful Ctrl+C shutdown: context cancellation, 5-second timeout, state save, summary, terminal restore
 
 ## 6. Observability (OTel)
 
 _Spec: `observability` — depends on CLI (3.1) for Fx init. Integrates into provider system._
 
-- [ ] 6.1 Implement `internal/otel/` package: Fx module for TracerProvider + MeterProvider init, no-op for non-instrumented commands
-- [ ] 6.2 Implement local file exporter: JSON-encoded OTLP to `HAMS_DATA_HOME/otel/{traces,metrics}/`
-- [ ] 6.3 Implement trace spans: root (apply/refresh), child (provider), grandchild (resource operation) with attributes
-- [ ] 6.4 Implement metrics: `hams.apply.duration`, `hams.provider.failures`, `hams.resources.total`, `hams.probe.duration`
-- [ ] 6.5 Implement graceful shutdown flush (Fx OnStop, 5-second hard timeout)
-- [ ] 6.6 Implement tail-sampling for large applies (threshold configurable, retain all failed spans)
-- [ ] 6.7 Design exporter interface for future OTLP extensibility
+- [x] 6.1 Implement `internal/otel/` package: Fx module for TracerProvider + MeterProvider init, no-op for non-instrumented commands
+- [x] 6.2 Implement local file exporter: JSON-encoded OTLP to `HAMS_DATA_HOME/otel/{traces,metrics}/`
+- [x] 6.3 Implement trace spans: root (apply/refresh), child (provider), grandchild (resource operation) with attributes
+- [x] 6.4 Implement metrics: `hams.apply.duration`, `hams.provider.failures`, `hams.resources.total`, `hams.probe.duration`
+- [x] 6.5 Implement graceful shutdown flush (Fx OnStop, 5-second hard timeout)
+- [x] 6.6 Implement tail-sampling for large applies (threshold configurable, retain all failed spans)
+- [x] 6.7 Design exporter interface for future OTLP extensibility
 
 ## 7. Builtin Providers (Phase 1: Core)
 
 _Spec: `builtin-providers` — depends on provider system (4.x). Priority order for implementation._
 _Docker E2E tests develop incrementally alongside each provider. Local safe-test packages: brew=`bat`, pnpm=`serve`, bash=`git config --global rerere.autoUpdate true`._
 
-- [ ] 7.1 Implement `bash` provider: URN-based scripts, `check:` field, `bash.hams/` subdirectory support, step/description naming
-- [ ] 7.1e Local verification: `hams bash` with `git config --global rerere.autoUpdate true` check/apply round-trip
+- [x] 7.1 Implement `bash` provider: URN-based scripts, `check:` field, `bash.hams/` subdirectory support, step/description naming
+- [x] 7.1e Local verification: `hams bash` with `git config --global rerere.autoUpdate true` check/apply round-trip
 - [ ] 7.1d Docker E2E: Debian container — bash provider runs a script, verifies check idempotency
-- [ ] 7.2 Implement `Homebrew` provider: core + cask + tap in one file, `--cask` flag handling, formula `desc` fetching for LLM enrichment, depend-on bash (curl|bash installer)
+- [x] 7.2 Implement `Homebrew` provider: core + cask + tap in one file, `--cask` flag handling, formula `desc` fetching for LLM enrichment, depend-on bash (curl|bash installer)
 - [ ] 7.2e Local verification: `hams brew install bat` / `hams brew remove bat` round-trip
 - [ ] 7.2d Docker E2E: Debian container — Homebrew provider self-bootstraps + installs `bat`, verifies state
-- [ ] 7.3 Implement `apt` provider: auto-inject `-y`, sudo-required, Linux-only platform filter
+- [x] 7.3 Implement `apt` provider: auto-inject `-y`, sudo-required, Linux-only platform filter
 - [ ] 7.3d Docker E2E: Debian container — `hams apt install curl`, verify installed + state recorded
-- [ ] 7.4 Implement `pnpm` provider: auto-inject `--global`, depend-on npm for pnpm install
+- [x] 7.4 Implement `pnpm` provider: auto-inject `--global`, depend-on npm for pnpm install
 - [ ] 7.4e Local verification: `hams pnpm install serve` / `hams pnpm remove serve` round-trip
 - [ ] 7.4d Docker E2E: Debian container — pnpm provider installs `serve` globally, verifies
-- [ ] 7.5 Implement `npm` provider: auto-inject `--global`
+- [x] 7.5 Implement `npm` provider: auto-inject `--global`
 - [ ] 7.5d Docker E2E: Debian container — npm provider installs a package globally
-- [ ] 7.6 Implement `git config` provider: KV config class, `--global`/`--file` support, check via `git config --get`, conditional includes
-- [ ] 7.6e Local verification: `hams git config --global rerere.autoUpdate true` check round-trip
+- [x] 7.6 Implement `git config` provider: KV config class, `--global`/`--file` support, check via `git config --get`, conditional includes
+- [x] 7.6e Local verification: `hams git config --global rerere.autoUpdate true` check round-trip
 - [ ] 7.6d Docker E2E: Debian container — git config provider sets+checks config values
-- [ ] 7.7 Implement `git clone` provider: record remote→local-path→default-branch, check = path exists only
-- [ ] 7.8 Implement `defaults` provider: `defaults write/read/delete`, macOS-only, killall post-hooks for Dock/Finder
+- [x] 7.7 Implement `git clone` provider: record remote→local-path→default-branch, check = path exists only
+- [x] 7.8 Implement `defaults` provider: `defaults write/read/delete`, macOS-only, killall post-hooks for Dock/Finder
 - [ ] 7.9 Property-based tests for each Phase 1 provider: probe round-trip, hamsfile serialization, idempotency
 - [ ] 7.10 Docker E2E: full Debian container — `hams apply` with fixture store containing bash + apt + npm + pnpm + git-config providers, verify all resources in state
 
@@ -125,13 +125,13 @@ _Docker E2E tests develop incrementally alongside each provider. Local safe-test
 
 _Spec: `builtin-providers` — can start after Phase 1 establishes the pattern._
 
-- [ ] 8.1 Implement `uv` provider: `uv tool install/uninstall`
-- [ ] 8.2 Implement `go` provider: `go install`, auto-inject `@latest` if no version specified
-- [ ] 8.3 Implement `cargo` provider: `cargo install/uninstall`
-- [ ] 8.4 Implement `vscode-ext` provider: `code --install-extension/--uninstall-extension`, depend-on Homebrew (visual-studio-code cask)
-- [ ] 8.5 Implement `mas` provider: `mas install/uninstall`, numeric app IDs, macOS-only, signin handling via interactive popup
-- [ ] 8.6 Implement `duti` provider: default app associations, `duti -x` check, macOS-only
-- [ ] 8.7 Implement `Ansible` provider: playbook paths + categories, `ansible-playbook` wrapping, depend-on for ansible CLI
+- [x] 8.1 Implement `uv` provider: `uv tool install/uninstall`
+- [x] 8.2 Implement `go` provider: `go install`, auto-inject `@latest` if no version specified
+- [x] 8.3 Implement `cargo` provider: `cargo install/uninstall`
+- [x] 8.4 Implement `vscode-ext` provider: `code --install-extension/--uninstall-extension`, depend-on Homebrew (visual-studio-code cask)
+- [x] 8.5 Implement `mas` provider: `mas install/uninstall`, numeric app IDs, macOS-only, signin handling via interactive popup
+- [x] 8.6 Implement `duti` provider: default app associations, `duti -x` check, macOS-only
+- [x] 8.7 Implement `Ansible` provider: playbook paths + categories, `ansible-playbook` wrapping, depend-on for ansible CLI
 - [ ] 8.8 Property-based tests for each Phase 2 provider
 - [ ] 8.9 Docker E2E: Alpine container — `hams apply` with fixture store covering Phase 1+2 providers available on Alpine
 
@@ -139,9 +139,9 @@ _Spec: `builtin-providers` — can start after Phase 1 establishes the pattern._
 
 _Cross-cutting — depends on provider system (4.x) and hamsfile SDK (2.x)._
 
-- [ ] 9.1 Implement LLM subprocess caller: invoke configured CLI (claude/codex) from `hams.config.yaml`, timeout handling, graceful degradation
-- [ ] 9.2 Implement tag recommendation: pass package name + desc + existing tags to LLM, parse response
-- [ ] 9.3 Implement intro generation: pass package name + desc to LLM, parse response
+- [x] 9.1 Implement LLM subprocess caller: invoke configured CLI (claude/codex) from `hams.config.yaml`, timeout handling, graceful degradation
+- [x] 9.2 Implement tag recommendation: pass package name + desc + existing tags to LLM, parse response
+- [x] 9.3 Implement intro generation: pass package name + desc to LLM, parse response
 - [ ] 9.4 Implement async enrichment flow: parallel goroutine during install, write back to hamsfile via SDK, error reporting at apply end
 - [ ] 9.5 Implement `--hams:lucky` flag: auto-accept all LLM recommendations without TUI picker
 - [ ] 9.6 Implement per-provider `enrich` standalone command (e.g., `hams brew enrich <app>`)
@@ -161,7 +161,7 @@ _Spec: `docs-site` — independent, can start after specs stabilize._
 - [ ] 10.8 Write "Provider API" page: Go SDK guide, go-plugin extension, resource classes, minimal example
 - [ ] 10.9 Configure GitHub Pages deployment with CNAME `hams.zthxxx.me`, docs at `/docs` subpath
 - [ ] 10.10 Set up i18n structure for Chinese translation (extensible)
-- [ ] 10.11 Write `README.md` (en-US): project overview, install methods, quick examples, badge links, license
+- [x] 10.11 Write `README.md` (en-US): project overview, install methods, quick examples, badge links, license
 - [ ] 10.12 Write `README.zh-CN.md`: Chinese translation of README
 
 ## 11. E2E & Release

@@ -7,24 +7,14 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/zthxxx/hams/internal/cliutil"
 	"github.com/zthxxx/hams/internal/provider"
 	"github.com/zthxxx/hams/internal/version"
 )
 
-// GlobalFlags holds flags that appear between `hams` and the provider name.
-type GlobalFlags struct {
-	Debug   bool
-	DryRun  bool
-	JSON    bool
-	NoColor bool
-	Config  string
-	Store   string
-	Profile string
-}
-
 // NewRootCmd creates the top-level hams Cobra command.
-func NewRootCmd() (*cobra.Command, *GlobalFlags) {
-	flags := &GlobalFlags{}
+func NewRootCmd() (*cobra.Command, *cliutil.GlobalFlags) {
+	flags := &cliutil.GlobalFlags{}
 
 	root := &cobra.Command{
 		Use:   "hams [global-flags] <command> [args]",
@@ -63,15 +53,21 @@ Use 'hams apply' to replay all installations from config.`,
 func Execute() {
 	root, flags := NewRootCmd()
 
-	// Create provider registry (builtins will register themselves).
+	// Create provider registry and register builtins.
 	registry := provider.NewRegistry()
+	registerBuiltins(registry)
 
 	// Add subcommands.
 	root.AddCommand(NewApplyCmd(flags, registry))
+	root.AddCommand(NewRefreshCmd(flags, registry))
+	root.AddCommand(NewConfigCmd(flags))
+	root.AddCommand(NewStoreCmd(flags))
+	root.AddCommand(NewListCmd(flags, registry))
+	root.AddCommand(NewSelfUpgradeCmd())
 	AddProviderCommands(root, flags)
 
 	if err := root.Execute(); err != nil {
 		PrintError(err, flags.JSON)
-		os.Exit(ExitGeneralError)
+		os.Exit(cliutil.ExitGeneralError)
 	}
 }

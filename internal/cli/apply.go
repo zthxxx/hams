@@ -10,6 +10,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/zthxxx/hams/internal/cliutil"
 	"github.com/zthxxx/hams/internal/config"
 	"github.com/zthxxx/hams/internal/hamsfile"
 	"github.com/zthxxx/hams/internal/logging"
@@ -19,7 +20,7 @@ import (
 )
 
 // NewApplyCmd creates the `hams apply` command.
-func NewApplyCmd(flags *GlobalFlags, registry *provider.Registry) *cobra.Command {
+func NewApplyCmd(flags *cliutil.GlobalFlags, registry *provider.Registry) *cobra.Command {
 	var (
 		fromRepo  string
 		noRefresh bool
@@ -48,7 +49,7 @@ Use --no-refresh to skip probing and apply based on state alone.`,
 	return cmd
 }
 
-func runApply(ctx context.Context, flags *GlobalFlags, registry *provider.Registry, fromRepo string, noRefresh bool, only, except string) error {
+func runApply(ctx context.Context, flags *cliutil.GlobalFlags, registry *provider.Registry, fromRepo string, noRefresh bool, only, except string) error {
 	if flags.DryRun {
 		fmt.Println("[dry-run] Would apply configurations. No changes will be made.")
 	}
@@ -70,13 +71,15 @@ func runApply(ctx context.Context, flags *GlobalFlags, registry *provider.Regist
 
 	if fromRepo != "" {
 		slog.Info("from-repo specified", "repo", fromRepo)
-		// TODO: implement go-git clone in task 3.9.
-		fmt.Printf("Would clone %s to %s/repo/\n", fromRepo, paths.DataHome)
-		return nil
+		var cloneErr error
+		storePath, cloneErr = bootstrapFromRepo(fromRepo, paths)
+		if cloneErr != nil {
+			return fmt.Errorf("bootstrap from repo: %w", cloneErr)
+		}
 	}
 
 	if storePath == "" {
-		return NewUserError(ExitUsageError,
+		return cliutil.NewUserError(cliutil.ExitUsageError,
 			"no store directory configured",
 			"Run 'hams apply --from-repo=<user/repo>' to clone a store",
 			"Or set store_path in ~/.config/hams/hams.config.yaml",
@@ -88,12 +91,23 @@ func runApply(ctx context.Context, flags *GlobalFlags, registry *provider.Regist
 		return fmt.Errorf("loading config: %w", err)
 	}
 
+	// Check if profile is configured; prompt if not.
+	if cfg.ProfileTag == "" || cfg.MachineID == "" {
+		fmt.Println("Not Found Profile in config, init it at first")
+		tag, mid, promptErr := promptProfileInit()
+		if promptErr != nil {
+			return fmt.Errorf("profile init: %w", promptErr)
+		}
+		cfg.ProfileTag = tag
+		cfg.MachineID = mid
+	}
+
 	// Acquire lock.
 	stateDir := cfg.StateDir()
 	lock := state.NewLock(stateDir)
 	if !flags.DryRun {
 		if lockErr := lock.Acquire("hams apply"); lockErr != nil {
-			return NewUserError(ExitLockError, lockErr.Error(),
+			return cliutil.NewUserError(cliutil.ExitLockError, lockErr.Error(),
 				fmt.Sprintf("Remove %s/.lock if the previous run crashed", stateDir),
 			)
 		}
@@ -180,7 +194,7 @@ func runApply(ctx context.Context, flags *GlobalFlags, registry *provider.Regist
 		merged.Installed, merged.Updated, merged.Removed, merged.Skipped, merged.Failed)
 
 	if merged.Failed > 0 {
-		return NewUserError(ExitPartialFailure,
+		return cliutil.NewUserError(cliutil.ExitPartialFailure,
 			fmt.Sprintf("%d resources failed", merged.Failed),
 			"Run 'hams apply' again to retry failed resources",
 			"Use '--debug' for detailed error output",
@@ -249,7 +263,7 @@ func printDryRunPlan(providers []provider.Provider, _ *config.Config) error { //
 }
 
 // SetupLogging initializes logging from global flags and returns the cleanup function.
-func SetupLogging(flags *GlobalFlags) func() {
+func SetupLogging(flags *cliutil.GlobalFlags) func() {
 	paths := config.ResolvePaths()
 	logFile, err := logging.Setup(paths.DataHome, flags.Debug)
 	if err != nil {

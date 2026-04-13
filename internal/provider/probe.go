@@ -18,10 +18,7 @@ func ProbeAll(ctx context.Context, providers []Provider, stateDir, machineID str
 	var wg sync.WaitGroup
 
 	for _, p := range providers {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-
+		wg.Go(func() {
 			name := p.Manifest().Name
 			sf := loadOrCreateState(stateDir, name, machineID)
 
@@ -52,7 +49,7 @@ func ProbeAll(ctx context.Context, providers []Provider, stateDir, machineID str
 			mu.Lock()
 			results[name] = sf
 			mu.Unlock()
-		}()
+		})
 	}
 
 	wg.Wait()
