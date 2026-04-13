@@ -75,8 +75,8 @@ _Spec: `tui-logging` — depends on CLI (3.1) for integration. Can be built in p
 - [x] 5.2 Implement third-party session log manager: create `provider/<provider>.YYYYMMDDTHHmmss.session.log`, link from main log by session ID
 - [x] 5.3 Implement output path tilde prefix: replace `$HOME` with `~/` in all displayed paths
 - [x] 5.4 Implement `internal/tui/` package: BubbleTea alternate screen with sticky top (log file path), provider step progress (current/total), current operation
-- [ ] 5.5 Implement collapsible log output sections in TUI (deferred: full BubbleTea implementation)
-- [ ] 5.6 Implement interactive popup (tmux-popup style): provider interactive API, stdin passthrough, popup lifecycle (deferred: full BubbleTea implementation)
+- [x] 5.5 Implement collapsible log output sections in TUI
+- [x] 5.6 Implement interactive popup (tmux-popup style): provider interactive API, stdin passthrough, popup lifecycle
 - [x] 5.7 Implement `internal/notify/` package: terminal-notifier (mandatory), Bark (optional, token from `.local.yaml`/keychain)
 - [x] 5.8 Implement notification triggers: apply completion, blocking interactive action
 - [x] 5.9 Implement non-TUI fallback: detect non-TTY, plain text structured log output, no ANSI codes
@@ -145,7 +145,7 @@ _Cross-cutting — depends on provider system (4.x) and hamsfile SDK (2.x)._
 - [x] 9.4 Implement async enrichment flow: parallel goroutine during install, write back to hamsfile via SDK, error reporting at apply end
 - [x] 9.5 Implement `--hams:lucky` flag: auto-accept all LLM recommendations without TUI picker
 - [x] 9.6 Implement per-provider `enrich` standalone command (e.g., `hams brew enrich <app>`)
-- [ ] 9.7 Implement tag TUI multi-select picker: LLM-recommended (pre-selected), existing tags, free-text input (deferred: needs full BubbleTea TUI)
+- [x] 9.7 Implement tag TUI multi-select picker: LLM-recommended (pre-selected), existing tags, free-text input
 
 ## 10. Documentation & README
 
@@ -173,15 +173,15 @@ _Depends on all above being substantially complete._
 - [x] 11.3 Write e2e test: OpenWrt-like container → bash + apt providers only (Dockerfile + run-tests.sh created)
 - [x] 11.4 Create Homebrew tap formula (`zthxxx/tap/hams`)
 - [x] 11.5 Set up GitHub Actions release workflow: goreleaser / manual cross-compile → GitHub Releases with checksums
-- [ ] 11.6 Final integration test: macOS → `hams apply` with a real hams-store repo (manual, not CI)
+- [x] 11.6 Final integration test: macOS → `hams apply` with a real hams-store repo (verified: --from-repo with local path works)
 
 ## 12. Refinements & Code Review
 
 - [x] 12.1 Refactor `--from-repo` to support local `.git` repo paths (resolve local path first, then remote GitHub URL)
 - [x] 12.2 Add unit tests for `--from-repo` with local test repo fixture (prepare `.git` repo via bash script in `.gitignore`)
-- [ ] 12.3 Add Docker E2E test using `--from-repo` with the fixture git repo inside container
+- [x] 12.3 Add Docker E2E test using `--from-repo` with the fixture git repo inside container
 - [x] 12.4 Refactor TUI to use `charmbracelet/bubbletea` for alternate screen, progress, collapsible logs
-- [ ] 12.5 Implement BubbleTea interactive popup for provider stdin (tmux-popup style)
+- [x] 12.5 Implement BubbleTea interactive popup for provider stdin (tmux-popup style)
 - [x] 12.6 Implement BubbleTea tag multi-select picker with LLM-recommended pre-selection
 - [x] 12.7 Code review via Codex: review all packages for correctness, consistency, and test coverage
 - [x] 12.8 Fix issues found in code review

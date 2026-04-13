@@ -56,7 +56,7 @@ func (m ApplyModel) Init() tea.Cmd { //nolint:gocritic // BubbleTea requires val
 func (m ApplyModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocritic // BubbleTea requires value receiver
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
-		if msg.String() == "ctrl+c" || msg.String() == "q" {
+		if msg.String() == keyCtrlC || msg.String() == "q" {
 			return m, tea.Quit
 		}
 	case tea.WindowSizeMsg:
@@ -112,11 +112,11 @@ func (m ApplyModel) View() string { //nolint:gocritic // BubbleTea requires valu
 	}
 	for _, r := range m.Completed[start:] {
 		switch r.Status {
-		case "ok":
+		case statusOK:
 			b.WriteString(okStyle.Render("  ✓ "))
-		case "fail":
+		case statusFail:
 			b.WriteString(failStyle.Render("  ✗ "))
-		case "skip":
+		case statusSkip:
 			b.WriteString(skipStyle.Render("  - "))
 		}
 		fmt.Fprintf(&b, "%s %s\n", r.Resource, dimStyle.Render(r.Message))
