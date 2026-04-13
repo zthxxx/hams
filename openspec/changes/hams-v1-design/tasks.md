@@ -32,7 +32,7 @@ _Spec: `schema-design` — depends on project structure (1.1). Core dependency f
 
 _Spec: `cli-architecture` — depends on schema (2.x) and project structure (1.x)._
 
-- [x] 3.1 Implement Cobra root command with Fx integration, global flag parsing (`--debug`, `--dry-run`, `--json`, `--no-color`, `--config`, `--store`, `--profile`, `--help`, `--version`)
+- [x] 3.1 Implement urfave/cli root command with explicit DI wiring, global flag parsing (`--debug`, `--dry-run`, `--json`, `--no-color`, `--config`, `--store`, `--profile`, `--help`, `--version`)
 - [x] 3.2 Implement provider command routing: `hams <provider> <verb> <args>` dispatches to registered provider
 - [x] 3.3 Implement `--hams:` prefix flag extraction and `--` force-forward separator
 - [x] 3.4 Implement `--help` priority logic (position-dependent help display, highest priority)
@@ -196,7 +196,7 @@ _Detailed findings and fix plans: [`tasks/codex-review-97cdb7b.task.md`](tasks/c
 - [x] 13.4 [P1] Persist CLI installs into the store (`homebrew.go`)
 - [x] 13.5 [P2] Save refreshed state to disk (`commands.go`)
 - [x] 13.6 [P2] Set ConfigHash after a successful apply (`apply.go`)
-- [ ] 13.7 [P2] Replace placeholder Homebrew checksums (`hams.rb`) — deferred to release automation
+- [x] 13.7 [P2] Write example Homebrew Formula (`Formula/hams.rb`) — actual formula will lives in `zthxxx/homebrew-tap`, and update by GitHub Actions release workflow
 
 ---
 

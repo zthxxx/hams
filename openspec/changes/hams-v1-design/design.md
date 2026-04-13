@@ -71,14 +71,30 @@ docs-site ─────────── (independent, written after all othe
 
 **Alternatives considered**: Cobra (original implementation) — worked but required manual global flag stripping and had awkward persistent flag inheritance with disabled flag parsing on child commands.
 
+### D1c. Explicit DI over Uber Fx
+
+**Decision**: Use explicit constructor-based dependency wiring instead of Uber Fx's container-based DI.
+
+**Rationale**: The application's dependency graph is straightforward and static — provider registry, config, state, hamsfile SDK. Uber Fx adds indirection (reflection-based injection, lifecycle hooks, error messages referencing Go types) without proportional benefit for this codebase size. Explicit wiring in `cli.Execute()` → `NewApp(registry)` is easier to trace, debug, and refactor. The `internal/version` package retains an Fx Module for reference if Fx is adopted later.
+
+**Alternatives considered**: Uber Fx (original spec) — provides lifecycle management and automatic wiring, but adds cognitive overhead and makes the boot sequence harder to follow in a project where the dependency graph is small and stable.
+
+### D1d. Lightweight custom OTel over official SDK
+
+**Decision**: Use a custom lightweight `otel.Session` model for trace/metric collection instead of the official `go.opentelemetry.io` SDK.
+
+**Rationale**: v1 only exports to local JSON files — no OTLP network endpoints. The official OTel Go SDK pulls in significant dependencies (gRPC, protobuf, OTLP exporters) that increase binary size by ~10-15MB. The custom `Session` model provides the same trace/metric semantics (spans with parent/child, attributes, metrics with units) in ~150 lines with zero external dependencies. If OTLP export is needed in the future, the custom model can be replaced with the official SDK; the `Exporter` interface is designed to accommodate this migration.
+
+**Alternatives considered**: Official OTel Go SDK — provides full OTLP support and ecosystem compatibility, but brings heavy dependencies inappropriate for a CLI tool that only writes local files in v1.
+
 ### D2. Module Architecture (Go packages)
 
 **Decision**: Clean architecture with dependency inversion.
 
 ```
-cmd/hams/              → main.go (Fx bootstrap, wire everything)
+cmd/hams/              → main.go (calls cli.Execute(), explicit wiring)
 internal/
-  cli/                 → Cobra command definitions, global flag parsing, routing to providers
+  cli/                 → urfave/cli command definitions, global flag parsing, routing to providers
   config/              → hams.config.yaml loading, merge logic (.local.yaml), profile resolution
   state/               → State file read/write, lock manager (PID+cmd), baseline tracking
   hamsfile/             → Hamsfile read/write with comment preservation, SDK for providers

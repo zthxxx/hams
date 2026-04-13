@@ -1,18 +1,18 @@
 ## ADDED Requirements
 
-### Requirement: Cobra and Fx bootstrap
+### Requirement: CLI framework bootstrap
 
-The `hams` binary SHALL use Uber Fx for dependency injection and Cobra for command routing. The `cmd/hams/main.go` entry point SHALL construct an `fx.App` that provides all core services (config loader, state manager, hamsfile SDK, provider registry, TUI, logger, OTel, i18n, sudo manager, lock manager, self-updater) and invokes the Cobra root command. All Cobra commands SHALL be registered via Fx so that adding a new command requires only providing it into the DI container. The Fx lifecycle SHALL manage startup/shutdown ordering (e.g., OTel flush, sudo heartbeat stop, lock release, TUI teardown).
+The `hams` binary SHALL use `urfave/cli` (v3) for command routing with explicit dependency wiring. The `cmd/hams/main.go` entry point SHALL call `cli.Execute()` which constructs the provider registry, registers all builtin providers, and builds the CLI app. Core services (config loader, state manager, hamsfile SDK, provider registry, TUI, logger, OTel, i18n, sudo manager, lock manager, self-updater) SHALL be wired via explicit constructor calls in the CLI initialization path. Provider commands SHALL be registered dynamically from the provider registry so that adding a new provider requires only implementing the `Provider` interface and registering it.
 
-#### Scenario: Application starts with Fx wiring
+#### Scenario: Application starts with explicit wiring
 
 - **WHEN** the user runs `hams` with any valid command
-- **THEN** Fx SHALL construct the dependency graph, start all lifecycle hooks in dependency order, execute the Cobra command, and on exit, run shutdown hooks in reverse order
+- **THEN** the CLI framework SHALL construct all required services, register provider commands dynamically, and execute the matched command
 
-#### Scenario: Fx dependency missing at build time
+#### Scenario: Missing dependency at initialization
 
-- **WHEN** a required dependency is not provided in the Fx container
-- **THEN** the application SHALL fail to start with a clear error message naming the missing type, printed to stderr
+- **WHEN** a required service cannot be constructed (e.g., config file unreadable)
+- **THEN** the application SHALL fail to start with a clear error message printed to stderr
 
 ### Requirement: Command routing syntax
 
@@ -45,7 +45,7 @@ The CLI SHALL follow the routing pattern `hams [global-flags] <command> [args] [
 
 ### Requirement: Provider self-parsing
 
-Each provider SHALL self-parse its own subcommands, verb routing, and parameter forwarding. The Cobra root command SHALL delegate to the provider after extracting global flags and `--hams:` prefixed flags. The provider is responsible for deciding which verbs are supported (e.g., `install`, `remove`, `list`, `enrich`), how arguments map to the wrapped CLI, and which flags to auto-inject (e.g., `-g` for pnpm global, `-y` for apt non-interactive, `@latest` for npm).
+Each provider SHALL self-parse its own subcommands, verb routing, and parameter forwarding. The urfave/cli root command SHALL delegate to the provider after extracting global flags and `--hams:` prefixed flags. The provider is responsible for deciding which verbs are supported (e.g., `install`, `remove`, `list`, `enrich`), how arguments map to the wrapped CLI, and which flags to auto-inject (e.g., `-g` for pnpm global, `-y` for apt non-interactive, `@latest` for npm).
 
 #### Scenario: Provider receives only its arguments
 

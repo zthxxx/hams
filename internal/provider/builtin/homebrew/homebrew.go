@@ -295,7 +295,7 @@ func (p *Provider) loadOrCreateHamsfile(flags *cliutil.GlobalFlags) (*hamsfile.F
 		return nil, fmt.Errorf("stat hamsfile %s: %w", path, err)
 	}
 
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
 		return nil, fmt.Errorf("create profile dir for %s: %w", path, err)
 	}
 

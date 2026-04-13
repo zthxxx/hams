@@ -1,23 +1,23 @@
 ## ADDED Requirements
 
-### Requirement: OTel SDK initialization
+### Requirement: OTel session initialization
 
-The CLI architecture SHALL initialize the OpenTelemetry SDK during Fx bootstrap in `cmd/hams/main.go`. The SDK MUST configure a `TracerProvider` and a `MeterProvider`, both using the local file exporter. The SDK MUST NOT configure an OTel Logs SDK. The resource attributes MUST include `service.name=hams`, `service.version=<build-version>`, and `host.name=<machine-id>`.
+The CLI architecture SHALL initialize a lightweight OTel `Session` for instrumented commands (`apply`, `refresh`). The session SHALL provide span and metric collection APIs equivalent to a `TracerProvider` and `MeterProvider`, using a custom in-process model (not the official `go.opentelemetry.io` SDK) to minimize binary size and dependency footprint. The session SHALL export to the local file exporter at shutdown. A future version MAY migrate to the official OTel SDK if OTLP network export is needed.
 
-#### Scenario: SDK bootstrap on hams apply
+#### Scenario: Session created on hams apply
 
 - **WHEN** the user runs `hams apply`
-- **THEN** Fx initializes the OTel `TracerProvider` and `MeterProvider` with the local file exporter before any provider executes
+- **THEN** the system creates an OTel `Session` with the local file exporter before any provider executes
 
-#### Scenario: SDK bootstrap on hams refresh
+#### Scenario: Session created on hams refresh
 
 - **WHEN** the user runs `hams refresh`
-- **THEN** Fx initializes the OTel `TracerProvider` and `MeterProvider` identically to `hams apply`
+- **THEN** the system creates an OTel `Session` identically to `hams apply`
 
 #### Scenario: OTel disabled for non-instrumented commands
 
 - **WHEN** the user runs a command that does not perform apply or refresh (e.g., `hams version`, `hams config`)
-- **THEN** the OTel SDK MUST NOT be initialized and no trace or metric data SHALL be emitted
+- **THEN** no OTel session SHALL be created and no trace or metric data SHALL be emitted
 
 ### Requirement: Root span per invocation
 
@@ -123,7 +123,7 @@ The system SHALL export traces and metrics to the local filesystem at `${HAMS_DA
 
 ### Requirement: Exporter interface for future extensibility
 
-The OTel integration MUST use an internal `Exporter` interface that abstracts the export destination. The local file exporter SHALL be the only implementation in v1. The interface MUST accept the standard OTel SDK `SpanExporter` and `MetricReader` contracts so that an OTLP gRPC/HTTP exporter can be added in a future version by providing an alternative implementation selectable via `hams.config.yaml`.
+The OTel integration MUST use an internal `Exporter` interface that abstracts the export destination. The local file exporter SHALL be the only implementation in v1. The interface SHOULD be designed so that a future OTLP gRPC/HTTP exporter can be added by providing an alternative implementation selectable via `hams.config.yaml`. Migration to the official OTel SDK contracts (`SpanExporter`, `MetricReader`) MAY occur when OTLP network export is implemented.
 
 #### Scenario: Exporter resolved from config
 
@@ -137,7 +137,7 @@ The OTel integration MUST use an internal `Exporter` interface that abstracts th
 
 ### Requirement: Graceful shutdown and flush
 
-The OTel SDK MUST flush all pending spans and metrics before the process exits. The shutdown MUST be triggered during Fx lifecycle `OnStop`. The shutdown MUST enforce a hard timeout of 5 seconds to prevent hanging on exit.
+The OTel session MUST flush all pending spans and metrics before the process exits. The shutdown MUST be triggered during the CLI shutdown sequence (context cancellation or normal exit). The shutdown MUST enforce a hard timeout of 5 seconds to prevent hanging on exit.
 
 #### Scenario: Clean shutdown on successful apply
 
@@ -147,7 +147,7 @@ The OTel SDK MUST flush all pending spans and metrics before the process exits. 
 #### Scenario: Shutdown on SIGINT
 
 - **WHEN** the user presses Ctrl+C during `hams apply`
-- **THEN** the Fx shutdown sequence fires, the OTel SDK flushes within 5 seconds, and the process exits
+- **THEN** the shutdown sequence fires, the OTel session flushes within 5 seconds, and the process exits
 
 #### Scenario: Shutdown timeout prevents hang
 

@@ -15,6 +15,25 @@ type Locale struct {
 // DefaultLocale is en_US.
 var DefaultLocale = Locale{Language: "en", Region: "US"}
 
+// catalogs holds translation maps keyed by language code.
+// Keys not present in a catalog fall back to the key itself (en_US passthrough).
+var catalogs = map[string]map[string]string{
+	"zh": catalogZhCN,
+}
+
+// catalogZhCN holds Chinese translations. Missing keys fall back to en_US (the key itself).
+var catalogZhCN = map[string]string{
+	"app.title": "hams — 声明式工作站环境管理工具",
+}
+
+// activeLocale is set by Init and used by T for lookups.
+var activeLocale Locale
+
+// Init detects the locale and activates the corresponding catalog.
+func Init() {
+	activeLocale = DetectLocale()
+}
+
 // DetectLocale reads LC_ALL, LC_CTYPE, LANG environment variables
 // in priority order and parses the locale string.
 func DetectLocale() Locale {
@@ -63,14 +82,18 @@ func (l Locale) String() string {
 }
 
 // IsSupported checks if translations exist for this locale.
-// Currently only en_US is supported.
 func (l Locale) IsSupported() bool {
-	return l.Language == "en"
+	_, ok := catalogs[l.Language]
+	return l.Language == "en" || ok
 }
 
 // T returns the translated string for the given key.
-// Currently returns the key itself (en_US passthrough).
-// Future: load translations from message catalogs.
+// Looks up the active locale's catalog first; falls back to the key itself (en_US default).
 func T(key string) string {
+	if cat, ok := catalogs[activeLocale.Language]; ok {
+		if val, found := cat[key]; found {
+			return val
+		}
+	}
 	return key
 }

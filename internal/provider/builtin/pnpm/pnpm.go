@@ -3,6 +3,7 @@ package pnpm
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"os/exec"
@@ -130,17 +131,15 @@ func (p *Provider) Name() string { return "pnpm" }
 func (p *Provider) DisplayName() string { return "pnpm" }
 
 func parsePnpmList(output string) map[string]string {
-	// Simplified JSON parsing for pnpm list -g --json.
 	result := make(map[string]string)
-	for line := range strings.SplitSeq(output, "\n") {
-		line = strings.TrimSpace(line)
-		if strings.HasPrefix(line, `"`) && strings.Contains(line, ":") {
-			parts := strings.SplitN(line, ":", 2)
-			name := strings.Trim(parts[0], `" `)
-			if name != "" && name != "dependencies" {
-				result[name] = ""
-			}
-		}
+	var data struct {
+		Dependencies map[string]json.RawMessage `json:"dependencies"`
+	}
+	if err := json.Unmarshal([]byte(output), &data); err != nil {
+		return result
+	}
+	for name := range data.Dependencies {
+		result[name] = ""
 	}
 	return result
 }

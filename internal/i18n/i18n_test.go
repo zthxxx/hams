@@ -83,6 +83,11 @@ func TestLocale_IsSupported(t *testing.T) {
 		t.Error("en_US should be supported")
 	}
 
+	zhCN := Locale{Language: "zh", Region: "CN"}
+	if !zhCN.IsSupported() {
+		t.Error("zh_CN should be supported")
+	}
+
 	unsupported := Locale{Language: "ja", Region: "JP"}
 	if unsupported.IsSupported() {
 		t.Error("ja_JP should not be supported yet")
@@ -92,5 +97,30 @@ func TestLocale_IsSupported(t *testing.T) {
 func TestT_Passthrough(t *testing.T) {
 	if got := T("hello world"); got != "hello world" {
 		t.Errorf("T() = %q, want 'hello world'", got)
+	}
+}
+
+func TestT_ZhCN_TranslatedKey(t *testing.T) {
+	prev := activeLocale
+	t.Cleanup(func() { activeLocale = prev })
+
+	activeLocale = Locale{Language: "zh", Region: "CN"}
+
+	got := T("app.title")
+	want := "hams — 声明式工作站环境管理工具"
+	if got != want {
+		t.Errorf("T(\"app.title\") = %q, want %q", got, want)
+	}
+}
+
+func TestT_ZhCN_FallbackForMissingKey(t *testing.T) {
+	prev := activeLocale
+	t.Cleanup(func() { activeLocale = prev })
+
+	activeLocale = Locale{Language: "zh", Region: "CN"}
+
+	got := T("some.untranslated.key")
+	if got != "some.untranslated.key" {
+		t.Errorf("T(\"some.untranslated.key\") = %q, want key passthrough", got)
 	}
 }

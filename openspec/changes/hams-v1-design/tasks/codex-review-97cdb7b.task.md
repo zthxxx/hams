@@ -24,5 +24,5 @@ Findings from Codex review of branch diff against `97cdb7b`.
 - [x] **CR-6: Set ConfigHash after a successful apply** (`internal/cli/apply.go:164-169`)
   `ComputePlan` only generates removals when `sf.ConfigHash` is non-empty, but code never updates `ConfigHash` before saving state. Packages removed from config stay installed indefinitely.
 
-- [ ] **CR-7: Replace placeholder Homebrew checksums** (`Formula/hams.rb:10-11`)
-  Formula ships literal `"PLACEHOLDER"` SHA256 values. `brew install zthxxx/tap/hams` fails on every platform. (Deferred to release automation.)
+- [x] **CR-7: Write example Homebrew Formula** (`Formula/hams.rb`)
+  Formula is an example/template only. The actual formula lives in the `zthxxx/homebrew-tap` repo, where sha256 and version are updated automatically by a GitHub Actions release workflow in `zthxxx/hams` via PR.

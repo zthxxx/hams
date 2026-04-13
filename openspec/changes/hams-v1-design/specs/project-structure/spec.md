@@ -103,7 +103,7 @@ The canonical `internal/` layout SHALL be:
 
 ```
 internal/
-  cli/                    # Cobra command definitions, global flag parsing, command routing
+  cli/                    # urfave/cli command definitions, global flag parsing, command routing
   config/                 # hams.config.yaml loading, .local.yaml merge, profile resolution
   state/                  # State file read/write, lock manager (PID+cmd), baseline tracking
   hamsfile/               # Hamsfile read/write with YAML comment preservation, SDK for providers

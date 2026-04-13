@@ -67,7 +67,8 @@ Single test: `go test -race -run TestFuncName ./path/to/package/...`
 | `HAMS_DATA_HOME` | `~/.local/share/hams/` | Logs, OTel, cloned repos |
 
 Store repo layout (profile-as-directory):
-```
+
+```text
 <store>/
   hams.config.yaml              # Project config (git-tracked)
   hams.config.local.yaml        # Local overrides (not tracked)
@@ -119,7 +120,6 @@ This project uses [OpenSpec](https://openspec.dev) for spec-driven development.
 - **Propose before coding** — create the change folder first so humans/AI align on intent before implementation drift.
 - **Deltas, not rewrites** — change specs describe diffs against current specs, making review and merging tractable.
 - **Scenarios are mandatory** — every requirement needs at least one `#### Scenario:` block, otherwise validation fails.
-
 
 ## Rules
 
