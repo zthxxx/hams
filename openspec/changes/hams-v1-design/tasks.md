@@ -161,7 +161,7 @@ _Spec: `docs-site` — independent, can start after specs stabilize._
 - [ ] 10.8 Write "Provider API" page: Go SDK guide, go-plugin extension, resource classes, minimal example
 - [ ] 10.9 Configure GitHub Pages deployment with CNAME `hams.zthxxx.me`, docs at `/docs` subpath
 - [ ] 10.10 Set up i18n structure for Chinese translation (extensible)
-- [ ] 10.11 Write `README.md` (en-US): project overview, install methods, quick examples, badge links, license
+- [x] 10.11 Write `README.md` (en-US): project overview, install methods, quick examples, badge links, license
 - [ ] 10.12 Write `README.zh-CN.md`: Chinese translation of README
 
 ## 11. E2E & Release
