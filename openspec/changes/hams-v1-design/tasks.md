@@ -33,9 +33,9 @@ _Spec: `schema-design` — depends on project structure (1.1). Core dependency f
 _Spec: `cli-architecture` — depends on schema (2.x) and project structure (1.x)._
 
 - [x] 3.1 Implement Cobra root command with Fx integration, global flag parsing (`--debug`, `--dry-run`, `--json`, `--no-color`, `--config`, `--store`, `--profile`, `--help`, `--version`)
-- [ ] 3.2 Implement provider command routing: `hams <provider> <verb> <args>` dispatches to registered provider
-- [ ] 3.3 Implement `--hams:` prefix flag extraction and `--` force-forward separator
-- [ ] 3.4 Implement `--help` priority logic (position-dependent help display, highest priority)
+- [x] 3.2 Implement provider command routing: `hams <provider> <verb> <args>` dispatches to registered provider
+- [x] 3.3 Implement `--hams:` prefix flag extraction and `--` force-forward separator
+- [x] 3.4 Implement `--help` priority logic (position-dependent help display, highest priority)
 - [ ] 3.5 Implement `internal/sudo/` package: one-time credential prompt at startup, 4-minute `sudo -v` heartbeat goroutine
 - [ ] 3.6 Implement `internal/i18n/` package: `LC_ALL`/`LC_CTYPE`/`LANG` parsing, message catalog loading, `en_US` default
 - [ ] 3.7 Implement exit code semantics (0/1/2/3/4/10/11-19/126/127) and AI-agent friendly error format (`code`/`message`/`suggestions`, `--json` mode)
