@@ -125,12 +125,12 @@ _Docker E2E tests develop incrementally alongside each provider. Local safe-test
 
 _Spec: `builtin-providers` — can start after Phase 1 establishes the pattern._
 
-- [ ] 8.1 Implement `uv` provider: `uv tool install/uninstall`
-- [ ] 8.2 Implement `go` provider: `go install`, auto-inject `@latest` if no version specified
-- [ ] 8.3 Implement `cargo` provider: `cargo install/uninstall`
-- [ ] 8.4 Implement `vscode-ext` provider: `code --install-extension/--uninstall-extension`, depend-on Homebrew (visual-studio-code cask)
-- [ ] 8.5 Implement `mas` provider: `mas install/uninstall`, numeric app IDs, macOS-only, signin handling via interactive popup
-- [ ] 8.6 Implement `duti` provider: default app associations, `duti -x` check, macOS-only
+- [x] 8.1 Implement `uv` provider: `uv tool install/uninstall`
+- [x] 8.2 Implement `go` provider: `go install`, auto-inject `@latest` if no version specified
+- [x] 8.3 Implement `cargo` provider: `cargo install/uninstall`
+- [x] 8.4 Implement `vscode-ext` provider: `code --install-extension/--uninstall-extension`, depend-on Homebrew (visual-studio-code cask)
+- [x] 8.5 Implement `mas` provider: `mas install/uninstall`, numeric app IDs, macOS-only, signin handling via interactive popup
+- [x] 8.6 Implement `duti` provider: default app associations, `duti -x` check, macOS-only
 - [ ] 8.7 Implement `Ansible` provider: playbook paths + categories, `ansible-playbook` wrapping, depend-on for ansible CLI
 - [ ] 8.8 Property-based tests for each Phase 2 provider
 - [ ] 8.9 Docker E2E: Alpine container — `hams apply` with fixture store covering Phase 1+2 providers available on Alpine
