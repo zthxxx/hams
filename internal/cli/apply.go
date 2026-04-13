@@ -122,6 +122,12 @@ func runApply(ctx context.Context, flags *cliutil.GlobalFlags, registry *provide
 		return fmt.Errorf("resolving provider dependencies: %w", dagErr)
 	}
 
+	for _, p := range sorted {
+		if bootstrapErr := p.Bootstrap(ctx); bootstrapErr != nil {
+			slog.Warn("provider bootstrap failed", "provider", p.Manifest().Name, "error", bootstrapErr)
+		}
+	}
+
 	if !noRefresh {
 		slog.Info("refreshing state")
 		probeResults := provider.ProbeAll(ctx, sorted, stateDir, cfg.MachineID)
