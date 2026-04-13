@@ -180,7 +180,7 @@ _Depends on all above being substantially complete._
 - [x] 12.1 Refactor `--from-repo` to support local `.git` repo paths (resolve local path first, then remote GitHub URL)
 - [x] 12.2 Add unit tests for `--from-repo` with local test repo fixture (prepare `.git` repo via bash script in `.gitignore`)
 - [ ] 12.3 Add Docker E2E test using `--from-repo` with the fixture git repo inside container
-- [ ] 12.4 Refactor TUI to use `charmbracelet/bubbletea` for alternate screen, progress, collapsible logs
+- [x] 12.4 Refactor TUI to use `charmbracelet/bubbletea` for alternate screen, progress, collapsible logs
 - [ ] 12.5 Implement BubbleTea interactive popup for provider stdin (tmux-popup style)
 - [ ] 12.6 Implement BubbleTea tag multi-select picker with LLM-recommended pre-selection
 - [ ] 12.7 Code review via Codex: review all packages for correctness, consistency, and test coverage
