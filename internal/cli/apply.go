@@ -125,10 +125,10 @@ func runApply(ctx context.Context, flags *cliutil.GlobalFlags, registry *provide
 	if !noRefresh {
 		slog.Info("refreshing state")
 		probeResults := provider.ProbeAll(ctx, sorted, stateDir, cfg.MachineID)
-		for name, sf := range probeResults {
-			statePath := filepath.Join(stateDir, name+".state.yaml")
+		for filePrefix, sf := range probeResults {
+			statePath := filepath.Join(stateDir, filePrefix+".state.yaml")
 			if saveErr := sf.Save(statePath); saveErr != nil {
-				slog.Error("failed to save probed state", "provider", name, "error", saveErr)
+				slog.Error("failed to save probed state", "provider", sf.Provider, "error", saveErr)
 			}
 		}
 	}
@@ -139,9 +139,11 @@ func runApply(ctx context.Context, flags *cliutil.GlobalFlags, registry *provide
 
 	var allResults []provider.ExecuteResult
 	for _, p := range sorted {
-		name := p.Manifest().Name
+		manifest := p.Manifest()
+		name := manifest.Name
+		filePrefix := manifestFilePrefix(manifest)
 		profileDir := cfg.ProfileDir()
-		hamsfilePath := filepath.Join(profileDir, name+".hams.yaml")
+		hamsfilePath := filepath.Join(profileDir, filePrefix+".hams.yaml")
 
 		if _, statErr := os.Stat(hamsfilePath); os.IsNotExist(statErr) {
 			slog.Debug("no hamsfile for provider, skipping", "provider", name)
@@ -154,13 +156,13 @@ func runApply(ctx context.Context, flags *cliutil.GlobalFlags, registry *provide
 			continue
 		}
 
-		statePath := filepath.Join(stateDir, name+".state.yaml")
+		statePath := filepath.Join(stateDir, filePrefix+".state.yaml")
 		sf, loadErr := state.Load(statePath)
 		if loadErr != nil {
 			sf = state.New(name, cfg.MachineID)
 		}
 
-		apps := extractApps(hf)
+		apps := hf.ListApps()
 		actions := provider.ComputePlan(apps, sf, sf.ConfigHash)
 
 		result := provider.Execute(ctx, p, actions, sf)
@@ -189,8 +191,11 @@ func runApply(ctx context.Context, flags *cliutil.GlobalFlags, registry *provide
 	return nil
 }
 
-func extractApps(hf *hamsfile.File) []string {
-	return hf.ListApps()
+func manifestFilePrefix(m provider.Manifest) string {
+	if m.FilePrefix != "" {
+		return m.FilePrefix
+	}
+	return m.Name
 }
 
 func filterProviders(providers []provider.Provider, only, except string) []provider.Provider {

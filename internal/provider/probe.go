@@ -2,8 +2,8 @@ package provider
 
 import (
 	"context"
-	"fmt"
 	"log/slog"
+	"path/filepath"
 	"sync"
 
 	"github.com/zthxxx/hams/internal/state"
@@ -19,8 +19,13 @@ func ProbeAll(ctx context.Context, providers []Provider, stateDir, machineID str
 
 	for _, p := range providers {
 		wg.Go(func() {
-			name := p.Manifest().Name
-			sf := loadOrCreateState(stateDir, name, machineID)
+			manifest := p.Manifest()
+			name := manifest.Name
+			filePrefix := manifest.FilePrefix
+			if filePrefix == "" {
+				filePrefix = name
+			}
+			sf := loadOrCreateState(stateDir, filePrefix, name, machineID)
 
 			probeResults, err := p.Probe(ctx, sf)
 			if err != nil {
@@ -47,7 +52,7 @@ func ProbeAll(ctx context.Context, providers []Provider, stateDir, machineID str
 			}
 
 			mu.Lock()
-			results[name] = sf
+			results[filePrefix] = sf
 			mu.Unlock()
 		})
 	}
@@ -56,8 +61,8 @@ func ProbeAll(ctx context.Context, providers []Provider, stateDir, machineID str
 	return results
 }
 
-func loadOrCreateState(stateDir, providerName, machineID string) *state.File {
-	path := fmt.Sprintf("%s/%s.state.yaml", stateDir, providerName)
+func loadOrCreateState(stateDir, filePrefix, providerName, machineID string) *state.File {
+	path := filepath.Join(stateDir, filePrefix+".state.yaml")
 	sf, err := state.Load(path)
 	if err != nil {
 		sf = state.New(providerName, machineID)
