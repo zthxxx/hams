@@ -54,8 +54,8 @@ _Spec: `cli-architecture` — depends on schema (2.x) and project structure (1.x
 
 _Spec: `provider-system` — depends on schema (2.x) and CLI (3.1-3.3). Core framework before any builtin._
 
-- [ ] 4.1 Define `Provider` interface: Register, Bootstrap, Probe, Plan, Apply, Remove, List, Enrich methods
-- [ ] 4.2 Implement provider registry: registration, discovery, manifest validation
+- [x] 4.1 Define `Provider` interface: Register, Bootstrap, Probe, Plan, Apply, Remove, List, Enrich methods
+- [x] 4.2 Implement provider registry: registration, discovery, manifest validation
 - [ ] 4.3 Implement depend-on DAG resolver: topological sort, platform-conditional filtering, cycle detection with error reporting
 - [ ] 4.4 Implement provider execution priority: DAG-level then priority-list ordering (configurable in hams.config.yaml)
 - [ ] 4.5 Implement probe dispatcher: parallel probe across providers (errgroup), 4 resource class strategies
