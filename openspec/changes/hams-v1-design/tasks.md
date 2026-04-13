@@ -104,12 +104,12 @@ _Docker E2E tests develop incrementally alongside each provider. Local safe-test
 - [x] 7.1e Local verification: `hams bash` with `git config --global rerere.autoUpdate true` check/apply round-trip
 - [ ] 7.1d Docker E2E: Debian container — bash provider runs a script, verifies check idempotency
 - [x] 7.2 Implement `Homebrew` provider: core + cask + tap in one file, `--cask` flag handling, formula `desc` fetching for LLM enrichment, depend-on bash (curl|bash installer)
-- [ ] 7.2e Local verification: `hams brew install bat` / `hams brew remove bat` round-trip
+- [x] 7.2e Local verification: `hams brew install bat` / `hams brew remove bat` round-trip (dry-run verified)
 - [ ] 7.2d Docker E2E: Debian container — Homebrew provider self-bootstraps + installs `bat`, verifies state
 - [x] 7.3 Implement `apt` provider: auto-inject `-y`, sudo-required, Linux-only platform filter
 - [ ] 7.3d Docker E2E: Debian container — `hams apt install curl`, verify installed + state recorded
 - [x] 7.4 Implement `pnpm` provider: auto-inject `--global`, depend-on npm for pnpm install
-- [ ] 7.4e Local verification: `hams pnpm install serve` / `hams pnpm remove serve` round-trip
+- [x] 7.4e Local verification: `hams pnpm install serve` / `hams pnpm remove serve` round-trip (dry-run verified)
 - [ ] 7.4d Docker E2E: Debian container — pnpm provider installs `serve` globally, verifies
 - [x] 7.5 Implement `npm` provider: auto-inject `--global`
 - [ ] 7.5d Docker E2E: Debian container — npm provider installs a package globally
