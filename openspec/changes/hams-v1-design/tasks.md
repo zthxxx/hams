@@ -34,7 +34,7 @@ _Spec: `cli-architecture` — depends on schema (2.x) and project structure (1.x
 
 - [x] 3.1 Implement urfave/cli root command with explicit DI wiring, global flag parsing (`--debug`, `--dry-run`, `--json`, `--no-color`, `--config`, `--store`, `--profile`, `--help`, `--version`)
 - [x] 3.2 Implement provider command routing: `hams <provider> <verb> <args>` dispatches to registered provider
-- [x] 3.3 Implement `--hams:` prefix flag extraction and `--` force-forward separator
+- [x] 3.3 Implement `--hams-` prefix flag extraction and `--` force-forward separator
 - [x] 3.4 Implement `--help` priority logic (position-dependent help display, highest priority)
 - [x] 3.5 Implement `internal/sudo/` package: one-time credential prompt at startup, 4-minute `sudo -v` heartbeat goroutine
 - [x] 3.6 Implement `internal/i18n/` package: `LC_ALL`/`LC_CTYPE`/`LANG` parsing, message catalog loading, `en_US` default
@@ -63,7 +63,7 @@ _Spec: `provider-system` — depends on schema (2.x) and CLI (3.1-3.3). Core fra
 - [x] 4.7 Implement apply executor: sequential per-provider, sequential per-resource within provider, write-serial global mutex
 - [x] 4.8 Implement hook engine: pre/post-install hooks, `defer: true` batching (within current provider), nested provider calls, hook-failed state tracking
 - [x] 4.9 Implement remove flow: delete hamsfile entry → execute remove command → state marked `Removed` (kept for audit)
-- [x] 4.10 Implement provider CLI wrapping framework: verb routing (hams-interpreted vs passthrough), auto-inject flag engine, `--hams:` prefix extraction
+- [x] 4.10 Implement provider CLI wrapping framework: verb routing (hams-interpreted vs passthrough), auto-inject flag engine, `--hams-` prefix extraction
 - [x] 4.11 Design go-plugin extension interface (`pkg/sdk/`): gRPC service definition, plugin discovery paths, subprocess lifecycle, crash handling with backoff
 - [x] 4.12 Property-based tests: DAG resolution (acyclic/cyclic/single-node/diamond), hook nesting, plan diffing
 
@@ -143,7 +143,7 @@ _Cross-cutting — depends on provider system (4.x) and hamsfile SDK (2.x)._
 - [x] 9.2 Implement tag recommendation: pass package name + desc + existing tags to LLM, parse response
 - [x] 9.3 Implement intro generation: pass package name + desc to LLM, parse response
 - [x] 9.4 Implement async enrichment flow: parallel goroutine during install, write back to hamsfile via SDK, error reporting at apply end
-- [x] 9.5 Implement `--hams:lucky` flag: auto-accept all LLM recommendations without TUI picker
+- [x] 9.5 Implement `--hams-lucky` flag: auto-accept all LLM recommendations without TUI picker
 - [x] 9.6 Implement per-provider `enrich` standalone command (e.g., `hams brew enrich <app>`)
 - [x] 9.7 Implement tag TUI multi-select picker: LLM-recommended (pre-selected), existing tags, free-text input
 

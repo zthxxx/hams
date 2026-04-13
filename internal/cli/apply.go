@@ -13,7 +13,7 @@ import (
 
 	"github.com/urfave/cli/v3"
 
-	"github.com/zthxxx/hams/internal/cliutil"
+	hamserr "github.com/zthxxx/hams/internal/error"
 	"github.com/zthxxx/hams/internal/config"
 	"github.com/zthxxx/hams/internal/hamsfile"
 	"github.com/zthxxx/hams/internal/logging"
@@ -49,7 +49,7 @@ Use --no-refresh to skip probing and apply based on state alone.`,
 	}
 }
 
-func runApply(ctx context.Context, flags *cliutil.GlobalFlags, registry *provider.Registry, fromRepo string, noRefresh bool, only, except string) error {
+func runApply(ctx context.Context, flags *provider.GlobalFlags, registry *provider.Registry, fromRepo string, noRefresh bool, only, except string) error {
 	if flags.DryRun {
 		fmt.Println("[dry-run] Would apply configurations. No changes will be made.")
 	}
@@ -77,7 +77,7 @@ func runApply(ctx context.Context, flags *cliutil.GlobalFlags, registry *provide
 	}
 
 	if storePath == "" {
-		return cliutil.NewUserError(cliutil.ExitUsageError,
+		return hamserr.NewUserError(hamserr.ExitUsageError,
 			"no store directory configured",
 			"Run 'hams apply --from-repo=<user/repo>' to clone a store",
 			"Or set store_path in ~/.config/hams/hams.config.yaml",
@@ -103,7 +103,7 @@ func runApply(ctx context.Context, flags *cliutil.GlobalFlags, registry *provide
 	lock := state.NewLock(stateDir)
 	if !flags.DryRun {
 		if lockErr := lock.Acquire("hams apply"); lockErr != nil {
-			return cliutil.NewUserError(cliutil.ExitLockError, lockErr.Error(),
+			return hamserr.NewUserError(hamserr.ExitLockError, lockErr.Error(),
 				fmt.Sprintf("Remove %s/.lock if the previous run crashed", stateDir),
 			)
 		}
@@ -197,7 +197,7 @@ func runApply(ctx context.Context, flags *cliutil.GlobalFlags, registry *provide
 		merged.Installed, merged.Updated, merged.Removed, merged.Skipped, merged.Failed)
 
 	if merged.Failed > 0 {
-		return cliutil.NewUserError(cliutil.ExitPartialFailure,
+		return hamserr.NewUserError(hamserr.ExitPartialFailure,
 			fmt.Sprintf("%d resources failed", merged.Failed),
 			"Run 'hams apply' again to retry failed resources",
 			"Use '--debug' for detailed error output",
@@ -269,7 +269,7 @@ func printDryRunPlan(providers []provider.Provider, _ *config.Config) error { //
 }
 
 // SetupLogging initializes logging from global flags and returns the cleanup function.
-func SetupLogging(flags *cliutil.GlobalFlags) func() {
+func SetupLogging(flags *provider.GlobalFlags) func() {
 	paths := config.ResolvePaths()
 	logFile, err := logging.Setup(paths.DataHome, flags.Debug)
 	if err != nil {

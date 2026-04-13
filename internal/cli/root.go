@@ -8,14 +8,15 @@ import (
 
 	"github.com/urfave/cli/v3"
 
-	"github.com/zthxxx/hams/internal/cliutil"
+	hamserr "github.com/zthxxx/hams/internal/error"
+	"github.com/zthxxx/hams/internal/i18n"
 	"github.com/zthxxx/hams/internal/provider"
 	"github.com/zthxxx/hams/internal/version"
 )
 
 // globalFlags extracts GlobalFlags from the urfave/cli context.
-func globalFlags(cmd *cli.Command) *cliutil.GlobalFlags {
-	return &cliutil.GlobalFlags{
+func globalFlags(cmd *cli.Command) *provider.GlobalFlags {
+	return &provider.GlobalFlags{
 		Debug:   cmd.Bool("debug"),
 		DryRun:  cmd.Bool("dry-run"),
 		JSON:    cmd.Bool("json"),
@@ -72,6 +73,8 @@ Use 'hams apply' to replay all installations from config.`,
 
 // Execute runs the root command with all subcommands wired up.
 func Execute() {
+	i18n.Init()
+
 	// Create provider registry and register builtins.
 	registry := provider.NewRegistry()
 	registerBuiltins(registry)
@@ -79,7 +82,7 @@ func Execute() {
 	app := NewApp(registry)
 
 	if err := app.Run(context.Background(), os.Args); err != nil {
-		flags := &cliutil.GlobalFlags{}
+		flags := &provider.GlobalFlags{}
 		// Check if --json was passed.
 		for _, arg := range os.Args {
 			if arg == "--json" {
@@ -87,7 +90,7 @@ func Execute() {
 			}
 		}
 		PrintError(err, flags.JSON)
-		os.Exit(cliutil.ExitGeneralError)
+		os.Exit(hamserr.ExitGeneralError)
 	}
 }
 

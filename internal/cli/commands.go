@@ -9,7 +9,7 @@ import (
 
 	"github.com/urfave/cli/v3"
 
-	"github.com/zthxxx/hams/internal/cliutil"
+	hamserr "github.com/zthxxx/hams/internal/error"
 	"github.com/zthxxx/hams/internal/config"
 	"github.com/zthxxx/hams/internal/logging"
 	"github.com/zthxxx/hams/internal/provider"
@@ -33,7 +33,7 @@ Only resources already tracked in state are probed — no new resources are disc
 	}
 }
 
-func runRefresh(ctx context.Context, flags *cliutil.GlobalFlags, registry *provider.Registry, only, except string) error {
+func runRefresh(ctx context.Context, flags *provider.GlobalFlags, registry *provider.Registry, only, except string) error {
 	paths := config.ResolvePaths()
 	cfg, err := config.Load(paths, flags.Store)
 	if err != nil {
@@ -88,7 +88,7 @@ func configCmd() *cli.Command {
 				ArgsUsage: "<key>",
 				Action: func(_ context.Context, cmd *cli.Command) error {
 					if cmd.Args().Len() < 1 {
-						return cliutil.NewUserError(cliutil.ExitUsageError,
+						return hamserr.NewUserError(hamserr.ExitUsageError,
 							"config get requires a key",
 							"Usage: hams config get <key>",
 						)
@@ -123,7 +123,7 @@ func printConfigKey(cfg *config.Config, paths config.Paths, key string) error {
 	case "data_home":
 		fmt.Println(logging.TildePath(paths.DataHome))
 	default:
-		return cliutil.NewUserError(cliutil.ExitUsageError,
+		return hamserr.NewUserError(hamserr.ExitUsageError,
 			fmt.Sprintf("unknown config key %q", key),
 			"Valid keys: profile_tag, machine_id, store_path, store_repo, llm_cli, config_home, data_home",
 		)
@@ -145,7 +145,7 @@ func storeCmd() *cli.Command {
 
 			storePath := cfg.StorePath
 			if storePath == "" {
-				return cliutil.NewUserError(cliutil.ExitUsageError,
+				return hamserr.NewUserError(hamserr.ExitUsageError,
 					"no store directory configured",
 					"Set store_path in ~/.config/hams/hams.config.yaml",
 					"Or use 'hams apply --from-repo=<user/repo>' to set up a store",

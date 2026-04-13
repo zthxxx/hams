@@ -146,7 +146,7 @@ THEN a "Global Flags" section SHALL be accessible (either on each page or as a s
 - `--except=<providers>`
 - `--help`
 - `--` separator semantics
-AND the `--hams:` prefix convention for provider-scoped flags SHALL be explained.
+AND the `--hams-` prefix convention for provider-scoped flags SHALL be explained.
 
 ### Requirement: Chapter Structure -- Builtin Provider Catalog
 
@@ -160,7 +160,7 @@ THEN the page SHALL contain:
 - Supported platforms
 - Store schema: annotated example of the provider's `<Provider>.hams.yaml` format with all supported fields
 - Available commands (install, remove, list, enrich) with examples
-- Provider-specific flags (using `--hams:` prefix)
+- Provider-specific flags (using `--hams-` prefix)
 - At least one complete, realistic example Hamsfile snippet
 AND the example YAML SHALL be valid and parseable.
 

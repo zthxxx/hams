@@ -139,7 +139,7 @@ AND the test SHALL verify that comments survive the round-trip.
 WHEN testing the CLI flag parser for provider subcommands
 THEN the test SHALL use table-driven tests with cases covering:
   - global flags before provider name
-  - `--hams:` prefixed provider-self flags
+  - `--hams-` prefixed provider-self flags
   - `--` passthrough separator
   - `--help` interception priority
 AND each test case SHALL specify input args, expected parsed result, and expected error (if any).

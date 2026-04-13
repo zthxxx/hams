@@ -271,7 +271,7 @@ Each provider SHALL declare a manifest containing the following metadata fields:
 | `display-name` | string | YES | Human-readable name with proper capitalization. Used in file names (e.g., `Homebrew.hams.yaml`), TUI output, documentation. |
 | `platform` | list\<string\> | NO | Supported platforms (`darwin`, `linux`, `openwrt`). If omitted, provider is available on all platforms. |
 | `depend-on` | list\<DependOnEntry\> | NO | Provider bootstrap dependencies. See Depend-on DAG requirement. |
-| `hams-flags` | list\<FlagDef\> | NO | Provider-specific flags using `--hams:` prefix (e.g., `--hams:tag`, `--hams:lucky`). |
+| `hams-flags` | list\<FlagDef\> | NO | Provider-specific flags using `--hams-` prefix (e.g., `--hams-tag`, `--hams-lucky`). |
 | `auto-inject` | map\<string, list\<string\>\> | NO | Flags automatically injected into wrapped CLI commands per verb (e.g., `install: ["-g", "-y"]` for npm). |
 | `verb-routing` | map\<string, VerbDef\> | YES | Maps user-facing verbs (install, remove, list, etc.) to provider actions. Defines which verbs are passthrough, which are hams-interpreted. |
 | `resource-class` | int (1-4) | YES | Determines probe strategy and identity scheme. |
@@ -482,7 +482,7 @@ The provider SHALL validate that the user-supplied verb is in the verb-routing t
 The provider SHALL parse its own subcommands independently of hams global flag parsing. The parsing boundary is:
 
 ```
-hams <global-flags> <provider-name> <provider-subcommand> <args> --hams:flags -- <passthrough-args>
+hams <global-flags> <provider-name> <provider-subcommand> <args> --hams-flags -- <passthrough-args>
 ```
 
 Everything after `<provider-name>` is owned by the provider's parser until `--` is encountered.
@@ -499,15 +499,15 @@ The provider manifest MAY declare flags that are automatically injected into the
 
 Auto-injected flags SHALL appear in `--help` output with a note indicating they are auto-injected by hams.
 
-#### `--hams:` Prefix Flags
+#### `--hams-` Prefix Flags
 
-Provider-specific flags that are NOT forwarded to the wrapped CLI MUST use the `--hams:` prefix (e.g., `--hams:tag=dev,cli`, `--hams:lucky`). This prefix prevents collision with the wrapped CLI's own flags.
+Provider-specific flags that are NOT forwarded to the wrapped CLI MUST use the `--hams-` prefix (e.g., `--hams-tag=dev,cli`, `--hams-lucky`). This prefix prevents collision with the wrapped CLI's own flags.
 
 Exception: `--help` needs no prefix and is intercepted by the provider to display hams-augmented help (provider verbs + hams flags + wrapped CLI help).
 
 #### Force-Forward Separator
 
-Everything after `--` in the command line SHALL be forwarded verbatim to the wrapped CLI command, bypassing all hams and provider flag parsing.
+The `--` separator and everything after it in the command line SHALL be forwarded verbatim to the wrapped CLI command, bypassing all hams and provider flag parsing. The `--` itself MUST be preserved in the forwarded arguments so that the wrapped CLI can use it to distinguish its own flags from positional arguments (e.g., `cargo run -- -v` requires the `--` to separate Cargo flags from the compiled binary's flags).
 
 #### Scenario: Verb routing for hams-interpreted list
 
@@ -521,16 +521,22 @@ WHEN a user runs `hams npm install typescript`
 THEN the npm provider SHALL execute `npm install -g typescript` (with `-g` auto-injected)
 AND the `--help` output for `hams npm install` SHALL document that `-g` is auto-injected.
 
-#### Scenario: --hams:tag flag not forwarded
+#### Scenario: --hams-tag flag not forwarded
 
-WHEN a user runs `hams brew install git --hams:tag=dev,vcs`
-THEN `--hams:tag=dev,vcs` SHALL be consumed by the provider for Hamsfile tagging
+WHEN a user runs `hams brew install git --hams-tag=dev,vcs`
+THEN `--hams-tag=dev,vcs` SHALL be consumed by the provider for Hamsfile tagging
 AND SHALL NOT be forwarded to `brew install`.
 
 #### Scenario: Force-forward with -- separator
 
 WHEN a user runs `hams brew install ffmpeg -- --with-libvpx --with-sdl2`
-THEN `--with-libvpx --with-sdl2` SHALL be forwarded verbatim to `brew install ffmpeg`.
+THEN the `--` separator and subsequent arguments `--with-libvpx --with-sdl2` SHALL be forwarded verbatim to `brew install ffmpeg`, preserving the `--` in the forwarded argument list.
+
+#### Scenario: Force-forward preserves -- for wrapped CLI argument parsing
+
+WHEN a user runs `hams cargo run -- -v --flag`
+THEN the provider SHALL forward `["run", "--", "-v", "--flag"]` to `cargo`
+AND `-v` and `--flag` SHALL be treated as arguments to the compiled binary (not as Cargo flags) because the `--` is preserved.
 
 #### Scenario: Unknown verb error
 
@@ -541,7 +547,7 @@ THEN the system SHALL print an error listing available verbs (e.g., install, rem
 #### Scenario: --help intercepted by provider
 
 WHEN a user runs `hams brew install --help`
-THEN the provider SHALL display combined help: hams-specific options (--hams:tag, --hams:lucky), auto-injected flags, and the wrapped `brew install --help` output.
+THEN the provider SHALL display combined help: hams-specific options (--hams-tag, --hams-lucky), auto-injected flags, and the wrapped `brew install --help` output.
 
 ---
 

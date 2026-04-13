@@ -8,7 +8,7 @@ import (
 	"os/exec"
 	"strings"
 
-	"github.com/zthxxx/hams/internal/cliutil"
+	hamserr "github.com/zthxxx/hams/internal/error"
 	"github.com/zthxxx/hams/internal/hamsfile"
 	"github.com/zthxxx/hams/internal/provider"
 	"github.com/zthxxx/hams/internal/state"
@@ -98,9 +98,9 @@ func (p *ConfigProvider) List(_ context.Context, _ *hamsfile.File, sf *state.Fil
 }
 
 // HandleCommand processes CLI subcommands for git config.
-func (p *ConfigProvider) HandleCommand(args []string, flags *cliutil.GlobalFlags) error {
+func (p *ConfigProvider) HandleCommand(args []string, _ map[string]string, flags *provider.GlobalFlags) error {
 	if len(args) < 2 {
-		return cliutil.NewUserError(cliutil.ExitUsageError,
+		return hamserr.NewUserError(hamserr.ExitUsageError,
 			"git-config requires key and value",
 			"Usage: hams git-config <key> <value>",
 			"Example: hams git-config user.name zthxxx",

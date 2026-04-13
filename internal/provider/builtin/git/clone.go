@@ -8,7 +8,7 @@ import (
 	"os/exec"
 	"strings"
 
-	"github.com/zthxxx/hams/internal/cliutil"
+	hamserr "github.com/zthxxx/hams/internal/error"
 	"github.com/zthxxx/hams/internal/hamsfile"
 	"github.com/zthxxx/hams/internal/provider"
 	"github.com/zthxxx/hams/internal/state"
@@ -104,9 +104,9 @@ func (p *CloneProvider) List(_ context.Context, _ *hamsfile.File, sf *state.File
 }
 
 // HandleCommand processes CLI subcommands for git clone.
-func (p *CloneProvider) HandleCommand(args []string, flags *cliutil.GlobalFlags) error {
+func (p *CloneProvider) HandleCommand(args []string, _ map[string]string, flags *provider.GlobalFlags) error {
 	if len(args) < 2 {
-		return cliutil.NewUserError(cliutil.ExitUsageError,
+		return hamserr.NewUserError(hamserr.ExitUsageError,
 			"git-clone requires a remote URL and local path",
 			"Usage: hams git-clone <remote-url> <local-path> [--branch=<branch>]",
 		)

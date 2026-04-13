@@ -354,7 +354,7 @@ THEN the Homebrew provider SHALL execute `brew install git`, record `{app: git}`
 
 #### Scenario: Install a cask
 
-WHEN the user runs `hams brew install visual-studio-code --hams:cask`
+WHEN the user runs `hams brew install visual-studio-code --hams-cask`
 THEN the Homebrew provider SHALL execute `brew install --cask visual-studio-code`, record `{app: visual-studio-code, cask: true}` in the Hamsfile, and update state.
 
 #### Scenario: Install a tap formula
@@ -1464,7 +1464,7 @@ configs:
 | Subcommand | Behavior |
 |------------|----------|
 | `hams git-config set <key> <value>` | Set globally + record. |
-| `hams git-config set --hams:file=<path> <key> <value>` | Set in file + record. |
+| `hams git-config set --hams-file=<path> <key> <value>` | Set in file + record. |
 | `hams git-config remove <key>` | Unset + delete from Hamsfile. |
 | `hams git-config list` | Diff view. |
 
@@ -1479,7 +1479,7 @@ THEN the provider SHALL execute `git config --global user.name zthxxx`, record a
 
 #### Scenario: Set a file-scoped git config
 
-WHEN the user runs `hams git-config set --hams:file=~/.config/git/github.zthxxx user.signingKey '~/.ssh/zthxxx.ed25519'`
+WHEN the user runs `hams git-config set --hams-file=~/.config/git/github.zthxxx user.signingKey '~/.ssh/zthxxx.ed25519'`
 THEN the provider SHALL create `~/.config/git/` if needed, execute `git config --file ~/.config/git/github.zthxxx user.signingKey '~/.ssh/zthxxx.ed25519'`, and record the entry.
 
 #### Scenario: Probe detects drift in global config
@@ -1561,13 +1561,13 @@ repos:
 
 | Subcommand | Behavior |
 |------------|----------|
-| `hams git-clone add <remote> --hams:path=<path>` | Clone + record. |
+| `hams git-clone add <remote> --hams-path=<path>` | Clone + record. |
 | `hams git-clone remove <urn-id>` | Remove from Hamsfile (no directory deletion). |
 | `hams git-clone list` | Show all repos with status. |
 
 #### Scenario: Clone a new repository
 
-WHEN the user runs `hams git-clone add git@github.com:zthxxx/hams.git --hams:path=~/Project/Golang/hams`
+WHEN the user runs `hams git-clone add git@github.com:zthxxx/hams.git --hams-path=~/Project/Golang/hams`
 THEN the provider SHALL execute `git clone git@github.com:zthxxx/hams.git ~/Project/Golang/hams`, record the entry in the Hamsfile, and update state to `ok`.
 
 #### Scenario: Probe an existing clone
@@ -2208,7 +2208,7 @@ All providers SHALL support the `enrich` operation, which uses LLM to generate o
 2. Provider reads existing tags from the Hamsfile.
 3. Payload sent to LLM (via claude/codex CLI subprocess): `{name, description, existing_tags, all_tags_in_file}`.
 4. LLM returns: `{recommended_tags: [...], intro: "..."}`.
-5. If interactive: tag picker shows recommendations. If `--hams:lucky`: auto-accept.
+5. If interactive: tag picker shows recommendations. If `--hams-lucky`: auto-accept.
 6. Updates written to Hamsfile via the hamsfile module.
 
 | Provider | Description source |
@@ -2234,9 +2234,9 @@ All providers SHALL support the `enrich` operation, which uses LLM to generate o
 WHEN the user runs `hams brew enrich git`
 THEN the Homebrew provider SHALL fetch `brew info --json=v2 git`, extract the description, read existing tags and all tags from `Homebrew.hams.yaml`, send to LLM, and present the tag picker with recommendations.
 
-#### Scenario: Enrich with --hams:lucky
+#### Scenario: Enrich with --hams-lucky
 
-WHEN the user runs `hams brew enrich git --hams:lucky`
+WHEN the user runs `hams brew enrich git --hams-lucky`
 THEN the provider SHALL auto-accept all LLM-recommended tags and intro without showing the tag picker.
 
 #### Scenario: LLM unavailable during enrich
@@ -2246,17 +2246,17 @@ THEN the provider SHALL log an error, keep existing tags and intro unchanged, an
 
 ### Requirement: Tag picker TUI layout
 
-When no `--hams:tag` is specified during install, providers that support LLM enrichment SHALL display a TUI multi-select picker with three sections:
+When no `--hams-tag` is specified during install, providers that support LLM enrichment SHALL display a TUI multi-select picker with three sections:
 
 1. **LLM-recommended tags** — pre-selected (checked by default).
 2. **All other existing tags** from the current Hamsfile — unselected.
 3. **Free-text input field** — for entering a new tag not in either list.
 
-The user SHALL be able to toggle selections with space, type to filter, and confirm with enter. When `--hams:lucky` is specified or the terminal is non-interactive, the picker SHALL be skipped and all LLM-recommended tags SHALL be auto-accepted.
+The user SHALL be able to toggle selections with space, type to filter, and confirm with enter. When `--hams-lucky` is specified or the terminal is non-interactive, the picker SHALL be skipped and all LLM-recommended tags SHALL be auto-accepted.
 
 #### Scenario: Interactive tag picker with LLM recommendations
 
-WHEN `hams brew install git` is run in an interactive terminal without `--hams:tag`
+WHEN `hams brew install git` is run in an interactive terminal without `--hams-tag`
 AND the LLM recommends tags `["network-tool", "development-tool"]`
 AND the Hamsfile already contains tags `["runtime-environment", "terminal-tool", "network-tool"]`
 THEN the picker SHALL show `network-tool` and `development-tool` as pre-selected

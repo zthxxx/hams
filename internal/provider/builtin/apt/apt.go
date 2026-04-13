@@ -9,7 +9,7 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/zthxxx/hams/internal/cliutil"
+	hamserr "github.com/zthxxx/hams/internal/error"
 	"github.com/zthxxx/hams/internal/hamsfile"
 	"github.com/zthxxx/hams/internal/provider"
 	"github.com/zthxxx/hams/internal/state"
@@ -100,13 +100,13 @@ func (p *Provider) List(_ context.Context, _ *hamsfile.File, sf *state.File) (st
 }
 
 // HandleCommand processes CLI subcommands for apt.
-func (p *Provider) HandleCommand(args []string, flags *cliutil.GlobalFlags) error {
+func (p *Provider) HandleCommand(args []string, _ map[string]string, flags *provider.GlobalFlags) error {
 	verb, remaining := provider.ParseVerb(args)
 
 	switch verb {
 	case "install":
 		if len(remaining) == 0 {
-			return cliutil.NewUserError(cliutil.ExitUsageError,
+			return hamserr.NewUserError(hamserr.ExitUsageError,
 				"apt install requires a package name",
 				"Usage: hams apt install <package>",
 			)

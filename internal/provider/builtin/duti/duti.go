@@ -8,7 +8,7 @@ import (
 	"os/exec"
 	"strings"
 
-	"github.com/zthxxx/hams/internal/cliutil"
+	hamserr "github.com/zthxxx/hams/internal/error"
 	"github.com/zthxxx/hams/internal/hamsfile"
 	"github.com/zthxxx/hams/internal/provider"
 	"github.com/zthxxx/hams/internal/state"
@@ -104,9 +104,9 @@ func (p *Provider) List(_ context.Context, _ *hamsfile.File, sf *state.File) (st
 }
 
 // HandleCommand processes CLI subcommands for duti.
-func (p *Provider) HandleCommand(args []string, flags *cliutil.GlobalFlags) error {
+func (p *Provider) HandleCommand(args []string, _ map[string]string, flags *provider.GlobalFlags) error {
 	if len(args) == 0 {
-		return cliutil.NewUserError(cliutil.ExitUsageError,
+		return hamserr.NewUserError(hamserr.ExitUsageError,
 			"duti requires arguments",
 			"Usage: hams duti <ext>=<bundle-id>",
 			"Example: hams duti pdf=com.adobe.acrobat.pdf",

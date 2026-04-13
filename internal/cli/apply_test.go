@@ -11,7 +11,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/zthxxx/hams/internal/cliutil"
 	"github.com/zthxxx/hams/internal/hamsfile"
 	"github.com/zthxxx/hams/internal/provider"
 	"github.com/zthxxx/hams/internal/state"
@@ -262,7 +261,7 @@ func TestRunApply_BootstrapsProvidersInDAGOrderBeforePlanning(t *testing.T) {
 	}
 }
 
-func setupApplyTestEnv(t *testing.T, providerPriority []string) (storeDir, profileDir, stateDir string, flags *cliutil.GlobalFlags) {
+func setupApplyTestEnv(t *testing.T, providerPriority []string) (storeDir, profileDir, stateDir string, flags *provider.GlobalFlags) {
 	t.Helper()
 
 	root := t.TempDir()
@@ -287,7 +286,7 @@ func setupApplyTestEnv(t *testing.T, providerPriority []string) (storeDir, profi
 	}, "\n")
 	writeApplyTestFile(t, filepath.Join(storeDir, "hams.config.yaml"), configBody)
 
-	return storeDir, profileDir, stateDir, &cliutil.GlobalFlags{Store: storeDir}
+	return storeDir, profileDir, stateDir, &provider.GlobalFlags{Store: storeDir}
 }
 
 func formatProviderPriority(priority []string) string {

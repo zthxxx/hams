@@ -5,7 +5,6 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/zthxxx/hams/internal/cliutil"
 	"github.com/zthxxx/hams/internal/config"
 	"github.com/zthxxx/hams/internal/provider"
 	"github.com/zthxxx/hams/internal/provider/builtin/ansible"
@@ -76,7 +75,7 @@ func registerBuiltins(registry *provider.Registry) {
 }
 
 func loadBuiltinProviderConfig() *config.Config {
-	flags := &cliutil.GlobalFlags{}
+	flags := &provider.GlobalFlags{}
 	stripGlobalFlags(os.Args[1:], flags)
 
 	paths := config.ResolvePaths()

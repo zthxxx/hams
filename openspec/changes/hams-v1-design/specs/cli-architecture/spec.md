@@ -16,7 +16,7 @@ The `hams` binary SHALL use `urfave/cli` (v3) for command routing with explicit 
 
 ### Requirement: Command routing syntax
 
-The CLI SHALL follow the routing pattern `hams [global-flags] <command> [args] [--hams:flags] [-- <passthrough>]` where `<command>` is either a builtin command (`apply`, `refresh`, `config`, `store`, `list`, `self-upgrade`) or a provider name followed by a provider verb (e.g., `hams brew install git`). Global flags MUST appear between `hams` and `<command>`. Provider-specific hams flags MUST use the `--hams:` prefix. The `--` separator SHALL force all subsequent arguments to be forwarded to the wrapped command without interpretation.
+The CLI SHALL follow the routing pattern `hams [global-flags] <command> [args] [--hams-flags] [-- <passthrough>]` where `<command>` is either a builtin command (`apply`, `refresh`, `config`, `store`, `list`, `self-upgrade`) or a provider name followed by a provider verb (e.g., `hams brew install git`). Global flags MUST appear between `hams` and `<command>`. Provider-specific hams flags MUST use the `--hams-` prefix. The `--` separator SHALL force all subsequent arguments to be forwarded to the wrapped command without interpretation.
 
 #### Scenario: Global flag before provider
 
@@ -30,13 +30,13 @@ The CLI SHALL follow the routing pattern `hams [global-flags] <command> [args] [
 
 #### Scenario: Provider hams-prefixed flag
 
-- **WHEN** the user runs `hams brew install git --hams:tag=dev,cli`
-- **THEN** `--hams:tag=dev,cli` SHALL be intercepted by hams as a provider-self flag and SHALL NOT be forwarded to the underlying `brew` command
+- **WHEN** the user runs `hams brew install git --hams-tag=dev,cli`
+- **THEN** `--hams-tag=dev,cli` SHALL be intercepted by hams as a provider-self flag and SHALL NOT be forwarded to the underlying `brew` command
 
 #### Scenario: Double-dash passthrough
 
 - **WHEN** the user runs `hams brew install git -- --verbose --force`
-- **THEN** `--verbose` and `--force` SHALL be forwarded verbatim to the underlying `brew install` command
+- **THEN** the `--` separator itself and all subsequent arguments (`--verbose`, `--force`) SHALL be forwarded verbatim to the underlying `brew install` command, preserving the `--` so that the wrapped CLI can distinguish positional arguments from flags
 
 #### Scenario: Provider verb without required argument
 
@@ -45,12 +45,12 @@ The CLI SHALL follow the routing pattern `hams [global-flags] <command> [args] [
 
 ### Requirement: Provider self-parsing
 
-Each provider SHALL self-parse its own subcommands, verb routing, and parameter forwarding. The urfave/cli root command SHALL delegate to the provider after extracting global flags and `--hams:` prefixed flags. The provider is responsible for deciding which verbs are supported (e.g., `install`, `remove`, `list`, `enrich`), how arguments map to the wrapped CLI, and which flags to auto-inject (e.g., `-g` for pnpm global, `-y` for apt non-interactive, `@latest` for npm).
+Each provider SHALL self-parse its own subcommands, verb routing, and parameter forwarding. The urfave/cli root command SHALL delegate to the provider after extracting global flags and `--hams-` prefixed flags. The provider is responsible for deciding which verbs are supported (e.g., `install`, `remove`, `list`, `enrich`), how arguments map to the wrapped CLI, and which flags to auto-inject (e.g., `-g` for pnpm global, `-y` for apt non-interactive, `@latest` for npm).
 
 #### Scenario: Provider receives only its arguments
 
-- **WHEN** the user runs `hams brew install git --hams:tag=cli -- --verbose`
-- **THEN** the Homebrew provider SHALL receive verb `install`, positional arg `git`, and passthrough args `["--verbose"]`. The provider SHALL NOT see `--hams:tag=cli` in its argument list (it is extracted by the hams framework).
+- **WHEN** the user runs `hams brew install git --hams-tag=cli -- --verbose`
+- **THEN** the Homebrew provider SHALL receive verb `install`, positional arg `git`, the `--` separator, and passthrough arg `--verbose` (i.e., `["install", "git", "--", "--verbose"]`). The provider SHALL NOT see `--hams-tag=cli` in its argument list (it is extracted by the hams framework).
 
 #### Scenario: Provider list differs from native list
 
@@ -102,7 +102,22 @@ When `hams apply` or any operation requiring elevated privileges is invoked, the
 
 ### Requirement: Internationalization via locale environment variables
 
-The system SHALL detect the user's locale by reading environment variables in priority order: `LC_ALL`, `LC_CTYPE`, `LANG`. The locale string SHALL be parsed to extract the language code (e.g., `en_US.UTF-8` yields `en`). If no supported locale is detected or the variables are unset, the system SHALL default to `en_US`. The i18n module SHALL provide a message catalog interface that all user-facing strings (errors, help text, prompts) go through. The v1 release SHALL ship with `en_US` translations; the architecture SHALL support additional locales without code changes.
+The system SHALL detect the user's locale by reading environment variables in priority order: `LC_ALL`, `LC_CTYPE`, `LANG`. The locale string SHALL be parsed by stripping the encoding suffix (e.g., `.UTF-8`, `.ISO-8859-1`) first, then extracting the language and region components (e.g., `zh_TW.UTF-8` yields language `zh`, region `TW`). The system always enforces UTF-8 internally; the encoding suffix is ignored. If no supported locale is detected or the variables are unset, the system SHALL default to `en_US`. The i18n module SHALL provide a message catalog interface that all user-facing strings (errors, help text, prompts) go through. The v1 release SHALL ship with `en_US` and `zh_CN` translations; the architecture SHALL support additional locales without code changes.
+
+#### Locale file resolution chain
+
+The English locale file (`en.yaml`) SHALL always be loaded as the base. For non-English locales, the system SHALL resolve a single locale file using the following fallback chain (first match wins):
+
+1. **Exact match**: `<lang>-<REGION>.yaml` (e.g., `zh-TW.yaml` for locale `zh_TW`)
+2. **Base language**: `<lang>.yaml` (e.g., `zh.yaml`)
+3. **Sibling match**: the first `<lang>-*.yaml` file alphabetically (e.g., `zh-CN.yaml` when only `zh-CN.yaml` exists and the locale is `zh_TW`)
+4. **No match**: no additional locale file is loaded; rely on English only
+
+At most one non-English locale file SHALL be loaded. The system loads either a full locale resource file or nothing — partial file loading is not supported.
+
+#### i18n key fallback
+
+For any i18n key lookup, if the key is missing from the loaded non-English locale, the system SHALL fall back to the English locale. If the key is also missing from English, the system SHALL return the key string itself as the message (fail-open for robustness).
 
 #### Scenario: English locale detected
 
@@ -123,6 +138,18 @@ The system SHALL detect the user's locale by reading environment variables in pr
 
 - **WHEN** `LC_ALL`, `LC_CTYPE`, and `LANG` are all unset
 - **THEN** the system SHALL default to `en_US`
+
+#### Scenario: Non-CN Chinese locale falls back to zh-CN
+
+- **WHEN** the user's environment has `LANG=zh_TW.UTF-8`
+- **AND** no `zh-TW.yaml` or `zh.yaml` locale file exists
+- **AND** `zh-CN.yaml` exists as the only `zh-*.yaml` file
+- **THEN** the system SHALL load `zh-CN.yaml` via the sibling match rule and use Chinese translations
+
+#### Scenario: Encoding suffix is stripped
+
+- **WHEN** the user's environment has `LANG=zh_CN.UTF-8` or `LANG=zh_CN.GB2312`
+- **THEN** the system SHALL strip the encoding suffix, parse `zh_CN`, and load `zh-CN.yaml` regardless of the original encoding
 
 ### Requirement: Exit code semantics
 
@@ -412,19 +439,25 @@ The following global flags SHALL be recognized when placed between `hams` and th
 - **WHEN** the user runs `hams --profile=openwrt apply`
 - **THEN** the system SHALL use the `openwrt` profile directory within the store, regardless of the configured default profile
 
-### Requirement: Provider-level `--hams:local` flag
+### Requirement: Provider-level `--hams-local` flag
 
-When `--hams:local` is specified after a provider command (e.g., `hams brew install htop --hams:local`), the resource entry SHALL be written to `<Provider>.hams.local.yaml` instead of the main `<Provider>.hams.yaml`. This flag applies only to write operations (install/remove). All read operations (`hams apply`, `hams <provider> list`, etc.) SHALL always read and merge BOTH `.hams.yaml` and `.hams.local.yaml` regardless of whether `--hams:local` is specified.
+When `--hams-local` is specified after a provider command (e.g., `hams brew install htop --hams-local`), the resource entry SHALL be written to `<Provider>.hams.local.yaml` instead of the main `<Provider>.hams.yaml`. This flag applies only to write operations (install/remove). All read operations (`hams apply`, `hams <provider> list`, etc.) SHALL always read and merge BOTH `.hams.yaml` and `.hams.local.yaml` regardless of whether `--hams-local` is specified.
 
-#### Scenario: Install with --hams:local writes to local file
+#### Scenario: Install with --hams-local writes to local file
 
-- **WHEN** the user runs `hams brew install htop --hams:local`
+- **WHEN** the user runs `hams brew install htop --hams-local`
 - **THEN** `htop` SHALL be written to `Homebrew.hams.local.yaml` (not `Homebrew.hams.yaml`)
 - **AND** `brew install htop` SHALL execute normally
 
+#### Scenario: Remove with --hams-local writes to local file
+
+- **WHEN** the user runs `hams brew remove htop --hams-local`
+- **THEN** `htop` SHALL be removed from `Homebrew.hams.local.yaml` (not `Homebrew.hams.yaml`)
+- **AND** `brew uninstall htop` SHALL execute normally
+
 #### Scenario: List always reads both files
 
-- **WHEN** the user runs `hams brew list` (without `--hams:local`)
+- **WHEN** the user runs `hams brew list` (without `--hams-local`)
 - **THEN** the output SHALL include entries from both `Homebrew.hams.yaml` and `Homebrew.hams.local.yaml`, merged according to the provider's merge strategy
 
 #### Scenario: Apply reads both files
