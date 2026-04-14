@@ -1,0 +1,172 @@
+import { Callout, Steps, Tabs } from 'nextra/components'
+
+# 开发沙盒
+
+一条命令起一个 Docker 沙盒，Go 代码改一下就热重建 —— 在真实 Linux 环境里调 hams，
+不用动你自己那台机器。
+
+<Callout type="info">
+hams 会改宿主机的状态 —— 装包、写配置、跑 provider。开发的时候直接在自己笔记本上跑，
+出问题就得在自己电脑上清残留。开发沙盒就是这个内循环的容器版。
+</Callout>
+
+## 你能拿到什么
+
+跑 `task dev EXAMPLE=<name>` 之后：
+
+1. 起一个叫 `hams-<name>` 的临时容器，把这个 example 的 config/store/state
+   挂进去，以你本机的 `uid:gid` 跑。
+2. 宿主侧的 Go 监听器在每次 `.go` 保存后重编 `bin/hams-linux-<arch>`
+   （500ms 防抖、最多一个等待中的 build、走 `$GOCACHE`）。
+3. 容器里下次调 `hams` 的时候自动看到新二进制 —— 通过目录 bind-mount，
+   不用重启、不用 `docker cp`、shell 也不会掉。
+
+在 `task dev` 那个终端按 `Ctrl+C` 就都停了。容器是带 `--rm` 启的，没有残留要清。
+
+## 前置条件
+
+- Docker（macOS 上是 Docker Desktop，Linux 上 docker-ce 或 Rancher Desktop 都行）。
+  Podman 加 `docker` alias 也可以。
+- Go 1.24+ 和 `go-task`。第一次装工具链跑一下 `task setup`。
+
+<Callout type="warning">
+监听器会交叉编译到 Linux，所以沙盒只跑 Linux 容器。不走 Docker 的原生沙盒不在范围内。
+</Callout>
+
+## 跑第一个 example
+
+```bash
+task dev EXAMPLE=basic-debian
+```
+
+<Steps>
+
+### 脚本干了什么
+
+`scripts/commands/dev/main.sh` 跑的流水线：
+
+1. **Ensure** —— 如果 `examples/basic-debian/` 不存在，把 `examples/.template/`
+   拷过去（从第一次起就进 git）。
+2. **检测架构** —— `uname -m` → `amd64` 或 `arm64`。
+3. **初始构建** —— `GOOS=linux GOARCH=<arch> CGO_ENABLED=0 go build
+   -o bin/hams-linux-<arch> ./cmd/hams`。
+4. **构建镜像** —— `docker build -t hams-dev-basic-debian`。
+5. **启容器** —— `docker run -d --name hams-basic-debian --rm`，带四个 bind
+   mount，并把 `/usr/local/bin/hams` 软链到 `/hams-bin/` 下对应架构的二进制。
+6. **打印 attach 提示** —— 告诉你怎么进容器。
+7. **交给监听器** —— `go run ./internal/devtools/watch --arch <arch>`，
+   前台运行直到你按 `Ctrl+C`。
+
+### 进容器
+
+另一个终端：
+
+```bash
+task dev:shell EXAMPLE=basic-debian
+```
+
+或者等价的：
+
+```bash
+docker exec -it hams-basic-debian bash
+```
+
+进容器之后：
+
+```bash
+hams --version    # 类似 "dev (a6f4218)" —— 是你当前 HEAD 的短 SHA
+hams apply        # 跑这个 example 里的 hamsfile
+hams apt list     # 看 store 和实际装的状态差在哪
+```
+
+### 迭代
+
+在 `./cmd`、`./internal` 或 `./pkg` 下改任何 `.go` 文件。监听器会打：
+
+```text
+time=... level=INFO msg="build started"
+time=... level=INFO msg="build ok" commit=a6f4218 duration=312ms
+```
+
+容器里下一次调 `hams` 就是新二进制。每次重编后 `hams --version` 里的 SHA 会往前推。
+
+</Steps>
+
+## 新加一个 example
+
+```bash
+task dev EXAMPLE=my-experiment
+```
+
+如果 `examples/my-experiment/` 不存在，脚本就把 `examples/.template/` 拷过去。
+改里面的文件来定义你的场景：
+
+```text
+examples/my-experiment/
+  Dockerfile              # 可选，baseline 是 debian-slim + sudo
+  config/
+    hams.config.yaml      # 全局配置（store_path 等）
+  store/
+    hams.config.yaml      # store 配置（profile_tag、machine_id）
+    dev/                  # profile 目录 —— hamsfile 放这里
+      apt.hams.yaml
+      bash.hams.yaml
+  state/                  # hams 写 .state 到这里（进 git）
+```
+
+再跑 `task dev EXAMPLE=my-experiment` 不会覆盖已有目录，你的改动可以放心 commit。
+
+## 为什么 `state/` 要进 git
+
+`examples/<name>/` 下面的每个目录 —— 包括 `state/` —— 都是故意进 git 的。
+一个 example 的意义就是端到端的叙事：*给定这份 config + 这份 store，跑 hams apply
+能得到这份 state。* 如果 `.state/` 被 gitignore，光读 repo 看不出来 example 会产出什么，
+得真跑一遍才知道。
+
+跑完一轮以后，两种方式处理 state：
+
+- **冻结新结果**：`git add examples/<name>/state/ && git commit` ——
+  这个场景从此记的是新结果。
+- **丢掉 drift**：`git checkout examples/<name>/state/` —— 回到上一次 commit 的状态。
+
+## 并行跑多个场景
+
+容器名字是 `hams-<example>`，不是 `hams-dev`。同时在两个终端跑两个场景完全没问题：
+
+```bash
+# 终端 1
+task dev EXAMPLE=basic-debian
+
+# 终端 2
+task dev EXAMPLE=my-experiment
+```
+
+每个容器有自己的 bind mount、自己的 state 目录，互不干扰。
+
+<Callout type="warning">
+同时跑**同一个** example 两次是没定义的 —— 后一次会把前一个容器 stop-and-replace。
+"一个 example 只跑一份" 是开发者自己的约定，脚本不做跨实例协调。
+</Callout>
+
+## 常见问题
+
+**`docker: Cannot connect to the Docker daemon`** —— 起一下 Docker Desktop
+（或同类工具）。脚本会直接透传 docker CLI 的原始错误消息，什么都不会动就退出。
+
+**`Error: container name "hams-<x>" already in use`** —— 按理不会出现，因为
+`start-container.sh` 会先跑 `docker rm --force hams-<x>`。如果真遇到了，手动跑一下再重试。
+
+**容器里 `hams --version` 还是老 SHA** —— 监听器每次 build 都会打日志。如果日志显示
+`build ok commit=<新 SHA>` 但容器看到的还是旧的，检查一下 `bin/hams-linux-<arch>`
+的修改时间是不是比容器启动还新。目录挂载每次调用都现查文件名，主机和容器之间没有缓存层。
+
+**`hams apply` 报 state 文件 `permission denied`** —— 容器是以
+`--user $(id -u):$(id -g)` 启动的。如果之前某次是别的身份（比如 `sudo`）跑的，
+那些 state 文件得 `sudo chown` 一次；之后默认用户的 ownership 就一直成立了。
+
+## 代码在哪
+
+- 监听器：`internal/devtools/watch/{main,engine,fswatch,builder,reporter}.go`
+- 编排脚本：`scripts/commands/dev/*.sh`
+- 模板：`examples/.template/`
+- Taskfile：`dev` / `dev:shell` target

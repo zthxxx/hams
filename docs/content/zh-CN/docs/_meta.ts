@@ -8,4 +8,5 @@ export default {
   cli: 'CLI 参考',
   providers: '提供者',
   schema: 'Schema 参考',
+  contributing: '贡献指南',
 }
