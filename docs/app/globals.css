@@ -1,6 +1,6 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss";
+
+@variant dark (&:where(.dark, .dark *));
 
 /* Hide zh-CN nav tab — language switching is via the LanguageSwitcher component */
 .nextra-nav-container a[href="/zh-CN/docs"] {

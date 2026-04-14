@@ -1,4 +1,6 @@
-import { useRouter } from 'next/router'
+'use client'
+
+import { useRouter, usePathname } from 'next/navigation'
 import { useState, useRef, useEffect } from 'react'
 import { MdTranslate } from 'react-icons/md'
 
@@ -9,6 +11,7 @@ const locales = [
 
 export function LanguageSwitcher() {
   const router = useRouter()
+  const pathname = usePathname() ?? '/'
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
 
@@ -22,28 +25,24 @@ export function LanguageSwitcher() {
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [])
 
-  const currentPath = router.asPath
-  const isZhCN = currentPath.startsWith('/zh-CN')
+  const isZhCN = pathname.startsWith('/zh-CN')
   const currentLocale = isZhCN ? 'zh-CN' : 'en'
 
   function switchTo(code: string) {
     setOpen(false)
     if (code === currentLocale) return
 
-    // Strip current locale prefix to get the base path
-    let basePath = currentPath
+    let basePath = pathname
     if (isZhCN) {
-      basePath = currentPath.replace(/^\/zh-CN/, '') || '/'
-    } else if (currentPath.startsWith('/en')) {
-      basePath = currentPath.replace(/^\/en/, '') || '/'
+      basePath = pathname.replace(/^\/zh-CN/, '') || '/'
+    } else if (pathname.startsWith('/en')) {
+      basePath = pathname.replace(/^\/en/, '') || '/'
     }
 
     let targetPath: string
     if (code === 'en') {
-      // English: landing page at /, docs at /en/docs/...
       targetPath = basePath === '/' ? '/' : `/en${basePath}`
     } else {
-      // zh-CN: everything under /zh-CN/
       targetPath = basePath === '/' ? '/zh-CN' : `/zh-CN${basePath}`
     }
     router.push(targetPath)

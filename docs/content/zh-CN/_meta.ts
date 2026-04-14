@@ -2,7 +2,11 @@ export default {
   index: {
     display: 'hidden',
     theme: {
-      layout: 'raw',
+      layout: 'full',
+      sidebar: false,
+      toc: false,
+      breadcrumb: false,
+      pagination: false,
     },
   },
   docs: '文档',

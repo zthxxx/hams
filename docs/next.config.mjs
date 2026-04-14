@@ -1,12 +1,14 @@
 import nextra from 'nextra'
 
 const withNextra = nextra({
-  theme: 'nextra-theme-docs',
-  themeConfig: './theme.config.tsx',
+  search: { codeblocks: false },
+  contentDirBasePath: '/',
 })
 
 export default withNextra({
   output: 'export',
   distDir: 'dist',
   images: { unoptimized: true },
+  reactStrictMode: true,
+  trailingSlash: true,
 })
