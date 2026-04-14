@@ -11,6 +11,8 @@ import (
 	"strings"
 	"testing"
 
+	"gopkg.in/yaml.v3"
+
 	"github.com/zthxxx/hams/internal/hamsfile"
 	"github.com/zthxxx/hams/internal/provider"
 	"github.com/zthxxx/hams/internal/state"
@@ -134,8 +136,9 @@ func TestRunApply_UsesFilePrefixStatePathAndProviderPlan(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load state: %v", err)
 	}
-	if sf.ConfigHash != expectedConfigHash([]string{"git"}) {
-		t.Fatalf("ConfigHash = %q, want %q", sf.ConfigHash, expectedConfigHash([]string{"git"}))
+	wantHash := expectedConfigHashFromFile(hamsfilePath)
+	if sf.ConfigHash != wantHash {
+		t.Fatalf("ConfigHash = %q, want %q", sf.ConfigHash, wantHash)
 	}
 	if got := sf.Resources["git"]; got == nil || got.State != state.StateOK {
 		t.Fatalf("resource git state = %#v, want ok", got)
@@ -197,8 +200,9 @@ func TestRunApply_PersistsConfigHashAndRemovesOnNextRun(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load state: %v", err)
 	}
-	if sf.ConfigHash != expectedConfigHash(nil) {
-		t.Fatalf("ConfigHash = %q, want empty-config hash %q", sf.ConfigHash, expectedConfigHash(nil))
+	wantEmptyHash := expectedConfigHashFromFile(hamsfilePath)
+	if sf.ConfigHash != wantEmptyHash {
+		t.Fatalf("ConfigHash = %q, want empty-config hash %q", sf.ConfigHash, wantEmptyHash)
 	}
 	if got := sf.Resources["git"]; got == nil || got.State != state.StateRemoved {
 		t.Fatalf("resource git state = %#v, want removed", got)
@@ -314,10 +318,15 @@ func writeApplyTestFile(t *testing.T, path, content string) {
 	}
 }
 
-func expectedConfigHash(appIDs []string) string {
-	sorted := slices.Clone(appIDs)
-	slices.Sort(sorted)
-
-	sum := sha256.Sum256([]byte(strings.Join(sorted, "\n")))
+func expectedConfigHashFromFile(path string) string {
+	hf, err := hamsfile.Read(path)
+	if err != nil {
+		panic(fmt.Sprintf("expectedConfigHashFromFile: %v", err))
+	}
+	data, err := yaml.Marshal(hf.Root)
+	if err != nil {
+		panic(fmt.Sprintf("expectedConfigHashFromFile marshal: %v", err))
+	}
+	sum := sha256.Sum256(data)
 	return hex.EncodeToString(sum[:])
 }

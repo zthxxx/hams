@@ -117,10 +117,11 @@ func (p *CloneProvider) Apply(ctx context.Context, action provider.Action) error
 	}
 
 	slog.Info("git clone", "remote", remote, "path", localPath)
-	args := []string{"clone", remote, localPath}
+	args := []string{"clone"}
 	if branch != "" {
 		args = append(args, "--branch", branch)
 	}
+	args = append(args, remote, localPath)
 
 	cmd := exec.CommandContext(ctx, "git", args...) //nolint:gosec // git clone args from hamsfile declarations
 	cmd.Stdout = os.Stdout

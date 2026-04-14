@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/urfave/cli/v3"
+	"gopkg.in/yaml.v3"
 
 	hamserr "github.com/zthxxx/hams/internal/error"
 	"github.com/zthxxx/hams/internal/config"
@@ -189,6 +190,7 @@ func runApply(ctx context.Context, flags *provider.GlobalFlags, registry *provid
 	}
 
 	var allResults []provider.ExecuteResult
+	var skippedProviders []string
 	for _, p := range sorted {
 		manifest := p.Manifest()
 		name := manifest.Name
@@ -224,6 +226,7 @@ func runApply(ctx context.Context, flags *provider.GlobalFlags, registry *provid
 		}
 		if readErr != nil {
 			slog.Error("failed to read hamsfile", "provider", name, "error", readErr)
+			skippedProviders = append(skippedProviders, name)
 			continue
 		}
 
@@ -236,6 +239,7 @@ func runApply(ctx context.Context, flags *provider.GlobalFlags, registry *provid
 		actions, planErr := p.Plan(ctx, hf, sf)
 		if planErr != nil {
 			slog.Error("failed to plan provider actions", "provider", name, "error", planErr)
+			skippedProviders = append(skippedProviders, name)
 			continue
 		}
 
@@ -266,9 +270,14 @@ func runApply(ctx context.Context, flags *provider.GlobalFlags, registry *provid
 	fmt.Printf("\nhams apply complete: %d installed, %d updated, %d removed, %d skipped, %d failed\n",
 		merged.Installed, merged.Updated, merged.Removed, merged.Skipped, merged.Failed)
 
-	if merged.Failed > 0 {
+	if len(skippedProviders) > 0 {
+		fmt.Printf("Warning: %d provider(s) skipped due to errors: %s\n",
+			len(skippedProviders), strings.Join(skippedProviders, ", "))
+	}
+
+	if merged.Failed > 0 || len(skippedProviders) > 0 {
 		return hamserr.NewUserError(hamserr.ExitPartialFailure,
-			fmt.Sprintf("%d resources failed", merged.Failed),
+			fmt.Sprintf("%d resources failed, %d providers skipped", merged.Failed, len(skippedProviders)),
 			"Run 'hams apply' again to retry failed resources",
 			"Use '--debug' for detailed error output",
 		)
@@ -314,10 +323,16 @@ func manifestFilePrefix(m provider.Manifest) string { //nolint:gocritic // simpl
 }
 
 func configHashForHamsfile(hf *hamsfile.File) string {
-	appIDs := hf.ListApps()
-	slices.Sort(appIDs)
-
-	sum := sha256.Sum256([]byte(strings.Join(appIDs, "\n")))
+	// Hash the full YAML content so config changes (not just ID changes) are detected.
+	data, err := yaml.Marshal(hf.Root)
+	if err != nil {
+		// Fall back to hashing app IDs.
+		appIDs := hf.ListApps()
+		slices.Sort(appIDs)
+		sum := sha256.Sum256([]byte(strings.Join(appIDs, "\n")))
+		return hex.EncodeToString(sum[:])
+	}
+	sum := sha256.Sum256(data)
 	return hex.EncodeToString(sum[:])
 }
 
