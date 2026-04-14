@@ -139,9 +139,9 @@ Loop repeatedly until all of the following tasks are completed.
 - [x] Run command `/simplify`
   - Any review issues?
     - [x] If yes: uncheck this task and all above, fix issues, then re-run from the top. If no issues: check this task, git commit, and continue.
-- [x] Run command `/opsx:verify`
+- [ ] Run command `/opsx:verify`
   - Any review issues?
-    - [x] If yes: uncheck this task and all above, fix issues, then re-run from the top. If no issues: check this task, git commit, and continue.
+    - [ ] If yes: uncheck this task and all above, fix issues, then re-run from the top. If no issues: check this task, git commit, and continue.
 - [ ] Run command `/codex:review --wait --base 483714b`
   - Any review issues?
     - [ ] If yes: uncheck this task and all above, fix issues, then re-run from the top. If no issues: check this task, git commit, and continue.
