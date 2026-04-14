@@ -373,16 +373,15 @@ func TestEngine_Invariants(t *testing.T) {
 			}
 			time.Sleep(time.Millisecond)
 
-			active, pending := eng.Stats()
-			if active && !active {
-				rt.Fatalf("impossible state")
+			// Invariant: at any point, the number of started builds minus the
+			// number of finished builds is at most 1 — the engine holds one
+			// build in flight and coalesces the rest into a single pending
+			// slot, never queuing a second one.
+			inFlight := builder.starts.Load() - builder.finishes.Load()
+			if inFlight < 0 || inFlight > 1 {
+				rt.Fatalf("invariant violated: starts=%d finishes=%d inFlight=%d",
+					builder.starts.Load(), builder.finishes.Load(), inFlight)
 			}
-			_ = pending
-			// Core invariant: the engine never reports more than one extra
-			// pending beyond the one in flight, enforced by the bool flag.
-			// If active is true, there is at most one build running (enforced
-			// by the state machine). If pending is true, exactly one more
-			// build will follow when the active one completes.
 		}
 
 		// Drain any remaining build.

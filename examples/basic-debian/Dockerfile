@@ -16,9 +16,9 @@ FROM debian:bookworm-slim
 
 ENV DEBIAN_FRONTEND=noninteractive
 
-# Base toolchain for hams development scenarios. apt lists are kept primed
-# with a second `apt-get update` so in-container `apt install` during a dev
-# session doesn't need to refetch indexes on every invocation.
+# Base toolchain for hams development scenarios. apt lists are intentionally
+# NOT deleted after install, so in-container `apt install` during a dev
+# session resolves package names without refetching indexes.
 RUN apt-get update \
  && apt-get install -y --no-install-recommends \
       bash \
@@ -26,10 +26,7 @@ RUN apt-get update \
       curl \
       git \
       procps \
-      sudo \
- && rm -rf /var/lib/apt/lists/*
-
-RUN apt-get update
+      sudo
 
 # Unprivileged user baked for interactive shells. `docker run --user <uid>`
 # overrides this with the host uid/gid so bind-mounted files land with

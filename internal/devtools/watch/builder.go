@@ -99,7 +99,6 @@ func readCommitSHA(ctx context.Context, repoRoot string) string {
 	return strings.TrimSpace(string(out))
 }
 
-// Compile-time check.
 var _ Builder = (*GoBuilder)(nil)
 
 // FormatDuration renders a build duration for logs as "1.23s" or "456ms".

@@ -89,8 +89,15 @@ printf 'task dev: target arch = %s\n' "${arch}"
 
 output="bin/hams-linux-${arch}"
 mkdir -p bin
-printf 'task dev: building %s (initial)\n' "${output}"
-GOOS=linux GOARCH="${arch}" CGO_ENABLED=0 go build -o "${output}" ./cmd/hams
+# Inject the short commit SHA so `hams --version` inside the container shows
+# `dev (<sha>)` from the very first invocation, matching what the watcher's
+# later rebuilds will produce. `git rev-parse` is allowed to fail — the
+# watcher will correct the SHA on the next build if the repo resolves later.
+initial_commit="$(git rev-parse --short HEAD 2>/dev/null || echo unknown)"
+initial_ldflags="-X github.com/zthxxx/hams/internal/version.commit=${initial_commit}"
+printf 'task dev: building %s (initial, commit=%s)\n' "${output}" "${initial_commit}"
+GOOS=linux GOARCH="${arch}" CGO_ENABLED=0 \
+  go build -ldflags "${initial_ldflags}" -o "${output}" ./cmd/hams
 
 bash "${script_dir}/build-image.sh" --example "${example}"
 bash "${script_dir}/start-container.sh" --example "${example}" --arch "${arch}"
