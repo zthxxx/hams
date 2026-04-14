@@ -26,6 +26,14 @@ func TestDirectBuilder_ImplementsCmdBuilder(_ *testing.T) {
 	var _ CmdBuilder = DirectBuilder{}
 }
 
+func TestSpyAcquirer_ImplementsAcquirer(_ *testing.T) {
+	var _ Acquirer = (*SpyAcquirer)(nil)
+}
+
+func TestRecordingBuilder_ImplementsCmdBuilder(_ *testing.T) {
+	var _ CmdBuilder = (*RecordingBuilder)(nil)
+}
+
 // Manager tests.
 
 func TestNewManager(t *testing.T) {
@@ -102,4 +110,51 @@ func TestNoopAcquirer_AlwaysSucceeds(t *testing.T) {
 		t.Fatalf("NoopAcquirer.Acquire should always succeed: %v", err)
 	}
 	na.Stop() // Should not panic.
+}
+
+func TestSpyAcquirer_RecordsCalls(t *testing.T) {
+	t.Parallel()
+	spy := &SpyAcquirer{}
+	if spy.AcquireCalls != 0 || spy.StopCalls != 0 {
+		t.Fatal("new SpyAcquirer should have zero calls")
+	}
+
+	if err := spy.Acquire(context.Background()); err != nil {
+		t.Fatalf("SpyAcquirer.Acquire error: %v", err)
+	}
+	if spy.AcquireCalls != 1 {
+		t.Errorf("AcquireCalls = %d, want 1", spy.AcquireCalls)
+	}
+
+	spy.Stop()
+	if spy.StopCalls != 1 {
+		t.Errorf("StopCalls = %d, want 1", spy.StopCalls)
+	}
+}
+
+func TestRecordingBuilder_RecordsCalls(t *testing.T) {
+	t.Parallel()
+	rb := &RecordingBuilder{}
+	cmd := rb.Command(context.Background(), "apt-get", "install", "-y", "curl")
+
+	if len(rb.Calls) != 1 {
+		t.Fatalf("Calls = %d, want 1", len(rb.Calls))
+	}
+	if rb.Calls[0].Name != "apt-get" {
+		t.Errorf("Name = %q, want apt-get", rb.Calls[0].Name)
+	}
+	wantArgs := []string{"install", "-y", "curl"}
+	if len(rb.Calls[0].Args) != len(wantArgs) {
+		t.Fatalf("Args = %v, want %v", rb.Calls[0].Args, wantArgs)
+	}
+	for i, want := range wantArgs {
+		if rb.Calls[0].Args[i] != want {
+			t.Errorf("Args[%d] = %q, want %q", i, rb.Calls[0].Args[i], want)
+		}
+	}
+
+	// The returned command should be harmless (true).
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("recorded command should succeed: %v", err)
+	}
 }

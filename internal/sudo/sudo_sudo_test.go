@@ -72,6 +72,26 @@ func TestBuilder_AsRoot_SkipsSudo(t *testing.T) {
 	}
 }
 
+func TestAcquire_AsNonRoot_WithoutSudo_Fails(t *testing.T) {
+	if os.Getuid() == 0 {
+		t.Skip("test requires non-root user without sudo access")
+	}
+
+	// This test runs as nosudouser who has no sudoers entry.
+	// checkSudo() will fail (sudo -n true exits non-zero), then Acquire
+	// will attempt interactive sudo -v which also fails (no TTY, no password).
+	m := NewManager()
+	defer m.Stop()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	err := m.Acquire(ctx)
+	if err == nil {
+		t.Fatal("Acquire should fail for user without sudo access")
+	}
+}
+
 func TestBuilder_AsNonRoot_PrependsSudo(t *testing.T) {
 	if os.Getuid() == 0 {
 		t.Skip("test requires non-root user")

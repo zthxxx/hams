@@ -9,7 +9,7 @@ import (
 
 func TestManifest(t *testing.T) {
 	t.Parallel()
-	p := New(sudo.DirectBuilder{})
+	p := New(&sudo.RecordingBuilder{})
 	m := p.Manifest()
 	if m.Name != "apt" {
 		t.Errorf("Name = %q, want apt", m.Name)
@@ -71,7 +71,7 @@ Architecture: amd64`,
 
 func TestNameDisplayName(t *testing.T) {
 	t.Parallel()
-	p := New(sudo.DirectBuilder{})
+	p := New(&sudo.RecordingBuilder{})
 	if p.Name() != "apt" {
 		t.Errorf("Name() = %q", p.Name())
 	}
