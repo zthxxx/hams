@@ -87,10 +87,21 @@ func Load(paths Paths, storePath string) (*Config, error) {
 
 	// Level 1: built-in defaults (already set above).
 
-	// Level 2: global config.
+	// Level 2a: global config.
 	globalPath := paths.GlobalConfigPath()
 	if err := mergeFromFile(cfg, globalPath); err != nil && !os.IsNotExist(err) {
 		return nil, fmt.Errorf("loading global config %s: %w", globalPath, err)
+	}
+
+	// Level 2b: global local overrides (for sensitive keys written outside a store context).
+	globalLocalPath := filepath.Join(paths.ConfigHome, "hams.config.local.yaml")
+	if err := mergeFromFile(cfg, globalLocalPath); err != nil && !os.IsNotExist(err) {
+		return nil, fmt.Errorf("loading global local config %s: %w", globalLocalPath, err)
+	}
+
+	// If no explicit storePath but the global config defines one, use it.
+	if storePath == "" && cfg.StorePath != "" {
+		storePath = cfg.StorePath
 	}
 
 	// Level 3: project-level config.

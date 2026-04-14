@@ -5,9 +5,11 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 
 	"github.com/urfave/cli/v3"
 
+	"github.com/zthxxx/hams/internal/config"
 	hamserr "github.com/zthxxx/hams/internal/error"
 	"github.com/zthxxx/hams/internal/i18n"
 	"github.com/zthxxx/hams/internal/provider"
@@ -25,6 +27,16 @@ func globalFlags(cmd *cli.Command) *provider.GlobalFlags {
 		Store:   cmd.String("store"),
 		Profile: cmd.String("profile"),
 	}
+}
+
+// resolvePaths returns config.Paths with --config flag applied.
+func resolvePaths(flags *provider.GlobalFlags) config.Paths {
+	paths := config.ResolvePaths()
+	if flags.Config != "" {
+		paths.ConfigHome = filepath.Dir(flags.Config)
+		paths.ConfigFilePath = flags.Config
+	}
+	return paths
 }
 
 // NewApp creates the top-level hams urfave/cli application.

@@ -54,11 +54,7 @@ func runApply(ctx context.Context, flags *provider.GlobalFlags, registry *provid
 		fmt.Println("[dry-run] Would apply configurations. No changes will be made.")
 	}
 
-	paths := config.ResolvePaths()
-	if flags.Config != "" {
-		paths.ConfigHome = filepath.Dir(flags.Config)
-		paths.ConfigFilePath = flags.Config
-	}
+	paths := resolvePaths(flags)
 
 	storePath := flags.Store
 	if storePath == "" {

@@ -3,7 +3,6 @@ package cli
 import (
 	"log/slog"
 	"os"
-	"path/filepath"
 
 	"github.com/zthxxx/hams/internal/config"
 	"github.com/zthxxx/hams/internal/provider"
@@ -78,11 +77,7 @@ func loadBuiltinProviderConfig() *config.Config {
 	flags := &provider.GlobalFlags{}
 	stripGlobalFlags(os.Args[1:], flags)
 
-	paths := config.ResolvePaths()
-	if flags.Config != "" {
-		paths.ConfigHome = filepath.Dir(flags.Config)
-		paths.ConfigFilePath = flags.Config
-	}
+	paths := resolvePaths(flags)
 
 	cfg, err := config.Load(paths, flags.Store)
 	if err != nil {

@@ -39,7 +39,7 @@ Only resources already tracked in state are probed — no new resources are disc
 }
 
 func runRefresh(ctx context.Context, flags *provider.GlobalFlags, registry *provider.Registry, only, except string) error {
-	paths := config.ResolvePaths()
+	paths := resolvePaths(flags)
 	cfg, err := config.Load(paths, flags.Store)
 	if err != nil {
 		return fmt.Errorf("loading config: %w", err)
@@ -74,7 +74,7 @@ func configCmd() *cli.Command {
 				Usage: "Show all configuration values",
 				Action: func(_ context.Context, cmd *cli.Command) error {
 					flags := globalFlags(cmd)
-					paths := config.ResolvePaths()
+					paths := resolvePaths(flags)
 					cfg, loadErr := config.Load(paths, flags.Store)
 					if loadErr != nil {
 						return fmt.Errorf("loading config: %w", loadErr)
@@ -102,7 +102,7 @@ func configCmd() *cli.Command {
 						)
 					}
 					flags := globalFlags(cmd)
-					paths := config.ResolvePaths()
+					paths := resolvePaths(flags)
 					cfg, loadErr := config.Load(paths, flags.Store)
 					if loadErr != nil {
 						return fmt.Errorf("loading config: %w", loadErr)
@@ -131,7 +131,7 @@ func configCmd() *cli.Command {
 						)
 					}
 					flags := globalFlags(cmd)
-					paths := config.ResolvePaths()
+					paths := resolvePaths(flags)
 					if err := config.WriteConfigKey(paths, flags.Store, key, value); err != nil {
 						return fmt.Errorf("writing config: %w", err)
 					}
@@ -147,7 +147,8 @@ func configCmd() *cli.Command {
 				Name:  "edit",
 				Usage: "Open the global config file in your editor",
 				Action: func(_ context.Context, cmd *cli.Command) error {
-					paths := config.ResolvePaths()
+					flags := globalFlags(cmd)
+					paths := resolvePaths(flags)
 					configPath := paths.GlobalConfigPath()
 
 					// Ensure the config file exists.
@@ -207,7 +208,7 @@ func printConfigKey(cfg *config.Config, paths config.Paths, key string) error {
 func storeCmd() *cli.Command {
 	storeStatusAction := func(_ context.Context, cmd *cli.Command) error {
 		flags := globalFlags(cmd)
-		paths := config.ResolvePaths()
+		paths := resolvePaths(flags)
 		cfg, err := config.Load(paths, flags.Store)
 		if err != nil {
 			return fmt.Errorf("loading config: %w", err)
@@ -254,7 +255,7 @@ func storeCmd() *cli.Command {
 				Usage: "Initialize a new store directory structure",
 				Action: func(_ context.Context, cmd *cli.Command) error {
 					flags := globalFlags(cmd)
-					paths := config.ResolvePaths()
+					paths := resolvePaths(flags)
 					cfg, err := config.Load(paths, flags.Store)
 					if err != nil {
 						return fmt.Errorf("loading config: %w", err)
@@ -307,7 +308,7 @@ func storeCmd() *cli.Command {
 				Usage: "Commit and push store changes to the remote repository",
 				Action: func(_ context.Context, cmd *cli.Command) error {
 					flags := globalFlags(cmd)
-					paths := config.ResolvePaths()
+					paths := resolvePaths(flags)
 					cfg, err := config.Load(paths, flags.Store)
 					if err != nil {
 						return fmt.Errorf("loading config: %w", err)
@@ -353,7 +354,7 @@ func storeCmd() *cli.Command {
 				Usage: "Pull latest store changes from the remote repository",
 				Action: func(_ context.Context, cmd *cli.Command) error {
 					flags := globalFlags(cmd)
-					paths := config.ResolvePaths()
+					paths := resolvePaths(flags)
 					cfg, err := config.Load(paths, flags.Store)
 					if err != nil {
 						return fmt.Errorf("loading config: %w", err)
@@ -398,7 +399,7 @@ func listCmd(registry *provider.Registry) *cli.Command {
 		},
 		Action: func(_ context.Context, cmd *cli.Command) error {
 			flags := globalFlags(cmd)
-			paths := config.ResolvePaths()
+			paths := resolvePaths(flags)
 			cfg, err := config.Load(paths, flags.Store)
 			if err != nil {
 				return fmt.Errorf("loading config: %w", err)
