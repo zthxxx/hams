@@ -168,10 +168,3 @@ func (e *Engine) Run(ctx context.Context, events <-chan struct{}) {
 		}
 	}
 }
-
-// Stats returns a snapshot of internal counters. Intended for tests.
-func (e *Engine) Stats() (active, pending bool) {
-	e.mu.Lock()
-	defer e.mu.Unlock()
-	return e.active, e.pending
-}

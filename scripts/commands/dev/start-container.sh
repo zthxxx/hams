@@ -90,40 +90,35 @@ docker run \
   "${image_tag}" \
   sleep infinity >/dev/null
 
-# Post-start symlink: the host already knows GOARCH, so we don't need
-# any arch branching inside the image. The symlink points through the
-# bind-mounted /hams-bin/ directory, so rebuilds by the watcher become
-# visible on the very next `hams` invocation.
-docker exec \
-  --user root \
-  "${container_name}" \
-  ln -sf "/hams-bin/hams-linux-${arch}" "/usr/local/bin/hams"
-
-# Runtime /etc/passwd entry for the host uid.
+# Post-start setup runs all container mutations in a single `docker exec`
+# to amortize the per-exec syscall round-trip. Two responsibilities:
 #
-# Why: the container runs as --user ${host_uid}:${host_gid} so bind-mounted
-# files land with correct host ownership. But sudo, su, and many tools
-# ("you do not exist in the passwd database") break when the current uid
-# has no /etc/passwd entry. We append one at container start.
+#   1. Symlink /usr/local/bin/hams → /hams-bin/hams-linux-<arch>. The
+#      host already knows GOARCH, so the image stays arch-agnostic; the
+#      symlink points through the bind-mounted /hams-bin/ directory, so
+#      rebuilds by the watcher become visible on the very next invocation.
 #
-# Collision handling:
-#   - uid 1000 is already the baked "dev" user; skip append.
-#   - gid 1000 is the baked "dev" group; skip append.
-# A direct /etc/passwd + /etc/group append (rather than useradd/groupadd)
-# keeps the script portable across debian/alpine/other slim bases.
+#   2. Register the host uid/gid in /etc/passwd and /etc/group (and
+#      /etc/shadow if present). The container runs as --user ${host_uid}
+#      so bind-mounted files land with correct host ownership, but sudo,
+#      su, and PAM require a resolvable passwd + shadow entry. Direct
+#      append is used rather than useradd/groupadd for portability across
+#      debian, alpine, and other slim bases.
 #
-# The container's sudoers file grants passwordless sudo to ALL, so the
-# runtime uid inherits it as soon as it's resolvable via /etc/passwd.
+# Collision handling: `getent` short-circuits when the uid (e.g., 1000 =
+# baked "dev") or gid is already known, so nothing is written twice.
+# Interpolation into bash -c is safe because uid/gid come from `id -u`/
+# `id -g` on the host (integers only); arch is validated above.
 docker exec --user root "${container_name}" bash -eu -c "
+ln -sf '/hams-bin/hams-linux-${arch}' /usr/local/bin/hams
 if ! getent group '${host_gid}' >/dev/null 2>&1; then
   printf 'hostgroup:x:%s:\n' '${host_gid}' >> /etc/group
 fi
 if ! getent passwd '${host_uid}' >/dev/null 2>&1; then
   printf 'hostuser:x:%s:%s:dev sandbox host user:/home/dev:/bin/bash\n' \
     '${host_uid}' '${host_gid}' >> /etc/passwd
-  # Shadow entry with '*' password (disabled login password). PAM requires
-  # a valid shadow entry for sudo to skip the 'account locked' check even
-  # under NOPASSWD. Fields match shadow(5): last-change=1, others unset.
+  # shadow entry with '*' password (disabled login). PAM requires it to
+  # skip the 'account locked' check even under NOPASSWD.
   if [[ -f /etc/shadow ]]; then
     printf 'hostuser:*:1::::::\n' >> /etc/shadow
   fi
