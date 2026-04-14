@@ -44,6 +44,7 @@ type Resource struct {
 	State       ResourceState `yaml:"state"`
 	Version     string        `yaml:"version,omitempty"`
 	Value       string        `yaml:"value,omitempty"`
+	CheckCmd    string        `yaml:"check_cmd,omitempty"`
 	CheckStdout string        `yaml:"check_stdout,omitempty"`
 	InstallAt   string        `yaml:"install_at,omitempty"`
 	UpdatedAt   string        `yaml:"updated_at,omitempty"`
@@ -172,6 +173,11 @@ func WithValue(v string) ResourceOption {
 // WithError sets the last_error field.
 func WithError(e string) ResourceOption {
 	return func(r *Resource) { r.LastError = e }
+}
+
+// WithCheckCmd sets the check command to re-run during probe.
+func WithCheckCmd(s string) ResourceOption {
+	return func(r *Resource) { r.CheckCmd = s }
 }
 
 // WithCheckStdout sets the check_stdout fingerprint.

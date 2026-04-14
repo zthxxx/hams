@@ -427,9 +427,13 @@ func listCmd(registry *provider.Registry) *cli.Command {
 			var jsonResults []listResource
 
 			for _, p := range providers {
-				name := p.Manifest().Name
-				displayName := p.Manifest().DisplayName
-				statePath := filepath.Join(stateDir, name+".state.yaml")
+				manifest := p.Manifest()
+				displayName := manifest.DisplayName
+				filePrefix := manifest.FilePrefix
+				if filePrefix == "" {
+					filePrefix = manifest.Name
+				}
+				statePath := filepath.Join(stateDir, filePrefix+".state.yaml")
 
 				sf, loadErr := state.Load(statePath)
 				if loadErr != nil {
@@ -457,7 +461,7 @@ func listCmd(registry *provider.Registry) *cli.Command {
 					for _, id := range filteredIDs {
 						r := sf.Resources[id]
 						jsonResults = append(jsonResults, listResource{
-							Provider:    name,
+							Provider:    manifest.Name,
 							DisplayName: displayName,
 							ID:          id,
 							Status:      string(r.State),

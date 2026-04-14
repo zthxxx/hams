@@ -103,7 +103,7 @@ func executeInstall(ctx context.Context, p Provider, action Action, sf *state.Fi
 		return
 	}
 
-	sf.SetResource(action.ID, state.StateOK)
+	sf.SetResource(action.ID, state.StateOK, action.StateOpts...)
 	result.Installed++
 	slog.Info("installed", "provider", name, "resource", action.ID)
 	if session != nil {
@@ -133,7 +133,7 @@ func executeUpdate(ctx context.Context, p Provider, action Action, sf *state.Fil
 		return
 	}
 
-	sf.SetResource(action.ID, state.StateOK)
+	sf.SetResource(action.ID, state.StateOK, action.StateOpts...)
 	result.Updated++
 	slog.Info("updated", "provider", name, "resource", action.ID)
 	if session != nil {

@@ -81,6 +81,7 @@ func loadBuiltinProviderConfig() *config.Config {
 	paths := config.ResolvePaths()
 	if flags.Config != "" {
 		paths.ConfigHome = filepath.Dir(flags.Config)
+		paths.ConfigFilePath = flags.Config
 	}
 
 	cfg, err := config.Load(paths, flags.Store)

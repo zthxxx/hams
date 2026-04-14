@@ -33,8 +33,9 @@ var DefaultProviderPriority = []string{
 
 // Paths holds the resolved directory paths for hams.
 type Paths struct {
-	ConfigHome string // HAMS_CONFIG_HOME (~/.config/hams/)
-	DataHome   string // HAMS_DATA_HOME (~/.local/share/hams/)
+	ConfigHome     string // HAMS_CONFIG_HOME (~/.config/hams/)
+	DataHome       string // HAMS_DATA_HOME (~/.local/share/hams/)
+	ConfigFilePath string // Explicit config file path from --config flag (overrides GlobalConfigPath).
 }
 
 // ResolvePaths determines the hams directory paths from environment variables.
@@ -66,7 +67,11 @@ func ResolvePaths() Paths {
 }
 
 // GlobalConfigPath returns the path to the global hams config file.
+// If ConfigFilePath is set (via --config flag), it takes precedence.
 func (p Paths) GlobalConfigPath() string {
+	if p.ConfigFilePath != "" {
+		return p.ConfigFilePath
+	}
 	return filepath.Join(p.ConfigHome, "hams.config.yaml")
 }
 

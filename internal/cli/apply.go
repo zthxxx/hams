@@ -57,6 +57,7 @@ func runApply(ctx context.Context, flags *provider.GlobalFlags, registry *provid
 	paths := config.ResolvePaths()
 	if flags.Config != "" {
 		paths.ConfigHome = filepath.Dir(flags.Config)
+		paths.ConfigFilePath = flags.Config
 	}
 
 	storePath := flags.Store

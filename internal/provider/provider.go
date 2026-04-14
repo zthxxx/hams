@@ -80,9 +80,10 @@ type ProbeResult struct {
 
 // Action represents a planned operation on a resource.
 type Action struct {
-	ID       string
-	Type     ActionType
-	Resource any // Provider-specific resource data.
+	ID        string
+	Type      ActionType
+	Resource  any                    // Provider-specific resource data.
+	StateOpts []state.ResourceOption // Extra state options applied after successful execution.
 }
 
 // ActionType categorizes what will happen to a resource during apply.

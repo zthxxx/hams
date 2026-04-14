@@ -54,7 +54,7 @@ func (p *Provider) Bootstrap(_ context.Context) error {
 	return nil
 }
 
-// Probe runs the check command for each resource in state.
+// Probe runs the check command for each resource in state to detect drift.
 func (p *Provider) Probe(_ context.Context, sf *state.File) ([]provider.ProbeResult, error) {
 	var results []provider.ProbeResult
 	for id, r := range sf.Resources {
@@ -67,9 +67,15 @@ func (p *Provider) Probe(_ context.Context, sf *state.File) ([]provider.ProbeRes
 			State: state.StateOK,
 		}
 
-		// If we have check_stdout from a previous run, use it for comparison.
-		if r.CheckStdout != "" {
-			pr.Stdout = r.CheckStdout
+		// If a check command is stored in state, re-run it to detect drift.
+		if r.CheckCmd != "" {
+			stdout, passed := RunCheck(context.Background(), r.CheckCmd)
+			if !passed {
+				pr.State = state.StatePending
+				slog.Info("bash probe: check failed, marking pending", "resource", id, "check", r.CheckCmd)
+			} else {
+				pr.Stdout = stdout
+			}
 		}
 
 		results = append(results, pr)
@@ -92,6 +98,11 @@ func (p *Provider) Plan(_ context.Context, desired *hamsfile.File, observed *sta
 			continue
 		}
 		actions[i].Resource = res
+
+		// Persist check command into state so Probe can re-run it for drift detection.
+		if res.Check != "" {
+			actions[i].StateOpts = append(actions[i].StateOpts, state.WithCheckCmd(maybeAddSudo(res.Check, res.Sudo)))
+		}
 
 		// Cache remove commands so Remove() can look them up by ID.
 		if res.Remove != "" {

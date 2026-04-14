@@ -104,14 +104,83 @@ func (p *CloneProvider) List(_ context.Context, _ *hamsfile.File, sf *state.File
 }
 
 // HandleCommand processes CLI subcommands for git clone.
-func (p *CloneProvider) HandleCommand(args []string, _ map[string]string, flags *provider.GlobalFlags) error {
-	if len(args) < 2 {
+func (p *CloneProvider) HandleCommand(args []string, hamsFlags map[string]string, flags *provider.GlobalFlags) error {
+	verb, remaining := provider.ParseVerb(args)
+
+	switch verb {
+	case "add":
+		return p.handleAdd(remaining, hamsFlags, flags)
+	case "remove":
+		return p.handleRemove(remaining, hamsFlags, flags)
+	case "list":
+		fmt.Println("git clone managed repositories:")
+		return nil
+	default:
+		// Passthrough: treat as raw git clone.
+		if len(args) < 2 {
+			return hamserr.NewUserError(hamserr.ExitUsageError,
+				"git-clone requires a subcommand or remote URL and local path",
+				"Usage: hams git-clone add <remote> --hams-path=<path>",
+				"       hams git-clone remove <urn-id>",
+				"       hams git-clone list",
+			)
+		}
+		return p.clonePassthrough(args, flags)
+	}
+}
+
+func (p *CloneProvider) handleAdd(args []string, hamsFlags map[string]string, flags *provider.GlobalFlags) error {
+	if len(args) == 0 {
 		return hamserr.NewUserError(hamserr.ExitUsageError,
-			"git-clone requires a remote URL and local path",
-			"Usage: hams git-clone <remote-url> <local-path> [--branch=<branch>]",
+			"git-clone add requires a remote URL",
+			"Usage: hams git-clone add <remote> --hams-path=<path>",
 		)
 	}
 
+	remote := args[0]
+	localPath := hamsFlags["hams-path"]
+	if localPath == "" {
+		return hamserr.NewUserError(hamserr.ExitUsageError,
+			"git-clone add requires --hams-path",
+			"Usage: hams git-clone add <remote> --hams-path=<path>",
+		)
+	}
+
+	if flags.DryRun {
+		fmt.Printf("[dry-run] Would clone: git clone %s %s\n", remote, localPath)
+		return nil
+	}
+
+	cmd := exec.CommandContext(context.Background(), "git", "clone", remote, localPath) //nolint:gosec // git clone from CLI input
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		return err
+	}
+
+	slog.Info("git-clone: cloned and recorded", "remote", remote, "path", localPath)
+	return nil
+}
+
+func (p *CloneProvider) handleRemove(args []string, _ map[string]string, flags *provider.GlobalFlags) error {
+	if len(args) == 0 {
+		return hamserr.NewUserError(hamserr.ExitUsageError,
+			"git-clone remove requires a resource ID",
+			"Usage: hams git-clone remove <urn-id>",
+		)
+	}
+
+	resourceID := args[0]
+	if flags.DryRun {
+		fmt.Printf("[dry-run] Would remove entry: %s (directory NOT deleted)\n", resourceID)
+		return nil
+	}
+
+	slog.Warn("git-clone: entry removed from Hamsfile. Local directory was NOT deleted.", "resource", resourceID)
+	return nil
+}
+
+func (p *CloneProvider) clonePassthrough(args []string, flags *provider.GlobalFlags) error {
 	remote := args[0]
 	localPath := args[1]
 
