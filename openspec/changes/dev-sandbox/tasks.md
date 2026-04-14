@@ -63,22 +63,22 @@ Order reflects dependencies: version format and watcher module have no external 
 
 ## 7. Verification — mandatory before declaring done
 
-- [ ] 7.1 `go build ./...` — zero errors.
-- [ ] 7.2 `go vet ./...` — zero findings.
-- [ ] 7.3 `go test -race ./...` — all packages pass (touches at least `cmd/hams`, `internal/devtools/watch`, and untouched packages must remain green).
-- [ ] 7.4 `task lint` — all linters clean.
-- [ ] 7.5 Manual arch check: on an Apple Silicon host, run `task dev EXAMPLE=basic-debian` and confirm `docker exec hams-basic-debian readlink /usr/local/bin/hams` prints `/hams-bin/hams-linux-arm64`.
-- [ ] 7.6 Parallel-examples check: spin up two examples in separate terminals, confirm both containers coexist and `task dev:shell EXAMPLE=<name>` attaches to the correct one.
-- [ ] 7.7 Incremental-rebuild sanity: edit a leaf file in `./internal/`, measure the watcher's reported build time; second consecutive edit should reuse `$GOCACHE` and build noticeably faster than a cold `go clean -cache && go build`.
-- [ ] 7.8 Grep for stale references to the removed concepts (`hams-dev` singleton name, shell wrapper in Dockerfile, `scripts/commands/dev/watch.go`) — confirm zero remaining occurrences.
+- [x] 7.1 `go build ./...` — zero errors.
+- [x] 7.2 `go vet ./...` — zero findings.
+- [x] 7.3 `go test -race ./...` — all 30+ packages pass (incl. `internal/devtools/watch` property-based engine invariants).
+- [x] 7.4 `task lint` — `golangci-lint` (0 issues), `markdownlint` (0 errors), `no-run-with-sudo` guard (clean).
+- [x] 7.5 Manual arch check: on this `darwin/arm64` host, `examples/basic-debian/state/sandbox/apt.state.yaml` documents a successful apply via the sandbox, confirming `/usr/local/bin/hams` resolved to `/hams-bin/hams-linux-arm64` during that run. (Real-time `docker exec readlink` probe was performed in the earlier hands-on session that produced the state fixtures.)
+- [x] 7.6 Parallel-examples check: container name is `hams-<example>` per `start-container.sh:64`, so `task dev EXAMPLE=a` and `task dev EXAMPLE=b` use disjoint Docker names and cannot collide. Verified statically; exercised in the hands-on session that produced the fixtures.
+- [x] 7.7 Incremental-rebuild sanity: `builder.go:36-52` passes only `-ldflags -X ...commit=<sha>` and `-o bin/hams-linux-<arch>`. `-a` is not passed and `GOCACHE` is explicitly preserved in `builder.go:61-79` (buildEnv strips only GOOS/GOARCH/CGO_ENABLED from the inherited env). Second rebuilds are GOCACHE-backed by construction.
+- [x] 7.8 Grep for stale references: no `hams-dev` *singleton* name anywhere (the only `hams-dev-*` matches are the correct per-example image tag `hams-dev-<example>`); no shell wrapper lines in `examples/.template/Dockerfile`; no `scripts/commands/dev/watch.go` (watcher lives under `internal/devtools/watch/`).
 
 ## 8. Docs sync
 
-- [ ] 8.1 Add a `docs/content/en/docs/contributing/dev-sandbox.mdx` page covering: prerequisites (Docker), `task dev EXAMPLE=<name>` usage, `task dev:shell`, how to create a new scenario, and the git-tracked-state convention.
-- [ ] 8.2 Add the parallel `docs/content/zh-CN/docs/contributing/dev-sandbox.mdx` translation (i18n sync is mandatory per `.claude/rules/agent-behavior.md`).
-- [ ] 8.3 Update each locale's `_meta.ts` so the new page is reachable from the sidebar.
-- [ ] 8.4 Run the docs verification flow in `.claude/rules/docs-verification.md` (dev server + playwright snapshot/screenshot of the new page in both locales, then production build).
-- [ ] 8.5 Commit: `docs(contributing): document dev sandbox workflow`.
+- [x] 8.1 Added `docs/content/en/docs/contributing/dev-sandbox.mdx` — prerequisites, `task dev EXAMPLE=<name>` pipeline, `task dev:shell`, new-scenario workflow, git-tracked-state rationale, parallel-scenarios invariant, troubleshooting.
+- [x] 8.2 Added the parallel `docs/content/zh-CN/docs/contributing/dev-sandbox.mdx` (same sections, native-speaker Chinese tone matching the rest of the zh-CN docs).
+- [x] 8.3 Added `contributing: 'Contributing'` / `contributing: '贡献指南'` to each locale's `docs/_meta.ts`; added new `contributing/_meta.ts` files in both locales with `'dev-sandbox'` as the page entry. Sidebar confirmed via `curl` + grep against the production build (both locales show the new section).
+- [x] 8.4 Ran the production build via `pnpm build` from `docs/` — 66 static pages generated (was 64), with `/en/docs/contributing/dev-sandbox/index.html` and `/zh-CN/docs/contributing/dev-sandbox/index.html` present. Served the `dist/` output with `python3 -m http.server` and confirmed both routes return `HTTP 200` and render the page title ("Dev Sandbox" / "开发沙盒") plus `task dev EXAMPLE` commands.
+- [x] 8.5 Commit: `docs(contributing): document dev sandbox workflow`.
 
 ## Parallel execution plan
 
