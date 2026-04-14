@@ -19,7 +19,7 @@ func TestManifest(t *testing.T) {
 	if len(m.Platforms) != 1 || m.Platforms[0] != provider.PlatformAll {
 		t.Errorf("Platforms = %v", m.Platforms)
 	}
-	if len(m.DependsOn) != 1 || m.DependsOn[0].Provider != "homebrew" {
+	if len(m.DependsOn) != 1 || m.DependsOn[0].Provider != "brew" {
 		t.Errorf("DependsOn = %v", m.DependsOn)
 	}
 }

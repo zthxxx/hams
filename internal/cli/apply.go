@@ -86,6 +86,11 @@ func runApply(ctx context.Context, flags *provider.GlobalFlags, registry *provid
 		return fmt.Errorf("loading config: %w", err)
 	}
 
+	// Honor --profile flag override.
+	if flags.Profile != "" {
+		cfg.ProfileTag = flags.Profile
+	}
+
 	if cfg.ProfileTag == "" || cfg.MachineID == "" {
 		fmt.Println("Not Found Profile in config, init it at first")
 		tag, mid, promptErr := promptProfileInit()
@@ -94,6 +99,14 @@ func runApply(ctx context.Context, flags *provider.GlobalFlags, registry *provid
 		}
 		cfg.ProfileTag = tag
 		cfg.MachineID = mid
+
+		// Persist prompted values so they survive across runs.
+		if writeErr := config.WriteConfigKey(paths, storePath, "profile_tag", tag); writeErr != nil {
+			slog.Warn("failed to persist profile_tag", "error", writeErr)
+		}
+		if writeErr := config.WriteConfigKey(paths, storePath, "machine_id", mid); writeErr != nil {
+			slog.Warn("failed to persist machine_id", "error", writeErr)
+		}
 	}
 
 	stateDir := cfg.StateDir()
@@ -134,8 +147,11 @@ func runApply(ctx context.Context, flags *provider.GlobalFlags, registry *provid
 		if bootstrapErr := p.Bootstrap(ctx); bootstrapErr != nil {
 			manifest := p.Manifest()
 			filePrefix := manifestFilePrefix(manifest)
-			hamsfilePath := filepath.Join(profileDir, filePrefix+".hams.yaml")
-			if _, statErr := os.Stat(hamsfilePath); statErr == nil {
+			mainPath := filepath.Join(profileDir, filePrefix+".hams.yaml")
+			localPath := filepath.Join(profileDir, filePrefix+".hams.local.yaml")
+			_, mainErr := os.Stat(mainPath)
+			_, localErr := os.Stat(localPath)
+			if mainErr == nil || localErr == nil {
 				slog.Error("provider bootstrap failed (hamsfile exists, cannot proceed)",
 					"provider", manifest.Name, "error", bootstrapErr)
 				bootstrapFailed = append(bootstrapFailed, manifest.Name)
@@ -150,11 +166,6 @@ func runApply(ctx context.Context, flags *provider.GlobalFlags, registry *provid
 			"Ensure required tools are installed or remove the hamsfile entries",
 			"Use '--only' / '--except' to skip specific providers",
 		)
-	}
-
-	// Acquire sudo credentials once before any provider operations.
-	if sudoErr := sudoMgr.Acquire(ctx); sudoErr != nil {
-		slog.Warn("sudo acquisition failed; some providers may fail", "error", sudoErr)
 	}
 
 	if !noRefresh {
@@ -172,19 +183,38 @@ func runApply(ctx context.Context, flags *provider.GlobalFlags, registry *provid
 		return printDryRunPlan(sorted, cfg)
 	}
 
+	// Acquire sudo credentials once before any provider operations (after dry-run check).
+	if sudoErr := sudoMgr.Acquire(ctx); sudoErr != nil {
+		slog.Warn("sudo acquisition failed; some providers may fail", "error", sudoErr)
+	}
+
 	var allResults []provider.ExecuteResult
 	for _, p := range sorted {
 		manifest := p.Manifest()
 		name := manifest.Name
 		filePrefix := manifestFilePrefix(manifest)
 		hamsfilePath := filepath.Join(profileDir, filePrefix+".hams.yaml")
+		hamsfileLocalPath := filepath.Join(profileDir, filePrefix+".hams.local.yaml")
 
+		mainExists := true
 		if _, statErr := os.Stat(hamsfilePath); os.IsNotExist(statErr) {
+			mainExists = false
+		}
+		localExists := true
+		if _, statErr := os.Stat(hamsfileLocalPath); os.IsNotExist(statErr) {
+			localExists = false
+		}
+		if !mainExists && !localExists {
 			slog.Debug("no hamsfile for provider, skipping", "provider", name)
 			continue
 		}
 
-		hf, readErr := hamsfile.Read(hamsfilePath)
+		mergeStrategy := hamsfile.MergeAppend
+		if manifest.ResourceClass != provider.ClassPackage {
+			mergeStrategy = hamsfile.MergeOverride
+		}
+
+		hf, readErr := hamsfile.ReadMerged(hamsfilePath, hamsfileLocalPath, mergeStrategy)
 		if readErr != nil {
 			slog.Error("failed to read hamsfile", "provider", name, "error", readErr)
 			continue

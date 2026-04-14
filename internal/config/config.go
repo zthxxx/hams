@@ -26,9 +26,10 @@ type Config struct {
 }
 
 // DefaultProviderPriority is the built-in provider execution order.
+// Names must match provider Manifest().Name (lowercased by registry).
 var DefaultProviderPriority = []string{
-	"homebrew", "apt", "pnpm", "npm", "uv", "go", "cargo",
-	"vscode-ext", "mas", "git", "defaults", "duti", "bash",
+	"brew", "apt", "pnpm", "npm", "uv", "goinstall", "cargo",
+	"code-ext", "mas", "git-config", "git-clone", "defaults", "duti", "bash", "ansible",
 }
 
 // Paths holds the resolved directory paths for hams.

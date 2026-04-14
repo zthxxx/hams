@@ -29,7 +29,7 @@ func (p *Provider) Manifest() provider.Manifest {
 		ResourceClass: provider.ClassPackage,
 		DependsOn: []provider.DependOn{
 			{
-				Provider: "homebrew",
+				Provider: "brew",
 				Package:  "visual-studio-code",
 			},
 		},

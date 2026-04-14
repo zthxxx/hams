@@ -66,8 +66,8 @@ func TestLoad_EmptyStore(t *testing.T) {
 	if len(cfg.ProviderPriority) == 0 {
 		t.Error("expected default ProviderPriority to be populated")
 	}
-	if cfg.ProviderPriority[0] != "homebrew" {
-		t.Errorf("first default priority = %q, want 'homebrew'", cfg.ProviderPriority[0])
+	if cfg.ProviderPriority[0] != "brew" {
+		t.Errorf("first default priority = %q, want 'brew'", cfg.ProviderPriority[0])
 	}
 }
 

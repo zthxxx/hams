@@ -44,6 +44,9 @@ func runRefresh(ctx context.Context, flags *provider.GlobalFlags, registry *prov
 	if err != nil {
 		return fmt.Errorf("loading config: %w", err)
 	}
+	if flags.Profile != "" {
+		cfg.ProfileTag = flags.Profile
+	}
 
 	stateDir := cfg.StateDir()
 	providers, filterErr := filterProviders(registry.Ordered(cfg.ProviderPriority), only, except, registry.Names())
