@@ -31,12 +31,20 @@ RUN apt-get update \
 
 RUN apt-get update
 
-# Unprivileged user that matches the host uid/gid at runtime via
-# `docker run --user`. The baked 1000:1000 is a convenience for shells
-# started without --user.
+# Unprivileged user baked for interactive shells. `docker run --user <uid>`
+# overrides this with the host uid/gid so bind-mounted files land with
+# correct ownership on the host. HOME=/home/dev is forced via -e so hams
+# config paths resolve regardless of whether the host uid has a matching
+# /etc/passwd entry inside the container.
 RUN groupadd --system --gid 1000 dev \
  && useradd --system --uid 1000 --gid 1000 --shell /bin/bash --create-home dev \
- && printf 'dev ALL=(ALL) NOPASSWD: ALL\n' > /etc/sudoers.d/dev \
- && chmod 0440 /etc/sudoers.d/dev
+ && chmod 0777 /home/dev
+
+# Dev-sandbox sudoers: any uid (including host uids without /etc/passwd
+# entries) gets passwordless sudo. Acceptable because the container is
+# ephemeral (--rm), has no network services exposed, and exists only to
+# run hams scenarios.
+RUN printf 'ALL ALL=(ALL) NOPASSWD: ALL\n' > /etc/sudoers.d/dev-sandbox \
+ && chmod 0440 /etc/sudoers.d/dev-sandbox
 
 WORKDIR /workspace
