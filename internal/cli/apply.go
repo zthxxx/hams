@@ -14,8 +14,8 @@ import (
 	"github.com/urfave/cli/v3"
 	"gopkg.in/yaml.v3"
 
-	hamserr "github.com/zthxxx/hams/internal/error"
 	"github.com/zthxxx/hams/internal/config"
+	hamserr "github.com/zthxxx/hams/internal/error"
 	"github.com/zthxxx/hams/internal/hamsfile"
 	"github.com/zthxxx/hams/internal/logging"
 	"github.com/zthxxx/hams/internal/provider"
@@ -23,7 +23,7 @@ import (
 	"github.com/zthxxx/hams/internal/sudo"
 )
 
-func applyCmd(registry *provider.Registry) *cli.Command {
+func applyCmd(registry *provider.Registry, sudoAcq sudo.Acquirer) *cli.Command {
 	return &cli.Command{
 		Name:  "apply",
 		Usage: "Apply all configurations from the store",
@@ -40,7 +40,7 @@ Use --no-refresh to skip probing and apply based on state alone.`,
 		},
 		Action: func(ctx context.Context, cmd *cli.Command) error {
 			flags := globalFlags(cmd)
-			return runApply(ctx, flags, registry,
+			return runApply(ctx, flags, registry, sudoAcq,
 				cmd.String("from-repo"),
 				cmd.Bool("no-refresh"),
 				cmd.String("only"),
@@ -50,7 +50,7 @@ Use --no-refresh to skip probing and apply based on state alone.`,
 	}
 }
 
-func runApply(ctx context.Context, flags *provider.GlobalFlags, registry *provider.Registry, fromRepo string, noRefresh bool, only, except string) error {
+func runApply(ctx context.Context, flags *provider.GlobalFlags, registry *provider.Registry, sudoAcq sudo.Acquirer, fromRepo string, noRefresh bool, only, except string) error {
 	if flags.DryRun {
 		fmt.Println("[dry-run] Would apply configurations. No changes will be made.")
 	}
@@ -125,8 +125,7 @@ func runApply(ctx context.Context, flags *provider.GlobalFlags, registry *provid
 		}()
 	}
 
-	sudoMgr := sudo.NewManager()
-	defer sudoMgr.Stop()
+	defer sudoAcq.Stop()
 
 	allProviders := registry.Ordered(cfg.ProviderPriority)
 	providers, filterErr := filterProviders(allProviders, only, except, registry.Names())
@@ -185,7 +184,7 @@ func runApply(ctx context.Context, flags *provider.GlobalFlags, registry *provid
 	}
 
 	// Acquire sudo credentials once before any provider operations (after dry-run check).
-	if sudoErr := sudoMgr.Acquire(ctx); sudoErr != nil {
+	if sudoErr := sudoAcq.Acquire(ctx); sudoErr != nil {
 		slog.Warn("sudo acquisition failed; some providers may fail", "error", sudoErr)
 	}
 

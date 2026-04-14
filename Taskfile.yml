@@ -86,7 +86,15 @@ tasks:
   test:
     desc: Run tests with race detection
     cmds:
+      - task: test:unit
+      - task: test:e2e
+      - task: test:integration
+
+  test:unit:
+    desc: Run unit tests with race detection
+    cmds:
       - go test -race -count=1 -coverprofile=coverage.out ./...
+
 
   test:cover:
     desc: Show test coverage in browser
@@ -121,6 +129,11 @@ tasks:
     desc: Run integration tests via act
     cmds:
       - act push --container-architecture linux/amd64 -j integration --rm
+
+  test:sudo:
+    desc: Run sudo DI tests in Docker
+    cmds:
+      - act push --container-architecture linux/amd64 -j sudo --rm
 
   ci:
     desc: Run full CI pipeline locally via act (lint + test + build + integration + e2e)

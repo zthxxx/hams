@@ -130,6 +130,31 @@ jobs:
             "$INTEGRATION_IMAGE" \
             go test -v -tags=integration -race -count=1 ./...
 
+  sudo:
+    name: Sudo Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build sudo test image (cached by content hash)
+        run: |
+          HASH=$(cat e2e/sudo/Dockerfile go.mod go.sum | sha256sum | head -c 12)
+          IMAGE="hams-sudo:${HASH}"
+          if ! docker image inspect "$IMAGE" >/dev/null 2>&1; then
+            docker build -f e2e/sudo/Dockerfile -t "$IMAGE" .
+            docker images --format '{{.Repository}}:{{.Tag}}' \
+              | grep '^hams-sudo:' | grep -v ":${HASH}$" \
+              | xargs -r docker rmi 2>/dev/null || true
+          fi
+          echo "SUDO_IMAGE=$IMAGE" >> "$GITHUB_ENV"
+
+      - name: Run sudo tests
+        run: |
+          docker run --rm \
+            -v "$(pwd):/src" \
+            "$SUDO_IMAGE" \
+            bash /src/e2e/sudo/run-tests.sh
+
   e2e:
     name: E2E (${{ matrix.target }})
     runs-on: ubuntu-latest

@@ -65,6 +65,11 @@ words:
   - modernize
   - usestdlibvars
 
+  # linux/sudo
+  - NOPASSWD
+  - sudoers
+  - testuser
+
   # libraries
   - uber
 

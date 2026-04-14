@@ -20,10 +20,12 @@ import (
 var AutoInjectFlags = map[string]string{"-y": ""}
 
 // Provider implements the APT package manager provider.
-type Provider struct{}
+type Provider struct {
+	sudo sudo.CmdBuilder
+}
 
-// New creates a new apt provider.
-func New() *Provider { return &Provider{} }
+// New creates a new apt provider with the given sudo command builder.
+func New(sb sudo.CmdBuilder) *Provider { return &Provider{sudo: sb} }
 
 // Manifest returns the apt provider metadata.
 func (p *Provider) Manifest() provider.Manifest {
@@ -77,7 +79,7 @@ func (p *Provider) Plan(_ context.Context, desired *hamsfile.File, observed *sta
 // Apply installs an apt package with sudo.
 func (p *Provider) Apply(ctx context.Context, action provider.Action) error {
 	slog.Info("apt install", "package", action.ID)
-	cmd := sudo.RunWithSudo(ctx, "apt-get", "install", "-y", action.ID)
+	cmd := p.sudo.Command(ctx, "apt-get", "install", "-y", action.ID)
 	cmd.Stdout = nil
 	cmd.Stderr = nil
 	return cmd.Run()
@@ -86,7 +88,7 @@ func (p *Provider) Apply(ctx context.Context, action provider.Action) error {
 // Remove uninstalls an apt package with sudo.
 func (p *Provider) Remove(ctx context.Context, resourceID string) error {
 	slog.Info("apt remove", "package", resourceID)
-	cmd := sudo.RunWithSudo(ctx, "apt-get", "remove", "-y", resourceID)
+	cmd := p.sudo.Command(ctx, "apt-get", "remove", "-y", resourceID)
 	return cmd.Run()
 }
 
@@ -112,14 +114,14 @@ func (p *Provider) HandleCommand(_ context.Context, args []string, _ map[string]
 			fmt.Printf("[dry-run] Would install: sudo apt-get install -y %s\n", strings.Join(remaining, " "))
 			return nil
 		}
-		cmd := sudo.RunWithSudo(context.Background(), "apt-get", append([]string{"install", "-y"}, remaining...)...)
+		cmd := p.sudo.Command(context.Background(), "apt-get", append([]string{"install", "-y"}, remaining...)...)
 		return cmd.Run()
 	case "remove":
 		if flags.DryRun {
 			fmt.Printf("[dry-run] Would remove: sudo apt-get remove -y %s\n", strings.Join(remaining, " "))
 			return nil
 		}
-		cmd := sudo.RunWithSudo(context.Background(), "apt-get", append([]string{"remove", "-y"}, remaining...)...)
+		cmd := p.sudo.Command(context.Background(), "apt-get", append([]string{"remove", "-y"}, remaining...)...)
 		return cmd.Run()
 	default:
 		return provider.WrapExecPassthrough(context.Background(), "apt-get", args, nil)

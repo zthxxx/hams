@@ -10,10 +10,13 @@ import (
 
 	"github.com/urfave/cli/v3"
 
+	"go.uber.org/fx"
+
 	"github.com/zthxxx/hams/internal/config"
 	hamserr "github.com/zthxxx/hams/internal/error"
 	"github.com/zthxxx/hams/internal/i18n"
 	"github.com/zthxxx/hams/internal/provider"
+	"github.com/zthxxx/hams/internal/sudo"
 	"github.com/zthxxx/hams/internal/version"
 )
 
@@ -41,7 +44,7 @@ func resolvePaths(flags *provider.GlobalFlags) config.Paths {
 }
 
 // NewApp creates the top-level hams urfave/cli application.
-func NewApp(registry *provider.Registry) *cli.Command {
+func NewApp(registry *provider.Registry, sudoAcq sudo.Acquirer) *cli.Command {
 	flags := globalFlagDefs()
 
 	app := &cli.Command{
@@ -56,7 +59,7 @@ Use 'hams <provider> install <package>' to install and record.
 Use 'hams apply' to replay all installations from config.`,
 		Flags: flags,
 		Commands: []*cli.Command{
-			applyCmd(registry),
+			applyCmd(registry, sudoAcq),
 			refreshCmd(registry),
 			configCmd(),
 			storeCmd(),
@@ -88,11 +91,24 @@ Use 'hams apply' to replay all installations from config.`,
 func Execute() {
 	i18n.Init()
 
+	var sudoAcq sudo.Acquirer
+	var sudoCmd sudo.CmdBuilder
+
+	fxApp := fx.New(
+		fx.NopLogger,
+		sudo.Module,
+		fx.Populate(&sudoAcq, &sudoCmd),
+	)
+	if err := fxApp.Err(); err != nil {
+		fmt.Fprintf(os.Stderr, "initialization error: %v\n", err)
+		os.Exit(1)
+	}
+
 	// Create provider registry and register builtins.
 	registry := provider.NewRegistry()
-	registerBuiltins(registry)
+	registerBuiltins(registry, sudoCmd)
 
-	app := NewApp(registry)
+	app := NewApp(registry, sudoAcq)
 
 	if err := app.Run(context.Background(), os.Args); err != nil {
 		flags := &provider.GlobalFlags{}
