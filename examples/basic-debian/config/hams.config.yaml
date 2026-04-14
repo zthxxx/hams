@@ -1,0 +1,6 @@
+# Global hams config for the dev-sandbox scenario.
+#
+# Mounted by start-container.sh at $HOME/.config/hams/hams.config.yaml
+# inside the container (HAMS_CONFIG_HOME=$HOME/.config/hams).
+
+store_path: /workspace/store

@@ -1,0 +1,7 @@
+# Store-level hams config for the dev-sandbox scenario.
+#
+# Lives inside the store root (/workspace/store/hams.config.yaml inside
+# the container). Merged on top of the global config at load time.
+
+profile_tag: dev
+machine_id: sandbox

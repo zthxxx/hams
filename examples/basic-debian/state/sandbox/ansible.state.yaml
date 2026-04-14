@@ -1,0 +1,4 @@
+schema_version: 1
+provider: ansible
+machine_id: sandbox
+resources: {}
