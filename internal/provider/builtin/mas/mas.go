@@ -14,6 +14,9 @@ import (
 	"github.com/zthxxx/hams/internal/state"
 )
 
+// displayName is the human-readable name of this provider.
+const displayName = "Mac App Store"
+
 // Provider implements the Mac App Store provider.
 type Provider struct{}
 
@@ -24,7 +27,7 @@ func New() *Provider { return &Provider{} }
 func (p *Provider) Manifest() provider.Manifest {
 	return provider.Manifest{
 		Name:          "mas",
-		DisplayName:   "Mac App Store",
+		DisplayName:   displayName,
 		Platforms:     []provider.Platform{provider.PlatformDarwin},
 		ResourceClass: provider.ClassPackage,
 		FilePrefix:    "mas",
@@ -119,7 +122,7 @@ func (p *Provider) HandleCommand(_ context.Context, args []string, _ map[string]
 func (p *Provider) Name() string { return "mas" }
 
 // DisplayName returns the display name.
-func (p *Provider) DisplayName() string { return "Mac App Store" }
+func (p *Provider) DisplayName() string { return displayName }
 
 // parseMasList parses `mas list` output into an appID→version map.
 // Each line has the form: "1234567890  App Name (version)".

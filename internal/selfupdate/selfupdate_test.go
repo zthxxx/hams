@@ -260,7 +260,10 @@ func TestReplaceBinary_ChecksumMismatch_OriginalIntact(t *testing.T) {
 	}
 
 	// No temp files should remain.
-	entries, _ := os.ReadDir(dir)
+	entries, readErr := os.ReadDir(dir)
+	if readErr != nil {
+		t.Fatalf("reading temp dir: %v", readErr)
+	}
 	for _, e := range entries {
 		if strings.HasPrefix(e.Name(), "hams-update-") {
 			t.Errorf("temp file %q not cleaned up", e.Name())
@@ -304,7 +307,10 @@ func TestReplaceBinary_Property_AtomicOnFailure(t *testing.T) {
 		}
 
 		// Invariant: no temp files left behind.
-		entries, _ := os.ReadDir(tmpDir)
+		entries, readErr := os.ReadDir(tmpDir)
+		if readErr != nil {
+			t.Fatalf("reading temp dir: %v", readErr)
+		}
 		for _, e := range entries {
 			if strings.HasPrefix(e.Name(), "hams-update-") {
 				t.Errorf("temp file %q not cleaned up", e.Name())

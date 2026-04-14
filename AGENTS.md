@@ -91,7 +91,7 @@ Store repo layout (profile-as-directory):
 
 ## Build & Distribution
 
-This project is designed exclusively for *nix environments, such as Linux(Debian/Alpline) and macOS.
+This project is designed exclusively for *nix environments, such as Linux(Debian/Alpine) and macOS.
 It does not support, nor are there plans to support, Windows environments.
 
 Static binary (`CGO_ENABLED=0`), targets: darwin/arm64, linux/amd64, linux/arm64.

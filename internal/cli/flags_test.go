@@ -113,32 +113,9 @@ func TestSplitHamsFlags_Property_PartitionInvariants(t *testing.T) {
 			}
 		}
 
-		// Invariant 2: the -- separator itself is preserved in passthrough.
+		// Invariants 2 & 3: separator preserved and tail verbatim.
 		if firstSep >= 0 {
-			afterSep := args[firstSep+1:]
-			// passthrough = prefix (non-hams args before --) + "--" + afterSep
-			expectedPrefixLen := 0
-			for _, a := range beforeSep {
-				if !strings.HasPrefix(a, hamsFlagPrefix) {
-					expectedPrefixLen++
-				}
-			}
-			sepIdx := expectedPrefixLen
-			if sepIdx >= len(pass) || pass[sepIdx] != "--" {
-				t.Errorf("expected -- at passthrough[%d], got %v", sepIdx, pass)
-			}
-
-			// Invariant 3: everything after -- is preserved verbatim.
-			tailStart := sepIdx + 1
-			if tailStart+len(afterSep) != len(pass) {
-				t.Errorf("passthrough tail length mismatch: got %d, want %d", len(pass)-tailStart, len(afterSep))
-			} else {
-				for i, a := range afterSep {
-					if pass[tailStart+i] != a {
-						t.Errorf("after separator: pass[%d]=%q, want %q", tailStart+i, pass[tailStart+i], a)
-					}
-				}
-			}
+			checkSeparatorInvariants(t, args, beforeSep, pass, firstSep)
 		}
 
 		// Invariant 4: no --hams- flags in the prefix portion (before --).
@@ -175,4 +152,33 @@ func TestSplitHamsFlags_Property_PartitionInvariants(t *testing.T) {
 			}
 		}
 	})
+}
+
+// checkSeparatorInvariants asserts that "--" is preserved in passthrough at the right
+// position, and that every arg after the first "--" in args is present verbatim in pass.
+func checkSeparatorInvariants(t *rapid.T, args, beforeSep, pass []string, firstSep int) {
+	t.Helper()
+	afterSep := args[firstSep+1:]
+	// passthrough = prefix (non-hams args before --) + "--" + afterSep
+	expectedPrefixLen := 0
+	for _, a := range beforeSep {
+		if !strings.HasPrefix(a, hamsFlagPrefix) {
+			expectedPrefixLen++
+		}
+	}
+	sepIdx := expectedPrefixLen
+	if sepIdx >= len(pass) || pass[sepIdx] != "--" {
+		t.Errorf("expected -- at passthrough[%d], got %v", sepIdx, pass)
+	}
+
+	tailStart := sepIdx + 1
+	if tailStart+len(afterSep) != len(pass) {
+		t.Errorf("passthrough tail length mismatch: got %d, want %d", len(pass)-tailStart, len(afterSep))
+		return
+	}
+	for i, a := range afterSep {
+		if pass[tailStart+i] != a {
+			t.Errorf("after separator: pass[%d]=%q, want %q", tailStart+i, pass[tailStart+i], a)
+		}
+	}
 }

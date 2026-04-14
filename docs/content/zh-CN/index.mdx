@@ -3,10 +3,10 @@ import Link from 'next/link'
 <div className="landing-container">
   <div className="landing-hero">
     <h1 className="landing-title">hams 🐹</h1>
-    <div className="landing-tagline">声明式工作站环境管理工具</div>
+    <div className="landing-tagline">给工作站写声明、一键恢复</div>
     <div className="landing-description">
-      像仓鼠囤积食物一样，hams 将你的环境配置 —— 包、设置、dotfiles、git 仓库 ——
-      囤积到 YAML 文件中，在新机器上一条命令全部恢复。
+      仓鼠塞食物进颊囊，你把装过的包、改过的系统设置、dotfiles、git 仓库也都塞进 YAML 文件里。
+      换新机器那天，一条命令全回来。
     </div>
     <div className="landing-actions">
       <Link href="/zh-CN/docs" className="landing-btn-primary">
@@ -20,34 +20,34 @@ import Link from 'next/link'
 
   <div className="landing-features">
     <div className="landing-feature">
-      <h3>CLI 优先，自动记录</h3>
-      <div><code>hams brew install git</code> 安装的同时自动记录，无需手动编辑配置。</div>
+      <h3>边装边记</h3>
+      <div>敲 <code>hams brew install git</code> 就完事 —— 包装了，Hamsfile 也同步写好。不用先改 YAML 再来装。</div>
     </div>
     <div className="landing-feature">
-      <h3>一条命令恢复一切</h3>
-      <div><code>hams apply --from-repo=user/store</code> 在新机器上恢复所有环境。</div>
+      <h3>一条命令铺满新机器</h3>
+      <div><code>hams apply --from-repo=user/store</code>，剩下的交给它。</div>
     </div>
     <div className="landing-feature">
       <h3>15 个内置 Provider</h3>
-      <div>Homebrew、apt、pnpm、npm、cargo、go、VS Code、git、macOS defaults 等。</div>
+      <div>Homebrew、apt、pnpm、npm、cargo、go、VS Code、git、macOS defaults 这些日常的全都有。</div>
     </div>
     <div className="landing-feature">
-      <h3>基于 Diff 的更新</h3>
-      <div>手动编辑 YAML，运行 <code>hams apply</code>，自动对比状态并执行变更。</div>
+      <h3>改 YAML 就能同步</h3>
+      <div>手动编辑 Hamsfile 之后 <code>hams apply</code>，hams 会自己算差异、执行变更。</div>
     </div>
   </div>
 
   <div className="landing-example">
-    <h2>使用 hams 的日常</h2>
+    <h2>用 hams 是什么手感</h2>
 
 ```bash
-# 安装工具并自动记录
+# 装个工具，顺手记下来
 hams brew install htop
 
-# 三个月后，在新电脑上
+# 三个月后，新电脑开箱
 hams apply --from-repo=zthxxx/hams-store
 
-# 查看管理的包
+# 想看看管了哪些东西
 hams list
 ```
 

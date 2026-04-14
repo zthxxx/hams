@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -199,12 +200,7 @@ var ValidConfigKeys = []string{"profile_tag", "machine_id", "store_path", "store
 
 // IsValidConfigKey returns true if the key is a recognized settable config key.
 func IsValidConfigKey(key string) bool {
-	for _, k := range ValidConfigKeys {
-		if k == key {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(ValidConfigKeys, key)
 }
 
 // WriteConfigKey reads the appropriate config file, updates a single key, and writes it back atomically.
@@ -224,7 +220,7 @@ func WriteConfigKey(paths Paths, storePath, key, value string) error {
 	}
 
 	// Read existing file into a generic map to preserve unknown fields.
-	existing := make(map[string]interface{})
+	existing := make(map[string]any)
 	data, err := os.ReadFile(targetPath) //nolint:gosec // config paths are user-specified
 	if err == nil {
 		if unmarshalErr := yaml.Unmarshal(data, &existing); unmarshalErr != nil {

@@ -48,7 +48,7 @@ func NewApp(registry *provider.Registry, sudoAcq sudo.Acquirer) *cli.Command {
 	app := &cli.Command{
 		Name:    "hams",
 		Usage:   "Declarative IaC environment management for workstations",
-		Version: version.Version(),
+		Version: version.Brief(),
 		Description: `hams (hamster) wraps existing package managers to auto-record installations
 into declarative YAML config files, enabling one-command environment
 restoration on new machines.
@@ -99,7 +99,7 @@ func Execute() {
 		flags := &provider.GlobalFlags{}
 		// Check if --json was passed.
 		for _, arg := range os.Args {
-			if arg == "--json" {
+			if arg == jsonFlag {
 				flags.JSON = true
 			}
 		}

@@ -19,6 +19,9 @@ type ProviderHandler interface {
 	HandleCommand(ctx context.Context, args []string, hamsFlags map[string]string, flags *provider.GlobalFlags) error
 }
 
+// jsonFlag is the CLI flag that switches global output to JSON.
+const jsonFlag = "--json"
+
 // providerRegistry holds registered provider handlers.
 var providerRegistry = make(map[string]ProviderHandler)
 
@@ -81,7 +84,7 @@ func parseProviderArgs(args []string, flags *provider.GlobalFlags) (hamsFlags ma
 			flags.Debug = true
 		case arg == "--dry-run":
 			flags.DryRun = true
-		case arg == "--json":
+		case arg == jsonFlag:
 			flags.JSON = true
 		case arg == "--no-color":
 			flags.NoColor = true
@@ -132,7 +135,7 @@ func stripGlobalFlags(args []string, flags *provider.GlobalFlags) []string {
 			flags.Debug = true
 		case arg == "--dry-run":
 			flags.DryRun = true
-		case arg == "--json":
+		case arg == jsonFlag:
 			flags.JSON = true
 		case arg == "--no-color":
 			flags.NoColor = true

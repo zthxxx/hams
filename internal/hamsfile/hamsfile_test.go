@@ -284,7 +284,7 @@ func TestProperty_PreviewCmdSurvivesRoundTrip(t *testing.T) {
 		}
 
 		// Re-read and verify.
-		data, dataErr := os.ReadFile(path) //nolint:gosec // test
+		data, dataErr := os.ReadFile(path)
 		if dataErr != nil {
 			t.Fatalf("ReadFile: %v", dataErr)
 		}

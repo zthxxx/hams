@@ -17,6 +17,10 @@ When the user corrects an error, interrupts to redirect, or states a new rule:
 2. **Normative/principled/rule content**: add to the appropriate `.claude/rules/*.md` file.
 3. **Feature or interaction changes**: if the change affects user-facing behavior, sync updates to `docs/` or `README.md` AND auto-check corresponding i18n files (e.g., `*.zh-CN.*`) for parallel updates.
 
+## Recording Clarifications into Artifacts
+
+Any clarification — whether a confirmed approach from discussion or a scope/design/spec change — MUST be written back into the originating artifact (`proposal.md`, `design.md`, `spec.md`, `tasks.md`) at the moment it is resolved. Never execute on a clarified decision without first recording it. Discussion threads are ephemeral; artifacts are the system of record.
+
 ## Mandatory Verification Before Delivery
 
 When you believe a change is complete, you MUST verify the result before reporting it to the user. Never deliver an unverified "final" artifact. Verification steps:

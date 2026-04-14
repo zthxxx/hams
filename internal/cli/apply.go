@@ -144,20 +144,22 @@ func runApply(ctx context.Context, flags *provider.GlobalFlags, registry *provid
 	profileDir := cfg.ProfileDir()
 	var bootstrapFailed []string
 	for _, p := range sorted {
-		if bootstrapErr := p.Bootstrap(ctx); bootstrapErr != nil {
-			manifest := p.Manifest()
-			filePrefix := manifestFilePrefix(manifest)
-			mainPath := filepath.Join(profileDir, filePrefix+".hams.yaml")
-			localPath := filepath.Join(profileDir, filePrefix+".hams.local.yaml")
-			_, mainErr := os.Stat(mainPath)
-			_, localErr := os.Stat(localPath)
-			if mainErr == nil || localErr == nil {
-				slog.Error("provider bootstrap failed (hamsfile exists, cannot proceed)",
-					"provider", manifest.Name, "error", bootstrapErr)
-				bootstrapFailed = append(bootstrapFailed, manifest.Name)
-			} else {
-				slog.Debug("provider bootstrap skipped (no hamsfile)", "provider", manifest.Name, "error", bootstrapErr)
-			}
+		bootstrapErr := p.Bootstrap(ctx)
+		if bootstrapErr == nil {
+			continue
+		}
+		manifest := p.Manifest()
+		filePrefix := manifestFilePrefix(manifest)
+		mainPath := filepath.Join(profileDir, filePrefix+".hams.yaml")
+		localPath := filepath.Join(profileDir, filePrefix+".hams.local.yaml")
+		_, mainErr := os.Stat(mainPath)
+		_, localErr := os.Stat(localPath)
+		if mainErr == nil || localErr == nil {
+			slog.Error("provider bootstrap failed (hamsfile exists, cannot proceed)",
+				"provider", manifest.Name, "error", bootstrapErr)
+			bootstrapFailed = append(bootstrapFailed, manifest.Name)
+		} else {
+			slog.Debug("provider bootstrap skipped (no hamsfile)", "provider", manifest.Name, "error", bootstrapErr)
 		}
 	}
 	if len(bootstrapFailed) > 0 {
@@ -389,7 +391,7 @@ func filterProviders(providers []provider.Provider, only, except string, knownNa
 	return filtered, nil
 }
 
-func validateProviderNames(requested map[string]bool, known map[string]bool, knownNames []string) error {
+func validateProviderNames(requested, known map[string]bool, knownNames []string) error {
 	var unknown []string
 	for name := range requested {
 		if !known[name] {

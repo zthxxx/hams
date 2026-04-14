@@ -149,7 +149,7 @@ func configCmd() *cli.Command {
 			{
 				Name:  "edit",
 				Usage: "Open the global config file in your editor",
-				Action: func(_ context.Context, cmd *cli.Command) error {
+				Action: func(ctx context.Context, cmd *cli.Command) error {
 					flags := globalFlags(cmd)
 					paths := resolvePaths(flags)
 					configPath := paths.GlobalConfigPath()
@@ -159,7 +159,7 @@ func configCmd() *cli.Command {
 						if mkdirErr := os.MkdirAll(filepath.Dir(configPath), 0o750); mkdirErr != nil {
 							return fmt.Errorf("creating config directory: %w", mkdirErr)
 						}
-						if writeErr := os.WriteFile(configPath, []byte("# hams global configuration\n"), 0o640); writeErr != nil {
+						if writeErr := os.WriteFile(configPath, []byte("# hams global configuration\n"), 0o600); writeErr != nil {
 							return fmt.Errorf("creating config file: %w", writeErr)
 						}
 					}
@@ -172,7 +172,7 @@ func configCmd() *cli.Command {
 						editor = "vi"
 					}
 
-					editorCmd := exec.Command(editor, configPath) //nolint:gosec // editor is user-specified via $EDITOR
+					editorCmd := exec.CommandContext(ctx, editor, configPath) //nolint:gosec // editor is user-specified via $EDITOR
 					editorCmd.Stdin = os.Stdin
 					editorCmd.Stdout = os.Stdout
 					editorCmd.Stderr = os.Stderr
@@ -295,7 +295,7 @@ func storeCmd() *cli.Command {
 						if marshalErr != nil {
 							return fmt.Errorf("marshaling initial config: %w", marshalErr)
 						}
-						if writeErr := os.WriteFile(storeConfigPath, data, 0o640); writeErr != nil {
+						if writeErr := os.WriteFile(storeConfigPath, data, 0o600); writeErr != nil {
 							return fmt.Errorf("writing initial config: %w", writeErr)
 						}
 					}
@@ -309,7 +309,7 @@ func storeCmd() *cli.Command {
 			{
 				Name:  "push",
 				Usage: "Commit and push store changes to the remote repository",
-				Action: func(_ context.Context, cmd *cli.Command) error {
+				Action: func(ctx context.Context, cmd *cli.Command) error {
 					flags := globalFlags(cmd)
 					paths := resolvePaths(flags)
 					cfg, err := config.Load(paths, flags.Store)
@@ -325,7 +325,7 @@ func storeCmd() *cli.Command {
 						)
 					}
 
-					gitAdd := exec.Command("git", "-C", storePath, "add", "-A") //nolint:gosec // storePath is user-configured
+					gitAdd := exec.CommandContext(ctx, "git", "-C", storePath, "add", "-A") //nolint:gosec // storePath is user-configured
 					gitAdd.Stdin = os.Stdin
 					gitAdd.Stdout = os.Stdout
 					gitAdd.Stderr = os.Stderr
@@ -333,7 +333,7 @@ func storeCmd() *cli.Command {
 						return fmt.Errorf("git add: %w", runErr)
 					}
 
-					gitCommit := exec.Command("git", "-C", storePath, "commit", "-m", "hams: update store") //nolint:gosec // storePath is user-configured
+					gitCommit := exec.CommandContext(ctx, "git", "-C", storePath, "commit", "-m", "hams: update store") //nolint:gosec // storePath is user-configured
 					gitCommit.Stdin = os.Stdin
 					gitCommit.Stdout = os.Stdout
 					gitCommit.Stderr = os.Stderr
@@ -341,7 +341,7 @@ func storeCmd() *cli.Command {
 						return fmt.Errorf("git commit: %w", runErr)
 					}
 
-					gitPush := exec.Command("git", "-C", storePath, "push") //nolint:gosec // storePath is user-configured
+					gitPush := exec.CommandContext(ctx, "git", "-C", storePath, "push") //nolint:gosec // storePath is user-configured
 					gitPush.Stdin = os.Stdin
 					gitPush.Stdout = os.Stdout
 					gitPush.Stderr = os.Stderr
@@ -355,7 +355,7 @@ func storeCmd() *cli.Command {
 			{
 				Name:  "pull",
 				Usage: "Pull latest store changes from the remote repository",
-				Action: func(_ context.Context, cmd *cli.Command) error {
+				Action: func(ctx context.Context, cmd *cli.Command) error {
 					flags := globalFlags(cmd)
 					paths := resolvePaths(flags)
 					cfg, err := config.Load(paths, flags.Store)
@@ -371,7 +371,7 @@ func storeCmd() *cli.Command {
 						)
 					}
 
-					gitPull := exec.Command("git", "-C", storePath, "pull", "--rebase") //nolint:gosec // storePath is user-configured
+					gitPull := exec.CommandContext(ctx, "git", "-C", storePath, "pull", "--rebase") //nolint:gosec // storePath is user-configured
 					gitPull.Stdin = os.Stdin
 					gitPull.Stdout = os.Stdout
 					gitPull.Stderr = os.Stderr
@@ -422,7 +422,7 @@ func listCmd(registry *provider.Registry) *cli.Command {
 			var statusSet map[string]bool
 			if statusFilter != "" {
 				statusSet = make(map[string]bool)
-				for _, s := range strings.Split(statusFilter, ",") {
+				for s := range strings.SplitSeq(statusFilter, ",") {
 					statusSet[strings.TrimSpace(s)] = true
 				}
 			}

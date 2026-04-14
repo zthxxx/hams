@@ -8,15 +8,12 @@
     "type": "git",
     "url": "git+https://github.com/zthxxx/hams.git"
   },
-  "license": "UNLICENSED",
+  "license": "MIT",
   "engines": {
     "bun": ">=1.2",
     "pnpm": ">=10"
   },
   "packageManager": "pnpm@10.8.1",
-  "pnpm": {
-    "saveExact": true
-  },
   "scripts": {
     "lint": "eslint .",
     "lint:fix": "eslint --fix .",

@@ -6,10 +6,11 @@ import (
 
 	"pgregory.net/rapid"
 
+	"gopkg.in/yaml.v3"
+
 	"github.com/zthxxx/hams/internal/hamsfile"
 	"github.com/zthxxx/hams/internal/provider"
 	"github.com/zthxxx/hams/internal/state"
-	"gopkg.in/yaml.v3"
 )
 
 func TestDiffDesiredVsState_PropertyBased(t *testing.T) {

@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -20,6 +21,9 @@ import (
 	"github.com/zthxxx/hams/internal/provider"
 	"github.com/zthxxx/hams/internal/state"
 )
+
+// tagCLI is the default hamsfile tag for CLI (non-cask, non-tap) brew formulas.
+const tagCLI = "cli"
 
 // BrewResource holds provider-specific data for a Homebrew action.
 type BrewResource struct {
@@ -110,7 +114,7 @@ func listTaps(ctx context.Context) ([]string, error) {
 		return nil, fmt.Errorf("brew tap: %w", err)
 	}
 	var taps []string
-	for _, line := range strings.Split(strings.TrimSpace(string(output)), "\n") {
+	for line := range strings.SplitSeq(strings.TrimSpace(string(output)), "\n") {
 		line = strings.TrimSpace(line)
 		if line != "" {
 			taps = append(taps, line)
@@ -297,11 +301,11 @@ func (p *Provider) handleInstall(ctx context.Context, args []string, hamsFlags m
 	packages := packageArgs(args)
 	tag := parseInstallTag(hamsFlags)
 	// If --cask is present in args and no explicit tag was set, use "cask" as the tag.
-	if tag == "cli" && hasCaskFlag(args) {
+	if tag == tagCLI && hasCaskFlag(args) {
 		tag = "cask"
 	}
 	// Auto-detect tap format (user/repo with exactly one slash, no formula suffix).
-	if tag == "cli" && len(packages) > 0 && isTapFormat(packages[0]) {
+	if tag == tagCLI && len(packages) > 0 && isTapFormat(packages[0]) {
 		tag = "tap"
 	}
 	if len(packages) == 0 {
@@ -497,13 +501,13 @@ func (p *Provider) effectiveConfig(flags *provider.GlobalFlags) *config.Config {
 }
 
 func parseInstallTag(hamsFlags map[string]string) string {
-	tag := "cli"
+	tag := tagCLI
 	if raw := strings.TrimSpace(hamsFlags["tag"]); raw != "" {
 		tag = strings.TrimSpace(strings.Split(raw, ",")[0])
 	}
 
 	if tag == "" {
-		return "cli"
+		return tagCLI
 	}
 
 	return tag
@@ -521,10 +525,5 @@ func packageArgs(args []string) []string {
 }
 
 func hasCaskFlag(args []string) bool {
-	for _, arg := range args {
-		if arg == "--cask" {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(args, "--cask")
 }

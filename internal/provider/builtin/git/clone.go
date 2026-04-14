@@ -109,7 +109,7 @@ func (p *CloneProvider) Apply(ctx context.Context, action provider.Action) error
 		localPath = res.Path
 		branch = res.Branch
 	} else {
-		remote, localPath, branch = parseCloneResource(action.ID)
+		remote, localPath = parseCloneResource(action.ID)
 	}
 
 	if remote == "" || localPath == "" {
@@ -123,7 +123,7 @@ func (p *CloneProvider) Apply(ctx context.Context, action provider.Action) error
 	}
 	args = append(args, remote, localPath)
 
-	cmd := exec.CommandContext(ctx, "git", args...) //nolint:gosec // git clone args from hamsfile declarations
+	cmd := exec.CommandContext(ctx, "git", args...)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	return cmd.Run()
@@ -318,20 +318,18 @@ func (p *CloneProvider) effectiveConfig(flags *provider.GlobalFlags) *config.Con
 }
 
 func extractLocalPath(resourceID string) string {
-	_, localPath, _ := parseCloneResource(resourceID)
+	_, localPath := parseCloneResource(resourceID)
 	return localPath
 }
 
-func parseCloneResource(id string) (remote, localPath, branch string) {
-	// Format: "remote -> local-path"
-	// Branch is not encoded in the ID — use structured YAML fields instead.
+// parseCloneResource splits a legacy resource ID of the form "remote -> local-path".
+// Branch is intentionally not encoded in the ID — structured YAML fields carry it instead.
+func parseCloneResource(id string) (remote, localPath string) {
 	parts := strings.SplitN(id, " -> ", 2)
 	if len(parts) != 2 {
-		return "", "", ""
+		return "", ""
 	}
-	remote = strings.TrimSpace(parts[0])
-	localPath = strings.TrimSpace(parts[1])
-	return remote, localPath, ""
+	return strings.TrimSpace(parts[0]), strings.TrimSpace(parts[1])
 }
 
 // cloneParseResources parses structured git-clone entries from the hamsfile.
@@ -360,9 +358,9 @@ func cloneParseResources(f *hamsfile.File) (map[string]cloneResource, error) {
 			if item.Kind == yaml.ScalarNode {
 				// Simple string entry: treat as "remote -> path" format.
 				id := item.Value
-				remote, localPath, branch := parseCloneResource(id)
+				remote, localPath := parseCloneResource(id)
 				if remote != "" && localPath != "" {
-					resourceByID[id] = cloneResource{Remote: remote, Path: localPath, Branch: branch}
+					resourceByID[id] = cloneResource{Remote: remote, Path: localPath}
 				}
 				continue
 			}
@@ -395,15 +393,12 @@ func cloneParseResources(f *hamsfile.File) (map[string]cloneResource, error) {
 
 			// If structured fields present, use them. Otherwise try to parse ID.
 			if res.Remote == "" || res.Path == "" {
-				remote, localPath, branch := parseCloneResource(id)
+				remote, localPath := parseCloneResource(id)
 				if remote != "" {
 					res.Remote = remote
 				}
 				if localPath != "" {
 					res.Path = localPath
-				}
-				if branch != "" && res.Branch == "" {
-					res.Branch = branch
 				}
 			}
 

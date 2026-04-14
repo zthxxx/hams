@@ -4,6 +4,7 @@ package i18n
 import (
 	"embed"
 	"io/fs"
+	"log/slog"
 	"os"
 	"sort"
 	"strings"
@@ -35,7 +36,9 @@ func Init() {
 	bundle.RegisterUnmarshalFunc("yaml", yaml.Unmarshal)
 
 	// Always load English as the default.
-	_, _ = bundle.LoadMessageFileFS(localeFS, "locales/en.yaml")
+	if _, err := bundle.LoadMessageFileFS(localeFS, "locales/en.yaml"); err != nil {
+		slog.Debug("loading embedded English locale failed", "error", err)
+	}
 
 	// Load a non-English locale file using the fallback chain:
 	// 1. Exact match: lang-REGION.yaml (e.g., zh-TW.yaml)
@@ -45,7 +48,9 @@ func Init() {
 	var loadedTag string
 	if locale.Language != "en" {
 		if file := resolveLocaleFile(locale); file != "" {
-			_, _ = bundle.LoadMessageFileFS(localeFS, file)
+			if _, err := bundle.LoadMessageFileFS(localeFS, file); err != nil {
+				slog.Debug("loading embedded locale failed", "file", file, "error", err)
+			}
 			// Extract the BCP-47 tag from the filename (e.g., "locales/zh-CN.yaml" → "zh-CN").
 			loadedTag = strings.TrimSuffix(strings.TrimPrefix(file, "locales/"), ".yaml")
 		}

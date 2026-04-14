@@ -9,8 +9,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	hamserr "github.com/zthxxx/hams/internal/error"
 	"github.com/zthxxx/hams/internal/config"
+	hamserr "github.com/zthxxx/hams/internal/error"
 	"github.com/zthxxx/hams/internal/hamsfile"
 	"github.com/zthxxx/hams/internal/provider"
 	"github.com/zthxxx/hams/internal/state"
