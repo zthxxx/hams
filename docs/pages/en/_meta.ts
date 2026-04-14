@@ -5,5 +5,5 @@ export default {
       layout: 'raw',
     },
   },
-  docs: '文档',
+  docs: 'Documentation',
 }

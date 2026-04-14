@@ -8,9 +8,11 @@ Run this verification process whenever docs site content, configuration, or depe
 
 ### 1. Install & Start Dev Server
 
+In background task run:
+
 ```bash
-pnpm install --filter hams-docs...
-cd docs && pnpm dev --port 3939
+pnpm install
+cd docs && pnpm dev
 ```
 
 Wait for the dev server to respond with HTTP 200 at the basePath URL.
@@ -18,8 +20,8 @@ Wait for the dev server to respond with HTTP 200 at the basePath URL.
 ### 2. Verify with Playwright (Dev Server)
 
 Use `playwright-cli` skill to verify each page category. For each page:
-- Take a **snapshot** (DOM structure) to verify content and links
-- Take a **screenshot** to verify visual rendering and layout
+- First take a **snapshot** (DOM structure) to verify content and links
+- Then take a **screenshot** to verify visual rendering and layout when needed
 
 **Pages to verify** (at minimum):
 1. Homepage — content, sidebar, footer, dark mode toggle, GitHub link
@@ -80,3 +82,10 @@ Save all screenshots to `.playwright-cli/` (already in `.gitignore`):
 - Format: `<scenario>-<validation-intent>-<YYYYMMDDTHHmmss>.png`
 - Example: `homepage-full-render-20260414T070814.png`
 - Build verification prefix: `build-<scenario>-...`
+
+### Playwright CLI Guidelines
+
+- When using `playwright-cli`, always capture a snapshot before taking a screenshot.
+- Save all screenshots in the project's `.playwright-cli/` directory.
+- Use screenshot filenames in the format `<scenario>-<validation-intent>-<YYYYMMDDTHHmmss>.png`.
+- Use the same filename convention for visual comparison screenshots.

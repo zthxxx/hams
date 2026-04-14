@@ -21,6 +21,8 @@ globs: ["**/*"]
 
 - **Universal secret decoupling**: all token/key/credential values MUST be stored in OS keychain (via keyring, `kind: application password`) or in `*.local.*` config files (which are gitignored). Secret values SHALL never appear in git-tracked config files. This applies to notification tokens (Bark, Discord), LLM API keys, and any future integration credentials.
 
+- **Build outputs go to `./bin/` only**: all `go build` commands MUST output to the `bin/` directory (e.g., `-o bin/hams`). Never output binaries to the project root or any other location. This applies to Taskfile tasks, CI workflows, release scripts, and any ad-hoc build commands. The `bin/` directory is `.gitignore`'d.
+
 - **Frequent atomic commits**: during implementation, commit after each independent task/feature is complete. Every commit should be a coherent, revertable unit. Never batch unrelated changes into one commit.
 
 - **TDD with real-environment safety**: always write unit tests and E2E tests alongside implementation, not after.

@@ -39,14 +39,14 @@ AND the exported site SHALL be servable from any static file host.
 
 ### Requirement: GitHub Pages Deployment
 
-The site SHALL be deployed to GitHub Pages at `hams.zthxxx.me` via GitHub Actions CI/CD. The root URL (`hams.zthxxx.me`) SHALL serve a homepage/landing page. The documentation site SHALL be accessible at `hams.zthxxx.me/docs`.
+The site SHALL be deployed to GitHub Pages at `hams.zthxxx.me` via GitHub Actions CI/CD using `peaceiris/actions-gh-pages@v4`. The root URL (`hams.zthxxx.me`) SHALL serve a homepage/landing page. The documentation site SHALL be accessible at `hams.zthxxx.me/docs/`.
 
 #### Scenario: Automated deployment on main branch push
 
-WHEN a commit is pushed to the `main` branch that modifies files under `docs/`
+WHEN a commit is pushed to the `main` or `dev` branch
 THEN a GitHub Actions workflow SHALL:
-1. Install dependencies and build the static export
-2. Deploy the contents of `docs/out/` to GitHub Pages
+1. Install dependencies and build the static export to `docs/dist/`
+2. Deploy the contents of `docs/dist/` to GitHub Pages via `peaceiris/actions-gh-pages@v4` to the `gh-pages` branch
 AND the site SHALL be accessible at `https://hams.zthxxx.me` within 5 minutes of the workflow completing.
 
 #### Scenario: Custom domain configuration
@@ -232,16 +232,56 @@ THEN the page SHALL explain the four resource classes and their probe contracts:
 4. Filesystem (path existence)
 AND each class SHALL include the required state fields and an example.
 
+### Requirement: Landing Page
+
+The site SHALL have a dedicated landing page at the root URL (`/`) that introduces hams. The landing page SHALL use a full-width raw layout without sidebar or table-of-contents.
+
+#### Scenario: Landing page content
+
+WHEN a user visits `hams.zthxxx.me/`
+THEN the page SHALL display:
+- A hero section with the project name, tagline, and a brief description of what hams does
+- A call-to-action linking to the documentation (`/docs/`)
+- Key feature highlights
+AND the page SHALL use Nextra's `theme: { layout: 'raw' }` to render without sidebar/TOC.
+
+#### Scenario: Landing page navigation
+
+WHEN the landing page is displayed
+THEN the landing page entry SHALL be configured with `display: 'hidden'` in `_meta.ts` so it does not appear in the top navigation bar.
+
+### Requirement: Top Navigation Bar
+
+The site top navigation bar SHALL display a consistent set of links across all pages.
+
+#### Scenario: Top bar items
+
+WHEN a user views any page on the site
+THEN the top navigation bar SHALL contain, in order:
+1. Project name/logo (links to `/`)
+2. "Documentation" (links to `/docs/`)
+3. "Changelog" (links to GitHub changelog, opens in new tab)
+4. Search input (Nextra built-in Flexsearch)
+5. GitHub icon (links to repository)
+6. Language switcher icon (links to `/zh-CN/`)
+
 ### Requirement: Explicit Top-Level Navigation
 
 The documentation site SHALL use Nextra's `_meta.ts` files with explicit configuration for all top-level navigation entries. Navigation structure MUST NOT rely on implicit file-path-based conventions.
 
 #### Scenario: Top-level navigation entries
 
-WHEN a user views the site sidebar
-THEN all top-level navigation entries SHALL be explicitly declared in `pages/_meta.ts` (or locale-specific `pages/<locale>/_meta.ts`)
+WHEN a user views the site
+THEN all top-level navigation entries SHALL be explicitly declared in `pages/_meta.ts` with `type: 'page'`
 AND adding or removing a top-level section SHALL require an explicit edit to the `_meta.ts` file
 AND the `_meta.ts` file SHALL define display names for all entries.
+
+#### Scenario: Documentation section layout
+
+WHEN a user navigates to `/docs/`
+THEN the left sidebar SHALL display the documentation tree (Why hams?, Quickstart, CLI Reference, Providers, Schema Reference)
+AND the right side SHALL display a table of contents for the current page
+AND the `docs/` section SHALL have its own isolated sidebar showing only documentation pages.
 
 #### Scenario: Nested navigation
 
@@ -255,10 +295,9 @@ The documentation site SHALL support internationalization with English (`en`) as
 
 #### Scenario: English as default locale (no prefix)
 
-WHEN a user visits `hams.zthxxx.me/docs/` without a locale prefix
+WHEN a user visits `hams.zthxxx.me/` or `hams.zthxxx.me/docs/` without a locale prefix
 THEN the site SHALL render in English
-AND the URL structure SHALL NOT include an `/en/` prefix for English pages
-AND visiting `/en` or `/en/*` SHALL automatically redirect to `/` (the root without locale prefix).
+AND the URL structure SHALL NOT include an `/en/` prefix for English pages.
 
 #### Scenario: Chinese locale at /zh-CN path
 
@@ -269,19 +308,19 @@ AND the `/zh-CN/*` path SHALL be a sibling of the default (unprefixed) English p
 
 #### Scenario: Locale switcher
 
-WHEN a user clicks the locale switcher in the site navigation
-THEN the switcher SHALL display all available locales with their native names (e.g., "English", "中文")
-AND switching locales SHALL navigate to the equivalent page in the selected locale
-AND the locale preference SHALL be persisted.
+WHEN a user views the top navigation bar
+THEN a "中文" tab SHALL be visible alongside the English section tabs
+AND clicking "中文" SHALL navigate to the Chinese landing page at `/zh-CN/`
+AND the Chinese section SHALL have its own isolated sidebar with Chinese navigation labels.
 
-#### Scenario: i18n file structure (directory-based)
+#### Scenario: i18n file structure (directory-based without Nextra i18n)
 
 WHEN a developer adds a new documentation page
-THEN the i18n structure SHALL use Nextra's directory-based locale convention:
+THEN the i18n structure SHALL use a directory-based convention WITHOUT Nextra's built-in i18n (which is incompatible with `output: 'export'`):
 - English content in `pages/<path>.mdx` (root level, no locale directory)
-- Chinese content in `pages/zh-CN/<path>.mdx` (under locale directory)
-AND the `next.config.mjs` SHALL configure `i18n` with `locales: ['', 'zh-CN']` and `defaultLocale: ''` (empty string = no prefix for default)
-AND each locale directory SHALL have its own `_meta.ts` file with localized navigation labels.
+- Chinese content in `pages/zh-CN/<path>.mdx` (under locale directory, configured as `type: 'page'` in root `_meta.ts`)
+AND each locale directory SHALL have its own `_meta.ts` file with localized navigation labels
+AND `next.config.mjs` SHALL NOT use the `i18n` config key (incompatible with static export).
 
 #### Scenario: i18n content synchronization
 
@@ -312,6 +351,17 @@ AND search SHALL work entirely client-side with no external service dependency.
 WHEN a user searches while viewing the Chinese locale
 THEN the search SHALL prioritize Chinese content where available
 AND fall back to English content for untranslated pages.
+
+### Requirement: Tailwind CSS
+
+The documentation site SHALL use Tailwind CSS for custom styling of the landing page and any custom components.
+
+#### Scenario: Tailwind setup
+
+WHEN the docs site is built
+THEN Tailwind CSS SHALL be configured with PostCSS
+AND dark mode SHALL use the `class` strategy (compatible with Nextra's theme toggle)
+AND the content paths SHALL cover `pages/`, `components/`, and `theme.config.tsx`.
 
 ### Requirement: Visual Design
 

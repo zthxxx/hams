@@ -5,5 +5,4 @@ export default {
       layout: 'raw',
     },
   },
-  docs: '文档',
 }
