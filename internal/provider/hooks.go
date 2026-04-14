@@ -40,60 +40,48 @@ type HookSet struct {
 }
 
 // RunPreInstallHooks executes pre-install hooks for a resource.
-// Returns an error if any hook fails (blocks the install).
 func RunPreInstallHooks(ctx context.Context, hooks []Hook, resourceID string) error {
-	for _, h := range hooks {
-		if h.Defer {
-			continue // Deferred hooks are collected, not run here.
-		}
-		if err := runHook(ctx, h, resourceID); err != nil {
-			return fmt.Errorf("pre-install hook for %s failed: %w", resourceID, err)
-		}
-	}
-	return nil
-}
-
-// RunPostInstallHooks executes non-deferred post-install hooks.
-// Returns hook-failed errors without stopping.
-func RunPostInstallHooks(ctx context.Context, hooks []Hook, resourceID string, sf *state.File) error {
-	for _, h := range hooks {
-		if h.Defer {
-			continue
-		}
-		if err := runHook(ctx, h, resourceID); err != nil {
-			slog.Error("post-install hook failed", "resource", resourceID, "error", err)
-			sf.SetResource(resourceID, state.StateHookFailed, state.WithError(err.Error()))
-			return fmt.Errorf("post-install hook for %s failed: %w", resourceID, err)
-		}
-	}
-	return nil
+	return runPreHooks(ctx, hooks, resourceID, "pre-install")
 }
 
 // RunPreUpdateHooks executes pre-update hooks for a resource.
-// Returns an error if any hook fails (blocks the update).
 func RunPreUpdateHooks(ctx context.Context, hooks []Hook, resourceID string) error {
-	for _, h := range hooks {
-		if h.Defer {
-			continue // Deferred hooks are collected, not run here.
-		}
-		if err := runHook(ctx, h, resourceID); err != nil {
-			return fmt.Errorf("pre-update hook for %s failed: %w", resourceID, err)
-		}
-	}
-	return nil
+	return runPreHooks(ctx, hooks, resourceID, "pre-update")
+}
+
+// RunPostInstallHooks executes non-deferred post-install hooks.
+func RunPostInstallHooks(ctx context.Context, hooks []Hook, resourceID string, sf *state.File) error {
+	return runPostHooks(ctx, hooks, resourceID, "post-install", sf)
 }
 
 // RunPostUpdateHooks executes non-deferred post-update hooks.
-// Returns hook-failed errors without stopping.
 func RunPostUpdateHooks(ctx context.Context, hooks []Hook, resourceID string, sf *state.File) error {
+	return runPostHooks(ctx, hooks, resourceID, "post-update", sf)
+}
+
+// runPreHooks runs non-deferred pre-phase hooks. Returns error on first failure.
+func runPreHooks(ctx context.Context, hooks []Hook, resourceID, phase string) error {
 	for _, h := range hooks {
 		if h.Defer {
 			continue
 		}
 		if err := runHook(ctx, h, resourceID); err != nil {
-			slog.Error("post-update hook failed", "resource", resourceID, "error", err)
+			return fmt.Errorf("%s hook for %s failed: %w", phase, resourceID, err)
+		}
+	}
+	return nil
+}
+
+// runPostHooks runs non-deferred post-phase hooks. Records hook-failed state on error.
+func runPostHooks(ctx context.Context, hooks []Hook, resourceID, phase string, sf *state.File) error {
+	for _, h := range hooks {
+		if h.Defer {
+			continue
+		}
+		if err := runHook(ctx, h, resourceID); err != nil {
+			slog.Error(phase+" hook failed", "resource", resourceID, "error", err)
 			sf.SetResource(resourceID, state.StateHookFailed, state.WithError(err.Error()))
-			return fmt.Errorf("post-update hook for %s failed: %w", resourceID, err)
+			return fmt.Errorf("%s hook for %s failed: %w", phase, resourceID, err)
 		}
 	}
 	return nil
@@ -132,10 +120,9 @@ func RunDeferredHooks(ctx context.Context, deferred []DeferredHook, sf *state.Fi
 func runHook(ctx context.Context, h Hook, resourceID string) error {
 	slog.Debug("running hook", "type", h.Type, "resource", resourceID, "command", h.Command)
 
-	// Detect nested hams invocations. For now, log a warning and proceed
-	// via sh -c subprocess. Full in-process dispatch is not yet supported.
+	// Nested hams invocations run as subprocess; in-process dispatch not yet supported.
 	if strings.HasPrefix(strings.TrimSpace(h.Command), "hams ") {
-		slog.Warn("nested hams invocation detected in hook; running as subprocess (in-process dispatch not yet supported)",
+		slog.Warn("nested hams invocation detected in hook; running as subprocess",
 			"resource", resourceID, "command", h.Command)
 	}
 

@@ -121,48 +121,37 @@ func (p *Provider) HandleCommand(args []string, hamsFlags map[string]string, fla
 		return nil
 	}
 
-	// Build preview-cmd from original args for audit/review purposes.
-	previewCmd := "defaults " + strings.Join(args, " ")
-
 	cmd := exec.CommandContext(context.Background(), "defaults", args...) //nolint:gosec // defaults args from CLI input
 	if err := cmd.Run(); err != nil {
 		return err
 	}
 
-	// Record preview-cmd to hamsfile if the command was a "write".
 	if len(args) >= 5 && args[0] == "write" {
-		p.recordPreviewCmd(args, previewCmd, hamsFlags, flags)
+		p.recordPreviewCmd(args, hamsFlags, flags)
 	}
 
 	return nil
 }
 
 // recordPreviewCmd saves the preview-cmd field to the hamsfile for a defaults write.
-func (p *Provider) recordPreviewCmd(args []string, previewCmd string, hamsFlags map[string]string, flags *provider.GlobalFlags) {
+func (p *Provider) recordPreviewCmd(args []string, hamsFlags map[string]string, flags *provider.GlobalFlags) {
 	if p.cfg == nil || p.cfg.StorePath == "" {
-		return // No store configured; skip recording.
+		return
 	}
 
-	// Build resource ID from write args: domain.key=type:value.
 	domain := args[1]
 	key := args[2]
 	typeStr := strings.TrimPrefix(args[3], "-")
 	value := args[4]
 	resourceID := fmt.Sprintf("%s.%s=%s:%s", domain, key, typeStr, value)
+	previewCmd := "defaults " + strings.Join(args, " ")
 
 	suffix := ".hams.yaml"
 	if _, ok := hamsFlags["local"]; ok {
 		suffix = ".hams.local.yaml"
 	}
 
-	cfg := p.cfg
-	if flags.Store != "" {
-		cfg = &config.Config{StorePath: flags.Store, ProfileTag: cfg.ProfileTag, MachineID: cfg.MachineID}
-	}
-	if flags.Profile != "" {
-		cfg = &config.Config{StorePath: cfg.StorePath, ProfileTag: flags.Profile, MachineID: cfg.MachineID}
-	}
-
+	cfg := p.effectiveConfig(flags)
 	path := filepath.Join(cfg.ProfileDir(), "defaults"+suffix)
 	hf, err := hamsfile.Read(path)
 	if err != nil {
@@ -174,6 +163,24 @@ func (p *Provider) recordPreviewCmd(args []string, previewCmd string, hamsFlags 
 	if writeErr := hf.Write(); writeErr != nil {
 		slog.Debug("could not save preview-cmd", "path", path, "error", writeErr)
 	}
+}
+
+// effectiveConfig returns the config with flag overrides applied.
+func (p *Provider) effectiveConfig(flags *provider.GlobalFlags) *config.Config {
+	if p.cfg == nil {
+		p.cfg = &config.Config{}
+	}
+	cfg := *p.cfg
+	if flags == nil {
+		return &cfg
+	}
+	if flags.Store != "" {
+		cfg.StorePath = flags.Store
+	}
+	if flags.Profile != "" {
+		cfg.ProfileTag = flags.Profile
+	}
+	return &cfg
 }
 
 // Name returns the CLI name.

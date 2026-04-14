@@ -18,10 +18,10 @@ type DiffEntry struct {
 
 // DiffResult holds the full diff between Hamsfile (desired) and state (observed).
 type DiffResult struct {
-	Additions []DiffEntry `json:"additions"` // In Hamsfile but not in state.
-	Removals  []DiffEntry `json:"removals"`  // In state but not in Hamsfile.
-	Matched   []DiffEntry `json:"matched"`   // In both with consistent status.
-	Diverged  []DiffEntry `json:"diverged"`  // In both but status differs from OK.
+	Additions []DiffEntry `json:"additions"`
+	Removals  []DiffEntry `json:"removals"`
+	Matched   []DiffEntry `json:"matched"`
+	Diverged  []DiffEntry `json:"diverged"`
 }
 
 // DiffDesiredVsState compares Hamsfile resources against state resources.
@@ -36,29 +36,15 @@ func DiffDesiredVsState(desired *hamsfile.File, observed *state.File) DiffResult
 	observedSet := make(map[string]bool)
 	for id := range observed.Resources {
 		if observed.Resources[id].State == state.StateRemoved {
-			continue // Skip removed resources.
+			continue
 		}
 		observedSet[id] = true
 	}
 
-	// Additions: in desired but not in observed.
+	// Single pass over desired: classify as addition, matched, or diverged.
 	for app := range desiredSet {
 		if !observedSet[app] {
 			result.Additions = append(result.Additions, DiffEntry{ID: app, Type: "addition"})
-		}
-	}
-
-	// Removals: in observed but not in desired.
-	for id := range observedSet {
-		if !desiredSet[id] {
-			r := observed.Resources[id]
-			result.Removals = append(result.Removals, DiffEntry{ID: id, Type: "removal", Status: string(r.State)})
-		}
-	}
-
-	// Matched/Diverged: in both.
-	for app := range desiredSet {
-		if !observedSet[app] {
 			continue
 		}
 		r := observed.Resources[app]
@@ -66,6 +52,13 @@ func DiffDesiredVsState(desired *hamsfile.File, observed *state.File) DiffResult
 			result.Matched = append(result.Matched, DiffEntry{ID: app, Type: "matched", Status: string(r.State)})
 		} else {
 			result.Diverged = append(result.Diverged, DiffEntry{ID: app, Type: "diverged", Status: string(r.State)})
+		}
+	}
+
+	for id := range observedSet {
+		if !desiredSet[id] {
+			r := observed.Resources[id]
+			result.Removals = append(result.Removals, DiffEntry{ID: id, Type: "removal", Status: string(r.State)})
 		}
 	}
 

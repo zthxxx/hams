@@ -430,10 +430,13 @@ func (p *Provider) loadOrCreateHamsfile(hamsFlags map[string]string, flags *prov
 		return nil, err
 	}
 
-	if _, err := os.Stat(path); err == nil {
-		return hamsfile.Read(path)
-	} else if !os.IsNotExist(err) {
-		return nil, fmt.Errorf("stat hamsfile %s: %w", path, err)
+	// Read directly; create empty file on ErrNotExist (avoids TOCTOU with Stat).
+	f, readErr := hamsfile.Read(path)
+	if readErr == nil {
+		return f, nil
+	}
+	if !os.IsNotExist(readErr) {
+		return nil, fmt.Errorf("reading hamsfile %s: %w", path, readErr)
 	}
 
 	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
