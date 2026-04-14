@@ -116,7 +116,7 @@ This project uses [OpenSpec](https://openspec.dev) for spec-driven development.
 
 - `openspec/changes/` — In-flight proposals: features being designed, built, or reviewed but NOT yet deployed.
   - `{change-id}/proposal.md` — Why the change exists, what it affects, user impact.
-  - `{change-id}/tasks.md` — Checklist of implementation steps; check off `- [x]` as work progresses.
+  - `{change-id}/tasks.md` — Checklist of implementation steps; check off `- [ ]` as work progresses.
   - `{change-id}/tasks/{capability}.task.md` — Complex tasks broken down into an independent file, linked from the main `tasks.md`.
   - `{change-id}/design.md` — Optional; only for non-trivial technical decisions, tradeoffs, alternatives.
   - `{change-id}/specs/{capability}/spec.md` — Spec deltas using `## ADDED`/`## MODIFIED`/`## REMOVED` headers, NOT full rewrites.
@@ -136,18 +136,18 @@ This project uses [OpenSpec](https://openspec.dev) for spec-driven development.
 
 Loop repeatedly until all of the following tasks are completed.
 
-- [x] Run command `/simplify`
+- [ ] Run command `/opsx:verify`
   - Any review issues?
-    - [x] If yes: uncheck this task and all above, fix issues, then re-run from the top. If no issues: check this task, git commit, and continue.
-- [x] Run command `/opsx:verify`
+    - [ ] If yes: uncheck this task and all above, fix issues, then re-run from the top. If no issues: check this task, git commit, and continue.
+- [ ] Run command `/simplify`
   - Any review issues?
-    - [x] If yes: uncheck this task and all above, fix issues, then re-run from the top. If no issues: check this task, git commit, and continue.
-- [x] Run command `/codex:review --wait --base 483714b`
+    - [ ] If yes: uncheck this task and all above, fix issues, then re-run from the top. If no issues: check this task, git commit, and continue.
+- [ ] Run command `/codex:review --wait --base 483714b`
   - Any review issues?
-    - [x] If yes: uncheck this task and all above, fix issues, then re-run from the top. If no issues: check this task, git commit, and continue.
-- [x] Run command `/codex:rescue`
+    - [ ] If yes: uncheck this task and all above, fix issues, then re-run from the top. If no issues: check this task, git commit, and continue.
+- [ ] Run command `/codex:rescue`
   - Any review issues?
-    - [x] If yes: uncheck this task and all above, fix issues, then re-run from the top. If no issues: check this task, git commit, and continue.
+    - [ ] If yes: uncheck this task and all above, fix issues, then re-run from the top. If no issues: check this task, git commit, and continue.
 
 ## Rules
 

@@ -139,6 +139,35 @@ func TestStateDir(t *testing.T) {
 	}
 }
 
+func TestIsSensitiveKey_ExactMatch(t *testing.T) {
+	t.Parallel()
+	if !IsSensitiveKey("llm_cli") {
+		t.Error("llm_cli should be sensitive (exact match)")
+	}
+}
+
+func TestIsSensitiveKey_SubstringMatch(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		key       string
+		sensitive bool
+	}{
+		{"notification.bark_token", true},
+		{"api_secret", true},
+		{"db_password", true},
+		{"oauth_credential", true},
+		{"profile_tag", false},
+		{"machine_id", false},
+		{"store_path", false},
+	}
+
+	for _, tc := range cases {
+		if IsSensitiveKey(tc.key) != tc.sensitive {
+			t.Errorf("IsSensitiveKey(%q) = %v, want %v", tc.key, !tc.sensitive, tc.sensitive)
+		}
+	}
+}
+
 func writeYAML(t *testing.T, path, content string) {
 	t.Helper()
 	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {

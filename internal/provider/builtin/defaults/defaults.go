@@ -6,19 +6,23 @@ import (
 	"fmt"
 	"log/slog"
 	"os/exec"
+	"path/filepath"
 	"strings"
 
 	hamserr "github.com/zthxxx/hams/internal/error"
+	"github.com/zthxxx/hams/internal/config"
 	"github.com/zthxxx/hams/internal/hamsfile"
 	"github.com/zthxxx/hams/internal/provider"
 	"github.com/zthxxx/hams/internal/state"
 )
 
 // Provider implements the macOS defaults provider.
-type Provider struct{}
+type Provider struct {
+	cfg *config.Config
+}
 
 // New creates a new defaults provider.
-func New() *Provider { return &Provider{} }
+func New(cfg *config.Config) *Provider { return &Provider{cfg: cfg} }
 
 // Manifest returns the defaults provider metadata.
 func (p *Provider) Manifest() provider.Manifest {
@@ -98,16 +102,13 @@ func (p *Provider) Remove(ctx context.Context, resourceID string) error {
 }
 
 // List returns defaults entries with status.
-func (p *Provider) List(_ context.Context, _ *hamsfile.File, sf *state.File) (string, error) {
-	var sb strings.Builder
-	for id, r := range sf.Resources {
-		fmt.Fprintf(&sb, "  %-50s %-10s %s\n", id, r.State, r.Value)
-	}
-	return sb.String(), nil
+func (p *Provider) List(_ context.Context, desired *hamsfile.File, sf *state.File) (string, error) {
+	diff := provider.DiffDesiredVsState(desired, sf)
+	return provider.FormatDiff(diff), nil
 }
 
 // HandleCommand processes CLI subcommands for defaults.
-func (p *Provider) HandleCommand(args []string, _ map[string]string, flags *provider.GlobalFlags) error {
+func (p *Provider) HandleCommand(args []string, hamsFlags map[string]string, flags *provider.GlobalFlags) error {
 	if len(args) < 3 {
 		return hamserr.NewUserError(hamserr.ExitUsageError,
 			"defaults requires: write <domain> <key> -<type> <value>",
@@ -120,8 +121,59 @@ func (p *Provider) HandleCommand(args []string, _ map[string]string, flags *prov
 		return nil
 	}
 
+	// Build preview-cmd from original args for audit/review purposes.
+	previewCmd := "defaults " + strings.Join(args, " ")
+
 	cmd := exec.CommandContext(context.Background(), "defaults", args...) //nolint:gosec // defaults args from CLI input
-	return cmd.Run()
+	if err := cmd.Run(); err != nil {
+		return err
+	}
+
+	// Record preview-cmd to hamsfile if the command was a "write".
+	if len(args) >= 5 && args[0] == "write" {
+		p.recordPreviewCmd(args, previewCmd, hamsFlags, flags)
+	}
+
+	return nil
+}
+
+// recordPreviewCmd saves the preview-cmd field to the hamsfile for a defaults write.
+func (p *Provider) recordPreviewCmd(args []string, previewCmd string, hamsFlags map[string]string, flags *provider.GlobalFlags) {
+	if p.cfg == nil || p.cfg.StorePath == "" {
+		return // No store configured; skip recording.
+	}
+
+	// Build resource ID from write args: domain.key=type:value.
+	domain := args[1]
+	key := args[2]
+	typeStr := strings.TrimPrefix(args[3], "-")
+	value := args[4]
+	resourceID := fmt.Sprintf("%s.%s=%s:%s", domain, key, typeStr, value)
+
+	suffix := ".hams.yaml"
+	if _, ok := hamsFlags["local"]; ok {
+		suffix = ".hams.local.yaml"
+	}
+
+	cfg := p.cfg
+	if flags.Store != "" {
+		cfg = &config.Config{StorePath: flags.Store, ProfileTag: cfg.ProfileTag, MachineID: cfg.MachineID}
+	}
+	if flags.Profile != "" {
+		cfg = &config.Config{StorePath: cfg.StorePath, ProfileTag: flags.Profile, MachineID: cfg.MachineID}
+	}
+
+	path := filepath.Join(cfg.ProfileDir(), "defaults"+suffix)
+	hf, err := hamsfile.Read(path)
+	if err != nil {
+		slog.Debug("could not load hamsfile for preview-cmd", "path", path, "error", err)
+		return
+	}
+
+	hf.SetPreviewCmd(resourceID, previewCmd)
+	if writeErr := hf.Write(); writeErr != nil {
+		slog.Debug("could not save preview-cmd", "path", path, "error", writeErr)
+	}
 }
 
 // Name returns the CLI name.

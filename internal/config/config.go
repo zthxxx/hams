@@ -3,8 +3,10 @@ package config
 
 import (
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 )
@@ -150,9 +152,24 @@ var sensitiveKeys = map[string]bool{
 	"llm_cli": true,
 }
 
+// sensitivePatterns are substrings that mark a key as sensitive.
+var sensitivePatterns = []string{
+	"token", "secret", "password", "credential",
+}
+
 // IsSensitiveKey returns true if the key should be stored in a .local.yaml file.
+// Matches exact keys in sensitiveKeys or keys containing sensitive substrings.
 func IsSensitiveKey(key string) bool {
-	return sensitiveKeys[key]
+	if sensitiveKeys[key] {
+		return true
+	}
+	lower := strings.ToLower(key)
+	for _, pattern := range sensitivePatterns {
+		if strings.Contains(lower, pattern) {
+			return true
+		}
+	}
+	return false
 }
 
 // ValidConfigKeys lists the keys that can be set via `hams config set`.
@@ -173,6 +190,7 @@ func IsValidConfigKey(key string) bool {
 func WriteConfigKey(paths Paths, storePath, key, value string) error {
 	var targetPath string
 	if IsSensitiveKey(key) {
+		slog.Info("sensitive key detected, routing to .local.yaml", "key", key)
 		if storePath == "" {
 			// Fall back to a global local config next to the global config.
 			targetPath = filepath.Join(paths.ConfigHome, "hams.config.local.yaml")

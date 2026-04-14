@@ -45,7 +45,7 @@ func registerBuiltins(registry *provider.Registry) {
 		cargo.New(),
 		git.NewConfigProvider(),
 		git.NewCloneProvider(builtinCfg),
-		defaults.New(),
+		defaults.New(builtinCfg),
 		duti.New(),
 		mas.New(),
 		vscodeext.New(),

@@ -124,6 +124,38 @@ func TestApplyModel_View_ShowsLast10Steps(t *testing.T) {
 	}
 }
 
+// --- RunTagPicker tests ---
+
+func TestRunTagPicker_LuckyReturnsLLMTags(t *testing.T) {
+	t.Parallel()
+	llmTags := []string{"devtools", "cli"}
+	existing := []string{"network", "system"}
+
+	result, err := RunTagPicker(llmTags, existing, true)
+	if err != nil {
+		t.Fatalf("RunTagPicker error: %v", err)
+	}
+	if len(result) != len(llmTags) {
+		t.Fatalf("result len = %d, want %d", len(result), len(llmTags))
+	}
+	for i, tag := range result {
+		if tag != llmTags[i] {
+			t.Errorf("result[%d] = %q, want %q", i, tag, llmTags[i])
+		}
+	}
+}
+
+func TestRunTagPicker_LuckyEmptyLLMTags(t *testing.T) {
+	t.Parallel()
+	result, err := RunTagPicker(nil, []string{"existing"}, true)
+	if err != nil {
+		t.Fatalf("RunTagPicker error: %v", err)
+	}
+	if len(result) != 0 {
+		t.Errorf("result len = %d, want 0 for nil LLM tags", len(result))
+	}
+}
+
 // --- PickerModel tests ---
 
 func TestNewPickerModel_LLMPreSelected(t *testing.T) {

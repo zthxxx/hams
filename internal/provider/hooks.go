@@ -69,6 +69,36 @@ func RunPostInstallHooks(ctx context.Context, hooks []Hook, resourceID string, s
 	return nil
 }
 
+// RunPreUpdateHooks executes pre-update hooks for a resource.
+// Returns an error if any hook fails (blocks the update).
+func RunPreUpdateHooks(ctx context.Context, hooks []Hook, resourceID string) error {
+	for _, h := range hooks {
+		if h.Defer {
+			continue // Deferred hooks are collected, not run here.
+		}
+		if err := runHook(ctx, h, resourceID); err != nil {
+			return fmt.Errorf("pre-update hook for %s failed: %w", resourceID, err)
+		}
+	}
+	return nil
+}
+
+// RunPostUpdateHooks executes non-deferred post-update hooks.
+// Returns hook-failed errors without stopping.
+func RunPostUpdateHooks(ctx context.Context, hooks []Hook, resourceID string, sf *state.File) error {
+	for _, h := range hooks {
+		if h.Defer {
+			continue
+		}
+		if err := runHook(ctx, h, resourceID); err != nil {
+			slog.Error("post-update hook failed", "resource", resourceID, "error", err)
+			sf.SetResource(resourceID, state.StateHookFailed, state.WithError(err.Error()))
+			return fmt.Errorf("post-update hook for %s failed: %w", resourceID, err)
+		}
+	}
+	return nil
+}
+
 // CollectDeferredHooks returns all hooks with defer=true from the given hook set.
 func CollectDeferredHooks(hooks []Hook) []DeferredHook {
 	var deferred []DeferredHook

@@ -7,10 +7,11 @@ import (
 )
 
 // RunTagPicker displays the interactive tag picker and returns selected tags.
-// If the terminal is non-interactive, returns llmTags directly (lucky mode).
-func RunTagPicker(llmTags, existingTags []string) ([]string, error) {
-	if !IsInteractive() {
-		// Non-interactive: auto-accept LLM recommendations.
+// If lucky is true or the terminal is non-interactive, returns llmTags directly
+// without displaying the TUI picker (auto-accept LLM recommendations).
+func RunTagPicker(llmTags, existingTags []string, lucky bool) ([]string, error) {
+	if lucky || !IsInteractive() {
+		// Lucky mode or non-interactive: auto-accept LLM recommendations.
 		return llmTags, nil
 	}
 

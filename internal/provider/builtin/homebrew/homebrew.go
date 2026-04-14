@@ -57,11 +57,20 @@ func (p *Provider) Bootstrap(_ context.Context) error {
 	return fmt.Errorf("homebrew not installed; run the bootstrap script first")
 }
 
-// Probe queries brew for installed formulae and casks.
+// Probe queries brew for installed formulae, casks, and taps.
 func (p *Provider) Probe(ctx context.Context, sf *state.File) ([]provider.ProbeResult, error) {
 	installed, err := listInstalled(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("listing installed brew packages: %w", err)
+	}
+
+	// Also enumerate taps.
+	taps, err := listTaps(ctx)
+	if err != nil {
+		slog.Debug("listing taps failed, ignoring", "error", err)
+	}
+	for _, tap := range taps {
+		installed[tap] = ""
 	}
 
 	var results []provider.ProbeResult
@@ -86,6 +95,29 @@ func (p *Provider) Probe(ctx context.Context, sf *state.File) ([]provider.ProbeR
 	}
 
 	return results, nil
+}
+
+// listTaps returns installed tap names.
+func listTaps(ctx context.Context) ([]string, error) {
+	cmd := exec.CommandContext(ctx, "brew", "tap") //nolint:gosec // brew is a trusted command
+	output, err := cmd.Output()
+	if err != nil {
+		return nil, fmt.Errorf("brew tap: %w", err)
+	}
+	var taps []string
+	for _, line := range strings.Split(strings.TrimSpace(string(output)), "\n") {
+		line = strings.TrimSpace(line)
+		if line != "" {
+			taps = append(taps, line)
+		}
+	}
+	return taps, nil
+}
+
+// isTapFormat returns true if the package name looks like a tap (user/repo format without formula).
+func isTapFormat(name string) bool {
+	parts := strings.Split(name, "/")
+	return len(parts) == 2 && !strings.Contains(parts[1], ".")
 }
 
 // Plan computes actions for Homebrew packages.
@@ -160,17 +192,10 @@ func (p *Provider) Remove(ctx context.Context, resourceID string) error {
 	return provider.WrapExecPassthrough(ctx, "brew", []string{"uninstall", resourceID}, nil)
 }
 
-// List returns installed packages with their status.
-func (p *Provider) List(_ context.Context, _ *hamsfile.File, sf *state.File) (string, error) {
-	var sb strings.Builder
-	for id, r := range sf.Resources {
-		version := r.Version
-		if version == "" {
-			version = "?"
-		}
-		fmt.Fprintf(&sb, "  %-30s %-10s %s\n", id, r.State, version)
-	}
-	return sb.String(), nil
+// List returns packages with diff between Hamsfile (desired) and state (observed).
+func (p *Provider) List(_ context.Context, desired *hamsfile.File, sf *state.File) (string, error) {
+	diff := provider.DiffDesiredVsState(desired, sf)
+	return provider.FormatDiff(diff), nil
 }
 
 // HandleCommand processes CLI subcommands for the brew provider.
@@ -183,9 +208,9 @@ func (p *Provider) HandleCommand(args []string, hamsFlags map[string]string, fla
 	case "remove", "uninstall":
 		return p.handleRemove(remaining, hamsFlags, flags)
 	case "list":
-		fmt.Println("Homebrew managed packages:")
-		// TODO: show diff between hamsfile and state.
-		return nil
+		return p.handleList(hamsFlags, flags)
+	case "tap":
+		return p.handleTap(remaining, hamsFlags, flags)
 	default:
 		// Passthrough to brew.
 		slog.Debug("passthrough to brew", "args", args)
@@ -199,6 +224,62 @@ func (p *Provider) Name() string { return "brew" }
 // DisplayName returns the display name.
 func (p *Provider) DisplayName() string { return "Homebrew" }
 
+func (p *Provider) handleList(hamsFlags map[string]string, flags *provider.GlobalFlags) error {
+	fmt.Println("Homebrew managed packages:")
+
+	hf, err := p.loadOrCreateHamsfile(hamsFlags, flags)
+	if err != nil {
+		return err
+	}
+
+	cfg := p.effectiveConfig(flags)
+	statePath := filepath.Join(cfg.StateDir(), "brew.state.yaml")
+	sf, err := state.Load(statePath)
+	if err != nil {
+		// No state yet — show all desired as additions.
+		sf = state.New("brew", cfg.MachineID)
+	}
+
+	diff := provider.DiffDesiredVsState(hf, sf)
+	if flags.JSON {
+		out, jsonErr := provider.FormatDiffJSON(diff)
+		if jsonErr != nil {
+			return jsonErr
+		}
+		fmt.Println(out)
+	} else {
+		fmt.Print(provider.FormatDiff(diff))
+	}
+	return nil
+}
+
+func (p *Provider) handleTap(args []string, hamsFlags map[string]string, flags *provider.GlobalFlags) error {
+	if len(args) == 0 {
+		return hamserr.NewUserError(hamserr.ExitUsageError,
+			"brew tap requires a repository name",
+			"Usage: hams brew tap <user/repo>",
+		)
+	}
+
+	repo := args[0]
+	if flags.DryRun {
+		fmt.Printf("[dry-run] Would run: brew tap %s\n", repo)
+		return nil
+	}
+
+	if err := provider.WrapExecPassthrough(context.Background(), "brew", []string{"tap", repo}, nil); err != nil {
+		return err
+	}
+
+	hf, err := p.loadOrCreateHamsfile(hamsFlags, flags)
+	if err != nil {
+		return err
+	}
+
+	hf.AddApp("tap", repo, "")
+	return hf.Write()
+}
+
 func (p *Provider) handleInstall(args []string, hamsFlags map[string]string, flags *provider.GlobalFlags) error {
 	if len(args) == 0 {
 		return hamserr.NewUserError(hamserr.ExitUsageError,
@@ -208,12 +289,16 @@ func (p *Provider) handleInstall(args []string, hamsFlags map[string]string, fla
 		)
 	}
 
+	packages := packageArgs(args)
 	tag := parseInstallTag(hamsFlags)
 	// If --cask is present in args and no explicit tag was set, use "cask" as the tag.
 	if tag == "cli" && hasCaskFlag(args) {
 		tag = "cask"
 	}
-	packages := packageArgs(args)
+	// Auto-detect tap format (user/repo with exactly one slash, no formula suffix).
+	if tag == "cli" && len(packages) > 0 && isTapFormat(packages[0]) {
+		tag = "tap"
+	}
 	if len(packages) == 0 {
 		return hamserr.NewUserError(hamserr.ExitUsageError,
 			"brew install requires at least one package name",

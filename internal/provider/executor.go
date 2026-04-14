@@ -121,6 +121,20 @@ func executeUpdate(ctx context.Context, p Provider, action Action, sf *state.Fil
 		})
 	}
 
+	// Run pre-update hooks (non-deferred).
+	if action.Hooks != nil && len(action.Hooks.PreUpdate) > 0 {
+		if err := RunPreUpdateHooks(ctx, action.Hooks.PreUpdate, action.ID); err != nil {
+			slog.Error("pre-update hook failed, skipping update", "provider", name, "resource", action.ID, "error", err)
+			sf.SetResource(action.ID, state.StateFailed, state.WithError(err.Error()))
+			result.Failed++
+			result.Errors = append(result.Errors, fmt.Errorf("%s: pre-update hook %s: %w", name, action.ID, err))
+			if session != nil {
+				session.EndSpan(span, "error")
+			}
+			return
+		}
+	}
+
 	slog.Info("updating", "provider", name, "resource", action.ID)
 	if err := p.Apply(ctx, action); err != nil {
 		slog.Error("update failed", "provider", name, "resource", action.ID, "error", err)
@@ -131,6 +145,19 @@ func executeUpdate(ctx context.Context, p Provider, action Action, sf *state.Fil
 			session.EndSpan(span, "error")
 		}
 		return
+	}
+
+	// Run post-update hooks (non-deferred).
+	if action.Hooks != nil && len(action.Hooks.PostUpdate) > 0 {
+		if err := RunPostUpdateHooks(ctx, action.Hooks.PostUpdate, action.ID, sf); err != nil {
+			// Update succeeded but hook failed — state is hook-failed.
+			result.Updated++
+			slog.Info("updated (hook failed)", "provider", name, "resource", action.ID)
+			if session != nil {
+				session.EndSpan(span, "ok")
+			}
+			return
+		}
 	}
 
 	sf.SetResource(action.ID, state.StateOK, action.StateOpts...)

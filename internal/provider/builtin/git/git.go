@@ -88,13 +88,10 @@ func (p *ConfigProvider) Remove(ctx context.Context, resourceID string) error {
 	return cmd.Run()
 }
 
-// List returns configured git values with status.
-func (p *ConfigProvider) List(_ context.Context, _ *hamsfile.File, sf *state.File) (string, error) {
-	var sb strings.Builder
-	for id, r := range sf.Resources {
-		fmt.Fprintf(&sb, "  %-40s %-10s %s\n", id, r.State, r.Value)
-	}
-	return sb.String(), nil
+// List returns git config entries with diff between desired and observed.
+func (p *ConfigProvider) List(_ context.Context, desired *hamsfile.File, sf *state.File) (string, error) {
+	diff := provider.DiffDesiredVsState(desired, sf)
+	return provider.FormatDiff(diff), nil
 }
 
 // HandleCommand processes CLI subcommands for git config.

@@ -65,6 +65,52 @@ func TestCollectDeferredHooks(t *testing.T) {
 	}
 }
 
+func TestRunPreUpdateHooks_Success(t *testing.T) {
+	hooks := []Hook{
+		{Type: HookPreUpdate, Command: "true"},
+	}
+	err := RunPreUpdateHooks(context.Background(), hooks, "htop")
+	if err != nil {
+		t.Fatalf("RunPreUpdateHooks error: %v", err)
+	}
+}
+
+func TestRunPreUpdateHooks_Failure(t *testing.T) {
+	hooks := []Hook{
+		{Type: HookPreUpdate, Command: "false"},
+	}
+	err := RunPreUpdateHooks(context.Background(), hooks, "htop")
+	if err == nil {
+		t.Fatal("expected pre-update hook failure")
+	}
+}
+
+func TestRunPreUpdateHooks_SkipsDeferred(t *testing.T) {
+	hooks := []Hook{
+		{Type: HookPreUpdate, Command: "false", Defer: true}, // Should be skipped.
+	}
+	err := RunPreUpdateHooks(context.Background(), hooks, "htop")
+	if err != nil {
+		t.Fatalf("deferred hook should be skipped: %v", err)
+	}
+}
+
+func TestRunPostUpdateHooks_FailureRecordsState(t *testing.T) {
+	sf := state.New("test", "machine")
+	sf.SetResource("htop", state.StateOK)
+
+	hooks := []Hook{
+		{Type: HookPostUpdate, Command: "false"},
+	}
+	err := RunPostUpdateHooks(context.Background(), hooks, "htop", sf)
+	if err == nil {
+		t.Fatal("expected post-update hook failure")
+	}
+	if sf.Resources["htop"].State != state.StateHookFailed {
+		t.Errorf("state = %q, want hook-failed", sf.Resources["htop"].State)
+	}
+}
+
 func TestRunDeferredHooks_MixedResults(t *testing.T) {
 	sf := state.New("test", "machine")
 	sf.SetResource("htop", state.StateOK)
