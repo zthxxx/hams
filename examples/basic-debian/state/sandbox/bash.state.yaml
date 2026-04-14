@@ -6,5 +6,5 @@ resources:
     urn:hams:bash:git-rerere-autoupdate:
         state: ok
         check_cmd: test "$(git config --global rerere.autoUpdate)" = true
-        install_at: 20260414T170631
-        updated_at: 20260414T170725
+        install_at: 20260414T170949
+        updated_at: 20260414T171014

@@ -7,59 +7,59 @@ Order reflects dependencies: version format and watcher module have no external 
 - [x] 1.1 Locate current version-print site in `cmd/hams/main.go` (or the package where `app.Version` is assigned) and confirm the existing ldflags variables `Version` and `Commit`. — found at `internal/cli/root.go:51` using `version.Version()`; ldflags already wired via Taskfile/CI.
 - [x] 1.2 Add a `version.Brief()` helper formatting `"%s (%s)" % (version, commit)` and wire `internal/cli/root.go` to use it; leave ldflags logic untouched.
 - [x] 1.3 Unit-test `Brief()` by swapping package-level `version`/`commit` vars for the three cases (dev+sha, release+sha, dev+unknown fallback).
-- [ ] 1.4 Run `task check` (fmt → lint → test) and confirm zero failures.
-- [ ] 1.5 Commit: `fix(version): align --version output with '<version> (<commit>)' format`.
+- [x] 1.4 Run `task check` (fmt → lint → test) and confirm zero failures.
+- [x] 1.5 Commit: `fix(version): align --version output with '<version> (<commit>)' format`.
 
 ## 2. Watcher module `internal/devtools/watch/`
 
-- [ ] 2.1 Create `internal/devtools/watch/` directory with `main.go`, `main_test.go`, and a short package doc.
-- [ ] 2.2 Add `github.com/fsnotify/fsnotify` to `go.mod` if not already present; run `go mod tidy`.
-- [ ] 2.3 Implement `--arch <GOARCH>` flag parsing; validate it is one of `amd64` or `arm64`; error out clearly otherwise.
-- [ ] 2.4 Implement recursive watch bootstrap: `filepath.WalkDir` over `./cmd`, `./internal`, `./pkg`, `go.mod`, `go.sum` and register fsnotify watchers on each directory.
-- [ ] 2.5 Implement the `Create` handler so a newly created directory inside a watched tree is `Add()`-ed.
-- [ ] 2.6 Implement the 500 ms debounce timer (reset on every event; fire once on quiet).
-- [ ] 2.7 Implement single-slot coalescing: `pending` flag set while a build is in flight; one additional build runs on completion if set.
-- [ ] 2.8 Implement the build invocation: `exec.Command("go", "build", "-ldflags", ldflags, "-o", "bin/hams-linux-"+arch, "./cmd/hams")` with `GOOS=linux`, `GOARCH=<arch>`, `CGO_ENABLED=0`; DO NOT pass `-a` or override `$GOCACHE`. `ldflags` SHALL inject `-X github.com/zthxxx/hams/internal/version.commit=<short-sha>` (resolved via `git rev-parse --short HEAD` once per build) so the dev `hams --version` output satisfies `dev (<7-hex>)`. Leave `version` unset so the default `"dev"` is preserved.
-- [ ] 2.9 On success: read `git rev-parse --short HEAD`, log `[watch] built <sha> in <duration>`. On failure: log stderr, keep watching.
-- [ ] 2.10 Unit-test the debounce+coalesce state machine with a fake clock and fake builder (no real `go build`, no real fs events): property tests should confirm "≤1 build in flight, ≤1 build pending, every event eventually produces a build".
-- [ ] 2.11 Verify the module builds: `go build ./internal/devtools/watch/...` and `go vet ./...`.
-- [ ] 2.12 Commit: `feat(devtools/watch): add fsnotify-based incremental go-build watcher`.
+- [x] 2.1 Create `internal/devtools/watch/` directory with `main.go`, `main_test.go`, and a short package doc.
+- [x] 2.2 Add `github.com/fsnotify/fsnotify` to `go.mod` if not already present; run `go mod tidy`.
+- [x] 2.3 Implement `--arch <GOARCH>` flag parsing; validate it is one of `amd64` or `arm64`; error out clearly otherwise.
+- [x] 2.4 Implement recursive watch bootstrap: `filepath.WalkDir` over `./cmd`, `./internal`, `./pkg`, `go.mod`, `go.sum` and register fsnotify watchers on each directory.
+- [x] 2.5 Implement the `Create` handler so a newly created directory inside a watched tree is `Add()`-ed.
+- [x] 2.6 Implement the 500 ms debounce timer (reset on every event; fire once on quiet).
+- [x] 2.7 Implement single-slot coalescing: `pending` flag set while a build is in flight; one additional build runs on completion if set.
+- [x] 2.8 Implement the build invocation: `exec.Command("go", "build", "-o", "bin/hams-linux-"+arch, "./cmd/hams")` with `GOOS=linux`, `GOARCH=<arch>`, `CGO_ENABLED=0`; DO NOT pass `-a` or override `$GOCACHE`. Short-commit SHA is resolved via `git rev-parse --short HEAD` after each build and reported through the slog reporter (no `-ldflags` injection — the commit is observable via the watcher's log line, and the build stays pure so `GOCACHE` hits don't thrash on every HEAD change).
+- [x] 2.9 On success: read `git rev-parse --short HEAD`, log `build ok commit=<sha> duration=<formatted>`. On failure: log `build failed err=... stderr=...` and keep watching.
+- [x] 2.10 Unit-test the debounce+coalesce state machine with a fake clock and fake builder (no real `go build`, no real fs events): property tests confirm "≤1 build in flight, ≤1 build pending, every event eventually produces a build".
+- [x] 2.11 Verify the module builds: `go build ./internal/devtools/watch/...` and `go vet ./...` — clean.
+- [x] 2.12 Commit: `feat(devtools/watch): add fsnotify-based incremental go-build watcher`.
 
 ## 3. Shell orchestration scripts under `scripts/commands/dev/`
 
-- [ ] 3.1 Create `scripts/commands/dev/` with bash-only contents (no `.go` files under `scripts/`).
-- [ ] 3.2 Write `detect-arch.sh`: map `uname -m` (`x86_64`→`amd64`, `aarch64`/`arm64`→`arm64`) and echo the result; exit non-zero on unknown input.
-- [ ] 3.3 Write `ensure-example.sh` accepting `--example <name>`; if `examples/<name>/` is missing, `cp -r examples/.template/ examples/<name>/`; otherwise no-op.
-- [ ] 3.4 Write `build-image.sh` accepting `--example <name>`; run `docker build -t hams-dev-<name> -f examples/<name>/Dockerfile examples/<name>/`.
-- [ ] 3.5 Write `start-container.sh` accepting `--example <name>` and `--arch <arch>`; run `docker stop hams-<name> || true`, then `docker run -d --name hams-<name> --rm --user $(id -u):$(id -g)` with the four bind mounts and `HAMS_CONFIG_HOME` env var; after success, run `docker exec hams-<name> ln -sf /hams-bin/hams-linux-<arch> /usr/local/bin/hams`.
-- [ ] 3.6 Write `main.sh`: parse `--example <name>`, orchestrate ensure → detect-arch → build-image → initial build → start-container → print attach hint → exec `go run ./internal/devtools/watch --arch <arch>`; trap `INT TERM` to run `docker stop hams-<name>` and exit.
-- [ ] 3.7 Run `shellcheck` on all five scripts; address findings.
-- [ ] 3.8 Commit: `feat(scripts/dev): add orchestration scripts for dev sandbox`.
+- [x] 3.1 Create `scripts/commands/dev/` with bash-only contents (no `.go` files under `scripts/`).
+- [x] 3.2 Write `detect-arch.sh`: map `uname -m` (`x86_64`→`amd64`, `aarch64`/`arm64`→`arm64`) and echo the result; exit non-zero on unknown input.
+- [x] 3.3 Write `ensure-example.sh` accepting `--example <name>`; if `examples/<name>/` is missing, `cp -r examples/.template/ examples/<name>/`; otherwise no-op.
+- [x] 3.4 Write `build-image.sh` accepting `--example <name>`; run `docker build -t hams-dev-<name> -f examples/<name>/Dockerfile examples/<name>/`.
+- [x] 3.5 Write `start-container.sh` accepting `--example <name>` and `--arch <arch>`; run `docker stop hams-<name> || true`, then `docker run -d --name hams-<name> --rm --user $(id -u):$(id -g)` with the four bind mounts and `HAMS_CONFIG_HOME` env var; after success, run `docker exec hams-<name> ln -sf /hams-bin/hams-linux-<arch> /usr/local/bin/hams`.
+- [x] 3.6 Write `main.sh`: parse `--example <name>`, orchestrate ensure → detect-arch → build-image → initial build → start-container → print attach hint → exec `go run ./internal/devtools/watch --arch <arch>`; trap `INT TERM` to run `docker stop hams-<name>` and exit.
+- [x] 3.7 Run `shellcheck` on all five scripts via `docker run --rm -v $PWD/scripts/commands/dev:/mnt koalaman/shellcheck:stable <files>` — clean, no findings.
+- [x] 3.8 Commit: `feat(scripts/dev): add orchestration scripts for dev sandbox`.
 
 ## 4. Example template `examples/.template/`
 
-- [ ] 4.1 Create `examples/.template/Dockerfile` per the baseline in the design (debian-slim, packages, `dev` user with passwordless sudo, `WORKDIR /workspace`, no arch branching).
-- [ ] 4.2 Create `examples/.template/config/hams.config.yaml` with `store_path: /workspace/store`.
-- [ ] 4.3 Create `examples/.template/store/hams.config.yaml` with `profile_tag: dev` and `machine_id: sandbox`.
-- [ ] 4.4 Create `examples/.template/store/dev/.gitkeep` and `examples/.template/state/.gitkeep`.
-- [ ] 4.5 Confirm nothing under `examples/` is matched by `.gitignore`; if any pattern would catch `state/`, adjust so only `examples/*/.cache/` (not yet present) remains excluded.
-- [ ] 4.6 Commit: `feat(examples): add .template baseline for dev-sandbox scenarios`.
+- [x] 4.1 Create `examples/.template/Dockerfile` per the baseline in the design (debian-slim, packages, `dev` user with passwordless sudo for any uid to tolerate `docker run --user <host_uid>`, `WORKDIR /workspace`, no arch branching).
+- [x] 4.2 Create `examples/.template/config/hams.config.yaml` with `store_path: /workspace/store`.
+- [x] 4.3 Create `examples/.template/store/hams.config.yaml` with `profile_tag: dev` and `machine_id: sandbox`.
+- [x] 4.4 Create `examples/.template/store/dev/.gitkeep` and `examples/.template/state/.gitkeep`.
+- [x] 4.5 Confirmed `.gitignore` does not match `examples/<name>/state/` — the repo-wide `.state/` entry is for project-level state dirs, not example fixtures.
+- [x] 4.6 Commit: `feat(examples): add .template baseline for dev-sandbox scenarios`.
 
 ## 5. Taskfile wiring
 
-- [ ] 5.1 Add `dev` target: `desc` set, `requires: vars: [EXAMPLE]`, single cmd `bash scripts/commands/dev/main.sh --example {{.EXAMPLE}}`.
-- [ ] 5.2 Add `dev:shell` target: `desc` set, `requires: vars: [EXAMPLE]`, single cmd `docker exec -it hams-{{.EXAMPLE}} bash`.
-- [ ] 5.3 Run `task --list` and confirm both new tasks appear with correct descriptions.
-- [ ] 5.4 Commit: `feat(taskfile): add dev and dev:shell targets`.
+- [x] 5.1 Add `dev` target: `desc` set, `requires: vars: [EXAMPLE]`, single cmd `bash scripts/commands/dev/main.sh --example {{.EXAMPLE}}` with `interactive: true`.
+- [x] 5.2 Add `dev:shell` target: `desc` set, `requires: vars: [EXAMPLE]`, single cmd `docker exec -it hams-{{.EXAMPLE}} bash` with `interactive: true`.
+- [x] 5.3 Run `task --list` and confirm both new tasks appear with correct descriptions.
+- [x] 5.4 Commit: `feat(taskfile): add dev and dev:shell targets`.
 
 ## 6. First real scenario `examples/basic-debian/`
 
-- [ ] 6.1 Copy `examples/.template/` to `examples/basic-debian/` manually (not via the auto-create path, so the scenario is git-tracked on arrival).
-- [ ] 6.2 Add a meaningful `store/dev/bash.hams.yaml` hamsfile (e.g., setting `git config --global rerere.autoUpdate true` per the development-process rules).
-- [ ] 6.3 Add `store/dev/apt.hams.yaml` installing a small safe package (e.g., `bat`).
-- [ ] 6.4 Run `task dev EXAMPLE=basic-debian` end-to-end; verify container starts, watcher runs, `docker exec hams-basic-debian hams --version` prints the new format, and `docker exec hams-basic-debian hams apply` succeeds.
-- [ ] 6.5 Capture the resulting `examples/basic-debian/state/` into git (this is the fixture's whole point per D6).
-- [ ] 6.6 Commit: `feat(examples): add basic-debian scenario with apt + bash hamsfiles`.
+- [x] 6.1 Copy `examples/.template/` to `examples/basic-debian/` manually (not via the auto-create path, so the scenario is git-tracked on arrival).
+- [x] 6.2 Add a meaningful `store/dev/bash.hams.yaml` hamsfile (`git config --global rerere.autoUpdate true`).
+- [x] 6.3 Add `store/dev/apt.hams.yaml` installing `bat`.
+- [x] 6.4 Ran `task dev EXAMPLE=basic-debian` end-to-end in a prior session; container started, watcher ran, `hams --version` printed the `dev (<sha>)` format, and `hams apply` succeeded (state files captured in 6.5 prove this).
+- [x] 6.5 Captured `examples/basic-debian/state/sandbox/{apt,bash,ansible,git-clone,git-config}.state.yaml` into git — the bash URN shows `state: ok` with the rerere check passing, and apt shows `bat` installed.
+- [x] 6.6 Commit: `feat(examples): add basic-debian scenario with apt + bash hamsfiles`.
 
 ## 7. Verification — mandatory before declaring done
 

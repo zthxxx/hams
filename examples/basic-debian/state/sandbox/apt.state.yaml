@@ -5,5 +5,5 @@ last_apply_config_hash: ef8d2be62f95fb486ab086ef4dce774ee72d675dba2db8fc92497b61
 resources:
     bat:
         state: ok
-        install_at: 20260414T170725
-        updated_at: 20260414T170725
+        install_at: 20260414T171014
+        updated_at: 20260414T171014

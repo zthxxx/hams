@@ -99,4 +99,35 @@ docker exec \
   "${container_name}" \
   ln -sf "/hams-bin/hams-linux-${arch}" "/usr/local/bin/hams"
 
+# Runtime /etc/passwd entry for the host uid.
+#
+# Why: the container runs as --user ${host_uid}:${host_gid} so bind-mounted
+# files land with correct host ownership. But sudo, su, and many tools
+# ("you do not exist in the passwd database") break when the current uid
+# has no /etc/passwd entry. We append one at container start.
+#
+# Collision handling:
+#   - uid 1000 is already the baked "dev" user; skip append.
+#   - gid 1000 is the baked "dev" group; skip append.
+# A direct /etc/passwd + /etc/group append (rather than useradd/groupadd)
+# keeps the script portable across debian/alpine/other slim bases.
+#
+# The container's sudoers file grants passwordless sudo to ALL, so the
+# runtime uid inherits it as soon as it's resolvable via /etc/passwd.
+docker exec --user root "${container_name}" bash -eu -c "
+if ! getent group '${host_gid}' >/dev/null 2>&1; then
+  printf 'hostgroup:x:%s:\n' '${host_gid}' >> /etc/group
+fi
+if ! getent passwd '${host_uid}' >/dev/null 2>&1; then
+  printf 'hostuser:x:%s:%s:dev sandbox host user:/home/dev:/bin/bash\n' \
+    '${host_uid}' '${host_gid}' >> /etc/passwd
+  # Shadow entry with '*' password (disabled login password). PAM requires
+  # a valid shadow entry for sudo to skip the 'account locked' check even
+  # under NOPASSWD. Fields match shadow(5): last-change=1, others unset.
+  if [[ -f /etc/shadow ]]; then
+    printf 'hostuser:*:1::::::\n' >> /etc/shadow
+  fi
+fi
+"
+
 printf 'start-container: %s is running (image %s, arch %s)\n' "${container_name}" "${image_tag}" "${arch}"
