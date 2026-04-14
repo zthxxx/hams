@@ -95,7 +95,6 @@ tasks:
     cmds:
       - go test -race -count=1 -coverprofile=coverage.out ./...
 
-
   test:cover:
     desc: Show test coverage in browser
     deps: [test]

@@ -10,8 +10,6 @@ import (
 
 	"github.com/urfave/cli/v3"
 
-	"go.uber.org/fx"
-
 	"github.com/zthxxx/hams/internal/config"
 	hamserr "github.com/zthxxx/hams/internal/error"
 	"github.com/zthxxx/hams/internal/i18n"
@@ -91,24 +89,11 @@ Use 'hams apply' to replay all installations from config.`,
 func Execute() {
 	i18n.Init()
 
-	var sudoAcq sudo.Acquirer
-	var sudoCmd sudo.CmdBuilder
-
-	fxApp := fx.New(
-		fx.NopLogger,
-		sudo.Module,
-		fx.Populate(&sudoAcq, &sudoCmd),
-	)
-	if err := fxApp.Err(); err != nil {
-		fmt.Fprintf(os.Stderr, "initialization error: %v\n", err)
-		os.Exit(1)
-	}
-
 	// Create provider registry and register builtins.
 	registry := provider.NewRegistry()
-	registerBuiltins(registry, sudoCmd)
+	registerBuiltins(registry, &sudo.Builder{})
 
-	app := NewApp(registry, sudoAcq)
+	app := NewApp(registry, sudo.NewManager())
 
 	if err := app.Run(context.Background(), os.Args); err != nil {
 		flags := &provider.GlobalFlags{}
