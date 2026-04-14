@@ -323,23 +323,15 @@ func extractLocalPath(resourceID string) string {
 }
 
 func parseCloneResource(id string) (remote, localPath, branch string) {
-	// Format: "remote -> local-path" or "remote -> local-path branch"
+	// Format: "remote -> local-path"
+	// Branch is not encoded in the ID — use structured YAML fields instead.
 	parts := strings.SplitN(id, " -> ", 2)
 	if len(parts) != 2 {
 		return "", "", ""
 	}
 	remote = strings.TrimSpace(parts[0])
-	rest := strings.TrimSpace(parts[1])
-
-	spaceIdx := strings.LastIndex(rest, " ")
-	if spaceIdx > 0 {
-		localPath = rest[:spaceIdx]
-		branch = rest[spaceIdx+1:]
-	} else {
-		localPath = rest
-	}
-
-	return remote, localPath, branch
+	localPath = strings.TrimSpace(parts[1])
+	return remote, localPath, ""
 }
 
 // cloneParseResources parses structured git-clone entries from the hamsfile.

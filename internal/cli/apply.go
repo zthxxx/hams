@@ -243,11 +243,21 @@ func runApply(ctx context.Context, flags *provider.GlobalFlags, registry *provid
 			continue
 		}
 
+		// If config content changed, promote skips to updates so edits apply.
+		currentHash := configHashForHamsfile(hf)
+		if sf.ConfigHash != "" && currentHash != sf.ConfigHash {
+			for i := range actions {
+				if actions[i].Type == provider.ActionSkip {
+					actions[i].Type = provider.ActionUpdate
+				}
+			}
+		}
+
 		result := provider.Execute(ctx, p, actions, sf)
 		allResults = append(allResults, result)
 
 		if result.Failed == 0 {
-			sf.ConfigHash = configHashForHamsfile(hf)
+			sf.ConfigHash = currentHash
 		}
 
 		if saveErr := sf.Save(statePath); saveErr != nil {
