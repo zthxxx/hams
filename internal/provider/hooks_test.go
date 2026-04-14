@@ -59,7 +59,7 @@ func TestCollectDeferredHooks(t *testing.T) {
 		{Type: HookPostInstall, Command: "echo 2", Defer: true},
 		{Type: HookPostInstall, Command: "echo 3", Defer: true},
 	}
-	deferred := CollectDeferredHooks(hooks)
+	deferred := CollectDeferredHooks("htop", hooks)
 	if len(deferred) != 2 {
 		t.Fatalf("deferred = %d, want 2", len(deferred))
 	}

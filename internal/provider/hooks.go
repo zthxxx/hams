@@ -88,11 +88,11 @@ func runPostHooks(ctx context.Context, hooks []Hook, resourceID, phase string, s
 }
 
 // CollectDeferredHooks returns all hooks with defer=true from the given hook set.
-func CollectDeferredHooks(hooks []Hook) []DeferredHook {
+func CollectDeferredHooks(resourceID string, hooks []Hook) []DeferredHook {
 	var deferred []DeferredHook
 	for _, h := range hooks {
 		if h.Defer {
-			deferred = append(deferred, DeferredHook{Hook: h})
+			deferred = append(deferred, DeferredHook{Hook: h, ResourceID: resourceID})
 		}
 	}
 	return deferred

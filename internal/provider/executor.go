@@ -91,6 +91,20 @@ func executeInstall(ctx context.Context, p Provider, action Action, sf *state.Fi
 	// Set state to pending before executing.
 	sf.SetResource(action.ID, state.StatePending)
 
+	// Run pre-install hooks (non-deferred).
+	if action.Hooks != nil && len(action.Hooks.PreInstall) > 0 {
+		if err := RunPreInstallHooks(ctx, action.Hooks.PreInstall, action.ID); err != nil {
+			slog.Error("pre-install hook failed, skipping install", "provider", name, "resource", action.ID, "error", err)
+			sf.SetResource(action.ID, state.StateFailed, state.WithError(err.Error()))
+			result.Failed++
+			result.Errors = append(result.Errors, fmt.Errorf("%s: pre-install hook %s: %w", name, action.ID, err))
+			if session != nil {
+				session.EndSpan(span, "error")
+			}
+			return
+		}
+	}
+
 	slog.Info("installing", "provider", name, "resource", action.ID)
 	if err := p.Apply(ctx, action); err != nil {
 		slog.Error("install failed", "provider", name, "resource", action.ID, "error", err)
@@ -101,6 +115,20 @@ func executeInstall(ctx context.Context, p Provider, action Action, sf *state.Fi
 			session.EndSpan(span, "error")
 		}
 		return
+	}
+
+	// Run post-install hooks (non-deferred).
+	if action.Hooks != nil && len(action.Hooks.PostInstall) > 0 {
+		if err := RunPostInstallHooks(ctx, action.Hooks.PostInstall, action.ID, sf); err != nil {
+			// Install succeeded but hook failed — state is hook-failed.
+			result.Installed++
+			result.Errors = append(result.Errors, fmt.Errorf("%s: post-install hook %s: %w", name, action.ID, err))
+			slog.Info("installed (hook failed)", "provider", name, "resource", action.ID)
+			if session != nil {
+				session.EndSpan(span, "ok")
+			}
+			return
+		}
 	}
 
 	sf.SetResource(action.ID, state.StateOK, action.StateOpts...)
@@ -152,6 +180,7 @@ func executeUpdate(ctx context.Context, p Provider, action Action, sf *state.Fil
 		if err := RunPostUpdateHooks(ctx, action.Hooks.PostUpdate, action.ID, sf); err != nil {
 			// Update succeeded but hook failed — state is hook-failed.
 			result.Updated++
+			result.Errors = append(result.Errors, fmt.Errorf("%s: post-update hook %s: %w", name, action.ID, err))
 			slog.Info("updated (hook failed)", "provider", name, "resource", action.ID)
 			if session != nil {
 				session.EndSpan(span, "ok")
