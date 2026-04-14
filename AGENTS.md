@@ -137,9 +137,9 @@ This project uses [OpenSpec](https://openspec.dev) for spec-driven development.
 Loop repeatedly until all of the following tasks are completed.
 
 - [x] Run command `/opsx:apply`
-- [ ] Run command `/opsx:verify`
+- [x] Run command `/opsx:verify`
   - Any review issues?
-    - [ ] If yes: uncheck this task and all above, fix issues, then re-run from the top. If no issues: check this task, git commit, and continue.
+    - [x] If yes: uncheck this task and all above, fix issues, then re-run from the top. If no issues: check this task, git commit, and continue.
 - [ ] Run command `/simplify`
   - Any review issues?
     - [ ] If yes: uncheck this task and all above, fix issues, then re-run from the top. If no issues: check this task, git commit, and continue.

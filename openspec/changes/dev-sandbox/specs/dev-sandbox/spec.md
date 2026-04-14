@@ -162,7 +162,7 @@ Every build invocation SHALL run as: `GOOS=linux GOARCH=<arch> CGO_ENABLED=0 go 
 
 The watcher SHALL rely on the default `$GOCACHE` for incremental compilation and SHALL NOT pass `-a` or otherwise invalidate the cache.
 
-On build success, the watcher SHALL print `[watch] built <short-commit-sha> in <duration>`. On build failure, it SHALL print the compiler stderr and continue watching.
+On build success, the watcher SHALL emit a structured `log/slog` record with message `build ok` and fields `commit=<short-commit-sha>` and `duration=<formatted>` (matching the project's `log/slog`-first logging convention in `.claude/rules/code-conventions.md`). On build failure, it SHALL emit a `build failed` record with the compiler stderr and keep watching.
 
 #### Scenario: `.go` save triggers a debounced, incremental rebuild
 
