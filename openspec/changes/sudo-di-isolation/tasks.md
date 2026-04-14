@@ -38,11 +38,11 @@
 **Files:**
 - Modify: `internal/sudo/sudo.go`
 
-- [ ] **Step 1: Read current sudo.go**
+- [x] **Step 1: Read current sudo.go**
 
 Current file has: `Manager` struct, `NewManager()`, `Acquire()`, `IsAcquired()`, `Stop()`, `RunWithSudo()`, `checkSudo()`, `isRoot` var.
 
-- [ ] **Step 2: Extract interfaces at top of file**
+- [x] **Step 2: Extract interfaces at top of file**
 
 Add these interfaces before the `Manager` struct:
 
@@ -61,7 +61,7 @@ type CmdBuilder interface {
 }
 ```
 
-- [ ] **Step 3: Rename `RunWithSudo` to a method on a new `SudoBuilder` struct**
+- [x] **Step 3: Rename `RunWithSudo` to a method on a new `SudoBuilder` struct**
 
 Replace the package-level `RunWithSudo` function with:
 
@@ -91,12 +91,12 @@ func RunWithSudo(ctx context.Context, name string, args ...string) *exec.Cmd {
 }
 ```
 
-- [ ] **Step 4: Verify compile**
+- [x] **Step 4: Verify compile**
 
 Run: `go build ./internal/sudo/...`
 Expected: PASS (no callers changed yet, backward-compat wrapper keeps things working)
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add internal/sudo/sudo.go
@@ -110,7 +110,7 @@ git commit -m "refactor(sudo): extract Acquirer and CmdBuilder interfaces"
 **Files:**
 - Create: `internal/sudo/noop.go`
 
-- [ ] **Step 1: Write the noop implementations**
+- [x] **Step 1: Write the noop implementations**
 
 ```go
 package sudo
@@ -140,12 +140,12 @@ func (DirectBuilder) Command(ctx context.Context, name string, args ...string) *
 }
 ```
 
-- [ ] **Step 2: Verify compile**
+- [x] **Step 2: Verify compile**
 
 Run: `go build ./internal/sudo/...`
 Expected: PASS
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add internal/sudo/noop.go
@@ -159,7 +159,7 @@ git commit -m "feat(sudo): add NoopAcquirer and DirectBuilder for unit test DI"
 **Files:**
 - Create: `internal/sudo/fx.go`
 
-- [ ] **Step 1: Write the Fx module**
+- [x] **Step 1: Write the Fx module**
 
 ```go
 package sudo
@@ -195,12 +195,12 @@ var TestModule = fx.Module("sudo-test",
 )
 ```
 
-- [ ] **Step 2: Verify compile**
+- [x] **Step 2: Verify compile**
 
 Run: `go build ./internal/sudo/...`
 Expected: PASS
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add internal/sudo/fx.go
@@ -215,7 +215,7 @@ git commit -m "feat(sudo): add Fx Module and TestModule for DI wiring"
 - Modify: `internal/provider/builtin/apt/apt.go`
 - Modify: `internal/provider/builtin/apt/apt_test.go`
 
-- [ ] **Step 1: Update apt.Provider to accept CmdBuilder**
+- [x] **Step 1: Update apt.Provider to accept CmdBuilder**
 
 Change the Provider struct and constructor:
 
@@ -229,7 +229,7 @@ type Provider struct {
 func New(sb sudo.CmdBuilder) *Provider { return &Provider{sudo: sb} }
 ```
 
-- [ ] **Step 2: Replace all `sudo.RunWithSudo` calls with `p.sudo.Command`**
+- [x] **Step 2: Replace all `sudo.RunWithSudo` calls with `p.sudo.Command`**
 
 In `Apply`:
 ```go
@@ -261,11 +261,11 @@ In `HandleCommand` remove case:
 cmd := p.sudo.Command(context.Background(), "apt-get", append([]string{"remove", "-y"}, remaining...)...)
 ```
 
-- [ ] **Step 3: Remove the `sudo` import (no longer needed as package-level call)**
+- [x] **Step 3: Remove the `sudo` import (no longer needed as package-level call)**
 
 The import changes from `"github.com/zthxxx/hams/internal/sudo"` — keep it, since we use the `sudo.CmdBuilder` type.
 
-- [ ] **Step 4: Update apt tests to inject DirectBuilder**
+- [x] **Step 4: Update apt tests to inject DirectBuilder**
 
 In `apt_test.go`, update any test that creates `apt.New()` to pass `sudo.DirectBuilder{}`:
 
@@ -280,12 +280,12 @@ func TestManifest(t *testing.T) {
 
 (Do this for all `New()` calls in `apt_test.go` — currently `TestManifest`, `TestNameDisplayName`, and `TestParseDpkgVersion` which doesn't use New.)
 
-- [ ] **Step 5: Verify compile and tests**
+- [x] **Step 5: Verify compile and tests**
 
 Run: `go build ./internal/provider/builtin/apt/... && go test ./internal/provider/builtin/apt/...`
 Expected: PASS
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add internal/provider/builtin/apt/apt.go internal/provider/builtin/apt/apt_test.go
@@ -299,7 +299,7 @@ git commit -m "refactor(apt): inject sudo.CmdBuilder via constructor"
 **Files:**
 - Modify: `internal/cli/register.go`
 
-- [ ] **Step 1: Add sudo CmdBuilder parameter to registerBuiltins**
+- [x] **Step 1: Add sudo CmdBuilder parameter to registerBuiltins**
 
 Change signature and pass `SudoBuilder` to apt:
 
@@ -312,12 +312,12 @@ Update the `apt.New()` call inside:
 apt.New(sudoCmd),
 ```
 
-- [ ] **Step 2: Verify compile**
+- [x] **Step 2: Verify compile**
 
 Run: `go build ./internal/cli/...`
 Expected: FAIL — callers of `registerBuiltins` need updating (done in Task 6)
 
-- [ ] **Step 3: Do NOT commit yet** — wait for Task 6 to make it compile
+- [x] **Step 3: Do NOT commit yet** — wait for Task 6 to make it compile
 
 ---
 
@@ -327,7 +327,7 @@ Expected: FAIL — callers of `registerBuiltins` need updating (done in Task 6)
 - Modify: `internal/cli/apply.go`
 - Modify: `internal/cli/root.go`
 
-- [ ] **Step 1: Add Acquirer parameter to runApply**
+- [x] **Step 1: Add Acquirer parameter to runApply**
 
 Change `runApply` signature to accept an `Acquirer`:
 
@@ -354,7 +354,7 @@ with:
 if sudoErr := sudoAcq.Acquire(ctx); sudoErr != nil {
 ```
 
-- [ ] **Step 2: Update applyCmd to pass Acquirer**
+- [x] **Step 2: Update applyCmd to pass Acquirer**
 
 Change `applyCmd` to accept and forward the Acquirer:
 
@@ -375,7 +375,7 @@ Action: func(ctx context.Context, cmd *cli.Command) error {
 },
 ```
 
-- [ ] **Step 3: Update NewApp to accept and forward sudo types**
+- [x] **Step 3: Update NewApp to accept and forward sudo types**
 
 ```go
 func NewApp(registry *provider.Registry, sudoAcq sudo.Acquirer) *cli.Command {
@@ -389,7 +389,7 @@ Commands: []*cli.Command{
 },
 ```
 
-- [ ] **Step 4: Update Execute to wire Fx**
+- [x] **Step 4: Update Execute to wire Fx**
 
 Replace the current `Execute()` function:
 
@@ -473,7 +473,7 @@ func Execute() {
 }
 ```
 
-- [ ] **Step 5: Update root_test.go to pass NoopAcquirer**
+- [x] **Step 5: Update root_test.go to pass NoopAcquirer**
 
 `root_test.go` calls `NewApp(registry)` in 3 tests. Update all to:
 
@@ -484,12 +484,12 @@ import "github.com/zthxxx/hams/internal/sudo"
 app := NewApp(registry, sudo.NoopAcquirer{})
 ```
 
-- [ ] **Step 6: Verify compile**
+- [x] **Step 6: Verify compile**
 
 Run: `go build ./cmd/hams/...`
 Expected: PASS
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add internal/cli/apply.go internal/cli/root.go internal/cli/register.go internal/cli/root_test.go
@@ -503,7 +503,7 @@ git commit -m "refactor(cli): wire sudo via Fx DI, inject Acquirer into runApply
 **Files:**
 - Modify: `internal/cli/apply_test.go`
 
-- [ ] **Step 1: Update all runApply calls to pass NoopAcquirer**
+- [x] **Step 1: Update all runApply calls to pass NoopAcquirer**
 
 Add import:
 ```go
@@ -517,12 +517,12 @@ runApply(context.Background(), flags, registry, sudo.NoopAcquirer{}, "", true, "
 
 There are 4 such calls in the current test file (lines 114, 184, 188, 258).
 
-- [ ] **Step 2: Run tests**
+- [x] **Step 2: Run tests**
 
 Run: `go test -race ./internal/cli/...`
 Expected: PASS — no more `Password:` prompt
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add internal/cli/apply_test.go
@@ -536,7 +536,7 @@ git commit -m "test(cli): inject NoopAcquirer in apply tests to prevent sudo pro
 **Files:**
 - Modify: `internal/sudo/sudo_test.go`
 
-- [ ] **Step 1: Add interface compliance tests**
+- [x] **Step 1: Add interface compliance tests**
 
 ```go
 func TestManager_ImplementsAcquirer(t *testing.T) {
@@ -556,7 +556,7 @@ func TestDirectBuilder_ImplementsCmdBuilder(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Update existing RunWithSudo tests to use SudoBuilder**
+- [x] **Step 2: Update existing RunWithSudo tests to use SudoBuilder**
 
 Replace `TestRunWithSudo_NonRoot_WrapsSudo`:
 ```go
@@ -590,7 +590,7 @@ func TestSudoBuilder_Root_SkipsSudo(t *testing.T) {
 }
 ```
 
-- [ ] **Step 3: Add DirectBuilder test**
+- [x] **Step 3: Add DirectBuilder test**
 
 ```go
 func TestDirectBuilder_NeverWrapsSudo(t *testing.T) {
@@ -603,7 +603,7 @@ func TestDirectBuilder_NeverWrapsSudo(t *testing.T) {
 }
 ```
 
-- [ ] **Step 4: Add NoopAcquirer test**
+- [x] **Step 4: Add NoopAcquirer test**
 
 ```go
 func TestNoopAcquirer_AlwaysSucceeds(t *testing.T) {
@@ -615,12 +615,12 @@ func TestNoopAcquirer_AlwaysSucceeds(t *testing.T) {
 }
 ```
 
-- [ ] **Step 5: Run tests**
+- [x] **Step 5: Run tests**
 
 Run: `go test -race ./internal/sudo/...`
 Expected: PASS
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add internal/sudo/sudo_test.go
@@ -634,21 +634,21 @@ git commit -m "test(sudo): update tests to use Acquirer/CmdBuilder interfaces"
 **Files:**
 - Modify: `internal/sudo/sudo.go`
 
-- [ ] **Step 1: Grep for remaining callers**
+- [x] **Step 1: Grep for remaining callers**
 
 Run: `rg 'sudo\.RunWithSudo' --type go`
 Expected: No matches (all callers migrated in Tasks 4-6)
 
-- [ ] **Step 2: Remove the deprecated function**
+- [x] **Step 2: Remove the deprecated function**
 
 Delete the `RunWithSudo` function from `sudo.go`.
 
-- [ ] **Step 3: Verify full build and tests**
+- [x] **Step 3: Verify full build and tests**
 
 Run: `go build ./... && go test -race ./...`
 Expected: PASS, no `Password:` prompt
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add internal/sudo/sudo.go
@@ -664,7 +664,7 @@ git commit -m "refactor(sudo): remove deprecated RunWithSudo function"
 - Create: `e2e/sudo/Dockerfile`
 - Create: `e2e/sudo/run-tests.sh`
 
-- [ ] **Step 1: Write the build-tagged test file**
+- [x] **Step 1: Write the build-tagged test file**
 
 ```go
 //go:build sudo
@@ -765,7 +765,7 @@ func TestSudoBuilder_AsNonRoot_PrependsSudo(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Write the Dockerfile**
+- [x] **Step 2: Write the Dockerfile**
 
 ```dockerfile
 FROM golang:1.25-bookworm
@@ -784,7 +784,7 @@ COPY go.mod go.sum ./
 RUN go mod download
 ```
 
-- [ ] **Step 3: Write the test runner script**
+- [x] **Step 3: Write the test runner script**
 
 ```bash
 #!/usr/bin/env bash
@@ -801,17 +801,17 @@ echo ""
 echo "All sudo tests passed."
 ```
 
-- [ ] **Step 4: Verify Dockerfile builds**
+- [x] **Step 4: Verify Dockerfile builds**
 
 Run: `docker build -f e2e/sudo/Dockerfile -t hams-sudo-test .`
 Expected: Image builds successfully
 
-- [ ] **Step 5: Run the sudo tests in Docker**
+- [x] **Step 5: Run the sudo tests in Docker**
 
 Run: `docker run --rm -v "$(pwd):/src" hams-sudo-test bash /src/e2e/sudo/run-tests.sh`
 Expected: All 4 tests pass (2 as root, 2 as testuser)
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add internal/sudo/sudo_sudo_test.go e2e/sudo/Dockerfile e2e/sudo/run-tests.sh
@@ -826,7 +826,7 @@ git commit -m "test(sudo): add Docker-based tests for real sudo behavior"
 - Modify: `.github/workflows/ci.yml`
 - Modify: `Taskfile.yml`
 
-- [ ] **Step 1: Add sudo test job to CI**
+- [x] **Step 1: Add sudo test job to CI**
 
 Add after the `integration:` job in `ci.yml`:
 
@@ -857,7 +857,7 @@ Add after the `integration:` job in `ci.yml`:
             bash /src/e2e/sudo/run-tests.sh
 ```
 
-- [ ] **Step 2: Add Taskfile entry**
+- [x] **Step 2: Add Taskfile entry**
 
 Add to `Taskfile.yml` after `test:integration:`:
 
@@ -868,7 +868,7 @@ Add to `Taskfile.yml` after `test:integration:`:
       - act push --container-architecture linux/amd64 -j sudo --rm
 ```
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add .github/workflows/ci.yml Taskfile.yml
@@ -879,26 +879,26 @@ git commit -m "ci: add sudo test job and task"
 
 ### Task 12: Final verification
 
-- [ ] **Step 1: Run full unit test suite — confirm no Password prompt**
+- [x] **Step 1: Run full unit test suite — confirm no Password prompt**
 
 Run: `go test -race -count=1 ./...`
 Expected: All tests PASS. No `Password:` prompt. No interactive blocking.
 
-- [ ] **Step 2: Run lint**
+- [x] **Step 2: Run lint**
 
 Run: `golangci-lint run ./...`
 Expected: PASS
 
-- [ ] **Step 3: Run sudo Docker tests**
+- [x] **Step 3: Run sudo Docker tests**
 
 Run: `docker run --rm -v "$(pwd):/src" hams-sudo-test bash /src/e2e/sudo/run-tests.sh`
 Expected: All 4 sudo tests pass
 
-- [ ] **Step 4: Add any new terms to cspell.yaml if needed**
+- [x] **Step 4: Add any new terms to cspell.yaml if needed**
 
 Check: `bun cspell lint --no-progress "internal/sudo/**"`
 
-- [ ] **Step 5: Verify no stale references**
+- [x] **Step 5: Verify no stale references**
 
 Run: `rg 'sudo\.RunWithSudo' --type go`
 Expected: No matches
@@ -906,7 +906,7 @@ Expected: No matches
 Run: `rg 'sudo\.NewManager' --type go`
 Expected: Only in `internal/sudo/sudo.go` (the constructor) and `internal/sudo/fx.go` (the Fx provider)
 
-- [ ] **Step 6: Commit any final fixes**
+- [x] **Step 6: Commit any final fixes**
 
 ```bash
 git add -A
