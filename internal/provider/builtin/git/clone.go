@@ -144,7 +144,7 @@ func (p *CloneProvider) handleAdd(args []string, hamsFlags map[string]string, fl
 	}
 
 	remote := args[0]
-	localPath := hamsFlags["hams-path"]
+	localPath := hamsFlags["path"]
 	if localPath == "" {
 		return hamserr.NewUserError(hamserr.ExitUsageError,
 			"git-clone add requires --hams-path",

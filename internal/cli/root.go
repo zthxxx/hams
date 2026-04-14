@@ -3,6 +3,7 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -102,7 +103,13 @@ func Execute() {
 			}
 		}
 		PrintError(err, flags.JSON)
-		os.Exit(hamserr.ExitGeneralError)
+
+		exitCode := hamserr.ExitGeneralError
+		var ue *hamserr.UserFacingError
+		if errors.As(err, &ue) {
+			exitCode = ue.Code
+		}
+		os.Exit(exitCode)
 	}
 }
 
