@@ -409,9 +409,7 @@ func cloneParseResources(f *hamsfile.File) (map[string]cloneResource, error) {
 				if localPath != "" {
 					res.Path = localPath
 				}
-				if branch == "" {
-					// Keep any branch from structured fields.
-				} else if res.Branch == "" {
+				if branch != "" && res.Branch == "" {
 					res.Branch = branch
 				}
 			}
