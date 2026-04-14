@@ -2,31 +2,77 @@ import { Callout } from 'nextra/components'
 
 # pnpm Provider
 
-<Callout type="info">
-  此页面尚未完成翻译，以下为英文原文。欢迎贡献翻译。
-</Callout>
+包装 [pnpm](https://pnpm.io/) 来管全局装的 Node.js 命令行工具 —— 像 `serve`、`tsx`、`prettier` 这种，
+你在任何目录都想敲就能用的那种。
 
-Wraps [pnpm](https://pnpm.io/) to manage globally installed Node.js packages.
+为什么专门有 pnpm provider 而不是让你用 npm？pnpm 的全局装有两点好：硬链接省磁盘、
+不会把 `node_modules` 污染到系统路径里。如果你已经在用 pnpm 管项目依赖，全局也用它一致性最好。
 
-**Platforms:** macOS, Linux
+**支持平台：** macOS、Linux
 
-## Usage
+## 怎么用
 
 ```bash
-hams pnpm add <package>
-hams pnpm remove <package>
+# 全局装一个工具
+hams pnpm add serve
+
+# 卸掉
+hams pnpm remove serve
+
+# 看看 hams 管了哪些 pnpm 全局包
 hams pnpm list
 ```
 
-## Hamsfile Example
+注意是 `add` / `remove`，这跟 pnpm 原生命令保持一致 —— 用过 pnpm 的人不用切换脑回路。
+
+## Hamsfile 长什么样
 
 ```yaml
-- app: serve
-  intro: Static file serving and directory listing.
-- app: tsx
-  intro: TypeScript execute for Node.js.
+# macOS/pnpm.hams.yaml
+schema_version: 1
+provider: pnpm
+
+groups:
+  - tag: dev
+    items:
+      - app: serve
+        intro: Static file serving and directory listing.
+      - app: tsx
+        intro: TypeScript executor for Node.js.
+      - app: prettier
+        tags: [formatter]
+        intro: Opinionated code formatter.
 ```
 
-<Callout type="info">
-  Full documentation coming soon.
+`app` 就是 npm 包名，跟 `pnpm add -g <name>` 里的那个完全一致。
+
+## 状态探测
+
+探测方式：hams 跑 `pnpm list -g --depth=0 --json`，从 JSON 里读出全局装的包列表和版本号。
+比起解析文本输出稳得多，pnpm 改输出格式也不会让 hams 突然失灵。
+
+## 前提条件
+
+你机器上得先有 pnpm。装 pnpm 本身**不归 pnpm provider 管** —— 先有鸡还是先有蛋嘛。
+推荐做法是在 `bash` provider 里放一条一次性步骤：
+
+```yaml
+# bash.hams.yaml
+- urn: "urn:hams:bash:install-pnpm"
+  step: Install pnpm
+  run: curl -fsSL https://get.pnpm.io/install.sh | sh -
+  check: command -v pnpm
+```
+
+然后在 `provider_priority` 里保证 `bash` 排在 `pnpm` 之前（默认配置已经是这样）。
+
+## 跟 npm provider 的区别
+
+两者底层逻辑一样，只是包装的工具不同。一台机器上两个都用也没问题 —— 你愿意把 `prettier` 放 pnpm、
+`nodemon` 放 npm 都行，Hamsfile 分别记录、互不打架。但一般建议选一个用：混用 node 全局包容易出现工具链诡异问题，
+跟 hams 没关系，是 Node 生态本身的痛点。
+
+<Callout type="tip">
+  pnpm 全局装的东西默认放在 `~/.local/share/pnpm`，记得把它加到 `PATH`。
+  `pnpm setup` 会帮你搞定这个，用 bash provider 跑一次就行。
 </Callout>

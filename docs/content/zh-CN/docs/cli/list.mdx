@@ -2,32 +2,70 @@ import { Callout } from 'nextra/components'
 
 # hams list
 
-<Callout type="info">
-  此页面尚未完成翻译，以下为英文原文。欢迎贡献翻译。
-</Callout>
+把 hams 管的所有东西列出来。每条记录会告诉你：这玩意儿我声明过，它现在装没装、版本对不对。
 
-List all resources currently managed by hams. Shows declared resources from Hamsfiles
-along with their current state (installed, missing, outdated).
-
-## Usage
+## 用法
 
 ```bash
 hams list [flags]
 ```
 
-## Examples
+## 场景示例
 
 ```bash
-# List all managed resources
+# 看一眼：当前机器上 hams 管了哪些资源，各自什么状态
 hams list
 
-# List resources in JSON format
+# 要给脚本/AI 用？来 JSON
 hams list --json
 
-# List resources for a specific provider
+# 只看 Homebrew 那一摊
 hams list --only=homebrew
+
+# 按标签筛（比如只看自己标过 cli 的工具）
+hams list --tag=cli
 ```
 
-<Callout type="info">
-  Full documentation coming soon.
+## 输出里能看到什么
+
+文本模式下的样子大致是：
+
+```
+Provider     App              State        Version
+─────────────────────────────────────────────────────
+Homebrew     ripgrep          ok           14.1.0
+Homebrew     bat              ok           0.24.0
+Homebrew     fd               missing      --
+pnpm         serve            ok           14.2.1
+pnpm         prettier         outdated     3.1.0 → 3.2.5
+git-config   user.name        ok           Your Name
+```
+
+每个资源会有一个状态：
+
+- `ok` — Hamsfile 里写的它有、机器上也装了、版本一致
+- `missing` — Hamsfile 里声明了但机器上没装
+- `outdated` — 装是装了，但版本跟 Hamsfile 里期望的不一样（少数 provider 才会有这个概念）
+- `failed` — 上次 apply 的时候挂了，错误信息在日志里
+- `unmanaged` — 机器上有，但 Hamsfile 里没写（只有带了 `--show-unmanaged` 才会列）
+
+## JSON 输出
+
+`--json` 出来的结构扁平，给 AI agent 或者 shell 脚本做管道用很方便：
+
+```json
+[
+  {
+    "provider": "Homebrew",
+    "app": "ripgrep",
+    "state": "ok",
+    "version": "14.1.0",
+    "tags": ["cli", "search"]
+  }
+]
+```
+
+<Callout type="tip">
+  `hams list` 显示的是上次 `refresh` 或 `apply` 之后记录的状态，不会现场去扫机器。
+  要最新数据就先跑一下 `hams refresh`。
 </Callout>

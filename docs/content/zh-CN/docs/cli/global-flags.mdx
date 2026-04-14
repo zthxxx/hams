@@ -1,49 +1,66 @@
 import { Callout } from 'nextra/components'
 
-# 全局标志
+# 全局 Flag
 
-<Callout type="info">
-  此页面尚未完成翻译，以下为英文原文。欢迎贡献翻译。
-</Callout>
-
-Global flags must appear between `hams` and the command name. They apply to all commands.
-
-## Usage
+全局 flag 是作用于所有命令的开关，位置固定放在 `hams` 和命令名**之间**：
 
 ```bash
-hams [global-flags] <command> [args]
+hams [全局 flag] <命令> [参数]
 ```
 
-## Flag Reference
+比如 `hams --debug apply` 对，`hams apply --debug` 不行 —— 后者会被认为是传给 `apply` 的 flag。
 
-| Flag | Type | Default | Description |
-|------|------|---------|-------------|
-| `--debug` | bool | `false` | Enable debug-level logging |
-| `--dry-run` | bool | `false` | Show planned actions without executing |
-| `--json` | bool | `false` | Output in JSON format for machine/AI parsing |
-| `--no-color` | bool | `false` | Disable ANSI color codes |
-| `--config=<path>` | string | `~/.config/hams/hams.config.yaml` | Override config file path |
-| `--store=<path>` | string | from config | Override store directory path |
-| `--profile=<tag>` | string | from config | Override active profile tag |
-| `--help` | bool | `false` | Display help text |
-| `--version` | bool | `false` | Display version and build info |
+## Flag 一览
 
-## Examples
+| Flag | 类型 | 默认 | 说明 |
+|------|------|------|------|
+| `--debug` | bool | `false` | 打开 debug 级别日志，问题排查神器 |
+| `--dry-run` | bool | `false` | 只打印计划，不真动手 |
+| `--json` | bool | `false` | 输出 JSON，给脚本和 AI agent 用 |
+| `--no-color` | bool | `false` | 关掉 ANSI 颜色码（输出到文件或不支持颜色的终端时用） |
+| `--config=<path>` | string | `~/.config/hams/hams.config.yaml` | 指定另一份配置文件 |
+| `--store=<path>` | string | 来自配置 | 覆盖 store 目录路径 |
+| `--profile=<tag>` | string | 来自配置 | 临时切换到另一个 profile |
+| `--help` | bool | `false` | 打印帮助 |
+| `--version` | bool | `false` | 打印版本信息 |
+
+## 常见用法
 
 ```bash
-# Run apply with debug output
+# debug 模式跑 apply，看 provider 里到底在做什么
 hams --debug apply
 
-# Preview changes without executing
+# 真执行前先预览一遍
 hams --dry-run apply
 
-# Use a custom config file
-hams --config=/path/to/config.yaml apply
+# 临时用另一个配置文件（比如测试新配置）
+hams --config=/tmp/test-config.yaml apply
 
-# Get JSON output for scripting
-hams --json list
+# 想把 list 结果给 jq 处理？来 JSON
+hams --json list | jq '.[] | select(.state == "missing")'
+
+# 临时切换 profile，不改全局配置
+hams --profile=work-linux apply
 ```
 
-<Callout type="info">
-  Full documentation coming soon.
+## 为什么要区分"全局 flag"和"命令 flag"
+
+说白了就是为了避开歧义。拿 `hams brew install bat --debug` 举例：`--debug` 到底是给 hams 还是给 `brew`？
+hams 的办法是：全局 flag 必须在命令名之前，命令/provider 名之后的东西一律当作命令自己的参数。
+这样规则清晰，hams 拦 hams 的，`brew` 拿 `brew` 的，谁也不误伤谁。
+
+## `--dry-run` 的细节
+
+开了 `--dry-run` 之后，hams 会：
+
+- 照常跑 `refresh` 读取机器现状（这步没有副作用）
+- 照常算 diff、打印计划
+- **不**跑任何 provider 的 install/remove/write 操作
+- **不**写 `.state/` 文件（下次真跑的时候状态不会对不上）
+- 退出码照常 —— 有计划就 `0`，有冲突就非 `0`
+
+所以它是真正的"干跑一次"，可以安全地用来审查自己的 Hamsfile 改动。
+
+<Callout type="tip">
+  `--json` 和 `--no-color` 组合起来很适合 CI 环境：机器可解析的输出，没有颜色码杂讯。
 </Callout>

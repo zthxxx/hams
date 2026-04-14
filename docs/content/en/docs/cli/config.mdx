@@ -2,8 +2,12 @@ import { Callout } from 'nextra/components'
 
 # hams config
 
-Read and write hams configuration values. Configuration is stored in
-`~/.config/hams/hams.config.yaml` by default.
+Read and write hams's own config — things like which profile you're using, where the store lives,
+which providers run in what order. This is *not* about the resources in your Hamsfiles; that's a
+separate layer.
+
+The global config lives at `~/.config/hams/hams.config.yaml` by default, and this command is a
+shortcut for editing it without opening a text editor.
 
 ## Usage
 
@@ -11,19 +15,71 @@ Read and write hams configuration values. Configuration is stored in
 hams config <subcommand> [flags]
 ```
 
-## Examples
+## Subcommands
+
+### `hams config show`
+
+Print the effective config — the result after merging global, store-level, and `*.local.*`
+overrides.
 
 ```bash
-# Show the current configuration
 hams config show
-
-# Get a specific config value
-hams config get store_path
-
-# Set a config value
-hams config set store_path ~/Projects/my-hams-store
+hams config show --json   # for scripts and agents
 ```
 
+### `hams config get <key>`
+
+Read one value. Handy inside shell scripts: `$(hams config get store_path)`.
+
+```bash
+hams config get store_path
+# /Users/you/Projects/hams-store
+
+hams config get profile_tag
+# macOS
+```
+
+### `hams config set <key> <value>`
+
+Write a value. When hams updates a YAML file, it keeps your existing `#` comments intact — no
+losing those careful explanations you left for your future self.
+
+```bash
+hams config set store_path ~/Projects/my-hams-store
+hams config set llm_cli claude
+```
+
+### `hams config unset <key>`
+
+Remove a key, falling back to the default.
+
+```bash
+hams config unset profile_tag
+```
+
+## The settings you'll actually touch
+
+| Key | What it controls |
+|-----|------------------|
+| `profile_tag` | Which profile directory this machine uses (`macOS`, `openwrt`, etc.) |
+| `machine_id` | The unique name for this machine. Picks the `.state/` subdirectory |
+| `store_repo` | Your store's remote URL. Used by `apply --from-repo` and `store push` |
+| `store_path` | Local path to the store |
+| `llm_cli` | Which LLM CLI to call for auto-generating `intro` fields. Example: `claude` |
+| `provider_priority` | The order providers run in during apply |
+
+## Where secrets go
+
+Don't put API keys, tokens, or credentials into git-tracked config files. hams supports two
+safer spots:
+
+1. **System keychain** (recommended) — stored via keyring as an application password
+2. **`*.local.yaml` files** — gitignored by default
+
+When you `hams config set` something that looks like a secret, hams will ask if you want to store
+it in the keychain.
+
 <Callout type="info">
-  Full documentation coming soon.
+  You don't have to use `hams config`. The YAML files are just files — open them in your editor,
+  change what you want, save. The command is there for CI and scripts. Either way works.
 </Callout>

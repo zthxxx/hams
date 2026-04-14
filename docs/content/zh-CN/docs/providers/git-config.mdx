@@ -2,36 +2,102 @@ import { Callout } from 'nextra/components'
 
 # git config Provider
 
-<Callout type="info">
-  此页面尚未完成翻译，以下为英文原文。欢迎贡献翻译。
-</Callout>
+管 git 的全局配置，也就是那些 `git config --global user.name "Your Name"` 类的设置。
+每次新机器要重配一遍、每次手敲都怕拼错邮箱 —— 这个 provider 就是让你写一次、到哪都自动生效。
 
-Manages Git configuration key-value pairs via `git config`. Probes the current value
-with `git config --get` and writes with `git config --global`.
+**支持平台：** macOS、Linux
 
-**Platforms:** macOS, Linux
-
-## Usage
+## 怎么用
 
 ```bash
-hams git-config set <key> <value>
+# 设置一条（会自动记到 Hamsfile）
+hams git-config set user.name "Your Name"
+hams git-config set user.email "you@example.com"
+
+# 列出 hams 管的 git 配置项
 hams git-config list
+
+# 取消某一条（会从 Hamsfile 里删掉，同时清除机器上的值）
+hams git-config unset rerere.autoUpdate
 ```
 
-## Hamsfile Example
+## Hamsfile 长什么样
 
 ```yaml
-- urn: "urn:hams:git-config:user-name"
-  step: Set git user name
-  key: user.name
-  value: "Your Name"
+# macOS/git-config.hams.yaml
+schema_version: 1
+provider: git-config
 
-- urn: "urn:hams:git-config:rerere"
-  step: Enable git rerere
-  key: rerere.autoUpdate
+groups:
+  - tag: identity
+    items:
+      - urn: "urn:hams:git-config:user-name"
+        step: Set git user name
+        key: user.name
+        value: "Your Name"
+      - urn: "urn:hams:git-config:user-email"
+        step: Set git user email
+        key: user.email
+        value: "you@example.com"
+
+  - tag: workflow
+    items:
+      - urn: "urn:hams:git-config:rerere"
+        step: Enable git rerere (remember conflict resolutions)
+        key: rerere.autoUpdate
+        value: "true"
+      - urn: "urn:hams:git-config:default-branch"
+        step: Default branch name for new repos
+        key: init.defaultBranch
+        value: "main"
+```
+
+几个字段的意思：
+
+- `urn` — hams 内部用来唯一标识一条资源的 ID，自己起个顺口的就行
+- `step` — 一句话描述这条设置干嘛用的（apply 日志里会显示）
+- `key` / `value` — 就是 `git config` 的 key 和 value
+
+## 状态探测
+
+探测方式：对每个 key 跑 `git config --global --get <key>`，读回来跟 Hamsfile 里的 `value` 字符串比较。
+一致就 `ok`，不一致就 `outdated`，读不到就 `missing`。
+
+简单直接，没有魔法。
+
+## 关于机器级别 vs 用户级别
+
+hams 默认写 `--global`（当前用户的 `~/.gitconfig`）。如果你有更特殊的需求：
+
+- **仓库级别**（`--local`）—— 不适合 hams 管，属于项目的事，放 `.gitconfig` 跟项目走
+- **系统级别**（`--system`）—— 用 `bash` provider 写 `sudo git config --system ...`
+
+## 几个常用场景
+
+**多账号分流（工作 / 个人）：** 用 git 的 `includeIf` 机制，在 `~/.gitconfig` 里按目录判断。
+hams 可以帮你设置 `includeIf` 和对应的配置文件路径：
+
+```yaml
+- urn: "urn:hams:git-config:work-includeif"
+  step: Include work config when under ~/work/
+  key: 'includeIf."gitdir:~/work/".path'
+  value: ~/.gitconfig-work
+```
+
+**GPG 签名：** 签名 key 属于 identity，放 git-config 很合适：
+
+```yaml
+- urn: "urn:hams:git-config:signing-key"
+  step: Set GPG signing key
+  key: user.signingkey
+  value: "AAAAAAAAAA"
+- urn: "urn:hams:git-config:commit-gpgsign"
+  step: Sign all commits
+  key: commit.gpgsign
   value: "true"
 ```
 
-<Callout type="info">
-  Full documentation coming soon.
+<Callout type="tip">
+  记得**别**把带敏感信息的配置放进跟 git 的 Hamsfile 里。token、GPG 密钥 ID 这种属于敏感信息，
+  写进 `git-config.hams.local.yaml`（不跟 git），或者扔进系统 keychain。
 </Callout>

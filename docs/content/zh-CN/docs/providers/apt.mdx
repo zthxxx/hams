@@ -2,31 +2,74 @@ import { Callout } from 'nextra/components'
 
 # apt Provider
 
-<Callout type="info">
-  此页面尚未完成翻译，以下为英文原文。欢迎贡献翻译。
-</Callout>
+在 Debian 系的 Linux（Ubuntu、Debian、Pop!_OS 等）上管系统级软件包的 provider。
+底下包的是 `apt-get` —— 不是 `apt`（交互命令），这样输出更干净、脚本里也不会触发那堆 warning。
 
-Wraps `apt-get` to manage system packages on Debian-based Linux distributions.
+**支持平台：** Linux（Debian / Ubuntu 系）
 
-**Platforms:** Linux (Debian/Ubuntu)
-
-## Usage
+## 怎么用
 
 ```bash
-hams apt install <package>
-hams apt remove <package>
+# 装一个包
+hams apt install curl
+
+# 卸掉
+hams apt remove htop
+
+# 看看 hams 管了哪些 apt 包
 hams apt list
 ```
 
-## Hamsfile Example
+每次 install 之前 hams 会自动帮你跑一次 `apt-get update`（最多一小时一次，不会重复刷），
+不用你手动操心源缓存是不是过期了。
+
+## 需要 sudo
+
+`apt` 动系统目录，绕不开 sudo。hams 在 apply 开始的时候会一次性问你密码，然后在后台每 4 分钟刷一次
+sudo 票据，保证中途不打扰你。要是环境里根本没有 sudo（比如 container 里以 root 跑），hams 会自动识别，不问密码。
+
+## Hamsfile 长什么样
 
 ```yaml
-- app: curl
-  intro: Command-line HTTP client.
-- app: build-essential
-  intro: C/C++ compiler and make utilities.
+# linux/apt.hams.yaml
+schema_version: 1
+provider: apt
+
+groups:
+  - tag: base
+    items:
+      - app: curl
+        intro: Command-line HTTP client.
+      - app: build-essential
+        intro: C/C++ compiler and make utilities.
+      - app: ca-certificates
+        intro: Common CA certificates.
+
+  - tag: dev
+    items:
+      - app: git
+      - app: tmux
+      - app: ripgrep
 ```
 
+`app` 就是 `apt-get install` 后面接的那个包名。如果同一行想装多个，写成列表就行 —— hams 会一次性打包装，比一条一条快得多。
+
+## 状态探测
+
+探测方式：hams 调 `dpkg-query -W -f='${Status} ${Package} ${Version}\n'` 把本机装了哪些 apt 包全捞出来，
+然后看 Hamsfile 里声明的每个包在不在列表里。这个办法比 `apt list --installed` 快，也不用解析人类可读的输出。
+
+## 关于 PPA 和第三方源
+
+`apt` provider 本身不管 `add-apt-repository`、`apt-key add` 这类操作 —— 它们属于"配置系统源"，
+通常只在少数几台机器上做一次。推荐的做法是：
+
+- 用 `bash` provider 写一个一次性步骤：`add-apt-repository ppa:xxx` 加上 `check: grep -r "xxx" /etc/apt/sources.list.d/`
+- 或者用 `ansible` provider 的 `apt_repository` 模块
+
+这样 `apply` 第一次跑会把源配上，后面就走正常的 `hams apt install`。
+
 <Callout type="info">
-  Full documentation coming soon.
+  hams 不会帮你 `apt upgrade` —— 包的版本升级属于"机器维护"而不是"环境声明"，交给你自己的节奏。
+  要强制升级某个包，就手动 `sudo apt-get install --only-upgrade <pkg>`，再 `hams refresh` 把状态同步回来。
 </Callout>

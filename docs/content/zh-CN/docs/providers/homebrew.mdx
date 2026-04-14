@@ -2,33 +2,87 @@ import { Callout } from 'nextra/components'
 
 # Homebrew Provider
 
-<Callout type="info">
-  此页面尚未完成翻译，以下为英文原文。欢迎贡献翻译。
-</Callout>
+包装 [Homebrew](https://brew.sh/)（也就是 `brew` 命令），用来管 macOS 和 Linux 上的 formula 和 cask。
+对大多数 macOS 用户来说，这是你最先打交道的 provider。
 
-Wraps [Homebrew](https://brew.sh/) (`brew`) to manage formulae and casks on macOS and Linux.
+**支持平台：** macOS、Linux
 
-**Platforms:** macOS, Linux
-
-## Usage
+## 怎么用
 
 ```bash
-hams brew install <formula>
-hams brew install --cask <cask>
-hams brew remove <formula>
+# 装个 formula（命令行工具）
+hams brew install ripgrep
+
+# 装 cask（GUI 应用）
+hams brew install --cask visual-studio-code
+
+# 卸掉
+hams brew remove htop
+
+# 看看 hams 管了哪些 brew 包
 hams brew list
+
+# 给已经记录在案的包补上标签和一句话说明
+hams brew enrich bat --hams-tag=cli --hams-intro="A cat clone with syntax highlighting"
 ```
 
-## Hamsfile Example
+每跑一次 `install`，hams 都会先真调 `brew install`，成功之后把这条记录写进
+`<profile>/Homebrew.hams.yaml`。卸载同理 —— 先 `brew uninstall`，再把对应条目从 YAML 里删掉。
+
+## Hamsfile 长什么样
 
 ```yaml
-- app: ripgrep
-  intro: Fast recursive grep alternative.
-- app: bat
-  tags: [cli]
-  intro: A cat clone with syntax highlighting.
+# macOS/Homebrew.hams.yaml
+schema_version: 1
+provider: Homebrew
+
+groups:
+  - tag: dev-tools
+    items:
+      - app: ripgrep
+        intro: Fast recursive grep alternative.
+      - app: bat
+        tags: [cli]
+        intro: A cat clone with syntax highlighting.
+      - app: ffmpeg
+        intro: Multimedia framework for audio/video processing.
+
+  - tag: apps
+    items:
+      - app: visual-studio-code
+        cask: true
+        intro: Microsoft's code editor.
 ```
 
-<Callout type="info">
-  Full documentation coming soon.
+- `app` 就是 `brew install <app>` 里的那个名字
+- `cask: true` 告诉 hams 这是个 cask，别当 formula 处理
+- `tags` 和 `intro` 纯粹给人看，`brew` 自己不关心
+- `groups[].tag` 是你用来分组的标签，可以随便起名
+
+## 状态探测
+
+`hams apply` 跑起来之后，Homebrew provider 会调一次 `brew list --formula` 和 `brew list --cask`，
+把机器上实际装了什么列出来，再和 Hamsfile 比对：
+
+- Hamsfile 里有、机器上没有 → 装上
+- Hamsfile 里没有、机器上有 → hams 不碰（它只管 Hamsfile 声明过的）
+- 两边都有 → 跳过，顺手把当前版本记到 `.state/`
+
+也就是说，hams 不会替你卸掉那些你手动 `brew install` 没走 hams 的包 —— 除非你也把它写进了 Hamsfile 再删掉。
+
+## 记录别人机器上的包到自己的 store
+
+换了新机器想一键还原旧机器上的 brew 环境？两种办法：
+
+```bash
+# 方法一：旧机器先把已装的包扫一遍进 Hamsfile
+hams brew list --import-existing
+
+# 方法二：手动把 `brew leaves` 的输出整理进 Hamsfile，再 push 到 store
+brew leaves > /tmp/brew-list.txt
+```
+
+<Callout type="tip">
+  给每个 formula 写一行 `intro`，三个月后回头看自己装了啥能少费不少脑筋。
+  `hams brew enrich <app>` 可以随时补上。
 </Callout>

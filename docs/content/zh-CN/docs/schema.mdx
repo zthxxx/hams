@@ -1,10 +1,10 @@
 # Schema 参考
 
-hams 使用三种类型的 YAML 文件。所有文件在读写过程中都会保留注释。
+hams 打交道的 YAML 一共三类文件。读进来、写出去都会保留你的注释 —— 这点很重要，因为 Hamsfile 通常会写不少解释性的注释。
 
 ## 全局配置
 
-位于 `~/.config/hams/hams.config.yaml`：
+位置：`~/.config/hams/hams.config.yaml`
 
 ```yaml
 profile_tag: macOS
@@ -20,19 +20,37 @@ provider_priority:
   - bash
 ```
 
+这份文件告诉 hams：当前机器叫什么、用哪个 profile、去哪儿找 store，以及 apply 的时候 provider 之间的先后顺序。
+
 ## Hamsfile
 
-### 包管理 Provider（Homebrew、pnpm、npm 等）
+Hamsfile 按 provider 分文件写，每个 provider 的格式略有差异，但总体一致：顶部标 schema 和 provider 名，
+中间按 `groups` 分组列资源。
+
+### 包管理类（Homebrew、pnpm、npm 等）
 
 ```yaml
-terminal-tool:
-  - app: lazygit
-    intro: Simple terminal UI for git commands
-  - app: htop
-    intro: Improved top (interactive process viewer)
+schema_version: 1
+provider: Homebrew
+
+groups:
+  - tag: terminal-tool
+    items:
+      - app: lazygit
+        intro: Simple terminal UI for git commands.
+      - app: htop
+        intro: Improved top (interactive process viewer).
 ```
 
-### KV 配置 Provider（defaults、git config）
+字段含义：
+
+- `app` — 包名，跟你在原生 CLI 里敲的那个完全一样
+- `intro` — 一句话说明，纯粹给人看
+- `tags` — 可选，用来分类、过滤
+
+### KV 配置类（defaults、git-config）
+
+这一类的每条记录都是个键值对：
 
 ```yaml
 configs:
@@ -46,19 +64,27 @@ configs:
     check: "defaults read com.apple.dock autohide"
 ```
 
-### Bash Provider
+- `urn` — hams 内部唯一标识，自己起个顺口的
+- `args` — provider 要用到的参数（domain、key、value、type）
+- `preview-cmd` — dry-run 时打印给你看的命令（可选）
+- `check` — 幂等性检查命令
+
+### Bash 类（bash、ansible）
 
 ```yaml
 setup:
   - urn: "urn:hams:bash:init-zsh"
-    step: "Install ZSH theme"
+    step: Install ZSH theme
     run: "curl -sSL .../installer.sh | bash"
     check: "test -f ~/.oh-my-zsh/custom/themes/jovial.zsh-theme"
 ```
 
+这类记录的核心是 `run` 和 `check` 一对：`run` 是要执行的命令，`check` 是判断"是不是已经做过了"。
+check 返回 0 就跳过，非 0 就跑 run。
+
 ## 状态文件
 
-位于 `<store>/.state/<machine-id>/<Provider>.state.yaml`：
+位置：`<store>/.state/<machine-id>/<Provider>.state.yaml`
 
 ```yaml
 schema_version: 1
@@ -71,3 +97,24 @@ resources:
     version: "3.3.0"
     install_at: "20260413T100000"
 ```
+
+状态文件记的是**这台机器的客观现实**：每个资源是装着还是缺着、什么版本、上次 apply 什么时候。
+`.state/` 目录默认 gitignore —— 它是本机事实，不同机器之间不应该共享。
+
+字段：
+
+- `last_apply_session` — 这个 provider 最后一次成功 apply 的时间戳
+- `resources` — 按资源名索引，每条记着 state（`ok` / `missing` / `outdated` / `failed`）、版本、装入时间
+
+## 几个特殊的后缀
+
+| 后缀 | 含义 |
+|------|------|
+| `.hams.yaml` | 主 Hamsfile，跟 git |
+| `.hams.local.yaml` | 本机特有配置，默认 gitignore（放敏感值、个人化工具） |
+| `.state.yaml` | 状态文件，gitignore |
+| `hams.config.yaml` | 全局/项目级配置 |
+| `hams.config.local.yaml` | 本地覆盖，gitignore |
+
+同一个 provider 如果有 `.hams.yaml` 和 `.hams.local.yaml` 两份，hams 会把两边合并起来一起 apply ——
+local 的资源不会推到 store，但在本机会照常装。

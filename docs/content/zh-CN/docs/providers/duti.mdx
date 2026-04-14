@@ -2,32 +2,99 @@ import { Callout } from 'nextra/components'
 
 # duti Provider
 
-<Callout type="info">
-  此页面尚未完成翻译，以下为英文原文。欢迎贡献翻译。
-</Callout>
+包装 [duti](https://github.com/moretension/duti) 来管 macOS 上"哪个文件类型用哪个应用打开"的关联关系。
+比如你想让所有 `.md` 默认用 VS Code 打开、所有 `.ts` 用 Cursor、所有图片用 IINA 预览 —— 就是这个 provider 干的事。
 
-Wraps [duti](https://github.com/moretension/duti) to manage default application associations
-for file types on macOS.
+**支持平台：** 仅 macOS
 
-**Platforms:** macOS only
-
-## Usage
+## 怎么用
 
 ```bash
-hams duti set <bundle-id> <uti> <role>
+# 把 TypeScript 文件默认用 VS Code 打开
+hams duti set com.microsoft.VSCode public.typescript editor
+
+# 列出被管的关联
 hams duti list
+
+# 取消一条关联（会恢复成系统默认）
+hams duti unset com.microsoft.VSCode public.typescript editor
 ```
 
-## Hamsfile Example
+三个位置参数的意思：**应用 bundle ID**、**UTI（文件类型）**、**角色**（`viewer` / `editor` / `shell` / `all`）。
+
+## Hamsfile 长什么样
 
 ```yaml
-- urn: "urn:hams:duti:vscode-ts"
-  step: Open TypeScript files with VS Code
-  bundle_id: com.microsoft.VSCode
-  uti: public.typescript
-  role: editor
+# macOS/duti.hams.yaml
+schema_version: 1
+provider: duti
+
+groups:
+  - tag: code
+    items:
+      - urn: "urn:hams:duti:vscode-ts"
+        step: Open TypeScript files with VS Code
+        bundle_id: com.microsoft.VSCode
+        uti: public.typescript
+        role: editor
+
+      - urn: "urn:hams:duti:vscode-md"
+        step: Open Markdown with VS Code
+        bundle_id: com.microsoft.VSCode
+        uti: net.daringfireball.markdown
+        role: editor
+
+  - tag: media
+    items:
+      - urn: "urn:hams:duti:iina-video"
+        step: Open video with IINA
+        bundle_id: com.colliderli.iina
+        uti: public.movie
+        role: viewer
 ```
 
-<Callout type="info">
-  Full documentation coming soon.
+## 常用的 UTI
+
+| 文件类型 | UTI |
+|----------|-----|
+| Markdown | `net.daringfireball.markdown` |
+| TypeScript | `public.typescript` |
+| JavaScript | `com.netscape.javascript-source` |
+| JSON | `public.json` |
+| 图片（通用） | `public.image` |
+| 视频（通用） | `public.movie` |
+| PDF | `com.adobe.pdf` |
+| 纯文本 | `public.plain-text` |
+
+想知道某个扩展名对应什么 UTI？跑 `duti -x md` 就会告诉你。
+
+## 怎么找应用的 bundle ID
+
+```bash
+# 比如 VS Code
+osascript -e 'id of app "Visual Studio Code"'
+# com.microsoft.VSCode
+
+# 或者 mdls 也行
+mdls -name kMDItemCFBundleIdentifier /Applications/Visual\ Studio\ Code.app
+```
+
+## 状态探测
+
+探测方式：对每条记录跑 `duti -x <ext>` 或 `duti -d <uti>`，拿回当前系统的默认应用，
+跟 Hamsfile 里的 `bundle_id` 比对。
+
+## 前提条件
+
+先装 duti：
+
+```yaml
+# Homebrew.hams.yaml
+- app: duti
+  intro: Set default applications for file types.
+```
+
+<Callout type="tip">
+  `duti` 改的是 macOS 的 Launch Services 数据库，有时候新关联要重启 Finder 或者整台机器才生效。
+  apply 跑完没看到效果，先 logout 再 login 一次。
 </Callout>

@@ -2,26 +2,84 @@ import { Callout } from 'nextra/components'
 
 # go install Provider
 
-Wraps `go install` to manage Go binaries installed from source.
+Wraps `go install` for installing Go-based CLI tools from source. If you write Go, you already know
+the drill — `go install github.com/x/y@latest` drops a binary into `$GOBIN`. hams records the fact
+so you can reproduce it later.
 
 **Platforms:** macOS, Linux
 
 ## Usage
 
 ```bash
-hams go install <module@version>
+# Install (full import path)
+hams go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest
+
+# No version? hams defaults to @latest
+hams go install github.com/goreleaser/goreleaser
+
+# See what hams is managing
 hams go list
 ```
 
-## Hamsfile Example
+`go install` doesn't have a native "uninstall" — to remove, hams deletes the matching binary from
+`$GOBIN`.
+
+## Hamsfile example
 
 ```yaml
-- app: github.com/golangci/golangci-lint/v2/cmd/golangci-lint
-  intro: Go linter aggregator.
-- app: golang.org/x/tools/cmd/goimports
-  intro: Go import organizer.
+# macOS/go.hams.yaml
+schema_version: 1
+provider: go
+
+groups:
+  - tag: go-tools
+    items:
+      - app: github.com/golangci/golangci-lint/v2/cmd/golangci-lint
+        version: latest
+        intro: Go linter aggregator.
+      - app: golang.org/x/tools/cmd/goimports
+        intro: Go import organizer.
+      - app: github.com/goreleaser/goreleaser
+        version: v1.25.1
+        intro: Go release tool.
 ```
 
-<Callout type="info">
-  Full documentation coming soon.
+- `app` is the full import path — same shape you'd hand to `go install`
+- `version` is optional; skip it and you get `latest`. Pin a tag to freeze the version
+
+## How state is probed
+
+Go has no native "list my globally-installed tools" command (because `go install` is stateless).
+hams's workaround:
+
+1. Scan `$GOBIN` (defaults to `$GOPATH/bin`, or `~/go/bin` if `$GOPATH` isn't set)
+2. For each binary, run `go version -m <bin>` to read its embedded module info
+3. Match those against the import paths declared in the Hamsfile
+
+So even on a machine packed with random Go binaries, hams only claims the ones it's actually
+managing.
+
+## Bootstrap
+
+You need `go` itself. Easiest path is Homebrew or apt:
+
+```yaml
+# Homebrew.hams.yaml
+- app: go
+  intro: Go programming language.
+```
+
+Then make sure `Homebrew` (or `apt`) comes before `go` in `provider_priority`.
+
+## `@latest` and versioning
+
+`go install x@latest` hits the module proxy each time to fetch the newest release. hams records
+the actual version installed into `.state/`. So on subsequent applies, as long as the Hamsfile
+says `latest` and there's a state entry, hams won't re-fetch unnecessarily — unless you explicitly
+run `hams refresh --force` or install `x@latest` again to pull a newer version.
+
+<Callout type="tip">
+  Unlike Homebrew or apt, tools installed via `go install` don't get an automatic upgrade path.
+  To update, re-run `hams go install x@latest` — hams will compare recorded versions and reinstall
+  if there's genuinely something new.
 </Callout>

@@ -2,11 +2,11 @@ import { Callout, Steps, Tabs } from 'nextra/components'
 
 # 快速开始
 
-从零开始，几分钟内拥有一台完全受管的工作站。
+零起步，几分钟之内就能拥有一台 hams 管起来的工作站。
 
-## 安装 hams
+## 装 hams
 
-选择最适合你的安装方式：
+挑一个顺手的方式：
 
 <Tabs items={['curl（推荐）', 'Homebrew', 'GitHub Releases']}>
   <Tabs.Tab>
@@ -14,22 +14,22 @@ import { Callout, Steps, Tabs } from 'nextra/components'
 bash -c "$(curl -fsSL https://github.com/zthxxx/hams/raw/master/scripts/install.sh)"
 ```
 
-此命令会为你的平台（darwin/arm64、linux/amd64、linux/arm64）下载最新版本的二进制文件，
-放置在 `/usr/local/bin/hams`，并写入一个 channel 标记供 `hams self-upgrade` 使用。
+脚本会识别你的平台（darwin/arm64、linux/amd64、linux/arm64），下最新版的二进制放到 `/usr/local/bin/hams`，
+同时记一条 channel 标记，之后 `hams self-upgrade` 就知道该从哪升。
   </Tabs.Tab>
   <Tabs.Tab>
 ```bash
 brew install zthxxx/tap/hams
 ```
 
-通过官方 Homebrew tap 安装。后续 `hams self-upgrade` 将使用 `brew upgrade hams` 进行更新。
+走的是官方 Homebrew tap。以后 `hams self-upgrade` 会自动调 `brew upgrade hams`，跟你日常的 brew 更新习惯一致。
   </Tabs.Tab>
   <Tabs.Tab>
-从 [GitHub Releases](https://github.com/zthxxx/hams/releases/latest) 下载适合你平台的二进制文件：
+从 [GitHub Releases](https://github.com/zthxxx/hams/releases/latest) 下自己平台的二进制：
 
 | 平台 | 架构 | 文件 |
 |------|------|------|
-| macOS | Apple Silicon (M1/M2/M3/M4) | `hams_darwin_arm64` |
+| macOS | Apple Silicon（M 系列） | `hams_darwin_arm64` |
 | Linux | x86-64 | `hams_linux_amd64` |
 | Linux | ARM64 | `hams_linux_arm64` |
 
@@ -42,57 +42,58 @@ sudo mv hams /usr/local/bin/hams
   </Tabs.Tab>
 </Tabs>
 
-验证安装：
+装完确认一下版本：
 
 ```bash
 hams --version
 # hams v0.1.0 (commit: abc1234, built: 2026-04-12)
 ```
 
-## 你的第一次安装
+## 装点东西试试
 
-安装好 hams 后，像使用底层工具一样使用它 -- 只需在前面加上 `hams`：
+用法很朴素 —— 把原来的命令前面加一个 `hams` 就行：
 
 ```bash
-# 通过 Homebrew 安装 bat（更好的 cat）并自动记录
+# 走 Homebrew 装 bat（比 cat 好用的那个），顺手记到 Hamsfile
 hams brew install bat
 
-# 通过 pnpm 全局安装 serve 并自动记录
+# 走 pnpm 全局装 serve，顺手记
 hams pnpm add serve
 
-# 设置你的 git 用户配置并记录
+# 配 git 身份，顺手记
 hams git-config user.name "Your Name"
 hams git-config user.email "you@example.com"
 ```
 
-每条命令执行后，hams 会：
-1. 运行底层工具（`brew install bat`、`pnpm add -g serve` 等）
-2. 将安装记录到你的 Hamsfile 中（`macOS/Homebrew.hams.yaml`、`macOS/pnpm.hams.yaml` 等）
+每条命令背后，hams 默默做两件事：
 
-## 在新机器上恢复一切
+1. 真调底下的工具（`brew install bat`、`pnpm add -g serve`）
+2. 把这次安装写进对应的 Hamsfile（`macOS/Homebrew.hams.yaml`、`macOS/pnpm.hams.yaml`）
 
-这就是 hams 大显身手的时候。在一台全新的机器上：
+## 在新机器上把一切恢复
+
+这是 hams 真正发力的地方。面对一台全新的机器：
 
 <Steps>
-### 安装 hams 本身
+### 先把 hams 自己装上
 
 ```bash
 bash -c "$(curl -fsSL https://github.com/zthxxx/hams/raw/master/scripts/install.sh)"
 ```
 
-hams 内置了 `go-git`，所以你不需要预先安装 git。
+hams 二进制里内置了 go-git，所以哪怕这机器连 git 命令都还没有也没关系。
 
-### 从你的 store 仓库运行 apply
+### 从 store 仓库 apply
 
 ```bash
 hams apply --from-repo=<your-username>/hams-store
 ```
 
-将 `<your-username>/hams-store` 替换为你的 GitHub 用户名和 store 仓库名。
+把 `<your-username>/hams-store` 换成你自己的 GitHub 用户和 store 仓库名。
 
-### 回答 profile 提示
+### 回答两个小问题
 
-第一次在新机器上 apply 时，hams 会问两个问题：
+第一次在新机器上跑 apply，hams 会问你两件事：
 
 ```
 No profile found for this machine.
@@ -104,22 +105,21 @@ Creating profile directory: macOS/
 Writing ~/.config/hams/hams.config.yaml...
 ```
 
-**Profile tag** 选择使用你 store 仓库中的哪个目录（例如 `macOS/` 或 `openwrt/`）。
-**Machine ID** 用于命名你的状态目录（`.state/MacbookProM3/`）。
+- **Profile tag** 决定用 store 里哪个目录下的 Hamsfile（比如 `macOS/` 或 `openwrt/`）
+- **Machine ID** 是这台机器的唯一名字，状态文件会放到 `.state/MacbookProM3/`
 
-### 输入 sudo 密码（如果需要）
+### 输 sudo 密码（如果需要）
 
-如果你的 profile 包含需要提升权限的 provider（例如 Linux 上的 `apt`），hams
-会在启动时提示你输入一次 sudo 密码：
+如果你的 profile 用到了需要提权的 provider（比如 Linux 上的 `apt`），hams 会在开始前一次性问密码：
 
 ```
 Some providers require sudo. Enter your password to continue:
 Password:
 ```
 
-hams 会在后台每 4 分钟刷新 sudo 票据，这样在 apply 过程中不会再次提示你。
+密码输一次就好。hams 在后台每 4 分钟刷一下 sudo 票据，保证 apply 跑到一半不会再跳出来打扰你。
 
-### 观看 hams 工作
+### 看着它干活
 
 ```
 hams apply  •  profile: macOS  •  machine: MacbookProM3
@@ -140,35 +140,35 @@ hams apply  •  profile: macOS  •  machine: MacbookProM3
 Log: ~/.local/share/hams/2026-04/20260412T143022.log
 ```
 
-### 验证 apply 是否成功
+### 确认一下
 
 ```bash
-# 列出所有受管资源及其状态
+# 列出所有被管的资源和当前状态
 hams list
 
-# 显示 Hamsfile 与当前状态的差异
+# 看看 Homebrew 这边具体情况
 hams brew list
 ```
 </Steps>
 
-## 推送你的更改
+## 把改动推回去
 
-安装软件包后，将你的 Hamsfiles 推送到 store 仓库，这样在其他机器上也能使用：
+装完新东西记得把 Hamsfile 推回 store，其他机器才能用上：
 
 ```bash
-# 在你的 store 仓库目录下
+# 站在 store 仓库目录下
 hams store push
-# 暂存所有 Hamsfile 更改，提交并推送到远程
+# 自动暂存所有 Hamsfile 改动 → 提交 → 推到远端
 ```
 
-或者手动管理 git -- Hamsfiles 是纯 YAML，完全可以手动编辑。
+不想用 hams 管 git 也行，Hamsfile 是纯 YAML，`git add` + `git commit` + `git push` 随便你。
 
-## 后续步骤
+## 接下来看什么
 
-- [CLI 参考](./cli) -- 所有命令和标志
-- [提供者](./providers) -- 15 个内置 provider 各自能做什么
-- [Schema 参考](./schema) -- Hamsfile 和配置 YAML 格式
+- [CLI 参考](./cli) —— 所有命令和 flag 的详解
+- [Providers](./providers) —— 15 个内置 provider 各自能干什么
+- [Schema 参考](./schema) —— Hamsfile 和配置 YAML 的字段说明
 
 <Callout type="tip">
-  运行 `hams --dry-run apply` 可以预览 hams *将会*执行的操作，而不会真正执行。
+  改完 Hamsfile 不放心？`hams --dry-run apply` 会把 hams 即将做的事列出来但不真动手，确认无误再正式跑。
 </Callout>

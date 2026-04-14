@@ -2,27 +2,82 @@ import { Callout } from 'nextra/components'
 
 # cargo Provider
 
-Wraps `cargo install` to manage Rust binaries installed from crates.io or git.
+Wraps `cargo install` for Rust-based CLI tools. Things like `ripgrep`, `fd`, and `bat` are all
+available through Homebrew too — but when you want the latest version, a feature flag, or a tool
+that hasn't made it into Homebrew yet, crates.io is the flexible route.
 
 **Platforms:** macOS, Linux
 
 ## Usage
 
 ```bash
-hams cargo install <crate>
-hams cargo uninstall <crate>
+# Install from crates.io
+hams cargo install ripgrep
+
+# Install from a git repo (useful for bleeding-edge or specific features)
+hams cargo install --git https://github.com/cli/cli
+
+# Remove
+hams cargo uninstall ripgrep
+
+# See what's managed
 hams cargo list
 ```
 
-## Hamsfile Example
+## Hamsfile example
 
 ```yaml
-- app: ripgrep
-  intro: Fast recursive grep.
-- app: fd-find
-  intro: Simple and fast alternative to find.
+# macOS/cargo.hams.yaml
+schema_version: 1
+provider: cargo
+
+groups:
+  - tag: cli
+    items:
+      - app: ripgrep
+        intro: Fast recursive grep.
+      - app: fd-find
+        intro: Simple and fast alternative to find.
+      - app: bottom
+        intro: Graphical process monitor.
+
+  - tag: from-git
+    items:
+      - app: gh
+        git: https://github.com/cli/cli
+        intro: GitHub CLI (bleeding edge).
 ```
 
-<Callout type="info">
-  Full documentation coming soon.
+- `app` is the crate name on crates.io — note that the **crate name isn't always the binary name**.
+  `fd-find` installs a binary called `fd`, for example
+- Add `git:` to install from a git repo instead. Use `rev:` or `branch:` to pin to a specific commit or branch
+
+## How state is probed
+
+`cargo install --list` outputs every installed crate with its version. hams parses that directly —
+simple, reliable.
+
+## Bootstrap
+
+You need `cargo`, which comes with the Rust toolchain. The usual path is rustup via a bash step:
+
+```yaml
+- urn: "urn:hams:bash:install-rust"
+  step: Install Rust toolchain
+  run: curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+  check: command -v cargo
+```
+
+rustup drops cargo into `~/.cargo/bin`, which you'll want on your `PATH`.
+
+## About compile times
+
+Heads up: `cargo install` **compiles from source**. A fast network isn't enough — you need CPU too.
+On an M-series Mac, a mid-sized crate like `ripgrep` takes ~30 seconds. On an older Linux server,
+it can be minutes. If you're time-sensitive, Homebrew or apt's pre-built binaries will always be
+faster.
+
+<Callout type="tip">
+  Cargo installs binaries into `~/.cargo/bin` by default. To move that, set `CARGO_HOME` — hams
+  respects the environment variable.
 </Callout>

@@ -2,32 +2,106 @@ import { Callout } from 'nextra/components'
 
 # hams store
 
-<Callout type="info">
-  此页面尚未完成翻译，以下为英文原文。欢迎贡献翻译。
-</Callout>
+管你的 store 仓库 —— 也就是那个装着所有 Hamsfile 和 `hams.config.yaml` 的 git 仓库。
+store 是 hams 的"事实来源"：新机器上跑 `apply --from-repo` 拉的就是它，日常 push 改动也推到它。
 
-Manage the store repository that holds your Hamsfiles and configuration. The store is
-a git repository that tracks your declared environment state.
-
-## Usage
+## 用法
 
 ```bash
 hams store <subcommand> [flags]
 ```
 
-## Examples
+## 子命令
+
+### `hams store init`
+
+在当前目录初始化一个新的 store。会生成 `hams.config.yaml`、profile 目录和 `.gitignore`（自动屏蔽 `.state/` 和 `*.local.*`）。
 
 ```bash
-# Initialize a new store
+mkdir my-hams-store && cd my-hams-store
 hams store init
+# 按提示填 profile tag 和 machine ID
+```
 
-# Clone an existing store from GitHub
+完事之后把它变成 git 仓库、推到 GitHub 就能跨机器共享了。
+
+### `hams store clone <repo>`
+
+把别人（或者你自己在另一台机器上的）store 拉到本机，然后让 hams 指向它。
+
+```bash
+# 从 GitHub 拉
 hams store clone zthxxx/hams-store
 
-# Show store status
+# 拉完默认就指向它了，直接 apply 就行
+hams apply
+```
+
+`clone` 等价于 `git clone` + `hams config set store_path`，一步到位。
+
+### `hams store status`
+
+显示 store 的状态：本地有没有未提交的改动、是否落后于远端、当前 profile 是哪个。
+
+```bash
 hams store status
 ```
 
-<Callout type="info">
-  Full documentation coming soon.
+示例输出：
+
+```
+Store:       /Users/you/Projects/hams-store
+Branch:      main (up to date with origin/main)
+Profile:     macOS
+Machine:     MacbookProM3
+
+Modified:
+  macOS/Homebrew.hams.yaml
+  macOS/pnpm.hams.yaml
+
+Untracked:
+  (none)
+```
+
+### `hams store push`
+
+把 Hamsfile 的改动暂存、提交、推送远端 —— 一条命令搞定。commit message 可以自己填，或者让 hams 根据 diff 自动生成一条。
+
+```bash
+# 一把梭
+hams store push
+
+# 指定 commit message
+hams store push -m "Add ripgrep and bat"
+
+# 只暂存当前 profile 下的改动（跨 profile 的先不推）
+hams store push --profile-only
+```
+
+store push 不会推 `.state/` 和 `*.local.*` 文件 —— 这些本来就 gitignore 掉了。
+
+### `hams store pull`
+
+从远端拉最新的 Hamsfile。拉完如果有差异，跑 `hams apply` 应用上去。
+
+```bash
+hams store pull
+hams apply   # 同步本机环境到最新 Hamsfile
+```
+
+## store 的目录结构
+
+```text
+hams-store/
+├── hams.config.yaml              # 项目级配置（跟 git）
+├── hams.config.local.yaml        # 本机覆盖（不跟 git）
+├── .state/<machine-id>/          # 每台机器各自的状态（gitignore）
+└── macOS/                        # profile 目录，可以有多个（macOS/、openwrt/、work-linux/）
+    ├── Homebrew.hams.yaml        # 跟 git 的 Hamsfile
+    └── Homebrew.hams.local.yaml  # 本机特有的（gitignore）
+```
+
+<Callout type="tip">
+  一个 store 可以装多个 profile —— 个人 Mac、工作 Linux、家里 NAS 都放同一个仓库，
+  切 profile 就是切一个目录。`hams.config.local.yaml` 决定当前机器跑哪个。
 </Callout>

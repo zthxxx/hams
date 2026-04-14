@@ -2,11 +2,11 @@ import { Callout, Steps, Tabs } from 'nextra/components'
 
 # Quickstart
 
-Get from zero to a fully managed workstation in minutes.
+From zero to a fully managed workstation in a few minutes.
 
 ## Install hams
 
-Choose the installation method that works best for you:
+Pick whichever fits your habits:
 
 <Tabs items={['curl (recommended)', 'Homebrew', 'GitHub Releases']}>
   <Tabs.Tab>
@@ -14,27 +14,29 @@ Choose the installation method that works best for you:
 bash -c "$(curl -fsSL https://github.com/zthxxx/hams/raw/master/scripts/install.sh)"
 ```
 
-This downloads the latest release binary for your platform (darwin/arm64, linux/amd64, linux/arm64),
-places it in `/usr/local/bin/hams`, and writes a channel marker for `hams self-upgrade` to use.
+The script figures out your platform (darwin/arm64, linux/amd64, linux/arm64), drops the latest
+binary in `/usr/local/bin/hams`, and leaves a channel marker so `hams self-upgrade` knows how you
+got here.
   </Tabs.Tab>
   <Tabs.Tab>
 ```bash
 brew install zthxxx/tap/hams
 ```
 
-Installs via the official Homebrew tap. `hams self-upgrade` will use `brew upgrade hams` for future updates.
+Via the official Homebrew tap. Later, `hams self-upgrade` defers to `brew upgrade hams`, so it
+fits into your regular brew habits.
   </Tabs.Tab>
   <Tabs.Tab>
-Download the binary for your platform from [GitHub Releases](https://github.com/zthxxx/hams/releases/latest):
+Grab the binary for your platform from [GitHub Releases](https://github.com/zthxxx/hams/releases/latest):
 
 | Platform | Architecture | File |
 |----------|-------------|------|
-| macOS | Apple Silicon (M1/M2/M3/M4) | `hams_darwin_arm64` |
+| macOS | Apple Silicon (M-series) | `hams_darwin_arm64` |
 | Linux | x86-64 | `hams_linux_amd64` |
 | Linux | ARM64 | `hams_linux_arm64` |
 
 ```bash
-# Example for macOS Apple Silicon
+# Example, macOS Apple Silicon
 curl -Lo hams https://github.com/zthxxx/hams/releases/latest/download/hams_darwin_arm64
 chmod +x hams
 sudo mv hams /usr/local/bin/hams
@@ -42,57 +44,58 @@ sudo mv hams /usr/local/bin/hams
   </Tabs.Tab>
 </Tabs>
 
-Verify the installation:
+Confirm you're good:
 
 ```bash
 hams --version
 # hams v0.1.0 (commit: abc1234, built: 2026-04-12)
 ```
 
-## Your First Installation
+## Install something (and let hams remember)
 
-Once hams is installed, use it exactly like the underlying tool — just prefix with `hams`:
+Usage is plain: take whatever command you'd normally type, stick `hams` in front of it.
 
 ```bash
-# Install bat (a better cat) via Homebrew and auto-record it
+# Install bat (a nicer cat) via Homebrew, and write it to the Hamsfile
 hams brew install bat
 
-# Install serve globally via pnpm and auto-record it
+# Globally install serve through pnpm, also recorded
 hams pnpm add serve
 
-# Set your git user config and record it
+# Set git identity, also recorded
 hams git-config user.name "Your Name"
 hams git-config user.email "you@example.com"
 ```
 
-After each command, hams:
-1. Runs the underlying tool (`brew install bat`, `pnpm add -g serve`, etc.)
-2. Records the installation in your Hamsfile (`macOS/Homebrew.hams.yaml`, `macOS/pnpm.hams.yaml`, etc.)
+Behind each command, hams quietly does two things:
 
-## Restore Everything on a New Machine
+1. Runs the actual tool (`brew install bat`, `pnpm add -g serve`)
+2. Writes the installation into the matching Hamsfile (`macOS/Homebrew.hams.yaml`, `macOS/pnpm.hams.yaml`)
 
-This is where hams shines. On a fresh machine:
+## Restore everything on a fresh machine
+
+This is where hams earns its keep. On a brand-new machine:
 
 <Steps>
-### Install hams itself
+### First, install hams itself
 
 ```bash
 bash -c "$(curl -fsSL https://github.com/zthxxx/hams/raw/master/scripts/install.sh)"
 ```
 
-hams bundles `go-git`, so you do not need git installed beforehand.
+hams bundles go-git, so you don't need to install `git` first. Classic chicken-and-egg dodged.
 
-### Run apply from your store repo
+### Apply from your store repo
 
 ```bash
 hams apply --from-repo=<your-username>/hams-store
 ```
 
-Replace `<your-username>/hams-store` with your GitHub username and store repository name.
+Replace the placeholder with your GitHub username and store repo name.
 
-### Respond to the profile prompts
+### Answer two quick questions
 
-The first time you apply on a new machine, hams asks two questions:
+The first time a machine sees hams, it asks:
 
 ```
 No profile found for this machine.
@@ -104,22 +107,22 @@ Creating profile directory: macOS/
 Writing ~/.config/hams/hams.config.yaml...
 ```
 
-The **profile tag** selects which directory in your store repo to use (e.g., `macOS/` vs `openwrt/`).
-The **machine ID** is used to name your state directory (`.state/MacbookProM3/`).
+- **Profile tag** picks which directory inside your store to use (`macOS/`, `openwrt/`, etc.)
+- **Machine ID** uniquely names this machine, so its state lives at `.state/MacbookProM3/`
 
-### Enter sudo password (if needed)
+### Enter your sudo password, if anything needs it
 
-If your profile includes providers that require elevated privileges (e.g., `apt` on Linux), hams
-prompts for your sudo password once at startup:
+If your profile uses a privileged provider (like `apt` on Linux), hams asks for sudo once at the start:
 
 ```
 Some providers require sudo. Enter your password to continue:
 Password:
 ```
 
-hams refreshes the sudo ticket in the background every 4 minutes so you are not re-prompted mid-apply.
+Once is all it needs. hams keeps the sudo ticket warm in the background (refreshing every 4 minutes)
+so apply can run to completion without popping another prompt.
 
-### Watch hams work
+### Watch it work
 
 ```
 hams apply  •  profile: macOS  •  machine: MacbookProM3
@@ -140,35 +143,38 @@ hams apply  •  profile: macOS  •  machine: MacbookProM3
 Log: ~/.local/share/hams/2026-04/20260412T143022.log
 ```
 
-### Verify the apply succeeded
+### Double-check
 
 ```bash
-# List all managed resources and their status
+# What's managed, and is it all happy?
 hams list
 
-# Show diff between Hamsfile and current state
+# Or zoom in on one provider
 hams brew list
 ```
 </Steps>
 
-## Push Your Changes
+## Push your changes back
 
-After installing packages, push your Hamsfiles to your store repo so they are available on other machines:
+Once you've installed new things on this machine, push the Hamsfiles back to the store so the
+other machines can catch up:
 
 ```bash
-# From your store repo directory
+# From inside your store directory
 hams store push
-# Stages all Hamsfile changes, commits, and pushes to remote
+# Stages Hamsfile changes, commits, pushes to the remote
 ```
 
-Or manage git manually — Hamsfiles are plain YAML, fully hand-editable.
+Prefer to drive git yourself? Go for it. Hamsfiles are plain YAML, nothing hams does stops you
+from `git add && git commit && git push`.
 
-## Next Steps
+## Where to go next
 
-- [CLI Reference](./cli) — all commands and flags
-- [Providers](./providers) — what each of the 15 builtin providers can do
-- [Schema Reference](./schema) — Hamsfile and config YAML format
+- [CLI Reference](./cli) — every command and flag
+- [Providers](./providers) — what each of the 15 builtin providers does
+- [Schema Reference](./schema) — the shape of Hamsfiles and config YAML
 
 <Callout type="tip">
-  Run `hams --dry-run apply` to preview what hams *would* do without executing anything.
+  Not sure about an upcoming apply? Try `hams --dry-run apply` first — it prints exactly what it
+  *would* do, without touching a thing.
 </Callout>

@@ -2,27 +2,82 @@ import { Callout } from 'nextra/components'
 
 # pnpm Provider
 
-Wraps [pnpm](https://pnpm.io/) to manage globally installed Node.js packages.
+Uses [pnpm](https://pnpm.io/) to manage globally installed Node.js command-line tools — the ones
+you want available from any directory: `serve`, `tsx`, `prettier`, and so on.
+
+Why pnpm specifically, when there's an npm provider too? Two reasons: pnpm's global installs are
+hard-linked (saves a lot of disk), and it doesn't dump `node_modules` into system paths the way npm
+can. If you already use pnpm for project dependencies, matching it for globals keeps things
+consistent.
 
 **Platforms:** macOS, Linux
 
 ## Usage
 
 ```bash
-hams pnpm add <package>
-hams pnpm remove <package>
+# Install a global tool
+hams pnpm add serve
+
+# Remove
+hams pnpm remove serve
+
+# See what hams is managing
 hams pnpm list
 ```
 
-## Hamsfile Example
+The verbs are `add` / `remove`, same as native pnpm — no need to remember a different syntax.
+
+## Hamsfile example
 
 ```yaml
-- app: serve
-  intro: Static file serving and directory listing.
-- app: tsx
-  intro: TypeScript execute for Node.js.
+# macOS/pnpm.hams.yaml
+schema_version: 1
+provider: pnpm
+
+groups:
+  - tag: dev
+    items:
+      - app: serve
+        intro: Static file serving and directory listing.
+      - app: tsx
+        intro: TypeScript executor for Node.js.
+      - app: prettier
+        tags: [formatter]
+        intro: Opinionated code formatter.
 ```
 
-<Callout type="info">
-  Full documentation coming soon.
+`app` is the npm package name, exactly as you'd write it in `pnpm add -g <name>`.
+
+## How state is probed
+
+hams calls `pnpm list -g --depth=0 --json` and pulls the globally-installed names and versions
+out of the JSON. Much more reliable than scraping text output — if pnpm changes how its table
+renders, hams doesn't suddenly break.
+
+## Bootstrap
+
+You need `pnpm` installed before the pnpm provider can do anything. Classic chicken-and-egg.
+The usual fix is a one-shot `bash` provider step:
+
+```yaml
+# bash.hams.yaml
+- urn: "urn:hams:bash:install-pnpm"
+  step: Install pnpm
+  run: curl -fsSL https://get.pnpm.io/install.sh | sh -
+  check: command -v pnpm
+```
+
+Make sure `bash` comes before `pnpm` in your `provider_priority` (the default order already does).
+
+## pnpm vs npm
+
+Mechanically, both providers do the same thing — the only difference is which tool they wrap. You
+can even use both in parallel on the same machine: `prettier` under pnpm, `nodemon` under npm. Each
+Hamsfile is separate, they don't collide. That said, picking one and sticking with it is usually
+wiser — mixing global Node tools across package managers sometimes surfaces Node-ecosystem quirks
+that have nothing to do with hams.
+
+<Callout type="tip">
+  pnpm installs globals to `~/.local/share/pnpm` by default. Make sure it's on your `PATH`.
+  `pnpm setup` handles that for you; run it once via the bash provider.
 </Callout>

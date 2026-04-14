@@ -2,32 +2,78 @@ import { Callout } from 'nextra/components'
 
 # hams config
 
-<Callout type="info">
-  此页面尚未完成翻译，以下为英文原文。欢迎贡献翻译。
-</Callout>
+读写 hams 自己的配置。这里的"配置"指的是 hams 运行时需要知道的东西 —— 当前 profile 叫什么、
+store 仓库放在哪、优先跑哪些 provider —— 不是 Hamsfile 里那些声明资源的内容。
 
-Read and write hams configuration values. Configuration is stored in
-`~/.config/hams/hams.config.yaml` by default.
+全局配置默认躺在 `~/.config/hams/hams.config.yaml`，这条命令就是操作它的快捷方式。
 
-## Usage
+## 用法
 
 ```bash
 hams config <subcommand> [flags]
 ```
 
-## Examples
+## 子命令一览
+
+### `hams config show`
+
+把当前生效的整份配置打印出来。合并了全局、store 项目级、`*.local.*` 各层覆盖之后的最终结果。
 
 ```bash
-# Show the current configuration
 hams config show
-
-# Get a specific config value
-hams config get store_path
-
-# Set a config value
-hams config set store_path ~/Projects/my-hams-store
+hams config show --json   # 给脚本/AI 用
 ```
 
+### `hams config get <key>`
+
+只取一个值。适合 shell 脚本里用 `$(hams config get store_path)` 这样嵌进去。
+
+```bash
+hams config get store_path
+# /Users/you/Projects/hams-store
+
+hams config get profile_tag
+# macOS
+```
+
+### `hams config set <key> <value>`
+
+写一个值。hams 会把你的修改写进文件时保留原有注释，不会把你辛苦写的 `#` 注释冲没了。
+
+```bash
+hams config set store_path ~/Projects/my-hams-store
+hams config set llm_cli claude
+```
+
+### `hams config unset <key>`
+
+把某个 key 从配置里删掉，让它回落到默认值。
+
+```bash
+hams config unset profile_tag
+```
+
+## 常用的配置项
+
+| Key | 说明 |
+|-----|------|
+| `profile_tag` | 当前机器用哪个 profile 目录（比如 `macOS`、`openwrt`） |
+| `machine_id` | 这台机器的唯一名字，决定 `.state/` 下哪个子目录属于自己 |
+| `store_repo` | 你的 store 仓库地址，用于 `apply --from-repo` 和 `store push` |
+| `store_path` | store 仓库在本机的路径 |
+| `llm_cli` | 跑 `intro` 自动生成时调哪个 LLM CLI，比如 `claude` |
+| `provider_priority` | apply 的时候 provider 之间的执行顺序 |
+
+## 秘密值存哪里
+
+像 API key、通知 token 这类敏感值**不要**写进 git 追踪的配置文件。hams 支持两种藏法：
+
+1. **系统 keychain**（推荐）—— 通过 keyring 存成 application password
+2. **`*.local.yaml` 文件** —— 默认 gitignore 掉
+
+用 `hams config set` 写敏感 key 时，hams 会问你要不要存到 keychain 里。
+
 <Callout type="info">
-  Full documentation coming soon.
+  除了 `hams config` 命令，你完全可以直接拿编辑器打开 YAML 文件改 —— 格式稳定、注释保留，
+  手工维护友好。命令只是为了让 CI 和脚本里写起来方便。
 </Callout>

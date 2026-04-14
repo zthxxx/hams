@@ -2,33 +2,49 @@ import { Callout } from 'nextra/components'
 
 # hams refresh
 
-<Callout type="info">
-  此页面尚未完成翻译，以下为英文原文。欢迎贡献翻译。
-</Callout>
+只看一眼机器的真实现状，把它写进 `.state/` 文件 —— 不装不卸不改任何东西。
 
-Probe the current machine state for all managed providers and update the local state files.
-This does not install or remove anything -- it only reads current reality and persists it
-to `.state/` files.
+这条命令存在的意义是：你手动在 hams 外面装过、卸过、改过的东西，`.state/` 不知道。
+下次 `apply` 就会按过时的状态去算差异，结果可能很奇怪。跑一下 `refresh`，状态就跟现实对齐了。
 
-## Usage
+## 用法
 
 ```bash
 hams refresh [flags]
 ```
 
-## Examples
+## 场景示例
 
 ```bash
-# Refresh state for all providers
+# 全量刷新：所有 provider 都重新扫一遍机器
 hams refresh
 
-# Refresh only Homebrew state
+# 只刷新 Homebrew 的状态（比如你刚手动 brew uninstall 了几个）
 hams refresh --only=homebrew
 
-# Refresh with debug output
+# 看看刷新过程中每个 provider 到底在查什么
 hams --debug refresh
 ```
 
+## 什么时候该跑
+
+- **手动装过东西之后**：你用原生命令 `brew install` / `pnpm add -g` 装了包，没走 hams
+- **刚从另一台机器同步过 store**：拉下来的 Hamsfile 变了，但本机 `.state/` 还停留在上次 apply
+- **排查 apply 为什么要重做某个资源**：先 refresh 看看状态是不是跟你想的一致
+- **机器环境大变动之后**：比如升级了系统、换了 Xcode Command Line Tools
+
 <Callout type="info">
-  Full documentation coming soon.
+  `hams apply` 会在开始前自动跑一次 `refresh`，所以正常流程里你不用手动调。
+  它主要用在"想看看但暂时不想动手"的场景。
 </Callout>
+
+## 和 apply 的区别
+
+| | refresh | apply |
+|---|---------|-------|
+| 读机器现状 | ✓ | ✓ |
+| 写 `.state/` 文件 | ✓ | ✓ |
+| 安装/卸载/修改资源 | ✗ | ✓ |
+| 需要 sudo | ✗ | 视 provider 而定 |
+
+一句话：`refresh` 是"只看不动"，`apply` 才是"看完真动手"。

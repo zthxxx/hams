@@ -2,51 +2,53 @@ import { Callout } from 'nextra/components'
 
 # Provider Catalog
 
-hams ships with 15 builtin providers covering the full spectrum of workstation configuration.
-Each provider wraps an existing CLI tool and gives it auto-record, state tracking, and diff-based apply.
+hams ships with 15 builtin providers that cover the bulk of what sits on a typical workstation.
+Each one wraps a tool you already use and adds auto-record, state tracking, and diff-based apply
+on top.
 
-## Builtin Providers
+## The 15 builtin providers
 
-| Provider | Wraps | Platforms | Description |
-|----------|-------|-----------|-------------|
+| Provider | Wraps | Platforms | What it manages |
+|----------|-------|-----------|-----------------|
 | [Homebrew](./homebrew) | `brew` | macOS, Linux | Formulae and casks via Homebrew |
-| [apt](./apt) | `apt-get` | Linux (Debian/Ubuntu) | System packages via APT |
-| [pnpm](./pnpm) | `pnpm` | macOS, Linux | Global Node.js packages via pnpm |
-| [npm](./npm) | `npm` | macOS, Linux | Global Node.js packages via npm |
-| [uv](./uv) | `uv` | macOS, Linux | Python tools via uv |
-| [go](./go) | `go install` | macOS, Linux | Go binaries via `go install` |
-| [cargo](./cargo) | `cargo install` | macOS, Linux | Rust binaries via Cargo |
+| [apt](./apt) | `apt-get` | Linux (Debian/Ubuntu) | System packages |
+| [pnpm](./pnpm) | `pnpm` | macOS, Linux | Global Node.js packages |
+| [npm](./npm) | `npm` | macOS, Linux | Global Node.js packages |
+| [uv](./uv) | `uv` | macOS, Linux | Python command-line tools |
+| [go](./go) | `go install` | macOS, Linux | Go binaries |
+| [cargo](./cargo) | `cargo install` | macOS, Linux | Rust binaries |
 | [vscode-ext](./vscode-ext) | `code` | macOS, Linux | VS Code extensions |
 | [mas](./mas) | `mas` | macOS only | Mac App Store apps |
-| [git-config](./git-config) | `git config` | macOS, Linux | Git configuration key-value pairs |
-| [git-clone](./git-clone) | `git clone` | macOS, Linux | Repository clones at fixed local paths |
-| [defaults](./defaults) | `defaults` | macOS only | macOS `defaults write` settings |
+| [git-config](./git-config) | `git config` | macOS, Linux | Git global configuration |
+| [git-clone](./git-clone) | `git clone` | macOS, Linux | Repositories cloned to fixed paths |
+| [defaults](./defaults) | `defaults` | macOS only | macOS system settings |
 | [duti](./duti) | `duti` | macOS only | Default app associations for file types |
-| [bash](./bash) | `bash` | macOS, Linux | Arbitrary shell scripts with idempotency checks |
+| [bash](./bash) | `bash` | macOS, Linux | Any shell script, with a `check:` for idempotency |
 | [Ansible](./ansible) | `ansible` | macOS, Linux | Ansible playbooks and ad-hoc tasks |
 
-## Resource Classes
+## Four flavours of resource
 
-Every provider's resources fall into one of four classes, each with a different probe strategy:
+Every provider's resources fit one of four classes. Each class has its own way of figuring out
+"is this already in the desired state?"
 
-### Package (native list)
+### Package — ask the native list command
 
-Providers: Homebrew, apt, pnpm, npm, uv, go, cargo, mas, vscode-ext
+**Providers:** Homebrew, apt, pnpm, npm, uv, go, cargo, mas, vscode-ext
 
-Probe method: The provider runs its native list command (e.g., `brew list --formula`, `npm list -g`)
-and checks whether the package name appears in the output. Version is recorded from the list output.
+**How it probes:** Run the native `list` command (`brew list --formula`, `npm list -g`, etc.),
+check whether the package shows up, grab the version from the output.
 
 ```yaml
 - app: ripgrep
   intro: Fast recursive grep alternative.
 ```
 
-### KV Config (read-back)
+### KV Config — read it back and compare
 
-Providers: defaults, git-config, duti
+**Providers:** defaults, git-config, duti
 
-Probe method: The provider reads back the current value using a read command (e.g., `defaults read`, `git config --get`)
-and compares it to the desired value. If they match, the resource is `ok`.
+**How it probes:** Run the corresponding read command (`defaults read`, `git config --get`),
+compare the returned value to the expected one. Match? `ok`.
 
 ```yaml
 - urn: "urn:hams:defaults:finder-show-extensions"
@@ -56,12 +58,12 @@ and compares it to the desired value. If they match, the resource is `ok`.
   value: true
 ```
 
-### Check-based (user-supplied check:)
+### Check-based — you write the test
 
-Providers: bash, ansible
+**Providers:** bash, ansible
 
-Probe method: The user supplies a `check:` shell command. If the command exits 0, the resource is `ok`;
-if it exits non-zero, the resource needs to be applied.
+**How it probes:** You supply a `check:` shell command. Exits 0, it's done. Exits non-zero, time
+to run. Idempotency is on you — which means these providers can manage anything you can describe.
 
 ```yaml
 - urn: "urn:hams:bash:install-homebrew"
@@ -70,12 +72,12 @@ if it exits non-zero, the resource needs to be applied.
   check: command -v brew
 ```
 
-### Filesystem (path existence)
+### Filesystem — does the path exist?
 
-Providers: git-clone, file
+**Providers:** git-clone, file
 
-Probe method: The provider checks whether the target path exists on disk. For git-clone, it also
-verifies the remote URL matches.
+**How it probes:** Check whether the target path exists. `git-clone` also confirms the remote URL
+matches.
 
 ```yaml
 - urn: "urn:hams:git-clone:dotfiles"
@@ -85,11 +87,11 @@ verifies the remote URL matches.
   default_branch: main
 ```
 
-## How Providers Are Ordered
+## The order providers run in
 
-During `hams apply`, providers execute in the order defined by `provider_priority` in your config.
-The default order is designed so dependencies come first (e.g., `bash` runs before `Homebrew` so
-you can bootstrap Homebrew via a bash step if needed):
+During `hams apply`, providers go in the order defined by `provider_priority`. The default order
+is deliberate — `bash` runs before `Homebrew`, for example, so you can bootstrap Homebrew inside
+a bash step before the Homebrew provider needs to install anything.
 
 ```yaml
 # ~/.config/hams/hams.config.yaml
@@ -112,11 +114,11 @@ provider_priority:
 ```
 
 <Callout type="info">
-  Override the order in your store's `hams.config.yaml` or use `--only` / `--except` flags on `hams apply`
-  to run only specific providers.
+  Want a different order? Override it in your store's `hams.config.yaml`. Want to run only some of
+  them? Pass `hams apply --only=homebrew,pnpm` or `--except=ansible`.
 </Callout>
 
-## Adding a Custom Provider
+## Bringing your own provider
 
-hams supports external providers via `hashicorp/go-plugin` (local gRPC). See the Provider API chapter
-(coming soon) for the full authoring guide and Go SDK reference.
+hams supports external providers through `hashicorp/go-plugin` (local gRPC). The full authoring
+guide and Go SDK reference live in the Provider API chapter (coming soon).

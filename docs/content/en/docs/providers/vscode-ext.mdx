@@ -2,27 +2,86 @@ import { Callout } from 'nextra/components'
 
 # VS Code Extensions Provider
 
-Wraps the `code` CLI to manage Visual Studio Code extensions.
+Wraps the `code` command-line tool to manage VS Code extensions. Clicking through the extension
+store one at a time on every new machine is one of life's lesser joys — this provider exists to
+make that moment disappear.
+
+Works with VS Code forks like Cursor and VSCodium too, as long as they ship a compatible CLI.
+Swap it via `hams.config.yaml`'s `vscode_ext.cli_command`.
 
 **Platforms:** macOS, Linux
 
 ## Usage
 
 ```bash
-hams vscode-ext install <extension-id>
-hams vscode-ext uninstall <extension-id>
+# Install (publisher.name form)
+hams vscode-ext install esbenp.prettier-vscode
+
+# Remove
+hams vscode-ext uninstall esbenp.prettier-vscode
+
+# See what's managed
 hams vscode-ext list
 ```
 
-## Hamsfile Example
+To find an extension's ID: open the VS Code extensions panel, right-click any extension → Copy
+Extension ID. That `publisher.name` string is what you want.
+
+## Hamsfile example
 
 ```yaml
-- app: esbenp.prettier-vscode
-  intro: Prettier formatter for VS Code.
-- app: golang.go
-  intro: Rich Go language support.
+# macOS/vscode-ext.hams.yaml
+schema_version: 1
+provider: vscode-ext
+
+groups:
+  - tag: language-support
+    items:
+      - app: golang.go
+        intro: Rich Go language support.
+      - app: rust-lang.rust-analyzer
+        intro: Rust language server.
+      - app: dbaeumer.vscode-eslint
+        intro: ESLint integration.
+
+  - tag: theme
+    items:
+      - app: esbenp.prettier-vscode
+        intro: Prettier formatter for VS Code.
+      - app: PKief.material-icon-theme
 ```
 
+## How state is probed
+
+`code --list-extensions` prints one extension ID per line. hams reads that list. Blunt but works.
+
+## Bootstrap
+
+The machine needs to have `code` on the PATH. On macOS you have to manually run "Shell Command:
+Install 'code' command in PATH" from the VS Code command palette after installing the app. Automate
+it with a `bash` provider step:
+
+```yaml
+- urn: "urn:hams:bash:link-vscode-cli"
+  step: Link VS Code CLI
+  run: ln -sf "/Applications/Visual Studio Code.app/Contents/Resources/app/bin/code" /usr/local/bin/code
+  check: command -v code
+```
+
+## Using Cursor / VSCodium
+
+In `hams.config.yaml`:
+
+```yaml
+providers:
+  vscode-ext:
+    cli_command: cursor   # or codium
+```
+
+From then on, hams uses `cursor --install-extension` instead of `code --install-extension`.
+
 <Callout type="info">
-  Full documentation coming soon.
+  User settings (`settings.json`) and key bindings (`keybindings.json`) are out of scope for this
+  provider — they're just dotfiles. Use the `file` provider, or clone a dotfiles repo with
+  git-clone.
 </Callout>

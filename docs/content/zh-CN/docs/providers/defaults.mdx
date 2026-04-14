@@ -2,38 +2,102 @@ import { Callout } from 'nextra/components'
 
 # macOS defaults Provider
 
-<Callout type="info">
-  此页面尚未完成翻译，以下为英文原文。欢迎贡献翻译。
-</Callout>
+管 macOS 那一大堆 `defaults write` 的设置 —— 显示所有文件扩展名、Dock 自动隐藏、
+禁用截屏阴影这类。新机器拿到手之后最烦的就是一个个改系统设置，这个 provider 是来救你的。
 
-Wraps `defaults write` to manage macOS system and application preferences. Probes
-current values via `defaults read` and compares against the desired state.
+**支持平台：** 仅 macOS
 
-**Platforms:** macOS only
-
-## Usage
+## 怎么用
 
 ```bash
-hams defaults set <domain> <key> <value>
+# 设置一条（会记进 Hamsfile）
+hams defaults set NSGlobalDomain AppleShowAllExtensions -bool true
+
+# 列出 hams 管的 defaults 条目
 hams defaults list
+
+# 取消一条（把值恢复成默认，并从 Hamsfile 里删掉）
+hams defaults unset NSGlobalDomain AppleShowAllExtensions
 ```
 
-## Hamsfile Example
+## Hamsfile 长什么样
 
 ```yaml
-- urn: "urn:hams:defaults:finder-show-extensions"
-  step: Show all file extensions in Finder
-  domain: NSGlobalDomain
-  key: AppleShowAllExtensions
-  value: true
+# macOS/defaults.hams.yaml
+schema_version: 1
+provider: defaults
 
-- urn: "urn:hams:defaults:dock-autohide"
-  step: Auto-hide the Dock
-  domain: com.apple.dock
-  key: autohide
-  value: true
+groups:
+  - tag: finder
+    items:
+      - urn: "urn:hams:defaults:finder-show-extensions"
+        step: Show all file extensions in Finder
+        domain: NSGlobalDomain
+        key: AppleShowAllExtensions
+        type: bool
+        value: true
+
+      - urn: "urn:hams:defaults:finder-show-hidden"
+        step: Show hidden files in Finder
+        domain: com.apple.finder
+        key: AppleShowAllFiles
+        type: bool
+        value: true
+
+  - tag: dock
+    items:
+      - urn: "urn:hams:defaults:dock-autohide"
+        step: Auto-hide the Dock
+        domain: com.apple.dock
+        key: autohide
+        type: bool
+        value: true
+
+  - tag: screenshot
+    items:
+      - urn: "urn:hams:defaults:screenshot-no-shadow"
+        step: Disable screenshot shadow
+        domain: com.apple.screencapture
+        key: disable-shadow
+        type: bool
+        value: true
 ```
 
+字段：
+
+- `domain` — defaults 的 domain，一般是反向 DNS 格式（`com.apple.dock`）或 `NSGlobalDomain`
+- `key` — 要设置的键名
+- `type` — 值的类型：`bool` / `int` / `float` / `string` / `array` / `dict`。影响 `defaults write` 时带的 flag
+- `value` — 期望的值
+
+## 状态探测
+
+探测方式：对每条记录跑 `defaults read <domain> <key>`，输出跟 Hamsfile 里的 `value` 比对。
+类型要匹配 —— `"true"`（字符串）跟 `true`（bool）在 defaults 里是两回事。
+
+## 让改动立刻生效
+
+`defaults write` 改的是 plist，但很多应用只在启动时读一次配置。Dock、Finder 这些要看到效果得重启它们：
+
+```yaml
+- urn: "urn:hams:bash:restart-dock"
+  step: Restart Dock to apply defaults
+  run: killall Dock
+  check: "false"   # 永远跑 —— 反正 killall Dock 幂等
+```
+
+也可以把这种"收尾动作"放进 `hams apply` 的 hook（即将推出），避免每次都手动 `killall`。
+
+## 怎么发现可以改什么
+
+三个办法：
+
+1. **Google / 博客** —— "mac defaults write tricks" 一搜一堆前人总结
+2. **官方脚本**：[mathiasbynens/dotfiles](https://github.com/mathiasbynens/dotfiles) 的 `.macos` 文件是这类技巧的集大成者
+3. **对比法** —— 手动改一次系统设置，然后 `defaults read > before.txt` 和 `after.txt` 对比 diff
+
 <Callout type="info">
-  Full documentation coming soon.
+  有些 defaults 改的是"只读"字段（macOS 会覆盖你的设置），或者需要关 SIP / 重启机器才生效。
+  hams 没法判断这些 —— apply 会显示写入成功，但 `refresh` 会发现值又变回去了，循环往复。
+  遇到这种先手动排查，不要怀疑 hams。
 </Callout>

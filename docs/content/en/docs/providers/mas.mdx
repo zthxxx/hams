@@ -2,26 +2,90 @@ import { Callout } from 'nextra/components'
 
 # Mac App Store Provider
 
-Wraps [mas](https://github.com/mas-cli/mas) to manage Mac App Store applications.
+Uses [mas](https://github.com/mas-cli/mas) to manage Mac App Store apps — things like Xcode,
+Tailscale, Keka, or Amphetamine that you can only realistically install through the App Store.
 
 **Platforms:** macOS only
 
 ## Usage
 
 ```bash
-hams mas install <app-id>
+# Install by App ID (not app name)
+hams mas install 497799835   # Xcode
+
+# See what's managed
 hams mas list
+
+# Remove
+hams mas remove 497799835
 ```
 
-## Hamsfile Example
+## Finding an App ID
+
+```bash
+# Search — gives you candidates with their IDs
+mas search "Tailscale"
+# 1475387142  Tailscale  (1.66.4)
+
+# Or: list the App Store apps you already have
+mas list
+```
+
+Copy the number. That's it.
+
+## Hamsfile example
 
 ```yaml
-- app: "497799835"
-  intro: Xcode - Apple's IDE for macOS and iOS development.
-- app: "1475387142"
-  intro: Tailscale - Mesh VPN.
+# macOS/mas.hams.yaml
+schema_version: 1
+provider: mas
+
+groups:
+  - tag: dev-required
+    items:
+      - app: "497799835"
+        intro: Xcode - Apple's IDE for macOS and iOS development.
+      - app: "1475387142"
+        intro: Tailscale - Mesh VPN.
+
+  - tag: productivity
+    items:
+      - app: "937984704"
+        intro: Amphetamine - Keep your Mac awake.
+      - app: "1147396723"
+        intro: WhatsApp.
 ```
 
-<Callout type="info">
-  Full documentation coming soon.
+App IDs are numeric, but YAML will happily drop leading zeros if you don't quote them. (Yes, App
+IDs don't have leading zeros. It's still a good habit.)
+
+## How state is probed
+
+`mas list` prints all installed App Store apps with their IDs. hams cross-references against the
+Hamsfile.
+
+## Bootstrap
+
+Install mas first. One Homebrew entry:
+
+```yaml
+# Homebrew.hams.yaml
+- app: mas
+  intro: Mac App Store CLI.
+```
+
+After installing mas, **you must sign in to the App Store GUI at least once**. mas can't log you in
+— that's Apple's limitation, not hams's. Sign in once, and the automation works from there on.
+
+## Limitations
+
+- **No purchases.** mas can't buy paid apps on your behalf. Buy them once in the App Store, then
+  `hams apply` downloads them on new machines
+- **Requires Apple ID sign-in.** See above
+- **No older versions.** The App Store serves only the latest release, and hams can't force downgrades
+
+<Callout type="warning">
+  Apple occasionally changes the App Store backend in ways that break `mas` temporarily. When that
+  happens, check the mas repo's issue tracker — fixes usually land within a few days. Install
+  those apps manually in the meantime, and `hams apply` will catch up when mas is working again.
 </Callout>

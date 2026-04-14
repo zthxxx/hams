@@ -2,57 +2,89 @@ import { Callout } from 'nextra/components'
 
 # Provider Commands
 
-Provider commands follow the pattern `hams <provider> <verb> [args]`. Each provider
-registers its own set of verbs that map to the underlying package manager's operations.
+Every command that talks to a package manager follows the same pattern: `hams <provider> <verb> [args]`.
+Each provider registers its own set of verbs, mapped to the tool it wraps — `brew`, `pnpm`, `apt`,
+`bash`, you name it.
 
-## Routing Pattern
+## The routing pattern
 
 ```bash
 hams <provider> <verb> [args] [--hams-flags] [-- <passthrough>]
 ```
 
-## Common Verbs
+- `<provider>` — the provider name (`brew`, `pnpm`, `apt`, `bash`, ...)
+- `<verb>` — a verb supported by that provider (see below)
+- `[args]` — whatever the verb needs (package name, file path, etc.)
+- `--hams-*` — hams-specific flags, never forwarded to the wrapped tool
+- `--` — everything after this point goes straight to the wrapped tool, untouched
 
-| Verb | Description | Example |
-|------|-------------|---------|
+## The verbs most providers support
+
+| Verb | What it does | Example |
+|------|--------------|---------|
 | `install` / `add` | Install a package and record it in the Hamsfile | `hams brew install bat` |
-| `remove` / `uninstall` | Remove a package and delete it from the Hamsfile | `hams brew remove htop` |
+| `remove` / `uninstall` | Remove a package and drop it from the Hamsfile | `hams brew remove htop` |
 | `list` | List packages managed by this provider | `hams brew list` |
 | `enrich` | Add metadata (tags, intro) to an already-recorded package | `hams brew enrich bat` |
+
+Not every provider supports every verb. `git-clone` uses `add` instead of `install`; `bash` uses
+`run`. Check the individual provider doc for specifics.
 
 ## Examples
 
 ```bash
-# Install via Homebrew
+# Homebrew: install a formula
 hams brew install bat
 
-# Install a global pnpm package
+# pnpm: install globally
 hams pnpm add serve
 
-# Install a global npm package
+# npm: install globally
 hams npm install --global prettier
 
-# Remove a Homebrew package
+# Homebrew: remove
 hams brew remove htop
 
-# List Homebrew packages
+# See what's managed under Homebrew
 hams brew list
 
-# Enrich a package with metadata
+# Attach metadata to an existing entry
 hams brew enrich bat --hams-tag=cli --hams-intro="A cat clone with syntax highlighting"
 ```
 
-## The `--hams-` Flag Convention
+## The `--hams-` flag convention
 
-Provider-scoped flags use the `--hams-` prefix to avoid colliding with the wrapped tool's flags:
+To avoid colliding with whatever flags the wrapped tool defines, every flag hams introduces is
+prefixed `--hams-`. hams strips them off before handing the rest to `brew` / `pnpm` / etc.
 
-| Flag | Description |
-|------|-------------|
-| `--hams-tag=<tags>` | Comma-separated tags to assign to the recorded resource |
-| `--hams-intro=<text>` | One-line description to store in the Hamsfile |
-| `--hams-local` | Write to `<Provider>.hams.local.yaml` instead of the main Hamsfile |
+| Flag | What it does |
+|------|--------------|
+| `--hams-tag=<tags>` | Tag the resource. Comma-separated for multiples |
+| `--hams-intro=<text>` | A one-line description written into the Hamsfile |
+| `--hams-local` | Write to `<Provider>.hams.local.yaml` (not committed) instead of the main Hamsfile |
+
+```bash
+# Install ripgrep tagged 'search,cli' with a description
+hams brew install ripgrep --hams-tag=search,cli --hams-intro="Fast recursive grep alternative"
+
+# A tool that's only for this machine, not the shared store
+hams brew install zoom --hams-local
+```
+
+## Passing through with `--`
+
+If the wrapped tool has a flag you want to pass along, but you don't want hams to interpret it
+as its own, put `--` in between.
+
+```bash
+# The --verbose goes to brew, not to hams
+hams brew install bat -- --verbose
+
+# Similarly, --save-dev goes to pnpm
+hams pnpm add typescript -- --save-dev
+```
 
 <Callout type="info">
-  Full documentation coming soon. See the [Providers](../providers) chapter for
-  provider-specific verb references.
+  To see what verbs and flags a specific provider supports, run `hams <provider> --help`. You can
+  also browse the [Providers](../providers) chapter for the per-provider documentation.
 </Callout>

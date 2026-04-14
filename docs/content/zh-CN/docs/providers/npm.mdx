@@ -2,31 +2,71 @@ import { Callout } from 'nextra/components'
 
 # npm Provider
 
-<Callout type="info">
-  此页面尚未完成翻译，以下为英文原文。欢迎贡献翻译。
-</Callout>
+包装 [npm](https://www.npmjs.com/) 来管全局装的 Node.js 工具。如果你团队/同事更习惯用 npm 而不是 pnpm，
+或者某些工具对 npm 有特殊依赖，用这个 provider 就对了。
 
-Wraps [npm](https://www.npmjs.com/) to manage globally installed Node.js packages.
+**支持平台：** macOS、Linux
 
-**Platforms:** macOS, Linux
-
-## Usage
+## 怎么用
 
 ```bash
-hams npm install --global <package>
-hams npm uninstall --global <package>
+# 全局装一个包（--global 不能少，不然 hams 会警告）
+hams npm install --global prettier
+
+# 卸掉
+hams npm uninstall --global prettier
+
+# 看看 hams 管了哪些 npm 全局包
 hams npm list
 ```
 
-## Hamsfile Example
+对，是 `install --global` / `uninstall --global`，跟原生 npm 一致。hams 默认**不**替你补 `--global` —
+防止你手抖把一个本地依赖当成全局装。
+
+## Hamsfile 长什么样
 
 ```yaml
-- app: prettier
-  intro: Opinionated code formatter.
-- app: eslint
-  intro: JavaScript and TypeScript linter.
+# macOS/npm.hams.yaml
+schema_version: 1
+provider: npm
+
+groups:
+  - tag: lint
+    items:
+      - app: prettier
+        intro: Opinionated code formatter.
+      - app: eslint
+        intro: JavaScript and TypeScript linter.
+
+  - tag: dev-tools
+    items:
+      - app: "@anthropic-ai/claude-code"
+        intro: Claude Code CLI.
+      - app: nodemon
+        intro: Auto-restart Node scripts on file change.
 ```
 
-<Callout type="info">
-  Full documentation coming soon.
+带 scope 的包（比如 `@anthropic-ai/claude-code`）记得用引号包起来，不然 YAML 会把 `@` 当特殊字符。
+
+## 状态探测
+
+探测方式：hams 跑 `npm list -g --depth=0 --json`，从 JSON 里读全局依赖。
+跟 pnpm provider 逻辑一样，只是换了个命令。
+
+## pnpm 还是 npm？
+
+如果你完全没偏好，选 pnpm provider —— 速度快、占磁盘小、生态好。
+但如果有这些情况，选 npm provider 更合适：
+
+- 想用 Node 官方安装包自带的 npm，不想再装 pnpm
+- 某个工具的 README 只说了 `npm install -g`，你懒得折腾兼容
+- 团队统一用 npm，不想引入额外依赖
+
+两个 provider 可以共存，但**同一个包只归一个 provider 管**。不然 apply 的时候两边都会去装/卸，
+会很奇怪。
+
+<Callout type="warning">
+  如果你是用 `nvm` 或 `fnm` 管 Node 版本，npm 的全局安装目录会跟着当前 Node 版本走。
+  换了 Node 版本之后，`hams refresh` 会发现"原来装的包不见了" —— 这是正常的，
+  因为新版本的 global 目录是全新的。重新 `hams apply` 就能在新版本下补齐。
 </Callout>

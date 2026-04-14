@@ -2,29 +2,58 @@ import { Callout } from 'nextra/components'
 
 # hams self-upgrade
 
-<Callout type="info">
-  此页面尚未完成翻译，以下为英文原文。欢迎贡献翻译。
-</Callout>
+把 hams 自己升级到最新版。这条命令会自动识别你当初是怎么装的 hams，走对应的升级通道。
 
-Upgrade the hams binary to the latest release. Downloads the appropriate binary
-for your platform from GitHub Releases.
-
-## Usage
+## 用法
 
 ```bash
 hams self-upgrade [flags]
 ```
 
-## Examples
+## 场景示例
 
 ```bash
-# Upgrade to the latest version
+# 直接升到最新
 hams self-upgrade
 
-# Check current version before upgrading
+# 升之前先看看当前版本
 hams --version
+# hams v0.1.0 (commit: abc1234, built: 2026-04-12)
+
+# 只看有没有新版本，不真升
+hams self-upgrade --check
+
+# 强制重装当前版本（当心二进制损坏时有用）
+hams self-upgrade --force
 ```
 
-<Callout type="info">
-  Full documentation coming soon.
+## hams 怎么知道该怎么升
+
+hams 安装的时候会记一条 channel 标记（在 `~/.local/share/hams/install-channel`），
+写明你是走哪个渠道装的。`self-upgrade` 就是照着这个标记决定怎么升：
+
+| 安装方式 | 升级动作 |
+|----------|----------|
+| `curl | bash` 安装脚本 | 从 GitHub Releases 下最新二进制，替换 `/usr/local/bin/hams` |
+| Homebrew tap | 跑 `brew upgrade hams` |
+| GitHub Releases 手动下载 | 提示你手动更新（hams 不敢动它不管的二进制） |
+
+## 升级过程会做什么
+
+1. 查一下 GitHub Releases 的最新 tag，跟当前版本比对
+2. 如果已经是最新，就此打住
+3. 下载对应平台的二进制到临时目录，校验 checksum
+4. 把旧的二进制改名备份（`hams.old`），新的换上
+5. 跑一下 `hams --version` 确认新版本能跑，失败就自动回滚
+
+整个过程原子性强，中途失败也不会让你变成"hams 装了一半"的状态。
+
+## 自动升级
+
+暂时没做定时自动升级 —— hams 是你本机的管家，什么时候升级你自己定。
+如果想自动化，往 crontab 或 launchd 里塞一条 `hams self-upgrade` 就行。
+
+<Callout type="warning">
+  正在跑 `hams apply` 的时候**不要**同时 `self-upgrade`。hams 有全局锁，会直接报 `LOCK_CONFLICT` 拒绝，
+  但万一绕过了锁可能把自己玩坏。等当前任务跑完再升。
 </Callout>

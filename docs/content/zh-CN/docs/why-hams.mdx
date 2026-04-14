@@ -1,85 +1,80 @@
-# 为什么选择 hams？
+# 为什么要有 hams
 
-**hams**（全称 *hamster*，仓鼠）是一款面向 macOS 和 Linux 工作站的声明式 IaC 环境管理工具。
-就像仓鼠为过冬囤积食物一样，hams 帮你囤积环境配置 -- 软件包、系统设置、dotfiles、git 仓库 --
-安全保存，在任何新机器上一条命令即可恢复。
+**hams**（名字来自 *hamster*，仓鼠）是一个面向 macOS 和 Linux 工作站的声明式环境管理工具。
+打个比方：仓鼠会把过冬要吃的食物塞进颊囊里囤着，hams 帮你把软件包、系统设置、dotfiles、git 仓库这些
+环境配置也塞进 YAML 文件里囤着 —— 换新机器那天，一条命令全都回来。
 
-## 问题所在
+## 这事儿的痛点在哪
 
-管理一台开发工作站涉及数月甚至数年间做出的数百个决定：
+一台干活用的开发机，是几个月甚至几年里成百上千个小决定攒出来的：
 
-- `brew install ripgrep bat fd delta`，因为你读了一篇博客
-- `npm install -g @anthropic-ai/claude-code`，因为同事给你演示了
-- `defaults write NSGlobalDomain AppleShowAllExtensions -bool true`，因为 Finder 隐藏了 `.md` 文件
-- `git config --global user.email "me@example.com"`，每台新机器都要配一遍
-- VS Code 扩展、App Store 购买、shell 配置、符号链接……
+- 看了篇博客，顺手 `brew install ripgrep bat fd delta`
+- 同事给你演示了某个工具，`npm install -g @anthropic-ai/claude-code`
+- Finder 默认藏 `.md` 扩展名忍了一周，`defaults write NSGlobalDomain AppleShowAllExtensions -bool true`
+- 每台新机器都得再配一次 `git config --global user.email "me@example.com"`
+- VS Code 扩展、App Store 买过的应用、shell 配置、各种符号链接……
 
-大多数开发者用一个 `setup.sh` 脚本来管理这些，脚本随着时间有机增长，最终变成一个 200 行的 bash 文件，
-没有幂等性，没有状态追踪，没有 TUI 反馈，也没有重试逻辑。
+大多数人处理这些的方式是一个 `setup.sh`，从几十行慢慢长到两百行，没幂等、没状态追踪、
+跑一半失败了不知道从哪续、新机器上跑完也不知道到底成功装了啥。
 
-**hams 就是为了替代那个脚本而生的。**
+**hams 就是来替掉那个脚本的。**
 
-## hams 与同类工具对比
+## 跟同类工具比一下
 
-| 工具 | 功能 | 为什么还不够 |
-|------|------|-------------|
-| **NixOS / nix-darwin** | 通过 Nix 表达式实现完全声明式的操作系统管理 | 太严格 -- 强制使用 Nix 生态，不能 `brew install`，学习曲线陡峭，密封构建会破坏很多 macOS 工具 |
-| **Terraform / Pulumi** | 声明式基础设施即代码 | 面向云端，不适合主机级别；需要先编写 HCL/代码才能安装；没有"记录我刚做了什么"的概念 |
-| **Ansible** | 基于 Playbook 的配置管理 | 先写 Playbook 的工作流；没有自动记录；每次重跑都要检查所有内容，没有状态文件来跳过未变更的资源 |
-| **chezmoi** | 带模板功能的 dotfile 管理器 | 只能处理文件 -- 不能管理软件包、`defaults write`、git config、App Store 应用 |
-| **brew bundle (Brewfile)** | 声明式 Homebrew 安装 | 仅限 Homebrew；没有状态追踪；没有保留注释的 YAML；没有钩子；不支持跨 provider |
-| **hams** | 包装任意包管理器，自动记录安装，在新机器上重放 | -- |
+| 工具 | 它能做什么 | 为什么还差点意思 |
+|------|-----------|----------------|
+| **NixOS / nix-darwin** | 用 Nix 表达式管整台机器，彻底声明式 | 太严格，必须全盘 Nix 化，不让你 `brew install`，学习曲线陡，sealed build 对很多 macOS 工具不友好 |
+| **Terraform / Pulumi** | 基础设施即代码 | 面向云资源，不是本机工具；得先写 HCL 或代码才能装东西；没有"记下我刚做了什么"这个动作 |
+| **Ansible** | Playbook 式的配置管理 | 先写 playbook 再跑，工作流反过来了；不能自动记录；每次都得重新探测所有任务，没有状态文件跳过没变化的资源 |
+| **chezmoi** | dotfile 管理，带模板 | 只管文件 —— 软件包、`defaults write`、git config、App Store 应用一概管不了 |
+| **brew bundle（Brewfile）** | 声明式跑 Homebrew | 只管 Homebrew；没状态追踪；YAML 注释不保留；没钩子；跨不了 provider |
+| **hams** | 包装你已经在用的包管理器，边装边记，新机器重放 | — |
 
-## hams 与 Ansible 的核心区别
+## 跟 Ansible 到底差在哪
 
-hams 和 Ansible 表面上相似（都运行幂等任务），但在三个关键方面不同：
+hams 和 Ansible 表面看都能"幂等执行任务"，但有三处关键不一样：
 
-1. **CLI 优先自动记录** -- `hams brew install git` 同时完成安装*和*记录。使用 Ansible 你需要先写一个 Playbook，
-   然后运行它。使用 hams 你先安装，声明会自动生成。
+1. **CLI 优先、自动记录** —— `hams brew install git` 同时完成了"装"和"记"。用 Ansible 你得先写个 playbook 再跑；
+用 hams，你先装，声明自动落地。
 
-2. **显式状态文件** -- hams 维护一个按机器划分的 `.state/<machine-id>/` 目录，精确追踪安装了什么以及何时安装的。
-   下次运行 `hams apply` 时，它会比对期望状态（Hamsfile）和观测状态（`.state/`），只对差异部分执行操作。
-   Ansible 每次运行都重新探测每个任务。
+2. **显式状态文件** —— hams 给每台机器维护一个 `.state/<machine-id>/` 目录，清楚记着装了啥、什么时候装的。
+下次 `apply` 就拿期望状态（Hamsfile）和实际状态（`.state/`）对比，只动有差异的部分。Ansible 每次都得把所有任务重探一遍。
 
-3. **幂等性是显式的** -- 对于脚本类资源（bash、defaults、duti），hams 要求提供一个 `check:` 命令来证明资源处于期望状态。
-   Ansible 模块的幂等性是隐式的，且因模块质量而异。
+3. **幂等性明确** —— 对于 bash、defaults、duti 这类脚本类资源，hams 要求你明写一条 `check:` 命令来证明"这事儿已经做完了"。
+Ansible 的幂等性藏在每个模块里，质量参差不齐。
 
 ## hams 不是什么
 
-- **不是 Docker 或 CI 的替代品。** hams 配置的是你的*宿主*开发环境，而不是临时容器。
-- **不是 NixOS 级别的隔离。** hams 调用真实的包管理器（`brew`、`apt`、`pnpm`），在你的真实环境中运行。
-  没有沙箱，没有密封构建，没有回滚保证。
-- **不是项目级别的工具。** hams 是主机级别的，管理的是*你的机器*，而不是项目的依赖。
-  项目依赖请使用 `package.json` / `go.mod` / `Cargo.toml`。
-- **不是 dotfile 管理器。** hams 可以通过 `file` provider 管理 dotfiles，但这不是它的主要功能。
-  如果你只需要管理 dotfiles，请使用 chezmoi 或 GNU Stow。
+- **不是 Docker 或 CI 的替代品。** hams 管的是你的**主机**开发环境，不是临时容器。
+- **不是 NixOS 那种严格隔离。** hams 直接调真实的 `brew`、`apt`、`pnpm`，在你真实的环境里动手，没有沙盒、没有 sealed build、没有万无一失的回滚。
+- **不是项目级工具。** hams 管的是**你的机器**，不是项目的依赖。项目依赖用 `package.json` / `go.mod` / `Cargo.toml`。
+- **不是 dotfile 管理器。** hams 可以通过 `file` provider 管 dotfiles，但不是它的主场。如果只想管 dotfiles，chezmoi 或 GNU Stow 更合适。
 
-## 名字的由来
+## 名字是怎么来的
 
-**hams** 是 **hamster**（仓鼠）的缩写。仓鼠以在颊囊中囤积食物而闻名 -- 尽可能多地塞进去，
-以便安全保存和日后取用。这正是这个工具所做的事情：它将你的环境配置囤积到 YAML 文件（"Hamsfiles"）中，
-让你可以在新机器上用一条命令恢复一切。
+**hams** 就是 **hamster**（仓鼠）的缩写。仓鼠的颊囊能塞很多食物，藏着过冬慢慢吃 ——
+这工具做的事情一模一样：把环境配置塞进 YAML 文件（叫它们 "Hamsfile"），新机器上一条命令全掏出来。
 
-`🐹` emoji 是官方吉祥物。
+`🐹` 是官方吉祥物。
 
-## 使用 hams 的日常
+## 日常用起来是什么样
 
 ```bash
-# 你发现了一个很棒的 CLI 工具。安装并自动记录它。
+# 发现了个好用的 CLI，装上，顺手记下来
 hams brew install htop
 
-# 三个月后，开箱新笔记本：
+# 三个月后，新笔记本开箱：
 hams apply --from-repo=zthxxx/hams-store
-# ... hams 克隆你的 store，提示选择 profile tag，安装所有内容
+# hams 克隆 store、问你 profile tag、挨个装回来
 
-# 你想看看有哪些被管理的内容：
+# 好奇自己管了些啥
 hams list
 
-# 有些东西是在 hams 外面手动安装的。同步状态：
+# 手动在 hams 外面装过别的，想让状态跟现实对齐
 hams refresh
 ```
 
-你的 Hamsfile 长这样 -- 可手动编辑、保留注释的 YAML：
+Hamsfile 就是这样的 YAML —— 可以手动编辑，注释也不会被吃掉：
 
 ```yaml
 # macOS/Homebrew.hams.yaml
@@ -87,7 +82,7 @@ schema_version: 1
 provider: Homebrew
 
 groups:
-  - tag: dev-tools  # Essential development tools
+  - tag: dev-tools  # 开发基础工具
     items:
       - app: git
         intro: Distributed version control system.
@@ -104,4 +99,4 @@ groups:
         intro: Multimedia framework for audio/video processing.
 ```
 
-准备好了吗？前往[快速开始](./quickstart)。
+心动了？看看[快速开始](./quickstart)就能跑起来。

@@ -2,8 +2,8 @@ import { Callout } from 'nextra/components'
 
 # hams self-upgrade
 
-Upgrade the hams binary to the latest release. Downloads the appropriate binary
-for your platform from GitHub Releases.
+Upgrade hams to the latest release. The command figures out how you originally installed hams and
+uses the right upgrade path automatically.
 
 ## Usage
 
@@ -14,13 +14,48 @@ hams self-upgrade [flags]
 ## Examples
 
 ```bash
-# Upgrade to the latest version
+# Straight upgrade
 hams self-upgrade
 
-# Check current version before upgrading
+# Peek at the current version first
 hams --version
+# hams v0.1.0 (commit: abc1234, built: 2026-04-12)
+
+# Check if an upgrade is available, without actually upgrading
+hams self-upgrade --check
+
+# Force a reinstall of the current version (handy if the binary got corrupted)
+hams self-upgrade --force
 ```
 
-<Callout type="info">
-  Full documentation coming soon.
+## How hams knows what to do
+
+At install time, hams writes a channel marker to `~/.local/share/hams/install-channel` that records
+how you got here. `self-upgrade` reads that marker and chooses accordingly:
+
+| Install method | What self-upgrade does |
+|----------------|------------------------|
+| `curl | bash` script | Download the latest binary from GitHub Releases, replace `/usr/local/bin/hams` |
+| Homebrew tap | Shell out to `brew upgrade hams` |
+| Manual download from Releases | Print instructions — hams doesn't overwrite a binary it didn't manage |
+
+## What happens during an upgrade
+
+1. Check the latest tag from GitHub Releases, compare to the current version
+2. Already on the latest? Stop here
+3. Download the matching binary to a temp location, verify the checksum
+4. Rename the old binary to `hams.old`, move the new one into place
+5. Run `hams --version` as a sanity check. If anything goes wrong, roll back automatically
+
+The process is deliberately atomic — a mid-flight failure won't leave you with a half-installed hams.
+
+## No auto-updates
+
+There's no built-in scheduled update. hams is your machine's personal assistant; it won't upgrade
+itself behind your back. If you want automation, drop `hams self-upgrade` into cron or launchd.
+
+<Callout type="warning">
+  Don't run `self-upgrade` while `hams apply` is in progress. The global lock will refuse with
+  `LOCK_CONFLICT`, but if something bypassed the lock you could leave yourself in a bad state.
+  Let the current run finish first.
 </Callout>

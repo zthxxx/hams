@@ -1,85 +1,80 @@
 # Why hams?
 
-**hams** (short for *hamster*) is a declarative IaC environment management tool for macOS and Linux workstations.
-Like a hamster hoarding supplies for winter, hams hoards your environment configurations — packages, settings,
-dotfiles, git repos — for safekeeping and one-command restoration on any new machine.
+**hams** (short for *hamster*) is a declarative environment manager for macOS and Linux workstations.
+Picture a hamster cramming food into its cheek pouches to save for winter — hams does that for your
+packages, system settings, dotfiles, and git repos, so when a new machine lands in your lap, one
+command brings everything back.
 
-## The Problem
+## The problem it's trying to solve
 
-Managing a developer workstation involves hundreds of decisions made over months or years:
+A working dev machine is the result of hundreds of little decisions spread over months or years:
 
-- `brew install ripgrep bat fd delta` because you read a blog post
-- `npm install -g @anthropic-ai/claude-code` because a colleague showed you
-- `defaults write NSGlobalDomain AppleShowAllExtensions -bool true` because Finder was hiding `.md` files
-- `git config --global user.email "me@example.com"` on every new machine
-- VS Code extensions, App Store purchases, shell configuration, symlinks...
+- `brew install ripgrep bat fd delta` — because you read a good blog post
+- `npm install -g @anthropic-ai/claude-code` — because a coworker showed it to you
+- `defaults write NSGlobalDomain AppleShowAllExtensions -bool true` — because Finder was hiding `.md` files and you got tired of it
+- `git config --global user.email "me@example.com"` — on every new machine, every time
+- VS Code extensions, App Store purchases, shell configs, symlinks you can't remember setting up...
 
-Most developers manage this with a `setup.sh` script that grows organically into an unmaintainable
-200-line bash file with no idempotency, no state tracking, no TUI feedback, and no retry logic.
+Most people manage this with a `setup.sh` that grows from 30 lines to 200, loses idempotency
+somewhere along the way, has no state tracking, and breaks silently when one `curl | bash` changes
+its URL. You run it on a new machine, half of it works, and you spend an afternoon figuring out why.
 
-**hams exists to replace that script.**
+**hams is what you'd build to replace that script, if you had the time.**
 
-## How hams Compares
+## How it stacks up
 
-| Tool | What it does | Why it's not enough |
+| Tool | What it does | Where it falls short |
 |------|-------------|---------------------|
-| **NixOS / nix-darwin** | Fully declarative OS management via Nix expressions | Too strict — forces Nix ecosystem, no `brew install`, steep learning curve, hermetic builds break many macOS tools |
-| **Terraform / Pulumi** | Declarative infrastructure as code | Cloud-first, not host-level; requires writing HCL/code *before* installing; no concept of "record what I just did" |
-| **Ansible** | Playbook-based configuration management | Write-playbook-first workflow; no auto-record; re-runs all checks every time with no state file to skip unchanged resources |
-| **chezmoi** | Dotfile manager with templating | Handles files only — not packages, not `defaults write`, not git config, not App Store apps |
-| **brew bundle (Brewfile)** | Declarative Homebrew installs | Homebrew only; no state tracking; no comment-preserving YAML; no hooks; no cross-provider support |
-| **hams** | Wraps any package manager, auto-records installations, replays on new machines | — |
+| **NixOS / nix-darwin** | Whole-OS declarative management via Nix expressions | All-or-nothing. You can't `brew install`. Learning curve is steep. Hermetic builds break a lot of real-world macOS tools |
+| **Terraform / Pulumi** | Declarative infra-as-code | Built for cloud, not your laptop. Write HCL *before* installing anything. No "record what I just did" workflow |
+| **Ansible** | Playbook-first config management | Backwards flow — write the playbook, then run it. No auto-record. Re-probes everything every run; no state file to skip what's already done |
+| **chezmoi** | Dotfile manager with templating | Files only. Packages, `defaults write`, git config, App Store — all out of scope |
+| **brew bundle (Brewfile)** | Declarative Homebrew | Homebrew only. No state tracking. Loses your YAML comments. No hooks. One tool, one universe |
+| **hams** | Wraps whatever package manager you already use, records as you install, replays on a new machine | — |
 
-## The hams Difference vs Ansible
+## Not just "Ansible with YAML"
 
-hams and Ansible are superficially similar (both run idempotent tasks), but differ in three key ways:
+hams and Ansible both chase idempotency, but the shape of the workflow is different in three important ways:
 
-1. **CLI-first auto-record** — `hams brew install git` installs *and* records. With Ansible you write a playbook first,
-   then run it. With hams you install first, and the declaration is automatically generated.
+1. **CLI-first, record as you go.** `hams brew install git` installs *and* writes the declaration. With Ansible you write a playbook first, then run it. With hams you just work the way you normally work, and the declaration appears on its own.
 
-2. **Explicit state file** — hams maintains a per-machine `.state/<machine-id>/` directory that tracks exactly what
-   was installed and when. On the next `hams apply`, it compares desired state (Hamsfile) against observed state (`.state/`)
-   and only acts on the diff. Ansible re-probes every task every run.
+2. **State is a real file on disk.** hams keeps a per-machine `.state/<machine-id>/` directory that knows exactly what's installed and when. The next `hams apply` diffs desired (Hamsfile) against observed (`.state/`) and only touches what changed. Ansible has to re-probe every task every time.
 
-3. **Idempotency is explicit** — For script-type resources (bash, defaults, duti), hams requires a `check:` command
-   that proves the resource is in the desired state. Ansible module idempotency is implicit and varies by module quality.
+3. **Idempotency is something you can read.** For script-type resources (bash, defaults, duti), hams makes you write a `check:` command that proves the thing is done. Ansible's idempotency hides inside each module and varies wildly by module quality. With hams, if you can't tell me how to detect "done," you can't express the resource — and that's a feature, not a limitation.
 
-## What hams is NOT
+## What hams is not
 
-- **Not a Docker or CI replacement.** hams configures your *host* developer environment, not ephemeral containers.
-- **Not NixOS-level isolation.** hams calls real package managers (`brew`, `apt`, `pnpm`) in your real environment.
-  No sandboxing, no hermetic builds, no rollback guarantees.
-- **Not a project-level tool.** hams is host-level. It manages *your machine*, not a project's dependencies.
-  Use `package.json` / `go.mod` / `Cargo.toml` for that.
-- **Not a dotfile manager.** hams can manage dotfiles via the `file` provider, but it is not its primary focus.
-  Use chezmoi or GNU Stow if you only need dotfile management.
+- **Not a Docker or CI substitute.** hams sets up the host you actually sit in front of, not throwaway containers.
+- **Not NixOS-grade isolation.** hams calls real `brew`, real `apt`, real `pnpm`. No sandbox, no hermetic builds, no perfect rollbacks. If Homebrew breaks, hams breaks.
+- **Not project-scoped.** hams manages *your machine*. Project dependencies belong in `package.json` / `go.mod` / `Cargo.toml`.
+- **Not a dotfile manager** (though it can do it). There's a `file` provider, but if dotfiles are your only need, chezmoi or GNU Stow will be happier tools.
 
-## The Name
+## About the name
 
-**hams** is short for **hamster**. Hamsters are famous for hoarding food in their cheek pouches — stuffing as much
-as possible for safekeeping and retrieval later. That's exactly what this tool does: it hoards your environment
-configurations into YAML files ("Hamsfiles") so you can restore everything on a new machine with a single command.
+**hams** is short for **hamster**. Hamsters are famous for hoarding food in their cheek pouches —
+stuffing as much in as they can, saving it for later. That's the mental model: hams hoards your
+environment into YAML files (called *Hamsfiles*) so you can pull it all back out on a new machine.
 
-The `🐹` emoji is the official mascot.
+The `🐹` is the official mascot. It's not going anywhere.
 
-## A Typical Day with hams
+## What it looks like in practice
 
 ```bash
-# You discover a great CLI tool. Install it and auto-record it.
+# You discover a cool CLI. Install it, and hams writes it down.
 hams brew install htop
 
-# Three months later, unboxing a new laptop:
+# Three months later, unboxing a new laptop
 hams apply --from-repo=zthxxx/hams-store
-# ... hams clones your store, prompts for profile tag, installs everything
+# hams clones your store, asks for a profile tag, installs the lot
 
-# You want to see what's managed:
+# Curious what's managed?
 hams list
 
-# Something was installed manually outside hams. Sync state:
+# You installed something manually, outside hams. Re-sync state.
 hams refresh
 ```
 
-Your Hamsfile looks like this — hand-editable, comment-preserving YAML:
+Your Hamsfile looks like this — hand-editable YAML, comments preserved:
 
 ```yaml
 # macOS/Homebrew.hams.yaml
@@ -87,7 +82,7 @@ schema_version: 1
 provider: Homebrew
 
 groups:
-  - tag: dev-tools  # Essential development tools
+  - tag: dev-tools  # the essentials
     items:
       - app: git
         intro: Distributed version control system.
@@ -104,4 +99,4 @@ groups:
         intro: Multimedia framework for audio/video processing.
 ```
 
-Ready to get started? Head to [Quickstart](./quickstart).
+Ready to try it? Head over to the [Quickstart](./quickstart).

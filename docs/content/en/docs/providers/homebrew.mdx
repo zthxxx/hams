@@ -2,29 +2,90 @@ import { Callout } from 'nextra/components'
 
 # Homebrew Provider
 
-Wraps [Homebrew](https://brew.sh/) (`brew`) to manage formulae and casks on macOS and Linux.
+Wraps [Homebrew](https://brew.sh/) — the `brew` command — to manage formulae and casks on macOS
+and Linux. For most macOS users, this is the first provider you'll actually touch.
 
 **Platforms:** macOS, Linux
 
 ## Usage
 
 ```bash
-hams brew install <formula>
-hams brew install --cask <cask>
-hams brew remove <formula>
+# Install a formula (CLI tool)
+hams brew install ripgrep
+
+# Install a cask (GUI app)
+hams brew install --cask visual-studio-code
+
+# Remove
+hams brew remove htop
+
+# See what hams is managing
 hams brew list
+
+# Attach tags and a one-liner to an already-recorded package
+hams brew enrich bat --hams-tag=cli --hams-intro="A cat clone with syntax highlighting"
 ```
 
-## Hamsfile Example
+Every `install` actually runs `brew install` first, and on success writes the entry into
+`<profile>/Homebrew.hams.yaml`. Removal mirrors that: `brew uninstall` first, then the entry
+disappears from the YAML.
+
+## What a Hamsfile looks like
 
 ```yaml
-- app: ripgrep
-  intro: Fast recursive grep alternative.
-- app: bat
-  tags: [cli]
-  intro: A cat clone with syntax highlighting.
+# macOS/Homebrew.hams.yaml
+schema_version: 1
+provider: Homebrew
+
+groups:
+  - tag: dev-tools
+    items:
+      - app: ripgrep
+        intro: Fast recursive grep alternative.
+      - app: bat
+        tags: [cli]
+        intro: A cat clone with syntax highlighting.
+      - app: ffmpeg
+        intro: Multimedia framework for audio/video processing.
+
+  - tag: apps
+    items:
+      - app: visual-studio-code
+        cask: true
+        intro: Microsoft's code editor.
 ```
 
-<Callout type="info">
-  Full documentation coming soon.
+- `app` is the name you'd type after `brew install`
+- `cask: true` tells hams it's a cask, not a formula
+- `tags` and `intro` are for humans. `brew` couldn't care less
+- `groups[].tag` is your own grouping label — name it whatever makes sense
+
+## How state is probed
+
+During apply, the Homebrew provider runs `brew list --formula` and `brew list --cask` and compares
+the machine's actual installs against the Hamsfile:
+
+- In the Hamsfile, not on the machine → install it
+- On the machine, not in the Hamsfile → hams leaves it alone (it only manages what you declared)
+- In both → skip, and record the installed version to `.state/`
+
+That second point matters: hams **won't** uninstall things you `brew install`ed outside of hams.
+Not unless you explicitly added and then removed them from a Hamsfile.
+
+## Importing an existing machine's brew state
+
+Moving your current brew setup into hams? Two options:
+
+```bash
+# Option 1: have hams scan what's installed and write it into the Hamsfile
+hams brew list --import-existing
+
+# Option 2: grab the list of top-level packages and move them in by hand
+brew leaves > /tmp/brew-list.txt
+```
+
+<Callout type="tip">
+  Spend the 10 seconds to write an `intro` for each formula. Three months from now, when you're
+  looking at your own Hamsfile and wondering "why did I install this?", you'll be grateful.
+  `hams brew enrich <app>` adds one retroactively.
 </Callout>

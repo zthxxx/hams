@@ -2,32 +2,35 @@ import { Callout } from 'nextra/components'
 
 # CLI Reference
 
-hams commands follow a consistent routing pattern:
+Every hams command fits the same shape:
 
 ```
 hams [global-flags] <command> [args] [--hams-flags] [-- <passthrough>]
 ```
 
-- **Global flags** must appear between `hams` and the command name.
-- **`--hams-` flags** are provider-scoped flags intercepted by hams before the underlying tool sees them.
-- **`--` separator** forces all subsequent arguments to be forwarded verbatim to the wrapped tool.
+Three rules cover most confusion:
 
-## Command Categories
+- **Global flags** sit between `hams` and the command name. Put them anywhere else and they stop being global.
+- **`--hams-` flags** belong to hams. They never reach the underlying tool.
+- **Anything after `--`** is handed straight to the underlying tool, untouched.
 
-### Core Commands
+## Commands by category
 
-| Command | Description |
+### Core commands
+
+| Command | What it does |
 |---------|-------------|
-| [`hams apply`](./apply) | Apply all Hamsfiles to the current machine (install/remove/update) |
-| [`hams refresh`](./refresh) | Probe installed state and update state files |
-| [`hams list`](./list) | List all resources managed by hams |
-| [`hams config`](./config) | Read and write hams configuration |
-| [`hams store`](./store) | Manage the store repository |
+| [`hams apply`](./apply) | Reconcile your machine with the Hamsfiles (install/remove/update) |
+| [`hams refresh`](./refresh) | Re-scan machine reality and update `.state/`. Doesn't touch anything else |
+| [`hams list`](./list) | List everything hams is managing |
+| [`hams config`](./config) | Read/write hams's own config |
+| [`hams store`](./store) | Manage the store repo (init, clone, push, pull) |
 | [`hams self-upgrade`](./self-upgrade) | Upgrade the hams binary |
 
-### Provider Commands
+### Provider commands
 
-Provider commands follow the pattern `hams <provider> <verb> [args]`:
+Provider commands all follow `hams <provider> <verb> [args]`. The verbs map to whatever the
+underlying tool exposes:
 
 ```bash
 hams brew install bat
@@ -38,42 +41,42 @@ hams brew list
 hams brew enrich bat
 ```
 
-See [Provider Commands](./provider-commands) for the full verb reference, and the
-[Providers](../providers) chapter for provider-specific documentation.
+The verb rulebook lives in [Provider Commands](./provider-commands). Per-provider specifics live
+in the [Providers](../providers) chapter.
 
-## Global Flags
+## Global flags
 
-| Flag | Type | Default | Description |
-|------|------|---------|-------------|
-| `--debug` | bool | `false` | Enable debug-level logging |
-| `--dry-run` | bool | `false` | Show planned actions without executing |
-| `--json` | bool | `false` | Output in JSON format for machine/AI parsing |
-| `--no-color` | bool | `false` | Disable ANSI color codes |
-| `--config=<path>` | string | `~/.config/hams/hams.config.yaml` | Override config file path |
-| `--store=<path>` | string | from config | Override store directory path |
-| `--profile=<tag>` | string | from config | Override active profile tag |
-| `--help` | bool | `false` | Display help text |
-| `--version` | bool | `false` | Display version and build info |
+| Flag | Type | Default | What it does |
+|------|------|---------|--------------|
+| `--debug` | bool | `false` | Turn on debug logging (great for figuring out what a provider is actually doing) |
+| `--dry-run` | bool | `false` | Print the plan, don't do the work |
+| `--json` | bool | `false` | Machine-readable output, for scripts and AI agents |
+| `--no-color` | bool | `false` | Kill ANSI colors (for file redirects, plain terminals) |
+| `--config=<path>` | string | `~/.config/hams/hams.config.yaml` | Use a different config file |
+| `--store=<path>` | string | from config | Override the store directory |
+| `--profile=<tag>` | string | from config | Switch profile for this run |
+| `--help` | bool | `false` | Print help |
+| `--version` | bool | `false` | Print version info |
 
-See [Global Flags](./global-flags) for detailed descriptions and examples.
+Full details in [Global Flags](./global-flags).
 
-## Exit Codes
+## Exit codes
 
 | Code | Meaning |
 |------|---------|
 | `0` | Success |
-| `1` | General error |
-| `2` | Usage / argument error (invalid flags, missing args) |
-| `3` | Lock conflict (another hams process is running) |
-| `4` | Partial failure (some resources succeeded, some failed) |
-| `10` | Sudo required but not granted or timed out |
+| `1` | Generic error |
+| `2` | Bad usage (wrong flags, missing args) |
+| `3` | Lock conflict — another hams process is already running |
+| `4` | Partial failure — some resources made it, some didn't |
+| `10` | Needed sudo, didn't get it |
 | `11–19` | Provider-specific errors |
 | `126` | Command not executable (POSIX) |
 | `127` | Command not found (POSIX) |
 
-## AI-Agent Friendly Errors
+## Errors that scripts and agents can read
 
-All error output is structured for machine parsing. In text mode:
+Every error is structured output by design. Plain mode looks like this:
 
 ```
 ERROR LOCK_CONFLICT: Another hams session is running.
@@ -97,25 +100,23 @@ With `--json`:
 ```
 
 <Callout type="info">
-  The `--hams-` prefix convention lets you pass hams-specific flags alongside provider passthrough arguments.
-  For example, `hams brew install bat --hams-tag=cli` records `bat` under the `cli` tag without forwarding
-  `--hams-tag=cli` to `brew`.
+  The `--hams-` prefix is how you pass hams-specific flags in the same command as flags for the
+  wrapped tool. Example: `hams brew install bat --hams-tag=cli` records `bat` tagged `cli`, while
+  `brew` has no idea that flag ever existed.
 </Callout>
 
-## The `--hams-` Flag Convention
+## `--hams-` flags at a glance
 
-Provider-scoped hams flags use the `--hams-` prefix so they cannot collide with the wrapped tool's own flags:
-
-| Flag | Description |
-|------|-------------|
-| `--hams-tag=<tags>` | Comma-separated tags to assign to the recorded resource |
-| `--hams-intro=<text>` | One-line description to store in the Hamsfile |
-| `--hams-local` | Write to `<Provider>.hams.local.yaml` instead of the main Hamsfile |
+| Flag | What it does |
+|------|--------------|
+| `--hams-tag=<tags>` | Attach tags to the resource. Comma-separated |
+| `--hams-intro=<text>` | One-line description saved into the Hamsfile |
+| `--hams-local` | Write to `<Provider>.hams.local.yaml` (gitignored) instead of the main Hamsfile |
 
 ```bash
-# Install ripgrep, tag it as 'search,cli', and add a description
+# Install ripgrep tagged 'search,cli' with a description
 hams brew install ripgrep --hams-tag=search,cli --hams-intro="Fast recursive grep alternative"
 
-# Install a work-only tool into the local (non-committed) Hamsfile
+# Install a tool that's only for this machine, not the shared store
 hams brew install zoom --hams-local
 ```

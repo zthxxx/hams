@@ -2,9 +2,12 @@ import { Callout } from 'nextra/components'
 
 # hams apply
 
-Apply all Hamsfiles to the current machine. This command reads your declared resources,
-diffs them against the current machine state, and reconciles by installing, removing, or
-updating packages as needed.
+Make your machine match what your Hamsfile says. This is the workhorse command — whether you're
+bootstrapping a new machine or you just hand-edited a Hamsfile and want the change to land, apply
+is what does it.
+
+In three steps: read your Hamsfiles → diff against the current machine state → install, remove,
+or update whatever's different.
 
 ## Usage
 
@@ -12,34 +15,66 @@ updating packages as needed.
 hams apply [flags]
 ```
 
+No flags? It applies everything in the current store to this machine.
+
 ## Examples
 
 ```bash
-# Apply all Hamsfiles in the current store
+# The everyday case: apply everything in the current store
 hams apply
 
-# Apply from a remote store repository
+# Fresh machine: clone the store from GitHub and apply in one go
 hams apply --from-repo=zthxxx/hams-store
 
-# Dry-run to preview changes without executing
+# Not sure what's about to happen? Dry-run first
 hams apply --dry-run
 
-# Apply only specific providers
+# Only interested in Homebrew and pnpm right now
 hams apply --only=homebrew,pnpm
 
-# Apply all except certain providers
+# Run everything *except* Ansible (which tends to be the slow one)
 hams apply --except=ansible
 ```
 
 ## Flags
 
-| Flag | Type | Description |
-|------|------|-------------|
-| `--from-repo` | string | Clone and apply from a remote GitHub repo |
-| `--only` | string | Comma-separated list of providers to apply |
-| `--except` | string | Comma-separated list of providers to skip |
-| `--dry-run` | bool | Preview changes without executing |
+| Flag | Type | What it does |
+|------|------|--------------|
+| `--from-repo` | string | Clone the store from a remote GitHub repo and apply. Perfect for a new machine |
+| `--only` | string | Comma-separated providers to run. Everything else is skipped |
+| `--except` | string | Comma-separated providers to skip. Everything else runs |
+| `--dry-run` | bool | Print the plan, don't execute it |
 
-<Callout type="info">
-  Full documentation coming soon.
+## What actually happens
+
+Under the hood, an apply goes through these stages:
+
+1. **Acquire the lock.** A global lock prevents two apply runs from stepping on each other
+2. **Refresh.** For each provider, scan the machine and write the results to `.state/`
+3. **Compute the diff.** Compare the Hamsfile (desired) with `.state/` (actual). The result is the
+   list of things to install, remove, or change
+4. **Execute in priority order.** Providers run in the order defined by `provider_priority`. By
+   default `bash` goes first, which lets you bootstrap dependencies like Homebrew inside a bash step
+5. **Write state back.** Each resource's `.state/<machine-id>/<Provider>.state.yaml` entry updates
+   as soon as that resource finishes
+
+Ctrl+C in the middle? Fine. The next apply picks up where this one left off — finished resources
+aren't repeated.
+
+## About sudo
+
+If your profile includes a provider that needs elevated privileges (`apt` being the usual example),
+hams asks for your sudo password once at the start, then quietly keeps the ticket alive every 4
+minutes so you're never interrupted mid-apply.
+
+## When something fails
+
+A single failure doesn't tank the whole run. hams keeps going with the rest of the resources,
+then reports what failed at the end and exits with code `4` (partial failure). Full logs sit in
+`~/.local/share/hams/`, organised by month. Fix the cause and apply again — only the failed
+resources will retry.
+
+<Callout type="tip">
+  On a store you don't fully trust yet, always `--dry-run` first. Look at the plan, then run it
+  for real.
 </Callout>

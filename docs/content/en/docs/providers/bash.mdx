@@ -2,31 +2,110 @@ import { Callout } from 'nextra/components'
 
 # bash Provider
 
-Runs arbitrary shell scripts with idempotency checks. Each resource includes a `run:` command
-and a `check:` command. The check command determines whether the resource needs to be applied.
+The most flexible provider — let it run any shell script you want. When something doesn't fit any
+other provider (installing Homebrew itself, running a third-party installer script, writing an odd
+environment file), `bash` is the escape hatch.
+
+Flexibility comes with one responsibility: bash can't figure out on its own whether "this thing
+has already been done." So you have to write a `check:` command. With a good check, `apply` stays
+idempotent no matter how many times you run it.
 
 **Platforms:** macOS, Linux
 
 ## Usage
 
 ```bash
-hams bash run <urn>
+# Run the step associated with a URN
+hams bash run "urn:hams:bash:install-homebrew"
+
+# See what's managed
+hams bash list
 ```
 
-## Hamsfile Example
+There's no `install` or `remove` here — every entry is a declarative "this thing needs to be done."
+
+## Hamsfile example
 
 ```yaml
-- urn: "urn:hams:bash:install-homebrew"
-  step: Install Homebrew
-  run: /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-  check: command -v brew
+# macOS/bash.hams.yaml
+schema_version: 1
+provider: bash
 
-- urn: "urn:hams:bash:git-rerere"
-  step: Enable git rerere
-  run: git config --global rerere.autoUpdate true
-  check: git config --global --get rerere.autoUpdate
+groups:
+  - tag: bootstrap
+    items:
+      - urn: "urn:hams:bash:install-homebrew"
+        step: Install Homebrew
+        run: /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+        check: command -v brew
+
+      - urn: "urn:hams:bash:install-pnpm"
+        step: Install pnpm
+        run: curl -fsSL https://get.pnpm.io/install.sh | sh -
+        check: command -v pnpm
+
+  - tag: config
+    items:
+      - urn: "urn:hams:bash:git-rerere"
+        step: Enable git rerere globally
+        run: git config --global rerere.autoUpdate true
+        check: git config --global --get rerere.autoUpdate
 ```
 
-<Callout type="info">
-  Full documentation coming soon.
+Fields:
+
+- `run` — the script. One line, or a YAML multi-line string (`run: |`)
+- `check` — the idempotency check. Exit 0 means "skip." Non-zero means "run it again"
+
+## Writing a check that won't let you down
+
+`check` is the soul of this provider. Get it right, and apply is a joy. Get it wrong, and you
+either reinstall things every time or miss installs that never happened.
+
+A few habits worth picking up:
+
+- **For command existence:** `command -v foo`. Not `which foo` — `which` behaves inconsistently across systems
+- **For file existence:** `test -f /path/to/file`
+- **For config values:** `git config --global --get some.key | grep -q "expected"`
+- **For environment variables:** `test -n "$FOO"`
+- **Don't let check have side effects.** It runs a lot. Imagine it running 100 times — still fine?
+
+**Anti-patterns:**
+
+```yaml
+# ❌ Always returns 0 — apply thinks it's done and never runs it
+check: "true"
+
+# ❌ Always returns non-zero — apply reruns it forever
+check: "false"
+
+# ❌ Depends on cwd, but hams's cwd might not be where you think
+check: test -f ./some-file
+```
+
+## The execution environment
+
+When hams runs `run`:
+
+- **shell** — `/bin/bash` by default. Change this globally in `hams.config.yaml` to `/bin/sh` or `/bin/zsh`
+- **cwd** — `$HOME`. Need a different directory? `cd` inside the script
+- **env** — inherits hams's own environment. For secrets, use the `env_from_keychain` field
+- **stdin** — closed. If your script needs input, use another provider or switch to a non-interactive mode (`-y` and friends)
+
+## When bash isn't the right tool
+
+bash is powerful, but it lacks the structured metadata the specialised providers bring. Default to
+something more specific when you can:
+
+- Installing a Homebrew formula? Use the Homebrew provider, don't write `brew install` in a bash step
+- Setting a git config key? Use git-config — it reads better than `git config --global`
+- Cloning a repo? That's git-clone
+
+Save bash for the things that truly have no better home: installing Homebrew itself, running a
+third-party installer, triggering one-off system initialisation.
+
+<Callout type="warning">
+  There's no "uninstall" for a bash resource — deleting a bash entry from the Hamsfile doesn't
+  reverse the script. If you need to undo something, do it manually, or add a separate bash entry
+  that performs the inverse operation.
 </Callout>

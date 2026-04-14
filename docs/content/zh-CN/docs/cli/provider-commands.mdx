@@ -2,61 +2,87 @@ import { Callout } from 'nextra/components'
 
 # Provider 命令
 
-<Callout type="info">
-  此页面尚未完成翻译，以下为英文原文。欢迎贡献翻译。
-</Callout>
+hams 里所有跟具体包管理器打交道的命令都走同一个路由模式：`hams <provider> <verb> [args]`。
+每个 provider 注册一组动词，背后映射到它包装的原生工具（`brew`、`pnpm`、`npm` 等）。
 
-Provider commands follow the pattern `hams <provider> <verb> [args]`. Each provider
-registers its own set of verbs that map to the underlying package manager's operations.
-
-## Routing Pattern
+## 路由模式
 
 ```bash
-hams <provider> <verb> [args] [--hams-flags] [-- <passthrough>]
+hams <provider> <verb> [args] [--hams-flags] [-- <透传参数>]
 ```
 
-## Common Verbs
+- `<provider>` 是 provider 名字（`brew`、`pnpm`、`apt`、`bash` 等）
+- `<verb>` 是这个 provider 支持的动词（见下文）
+- `[args]` 是动词需要的参数（包名、文件路径等）
+- `--hams-*` 是 hams 自己的 flag，不会传给底层工具
+- `--` 之后的所有东西原样扔给底层工具，hams 一个字都不动
 
-| Verb | Description | Example |
-|------|-------------|---------|
-| `install` / `add` | Install a package and record it in the Hamsfile | `hams brew install bat` |
-| `remove` / `uninstall` | Remove a package and delete it from the Hamsfile | `hams brew remove htop` |
-| `list` | List packages managed by this provider | `hams brew list` |
-| `enrich` | Add metadata (tags, intro) to an already-recorded package | `hams brew enrich bat` |
+## 常用动词
 
-## Examples
+| 动词 | 作用 | 例子 |
+|------|------|------|
+| `install` / `add` | 装一个包，并写进 Hamsfile | `hams brew install bat` |
+| `remove` / `uninstall` | 卸掉一个包，并从 Hamsfile 里删掉 | `hams brew remove htop` |
+| `list` | 列出这个 provider 管的所有包 | `hams brew list` |
+| `enrich` | 给已经记录的包补上 tag 和 intro 元信息 | `hams brew enrich bat` |
+
+不是所有 provider 都支持所有动词 —— 比如 `git-clone` 没有 `install`，它用 `add`；
+`bash` 没有 `install`，它用 `run`。具体见每个 provider 自己的文档。
+
+## 场景示例
 
 ```bash
-# Install via Homebrew
+# Homebrew：装 formula
 hams brew install bat
 
-# Install a global pnpm package
+# pnpm：全局装包
 hams pnpm add serve
 
-# Install a global npm package
+# npm：全局装包
 hams npm install --global prettier
 
-# Remove a Homebrew package
+# Homebrew：卸载
 hams brew remove htop
 
-# List Homebrew packages
+# Homebrew：查看被管的包
 hams brew list
 
-# Enrich a package with metadata
+# 补一下元信息：给 bat 加标签和说明
 hams brew enrich bat --hams-tag=cli --hams-intro="A cat clone with syntax highlighting"
 ```
 
-## The `--hams-` Flag Convention
+## `--hams-` 前缀的 flag
 
-Provider-scoped flags use the `--hams-` prefix to avoid colliding with the wrapped tool's flags:
+为了避免和底层工具的 flag 撞名，所有 hams 自己加的 flag 都带 `--hams-` 前缀。
+hams 拦下这些 flag，剩下的原样转发给 `brew`、`pnpm` 等。
 
-| Flag | Description |
-|------|-------------|
-| `--hams-tag=<tags>` | Comma-separated tags to assign to the recorded resource |
-| `--hams-intro=<text>` | One-line description to store in the Hamsfile |
-| `--hams-local` | Write to `<Provider>.hams.local.yaml` instead of the main Hamsfile |
+| Flag | 说明 |
+|------|------|
+| `--hams-tag=<tags>` | 给这条资源加标签（多个用逗号分隔） |
+| `--hams-intro=<text>` | 写进 Hamsfile 的一句话说明 |
+| `--hams-local` | 写到 `<Provider>.hams.local.yaml`（不跟 git）而不是主 Hamsfile |
+
+```bash
+# 装 ripgrep，打上 search,cli 的标签，带说明
+hams brew install ripgrep --hams-tag=search,cli --hams-intro="Fast recursive grep alternative"
+
+# 只给自己这台机器用、不想让同事看到的工具，走 local
+hams brew install zoom --hams-local
+```
+
+## 透传参数：`--` 的用法
+
+如果底层工具有个 flag 你想直接传过去、又不想让 hams 以为那是 hams 自己的参数，就用 `--` 隔一下。
+
+```bash
+# brew 的 --verbose 给 brew，不是给 hams
+hams brew install bat -- --verbose
+
+# pnpm 的 --save-dev 给 pnpm
+hams pnpm add typescript -- --save-dev
+```
 
 <Callout type="info">
-  Full documentation coming soon. See the [Providers](../providers) chapter for
-  provider-specific verb references.
+  想看单个 provider 支持哪些动词、有哪些 flag，直接跑 `hams <provider> --help`。
+  也可以去[ Providers 章节](../providers) 翻对应的 provider 文档。
 </Callout>

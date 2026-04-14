@@ -1,10 +1,12 @@
 # Schema Reference
 
-hams uses three types of YAML files. All files preserve comments across read/write cycles.
+hams reads and writes three kinds of YAML files. All of them round-trip through the parser with
+comments intact — which matters, because Hamsfiles tend to collect useful "why did I install this"
+notes over time.
 
-## Global Config
+## Global config
 
-Located at `~/.config/hams/hams.config.yaml`:
+Lives at `~/.config/hams/hams.config.yaml`:
 
 ```yaml
 profile_tag: macOS
@@ -20,19 +22,39 @@ provider_priority:
   - bash
 ```
 
+This file tells hams who this machine is, which profile to use, where the store lives, and the
+order in which providers run during apply.
+
 ## Hamsfile
 
-### Package Providers (Homebrew, pnpm, npm, etc.)
+Hamsfiles are split by provider, one file per provider. The general shape is: a header that names
+the schema and provider, and a `groups` section that holds resources organised under your own
+tags.
+
+### Package-style (Homebrew, pnpm, npm, and friends)
 
 ```yaml
-terminal-tool:
-  - app: lazygit
-    intro: Simple terminal UI for git commands
-  - app: htop
-    intro: Improved top (interactive process viewer)
+schema_version: 1
+provider: Homebrew
+
+groups:
+  - tag: terminal-tool
+    items:
+      - app: lazygit
+        intro: Simple terminal UI for git commands.
+      - app: htop
+        intro: Improved top (interactive process viewer).
 ```
 
-### KV Config Providers (defaults, git config)
+Field-by-field:
+
+- `app` — the package name, exactly as you'd type it in the native CLI
+- `intro` — a one-line reminder to your future self
+- `tags` — optional, for filtering and grouping
+
+### Key-value style (defaults, git-config)
+
+Each entry is a single setting:
 
 ```yaml
 configs:
@@ -46,19 +68,29 @@ configs:
     check: "defaults read com.apple.dock autohide"
 ```
 
-### Bash Provider
+- `urn` — hams's internal unique ID. Make it readable
+- `args` — whatever the provider needs (domain, key, value, type)
+- `preview-cmd` — what gets printed in a dry-run (optional)
+- `check` — the idempotency probe
+
+### Bash-style (bash, ansible)
+
+The core of this type is a `run`/`check` pair: `run` is what to do, `check` is how to know it's
+already done.
 
 ```yaml
 setup:
   - urn: "urn:hams:bash:init-zsh"
-    step: "Install ZSH theme"
+    step: Install ZSH theme
     run: "curl -sSL .../installer.sh | bash"
     check: "test -f ~/.oh-my-zsh/custom/themes/jovial.zsh-theme"
 ```
 
-## State File
+Check exits 0 and hams skips. Anything else and hams runs `run`.
 
-Located at `<store>/.state/<machine-id>/<Provider>.state.yaml`:
+## State file
+
+Lives at `<store>/.state/<machine-id>/<Provider>.state.yaml`:
 
 ```yaml
 schema_version: 1
@@ -71,3 +103,26 @@ resources:
     version: "3.3.0"
     install_at: "20260413T100000"
 ```
+
+State files capture **what's actually true on this machine right now**: is the resource installed,
+at what version, as of when. `.state/` is gitignored by default — it's a local fact, not something
+you share between machines.
+
+Key bits:
+
+- `last_apply_session` — timestamp of the most recent successful apply for this provider
+- `resources` — keyed by resource name. Each one tracks state (`ok` / `missing` / `outdated` /
+  `failed`), version, and install timestamp
+
+## File suffixes worth knowing
+
+| Suffix | Meaning |
+|--------|---------|
+| `.hams.yaml` | The main Hamsfile. Checked into git |
+| `.hams.local.yaml` | Machine-specific overrides. Gitignored by default. Good for secrets and personal tools |
+| `.state.yaml` | State file. Gitignored |
+| `hams.config.yaml` | Global / project-level config |
+| `hams.config.local.yaml` | Local overrides. Gitignored |
+
+If a provider has both `.hams.yaml` and `.hams.local.yaml`, hams merges them at apply time. The
+`local` entries won't leak to your store repo, but they'll still be installed on this machine.
