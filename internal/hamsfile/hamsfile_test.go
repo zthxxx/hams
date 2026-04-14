@@ -1,9 +1,11 @@
 package hamsfile
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"pgregory.net/rapid"
@@ -223,16 +225,89 @@ func TestAtomicWrite_NoTempFileOnSuccess(t *testing.T) {
 }
 
 // Property-based: round-trip preserves all app names.
+func TestSetPreviewCmd(t *testing.T) {
+	t.Parallel()
+	path := filepath.Join(t.TempDir(), "test.hams.yaml")
+	content := "config:\n  - urn: urn:hams:defaults:com.apple.dock.autohide\n    intro: dock autohide\n"
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	f, err := Read(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	f.SetPreviewCmd("urn:hams:defaults:com.apple.dock.autohide", "defaults write com.apple.dock autohide -bool true")
+	if writeErr := f.Write(); writeErr != nil {
+		t.Fatal(writeErr)
+	}
+
+	// Re-read and verify preview-cmd persisted.
+	f2, err := Read(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	data, _ := os.ReadFile(path) //nolint:errcheck // test
+	if !strings.Contains(string(data), "preview-cmd") {
+		t.Error("preview-cmd field not found in written file")
+	}
+	_ = f2 // f2 loaded successfully, field persists.
+}
+
+func TestProperty_PreviewCmdSurvivesRoundTrip(t *testing.T) {
+	baseDir := t.TempDir()
+	var counter atomic.Int64
+	rapid.Check(t, func(t *rapid.T) {
+		urnName := rapid.StringMatching(`urn:hams:defaults:[a-z][a-z0-9\.]{3,20}`).Draw(t, "urn")
+		previewCmd := rapid.StringMatching(`defaults write [a-z\.\- ]{5,30}`).Draw(t, "cmd")
+
+		dir := filepath.Join(baseDir, fmt.Sprintf("pcmd-%d", counter.Add(1)))
+		if mkErr := os.MkdirAll(dir, 0o750); mkErr != nil {
+			t.Fatalf("MkdirAll: %v", mkErr)
+		}
+		path := filepath.Join(dir, "test.hams.yaml")
+		content := fmt.Sprintf("config:\n  - urn: %s\n    intro: test entry\n", urnName)
+		if writeErr := os.WriteFile(path, []byte(content), 0o600); writeErr != nil {
+			t.Fatalf("write: %v", writeErr)
+		}
+
+		f, readErr := Read(path)
+		if readErr != nil {
+			t.Fatalf("Read: %v", readErr)
+		}
+
+		f.SetPreviewCmd(urnName, previewCmd)
+		if saveErr := f.Write(); saveErr != nil {
+			t.Fatalf("Write: %v", saveErr)
+		}
+
+		// Re-read and verify.
+		data, dataErr := os.ReadFile(path) //nolint:gosec // test
+		if dataErr != nil {
+			t.Fatalf("ReadFile: %v", dataErr)
+		}
+		if !strings.Contains(string(data), "preview-cmd") {
+			t.Fatal("preview-cmd field not found after round-trip")
+		}
+		if !strings.Contains(string(data), previewCmd) {
+			t.Fatalf("preview-cmd value %q not found in file", previewCmd)
+		}
+	})
+}
+
 func TestProperty_RoundtripPreservesApps(t *testing.T) {
+	baseDir := t.TempDir()
+	var counter atomic.Int64
 	rapid.Check(t, func(t *rapid.T) {
 		appName := rapid.StringMatching(`[a-z][a-z0-9\-]{1,20}`).Draw(t, "app")
 		tag := rapid.StringMatching(`[a-z][a-z\-]{2,15}`).Draw(t, "tag")
 
-		dir, mkErr := os.MkdirTemp("", "hamsfile-property-*")
-		if mkErr != nil {
-			t.Fatalf("MkdirTemp: %v", mkErr)
+		dir := filepath.Join(baseDir, fmt.Sprintf("run-%d", counter.Add(1)))
+		if mkErr := os.MkdirAll(dir, 0o750); mkErr != nil {
+			t.Fatalf("MkdirAll: %v", mkErr)
 		}
-		defer os.RemoveAll(dir) //nolint:errcheck // cleanup in property test
 		path := filepath.Join(dir, "test.hams.yaml")
 		writeErr := os.WriteFile(path, []byte("placeholder:\n  - app: keep\n"), 0o600)
 		if writeErr != nil {

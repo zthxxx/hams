@@ -1,0 +1,29 @@
+import { Callout } from 'nextra/components'
+
+# git clone Provider
+
+Manages repository clones at fixed local paths. Probes by checking whether the target
+directory exists and the remote URL matches.
+
+**Platforms:** macOS, Linux
+
+## Usage
+
+```bash
+hams git-clone add <remote-url> <local-path>
+hams git-clone list
+```
+
+## Hamsfile Example
+
+```yaml
+- urn: "urn:hams:git-clone:dotfiles"
+  step: Clone dotfiles repository
+  remote: https://github.com/zthxxx/dotfiles.git
+  local_path: ~/Projects/dotfiles
+  default_branch: main
+```
+
+<Callout type="info">
+  Full documentation coming soon.
+</Callout>

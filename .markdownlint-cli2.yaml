@@ -1,0 +1,7 @@
+globs:
+  - "**/*.md"
+  - "!node_modules"
+  - "!.agents"
+  - "!openspec"
+  - "!.claude"
+  - "!.specstory"

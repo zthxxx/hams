@@ -2,15 +2,19 @@ package cli
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"log/slog"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/urfave/cli/v3"
+	"gopkg.in/yaml.v3"
 
-	"github.com/zthxxx/hams/internal/cliutil"
+	hamserr "github.com/zthxxx/hams/internal/error"
 	"github.com/zthxxx/hams/internal/config"
 	"github.com/zthxxx/hams/internal/hamsfile"
 	"github.com/zthxxx/hams/internal/logging"
@@ -46,15 +50,12 @@ Use --no-refresh to skip probing and apply based on state alone.`,
 	}
 }
 
-func runApply(ctx context.Context, flags *cliutil.GlobalFlags, registry *provider.Registry, fromRepo string, noRefresh bool, only, except string) error {
+func runApply(ctx context.Context, flags *provider.GlobalFlags, registry *provider.Registry, fromRepo string, noRefresh bool, only, except string) error {
 	if flags.DryRun {
 		fmt.Println("[dry-run] Would apply configurations. No changes will be made.")
 	}
 
-	paths := config.ResolvePaths()
-	if flags.Config != "" {
-		paths.ConfigHome = filepath.Dir(flags.Config)
-	}
+	paths := resolvePaths(flags)
 
 	storePath := flags.Store
 	if storePath == "" {
@@ -74,7 +75,7 @@ func runApply(ctx context.Context, flags *cliutil.GlobalFlags, registry *provide
 	}
 
 	if storePath == "" {
-		return cliutil.NewUserError(cliutil.ExitUsageError,
+		return hamserr.NewUserError(hamserr.ExitUsageError,
 			"no store directory configured",
 			"Run 'hams apply --from-repo=<user/repo>' to clone a store",
 			"Or set store_path in ~/.config/hams/hams.config.yaml",
@@ -86,6 +87,11 @@ func runApply(ctx context.Context, flags *cliutil.GlobalFlags, registry *provide
 		return fmt.Errorf("loading config: %w", err)
 	}
 
+	// Honor --profile flag override.
+	if flags.Profile != "" {
+		cfg.ProfileTag = flags.Profile
+	}
+
 	if cfg.ProfileTag == "" || cfg.MachineID == "" {
 		fmt.Println("Not Found Profile in config, init it at first")
 		tag, mid, promptErr := promptProfileInit()
@@ -94,13 +100,21 @@ func runApply(ctx context.Context, flags *cliutil.GlobalFlags, registry *provide
 		}
 		cfg.ProfileTag = tag
 		cfg.MachineID = mid
+
+		// Persist prompted values so they survive across runs.
+		if writeErr := config.WriteConfigKey(paths, storePath, "profile_tag", tag); writeErr != nil {
+			slog.Warn("failed to persist profile_tag", "error", writeErr)
+		}
+		if writeErr := config.WriteConfigKey(paths, storePath, "machine_id", mid); writeErr != nil {
+			slog.Warn("failed to persist machine_id", "error", writeErr)
+		}
 	}
 
 	stateDir := cfg.StateDir()
 	lock := state.NewLock(stateDir)
 	if !flags.DryRun {
 		if lockErr := lock.Acquire("hams apply"); lockErr != nil {
-			return cliutil.NewUserError(cliutil.ExitLockError, lockErr.Error(),
+			return hamserr.NewUserError(hamserr.ExitLockError, lockErr.Error(),
 				fmt.Sprintf("Remove %s/.lock if the previous run crashed", stateDir),
 			)
 		}
@@ -115,20 +129,53 @@ func runApply(ctx context.Context, flags *cliutil.GlobalFlags, registry *provide
 	defer sudoMgr.Stop()
 
 	allProviders := registry.Ordered(cfg.ProviderPriority)
-	providers := filterProviders(allProviders, only, except)
+	providers, filterErr := filterProviders(allProviders, only, except, registry.Names())
+	if filterErr != nil {
+		return filterErr
+	}
 
 	sorted, dagErr := provider.ResolveDAG(providers)
 	if dagErr != nil {
 		return fmt.Errorf("resolving provider dependencies: %w", dagErr)
 	}
 
+	// Bootstrap providers. If a provider has a hamsfile in the profile dir,
+	// bootstrap failure is fatal — the user explicitly declared resources for it.
+	// Providers without hamsfiles are silently skipped on failure.
+	profileDir := cfg.ProfileDir()
+	var bootstrapFailed []string
+	for _, p := range sorted {
+		if bootstrapErr := p.Bootstrap(ctx); bootstrapErr != nil {
+			manifest := p.Manifest()
+			filePrefix := manifestFilePrefix(manifest)
+			mainPath := filepath.Join(profileDir, filePrefix+".hams.yaml")
+			localPath := filepath.Join(profileDir, filePrefix+".hams.local.yaml")
+			_, mainErr := os.Stat(mainPath)
+			_, localErr := os.Stat(localPath)
+			if mainErr == nil || localErr == nil {
+				slog.Error("provider bootstrap failed (hamsfile exists, cannot proceed)",
+					"provider", manifest.Name, "error", bootstrapErr)
+				bootstrapFailed = append(bootstrapFailed, manifest.Name)
+			} else {
+				slog.Debug("provider bootstrap skipped (no hamsfile)", "provider", manifest.Name, "error", bootstrapErr)
+			}
+		}
+	}
+	if len(bootstrapFailed) > 0 {
+		return hamserr.NewUserError(hamserr.ExitPartialFailure,
+			fmt.Sprintf("bootstrap failed for providers with hamsfiles: %s", strings.Join(bootstrapFailed, ", ")),
+			"Ensure required tools are installed or remove the hamsfile entries",
+			"Use '--only' / '--except' to skip specific providers",
+		)
+	}
+
 	if !noRefresh {
 		slog.Info("refreshing state")
 		probeResults := provider.ProbeAll(ctx, sorted, stateDir, cfg.MachineID)
-		for name, sf := range probeResults {
-			statePath := filepath.Join(stateDir, name+".state.yaml")
+		for filePrefix, sf := range probeResults {
+			statePath := filepath.Join(stateDir, filePrefix+".state.yaml")
 			if saveErr := sf.Save(statePath); saveErr != nil {
-				slog.Error("failed to save probed state", "provider", name, "error", saveErr)
+				slog.Error("failed to save probed state", "provider", sf.Provider, "error", saveErr)
 			}
 		}
 	}
@@ -137,34 +184,81 @@ func runApply(ctx context.Context, flags *cliutil.GlobalFlags, registry *provide
 		return printDryRunPlan(sorted, cfg)
 	}
 
-	var allResults []provider.ExecuteResult
-	for _, p := range sorted {
-		name := p.Manifest().Name
-		profileDir := cfg.ProfileDir()
-		hamsfilePath := filepath.Join(profileDir, name+".hams.yaml")
+	// Acquire sudo credentials once before any provider operations (after dry-run check).
+	if sudoErr := sudoMgr.Acquire(ctx); sudoErr != nil {
+		slog.Warn("sudo acquisition failed; some providers may fail", "error", sudoErr)
+	}
 
+	var allResults []provider.ExecuteResult
+	var skippedProviders []string
+	for _, p := range sorted {
+		manifest := p.Manifest()
+		name := manifest.Name
+		filePrefix := manifestFilePrefix(manifest)
+		hamsfilePath := filepath.Join(profileDir, filePrefix+".hams.yaml")
+		hamsfileLocalPath := filepath.Join(profileDir, filePrefix+".hams.local.yaml")
+
+		mainExists := true
 		if _, statErr := os.Stat(hamsfilePath); os.IsNotExist(statErr) {
+			mainExists = false
+		}
+		localExists := true
+		if _, statErr := os.Stat(hamsfileLocalPath); os.IsNotExist(statErr) {
+			localExists = false
+		}
+		if !mainExists && !localExists {
 			slog.Debug("no hamsfile for provider, skipping", "provider", name)
 			continue
 		}
 
-		hf, readErr := hamsfile.Read(hamsfilePath)
+		mergeStrategy := hamsfile.MergeAppend
+		if manifest.ResourceClass != provider.ClassPackage {
+			mergeStrategy = hamsfile.MergeOverride
+		}
+
+		var hf *hamsfile.File
+		var readErr error
+		if mainExists {
+			hf, readErr = hamsfile.ReadMerged(hamsfilePath, hamsfileLocalPath, mergeStrategy)
+		} else {
+			// Only local file exists — read it directly.
+			hf, readErr = hamsfile.Read(hamsfileLocalPath)
+		}
 		if readErr != nil {
 			slog.Error("failed to read hamsfile", "provider", name, "error", readErr)
+			skippedProviders = append(skippedProviders, name)
 			continue
 		}
 
-		statePath := filepath.Join(stateDir, name+".state.yaml")
+		statePath := filepath.Join(stateDir, filePrefix+".state.yaml")
 		sf, loadErr := state.Load(statePath)
 		if loadErr != nil {
 			sf = state.New(name, cfg.MachineID)
 		}
 
-		apps := extractApps(hf)
-		actions := provider.ComputePlan(apps, sf, sf.ConfigHash)
+		actions, planErr := p.Plan(ctx, hf, sf)
+		if planErr != nil {
+			slog.Error("failed to plan provider actions", "provider", name, "error", planErr)
+			skippedProviders = append(skippedProviders, name)
+			continue
+		}
+
+		// If config content changed, promote skips to updates so edits apply.
+		currentHash := configHashForHamsfile(hf)
+		if sf.ConfigHash != "" && currentHash != sf.ConfigHash {
+			for i := range actions {
+				if actions[i].Type == provider.ActionSkip {
+					actions[i].Type = provider.ActionUpdate
+				}
+			}
+		}
 
 		result := provider.Execute(ctx, p, actions, sf)
 		allResults = append(allResults, result)
+
+		if result.Failed == 0 {
+			sf.ConfigHash = currentHash
+		}
 
 		if saveErr := sf.Save(statePath); saveErr != nil {
 			slog.Error("failed to save state", "provider", name, "error", saveErr)
@@ -174,13 +268,26 @@ func runApply(ctx context.Context, flags *cliutil.GlobalFlags, registry *provide
 			"installed", result.Installed, "failed", result.Failed, "skipped", result.Skipped)
 	}
 
+	// Run async enrichment for providers that support it, non-blocking.
+	enrichErrors := runEnrichPhase(ctx, sorted, cfg)
+	if len(enrichErrors) > 0 {
+		for _, enrichErr := range enrichErrors {
+			slog.Warn("enrichment error", "error", enrichErr)
+		}
+	}
+
 	merged := provider.MergeResults(allResults)
 	fmt.Printf("\nhams apply complete: %d installed, %d updated, %d removed, %d skipped, %d failed\n",
 		merged.Installed, merged.Updated, merged.Removed, merged.Skipped, merged.Failed)
 
-	if merged.Failed > 0 {
-		return cliutil.NewUserError(cliutil.ExitPartialFailure,
-			fmt.Sprintf("%d resources failed", merged.Failed),
+	if len(skippedProviders) > 0 {
+		fmt.Printf("Warning: %d provider(s) skipped due to errors: %s\n",
+			len(skippedProviders), strings.Join(skippedProviders, ", "))
+	}
+
+	if merged.Failed > 0 || len(skippedProviders) > 0 {
+		return hamserr.NewUserError(hamserr.ExitPartialFailure,
+			fmt.Sprintf("%d resources failed, %d providers skipped", merged.Failed, len(skippedProviders)),
 			"Run 'hams apply' again to retry failed resources",
 			"Use '--debug' for detailed error output",
 		)
@@ -189,34 +296,114 @@ func runApply(ctx context.Context, flags *cliutil.GlobalFlags, registry *provide
 	return nil
 }
 
-func extractApps(hf *hamsfile.File) []string {
-	return hf.ListApps()
+// runEnrichPhase calls Enrich on providers that implement the Enricher interface.
+// This runs after all apply operations and is best-effort (errors are collected, not fatal).
+func runEnrichPhase(ctx context.Context, providers []provider.Provider, cfg *config.Config) []error {
+	var errs []error
+	for _, p := range providers {
+		enricher, ok := p.(provider.Enricher)
+		if !ok {
+			continue
+		}
+
+		// Enrich all resources that were just installed/updated.
+		name := p.Manifest().Name
+		filePrefix := manifestFilePrefix(p.Manifest())
+		hamsfilePath := filepath.Join(cfg.ProfileDir(), filePrefix+".hams.yaml")
+		hf, readErr := hamsfile.Read(hamsfilePath)
+		if readErr != nil {
+			continue
+		}
+
+		for _, appID := range hf.ListApps() {
+			if enrichErr := enricher.Enrich(ctx, appID); enrichErr != nil {
+				slog.Debug("enrich failed", "provider", name, "resource", appID, "error", enrichErr)
+				errs = append(errs, fmt.Errorf("%s: enrich %s: %w", name, appID, enrichErr))
+			}
+		}
+	}
+	return errs
 }
 
-func filterProviders(providers []provider.Provider, only, except string) []provider.Provider {
+func manifestFilePrefix(m provider.Manifest) string { //nolint:gocritic // simple helper, copy is acceptable
+	if m.FilePrefix != "" {
+		return m.FilePrefix
+	}
+	return m.Name
+}
+
+func configHashForHamsfile(hf *hamsfile.File) string {
+	// Hash the full YAML content so config changes (not just ID changes) are detected.
+	data, err := yaml.Marshal(hf.Root)
+	if err != nil {
+		// Fall back to hashing app IDs.
+		appIDs := hf.ListApps()
+		slices.Sort(appIDs)
+		sum := sha256.Sum256([]byte(strings.Join(appIDs, "\n")))
+		return hex.EncodeToString(sum[:])
+	}
+	sum := sha256.Sum256(data)
+	return hex.EncodeToString(sum[:])
+}
+
+func filterProviders(providers []provider.Provider, only, except string, knownNames []string) ([]provider.Provider, error) {
 	if only == "" && except == "" {
-		return providers
+		return providers, nil
+	}
+
+	if only != "" && except != "" {
+		return nil, hamserr.NewUserError(hamserr.ExitUsageError,
+			"--only and --except are mutually exclusive",
+			"Use --only to include specific providers, or --except to exclude them",
+		)
+	}
+
+	knownSet := make(map[string]bool)
+	for _, n := range knownNames {
+		knownSet[strings.ToLower(n)] = true
 	}
 
 	if only != "" {
 		onlySet := parseCSV(only)
+		if err := validateProviderNames(onlySet, knownSet, knownNames); err != nil {
+			return nil, err
+		}
 		var filtered []provider.Provider
 		for _, p := range providers {
 			if onlySet[strings.ToLower(p.Manifest().Name)] {
 				filtered = append(filtered, p)
 			}
 		}
-		return filtered
+		return filtered, nil
 	}
 
 	exceptSet := parseCSV(except)
+	if err := validateProviderNames(exceptSet, knownSet, knownNames); err != nil {
+		return nil, err
+	}
 	var filtered []provider.Provider
 	for _, p := range providers {
 		if !exceptSet[strings.ToLower(p.Manifest().Name)] {
 			filtered = append(filtered, p)
 		}
 	}
-	return filtered
+	return filtered, nil
+}
+
+func validateProviderNames(requested map[string]bool, known map[string]bool, knownNames []string) error {
+	var unknown []string
+	for name := range requested {
+		if !known[name] {
+			unknown = append(unknown, name)
+		}
+	}
+	if len(unknown) > 0 {
+		return hamserr.NewUserError(hamserr.ExitUsageError,
+			fmt.Sprintf("unknown provider(s): %s", strings.Join(unknown, ", ")),
+			fmt.Sprintf("Available providers: %s", strings.Join(knownNames, ", ")),
+		)
+	}
+	return nil
 }
 
 func parseCSV(s string) map[string]bool {
@@ -240,7 +427,7 @@ func printDryRunPlan(providers []provider.Provider, _ *config.Config) error { //
 }
 
 // SetupLogging initializes logging from global flags and returns the cleanup function.
-func SetupLogging(flags *cliutil.GlobalFlags) func() {
+func SetupLogging(flags *provider.GlobalFlags) func() {
 	paths := config.ResolvePaths()
 	logFile, err := logging.Setup(paths.DataHome, flags.Debug)
 	if err != nil {

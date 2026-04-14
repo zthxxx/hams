@@ -13,6 +13,10 @@ import (
 
 const heartbeatInterval = 4 * time.Minute
 
+// isRoot reports whether the current process runs as uid 0.
+// Overridable in tests to verify both branches without requiring actual root.
+var isRoot = func() bool { return os.Getuid() == 0 }
+
 // Manager handles sudo credential acquisition and keepalive.
 type Manager struct {
 	acquired bool
@@ -28,11 +32,19 @@ func NewManager() *Manager {
 
 // Acquire prompts the user for sudo credentials if not already acquired.
 // Call this once at the start of `hams apply`.
+// When running as root (uid 0), sudo is unnecessary — acquisition and
+// heartbeat are skipped entirely.
 func (m *Manager) Acquire(ctx context.Context) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
 	if m.acquired {
+		return nil
+	}
+
+	// Running as root — sudo is unnecessary, heartbeat not needed.
+	if isRoot() {
+		m.acquired = true
 		return nil
 	}
 
@@ -98,7 +110,12 @@ func (m *Manager) startHeartbeat(parentCtx context.Context) {
 }
 
 // RunWithSudo creates a command that runs with sudo.
+// When already running as root (uid 0), the command runs directly — sudo
+// wrapping is skipped because the process already has root privileges.
 func RunWithSudo(ctx context.Context, name string, args ...string) *exec.Cmd {
+	if isRoot() {
+		return exec.CommandContext(ctx, name, args...) //nolint:gosec // root-skip path; args from hamsfile declarations
+	}
 	sudoArgs := make([]string, 0, len(args)+1)
 	sudoArgs = append(sudoArgs, name)
 	sudoArgs = append(sudoArgs, args...)

@@ -42,14 +42,30 @@ type DependOn struct {
 	Platform Platform `yaml:"if,omitempty"` // Empty means all platforms.
 }
 
+// VerbRoute maps a user-facing verb to the provider action.
+type VerbRoute struct {
+	Verb   string `yaml:"verb"`   // e.g., "install", "remove", "list"
+	Action string `yaml:"action"` // Provider-specific action to invoke.
+}
+
+// FlagDef defines a provider-specific --hams- flag.
+type FlagDef struct {
+	Name        string `yaml:"name"`        // Flag name without --hams- prefix.
+	Description string `yaml:"description"` // Human-readable description.
+	Default     string `yaml:"default"`     // Default value (empty for boolean).
+}
+
 // Manifest holds provider metadata used for registration and discovery.
 type Manifest struct {
-	Name          string        `yaml:"name"`
-	DisplayName   string        `yaml:"display_name"`
-	Platform      Platform      `yaml:"platform"`
-	ResourceClass ResourceClass `yaml:"resource_class"`
-	DependsOn     []DependOn    `yaml:"depends_on,omitempty"`
-	FilePrefix    string        `yaml:"file_prefix"` // e.g., "Homebrew" → Homebrew.hams.yaml
+	Name          string            `yaml:"name"`
+	DisplayName   string            `yaml:"display_name"`
+	Platforms     []Platform        `yaml:"platforms"`
+	ResourceClass ResourceClass     `yaml:"resource_class"`
+	DependsOn     []DependOn        `yaml:"depends_on,omitempty"`
+	FilePrefix    string            `yaml:"file_prefix"`              // e.g., "Homebrew" → Homebrew.hams.yaml
+	VerbRouting   []VerbRoute       `yaml:"verb_routing,omitempty"`   // Maps verbs to provider actions.
+	AutoInject    map[string]string `yaml:"auto_inject,omitempty"`    // Flags auto-injected per verb.
+	HamsFlags     []FlagDef         `yaml:"hams_flags,omitempty"`     // Provider-specific --hams- flags.
 }
 
 // ProbeResult represents the outcome of probing a single resource.
@@ -64,9 +80,11 @@ type ProbeResult struct {
 
 // Action represents a planned operation on a resource.
 type Action struct {
-	ID       string
-	Type     ActionType
-	Resource any // Provider-specific resource data.
+	ID        string
+	Type      ActionType
+	Resource  any                    // Provider-specific resource data.
+	StateOpts []state.ResourceOption // Extra state options applied after successful execution.
+	Hooks     *HookSet               // Optional hooks to run around this action.
 }
 
 // ActionType categorizes what will happen to a resource during apply.

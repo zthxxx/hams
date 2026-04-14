@@ -2,7 +2,9 @@ package cli
 
 import (
 	"log/slog"
+	"os"
 
+	"github.com/zthxxx/hams/internal/config"
 	"github.com/zthxxx/hams/internal/provider"
 	"github.com/zthxxx/hams/internal/provider/builtin/ansible"
 	"github.com/zthxxx/hams/internal/provider/builtin/apt"
@@ -30,9 +32,11 @@ type cliProvider interface {
 // Each provider is instantiated once and used for both the provider registry
 // and CLI handler routing (avoiding double instantiation).
 func registerBuiltins(registry *provider.Registry) {
+	builtinCfg := loadBuiltinProviderConfig()
+
 	// Providers that implement both Provider and ProviderHandler.
 	cliProviders := []cliProvider{
-		homebrew.New(),
+		homebrew.New(builtinCfg),
 		apt.New(),
 		npm.New(),
 		pnpm.New(),
@@ -40,8 +44,8 @@ func registerBuiltins(registry *provider.Registry) {
 		goinstall.New(),
 		cargo.New(),
 		git.NewConfigProvider(),
-		git.NewCloneProvider(),
-		defaults.New(),
+		git.NewCloneProvider(builtinCfg),
+		defaults.New(builtinCfg),
 		duti.New(),
 		mas.New(),
 		vscodeext.New(),
@@ -67,4 +71,26 @@ func registerBuiltins(registry *provider.Registry) {
 			slog.Warn("failed to register provider", "provider", p.Manifest().Name, "error", err)
 		}
 	}
+}
+
+func loadBuiltinProviderConfig() *config.Config {
+	flags := &provider.GlobalFlags{}
+	stripGlobalFlags(os.Args[1:], flags)
+
+	paths := resolvePaths(flags)
+
+	cfg, err := config.Load(paths, flags.Store)
+	if err != nil {
+		slog.Warn("failed to load config for builtin providers", "error", err)
+		cfg = &config.Config{}
+	}
+
+	if flags.Store != "" {
+		cfg.StorePath = flags.Store
+	}
+	if flags.Profile != "" {
+		cfg.ProfileTag = flags.Profile
+	}
+
+	return cfg
 }

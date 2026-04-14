@@ -6,26 +6,30 @@ import (
 	"fmt"
 	"log/slog"
 	"os/exec"
+	"path/filepath"
 	"strings"
 
-	"github.com/zthxxx/hams/internal/cliutil"
+	hamserr "github.com/zthxxx/hams/internal/error"
+	"github.com/zthxxx/hams/internal/config"
 	"github.com/zthxxx/hams/internal/hamsfile"
 	"github.com/zthxxx/hams/internal/provider"
 	"github.com/zthxxx/hams/internal/state"
 )
 
 // Provider implements the macOS defaults provider.
-type Provider struct{}
+type Provider struct {
+	cfg *config.Config
+}
 
 // New creates a new defaults provider.
-func New() *Provider { return &Provider{} }
+func New(cfg *config.Config) *Provider { return &Provider{cfg: cfg} }
 
 // Manifest returns the defaults provider metadata.
 func (p *Provider) Manifest() provider.Manifest {
 	return provider.Manifest{
 		Name:          "defaults",
 		DisplayName:   "defaults",
-		Platform:      provider.PlatformDarwin,
+		Platforms:     []provider.Platform{provider.PlatformDarwin},
 		ResourceClass: provider.ClassKVConfig,
 		FilePrefix:    "defaults",
 	}
@@ -71,7 +75,7 @@ func (p *Provider) Probe(ctx context.Context, sf *state.File) ([]provider.ProbeR
 
 // Plan computes actions for defaults entries.
 func (p *Provider) Plan(_ context.Context, desired *hamsfile.File, observed *state.File) ([]provider.Action, error) {
-	apps := desired.Tags()
+	apps := desired.ListApps()
 	return provider.ComputePlan(apps, observed, observed.ConfigHash), nil
 }
 
@@ -98,18 +102,15 @@ func (p *Provider) Remove(ctx context.Context, resourceID string) error {
 }
 
 // List returns defaults entries with status.
-func (p *Provider) List(_ context.Context, _ *hamsfile.File, sf *state.File) (string, error) {
-	var sb strings.Builder
-	for id, r := range sf.Resources {
-		fmt.Fprintf(&sb, "  %-50s %-10s %s\n", id, r.State, r.Value)
-	}
-	return sb.String(), nil
+func (p *Provider) List(_ context.Context, desired *hamsfile.File, sf *state.File) (string, error) {
+	diff := provider.DiffDesiredVsState(desired, sf)
+	return provider.FormatDiff(diff), nil
 }
 
 // HandleCommand processes CLI subcommands for defaults.
-func (p *Provider) HandleCommand(args []string, flags *cliutil.GlobalFlags) error {
+func (p *Provider) HandleCommand(args []string, hamsFlags map[string]string, flags *provider.GlobalFlags) error {
 	if len(args) < 3 {
-		return cliutil.NewUserError(cliutil.ExitUsageError,
+		return hamserr.NewUserError(hamserr.ExitUsageError,
 			"defaults requires: write <domain> <key> -<type> <value>",
 			"Usage: hams defaults write com.apple.dock autohide -bool true",
 		)
@@ -121,7 +122,65 @@ func (p *Provider) HandleCommand(args []string, flags *cliutil.GlobalFlags) erro
 	}
 
 	cmd := exec.CommandContext(context.Background(), "defaults", args...) //nolint:gosec // defaults args from CLI input
-	return cmd.Run()
+	if err := cmd.Run(); err != nil {
+		return err
+	}
+
+	if len(args) >= 5 && args[0] == "write" {
+		p.recordPreviewCmd(args, hamsFlags, flags)
+	}
+
+	return nil
+}
+
+// recordPreviewCmd saves the preview-cmd field to the hamsfile for a defaults write.
+func (p *Provider) recordPreviewCmd(args []string, hamsFlags map[string]string, flags *provider.GlobalFlags) {
+	if p.cfg == nil || p.cfg.StorePath == "" {
+		return
+	}
+
+	domain := args[1]
+	key := args[2]
+	typeStr := strings.TrimPrefix(args[3], "-")
+	value := args[4]
+	resourceID := fmt.Sprintf("%s.%s=%s:%s", domain, key, typeStr, value)
+	previewCmd := "defaults " + strings.Join(args, " ")
+
+	suffix := ".hams.yaml"
+	if _, ok := hamsFlags["local"]; ok {
+		suffix = ".hams.local.yaml"
+	}
+
+	cfg := p.effectiveConfig(flags)
+	path := filepath.Join(cfg.ProfileDir(), "defaults"+suffix)
+	hf, err := hamsfile.Read(path)
+	if err != nil {
+		slog.Debug("could not load hamsfile for preview-cmd", "path", path, "error", err)
+		return
+	}
+
+	hf.SetPreviewCmd(resourceID, previewCmd)
+	if writeErr := hf.Write(); writeErr != nil {
+		slog.Debug("could not save preview-cmd", "path", path, "error", writeErr)
+	}
+}
+
+// effectiveConfig returns the config with flag overrides applied.
+func (p *Provider) effectiveConfig(flags *provider.GlobalFlags) *config.Config {
+	if p.cfg == nil {
+		p.cfg = &config.Config{}
+	}
+	cfg := *p.cfg
+	if flags == nil {
+		return &cfg
+	}
+	if flags.Store != "" {
+		cfg.StorePath = flags.Store
+	}
+	if flags.Profile != "" {
+		cfg.ProfileTag = flags.Profile
+	}
+	return &cfg
 }
 
 // Name returns the CLI name.

@@ -17,6 +17,17 @@ When the user corrects an error, interrupts to redirect, or states a new rule:
 2. **Normative/principled/rule content**: add to the appropriate `.claude/rules/*.md` file.
 3. **Feature or interaction changes**: if the change affects user-facing behavior, sync updates to `docs/` or `README.md` AND auto-check corresponding i18n files (e.g., `*.zh-CN.*`) for parallel updates.
 
+## Mandatory Verification Before Delivery
+
+When you believe a change is complete, you MUST verify the result before reporting it to the user. Never deliver an unverified "final" artifact. Verification steps:
+
+1. **Build**: `go build ./...` must pass with zero errors.
+2. **Vet**: `go vet ./...` must pass.
+3. **Tests**: `go test -race ./...` must pass — all packages, not just the ones you touched.
+4. **Stale references**: grep for old names/imports you removed to confirm zero remaining occurrences.
+
+Only after all checks pass may you report the work as complete. If any check fails, fix the issue and re-verify — do not report partial success.
+
 ## Documentation i18n Sync
 
 When updating any documentation file (`docs/**`, `README.md`), check for locale-suffixed variants (e.g., `README.zh-CN.md`, `docs/**/*.zh-CN.*`) and update them in the same pass. Do not leave i18n files stale.

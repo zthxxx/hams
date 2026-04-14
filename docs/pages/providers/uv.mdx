@@ -1,0 +1,28 @@
+import { Callout } from 'nextra/components'
+
+# uv Provider
+
+Wraps [uv](https://github.com/astral-sh/uv) to manage Python tools installed globally.
+
+**Platforms:** macOS, Linux
+
+## Usage
+
+```bash
+hams uv tool install <package>
+hams uv tool uninstall <package>
+hams uv list
+```
+
+## Hamsfile Example
+
+```yaml
+- app: ruff
+  intro: Fast Python linter and formatter.
+- app: httpie
+  intro: User-friendly HTTP client for the terminal.
+```
+
+<Callout type="info">
+  Full documentation coming soon.
+</Callout>

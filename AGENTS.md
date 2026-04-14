@@ -18,6 +18,17 @@ into YAML config files ("Hamsfiles"), enabling one-command environment restorati
 | JS package manager | pnpm (`saveExact: true`) |
 | npm package name | `harms` |
 
+## First Principle: Isolated Verification
+
+hams is a real-world package management tool that modifies the host system. **You cannot trust any change to the host machine before development is complete and verification has passed.** Isolated verification is paramount.
+
+You MUST simulate real scenarios (install, download, update, config read/write, etc.) to prove the entire flow works end-to-end — in these two isolated environments ONLY:
+
+1. **DI-isolated unit tests** — inject mock boundaries for filesystem, exec, network. Zero side effects on the host.
+2. **Docker-containerized E2E tests** — run via `act` against `.github/workflows/ci.yml`. Real package managers, real filesystems, real commands — but inside throwaway containers.
+
+**Never run hams operations that mutate the host** (install packages, write config outside `t.TempDir()`, execute provider commands) during development or testing. If it touches the real machine, it belongs inside a container.
+
 ## Core Philosophy
 
 1. **Declarative serialization of host state** — record what's installed into YAML, replay on new machines.
@@ -43,7 +54,7 @@ Single test: `go test -race -run TestFuncName ./path/to/package/...`
 | Tool | Purpose | Config |
 |------|---------|--------|
 | golangci-lint v2 | Go linting (30+ linters, strict) | `.golangci.yml` |
-| ESLint 9 | JS/TS linting (flat config) | `eslint.config.js` |
+| ESLint 9 | JS/TS linting (flat config) | `eslint.config.ts` |
 | markdownlint-cli2 | Markdown linting | `.markdownlint.yaml` |
 | cspell | Spell checking | `cspell.yaml` |
 | lefthook | Git hooks (pre-commit: fmt+lint, pre-push: test) | `lefthook.yml` |
@@ -67,7 +78,8 @@ Single test: `go test -race -run TestFuncName ./path/to/package/...`
 | `HAMS_DATA_HOME` | `~/.local/share/hams/` | Logs, OTel, cloned repos |
 
 Store repo layout (profile-as-directory):
-```
+
+```text
 <store>/
   hams.config.yaml              # Project config (git-tracked)
   hams.config.local.yaml        # Local overrides (not tracked)
@@ -104,7 +116,7 @@ This project uses [OpenSpec](https://openspec.dev) for spec-driven development.
 
 - `openspec/changes/` — In-flight proposals: features being designed, built, or reviewed but NOT yet deployed.
   - `{change-id}/proposal.md` — Why the change exists, what it affects, user impact.
-  - `{change-id}/tasks.md` — Checklist of implementation steps; check off `- [x]` as work progresses.
+  - `{change-id}/tasks.md` — Checklist of implementation steps; check off `- [ ]` as work progresses.
   - `{change-id}/tasks/{capability}.task.md` — Complex tasks broken down into an independent file, linked from the main `tasks.md`.
   - `{change-id}/design.md` — Optional; only for non-trivial technical decisions, tradeoffs, alternatives.
   - `{change-id}/specs/{capability}/spec.md` — Spec deltas using `## ADDED`/`## MODIFIED`/`## REMOVED` headers, NOT full rewrites.
@@ -120,6 +132,22 @@ This project uses [OpenSpec](https://openspec.dev) for spec-driven development.
 - **Deltas, not rewrites** — change specs describe diffs against current specs, making review and merging tractable.
 - **Scenarios are mandatory** — every requirement needs at least one `#### Scenario:` block, otherwise validation fails.
 
+## Current Task
+
+Loop repeatedly until all of the following tasks are completed.
+
+- [x] Run command `/opsx:verify`
+  - Any review issues?
+    - [x] If yes: uncheck this task and all above, fix issues, then re-run from the top. If no issues: check this task, git commit, and continue.
+- [x] Run command `/simplify`
+  - Any review issues?
+    - [x] If yes: uncheck this task and all above, fix issues, then re-run from the top. If no issues: check this task, git commit, and continue.
+- [x] Run command `/codex:review --wait --base 483714b`
+  - Any review issues?
+    - [x] If yes: uncheck this task and all above, fix issues, then re-run from the top. If no issues: check this task, git commit, and continue.
+- [x] Run command `/codex:rescue`
+  - Any review issues?
+    - [x] If yes: uncheck this task and all above, fix issues, then re-run from the top. If no issues: check this task, git commit, and continue.
 
 ## Rules
 

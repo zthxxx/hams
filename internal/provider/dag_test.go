@@ -10,7 +10,7 @@ func newStubWithDeps(name string, deps ...DependOn) *stubProvider {
 		manifest: Manifest{
 			Name:        name,
 			DisplayName: name,
-			Platform:    PlatformAll,
+			Platforms:   []Platform{PlatformAll},
 			DependsOn:   deps,
 		},
 	}

@@ -6,17 +6,17 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/zthxxx/hams/internal/cliutil"
+	hamserr "github.com/zthxxx/hams/internal/error"
 )
 
 // PrintError outputs a UserFacingError in the appropriate format.
 // In JSON mode, outputs a structured JSON object.
 // In text mode, outputs human-readable error with suggestions.
 func PrintError(err error, jsonMode bool) {
-	var ufe *cliutil.UserFacingError
+	var ufe *hamserr.UserFacingError
 	if !errors.As(err, &ufe) {
-		ufe = &cliutil.UserFacingError{
-			Code:    cliutil.ExitGeneralError,
+		ufe = &hamserr.UserFacingError{
+			Code:    hamserr.ExitGeneralError,
 			Message: err.Error(),
 		}
 	}

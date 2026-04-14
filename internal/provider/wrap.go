@@ -7,6 +7,8 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+
+	"github.com/zthxxx/hams/internal/runner"
 )
 
 // WrapExec runs a wrapped CLI command, forwarding args and capturing output.
@@ -38,6 +40,20 @@ func WrapExecPassthrough(ctx context.Context, command string, args []string, aut
 	cmd.Stderr = os.Stderr
 
 	return cmd.Run()
+}
+
+// WrapExecWithRunner runs a wrapped CLI command using a Runner interface for DI testability.
+func WrapExecWithRunner(ctx context.Context, r runner.Runner, command string, args []string, autoInject map[string]string) ([]byte, error) {
+	finalArgs := injectFlags(args, autoInject)
+	slog.Debug("executing wrapped command (runner)", "command", command, "args", finalArgs)
+	return r.Run(ctx, command, finalArgs...)
+}
+
+// WrapExecPassthroughWithRunner runs a wrapped CLI command with terminal I/O via a Runner.
+func WrapExecPassthroughWithRunner(ctx context.Context, r runner.Runner, command string, args []string, autoInject map[string]string) error {
+	finalArgs := injectFlags(args, autoInject)
+	slog.Debug("executing wrapped command (passthrough runner)", "command", command, "args", finalArgs)
+	return r.RunPassthrough(ctx, command, finalArgs...)
 }
 
 // injectFlags adds auto-inject flags if they're not already present.

@@ -5,11 +5,11 @@ import { Callout } from 'nextra/components'
 hams commands follow a consistent routing pattern:
 
 ```
-hams [global-flags] <command> [args] [--hams:flags] [-- <passthrough>]
+hams [global-flags] <command> [args] [--hams-flags] [-- <passthrough>]
 ```
 
 - **Global flags** must appear between `hams` and the command name.
-- **`--hams:` flags** are provider-scoped flags intercepted by hams before the underlying tool sees them.
+- **`--hams-` flags** are provider-scoped flags intercepted by hams before the underlying tool sees them.
 - **`--` separator** forces all subsequent arguments to be forwarded verbatim to the wrapped tool.
 
 ## Command Categories
@@ -97,25 +97,25 @@ With `--json`:
 ```
 
 <Callout type="info">
-  The `--hams:` prefix convention lets you pass hams-specific flags alongside provider passthrough arguments.
-  For example, `hams brew install bat --hams:tag=cli` records `bat` under the `cli` tag without forwarding
-  `--hams:tag=cli` to `brew`.
+  The `--hams-` prefix convention lets you pass hams-specific flags alongside provider passthrough arguments.
+  For example, `hams brew install bat --hams-tag=cli` records `bat` under the `cli` tag without forwarding
+  `--hams-tag=cli` to `brew`.
 </Callout>
 
-## The `--hams:` Flag Convention
+## The `--hams-` Flag Convention
 
-Provider-scoped hams flags use the `--hams:` prefix so they cannot collide with the wrapped tool's own flags:
+Provider-scoped hams flags use the `--hams-` prefix so they cannot collide with the wrapped tool's own flags:
 
 | Flag | Description |
 |------|-------------|
-| `--hams:tag=<tags>` | Comma-separated tags to assign to the recorded resource |
-| `--hams:intro=<text>` | One-line description to store in the Hamsfile |
-| `--hams:local` | Write to `<Provider>.hams.local.yaml` instead of the main Hamsfile |
+| `--hams-tag=<tags>` | Comma-separated tags to assign to the recorded resource |
+| `--hams-intro=<text>` | One-line description to store in the Hamsfile |
+| `--hams-local` | Write to `<Provider>.hams.local.yaml` instead of the main Hamsfile |
 
 ```bash
 # Install ripgrep, tag it as 'search,cli', and add a description
-hams brew install ripgrep --hams:tag=search,cli --hams:intro="Fast recursive grep alternative"
+hams brew install ripgrep --hams-tag=search,cli --hams-intro="Fast recursive grep alternative"
 
 # Install a work-only tool into the local (non-committed) Hamsfile
-hams brew install zoom --hams:local
+hams brew install zoom --hams-local
 ```

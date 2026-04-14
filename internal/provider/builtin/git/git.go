@@ -8,7 +8,7 @@ import (
 	"os/exec"
 	"strings"
 
-	"github.com/zthxxx/hams/internal/cliutil"
+	hamserr "github.com/zthxxx/hams/internal/error"
 	"github.com/zthxxx/hams/internal/hamsfile"
 	"github.com/zthxxx/hams/internal/provider"
 	"github.com/zthxxx/hams/internal/state"
@@ -25,7 +25,7 @@ func (p *ConfigProvider) Manifest() provider.Manifest {
 	return provider.Manifest{
 		Name:          "git-config",
 		DisplayName:   "git config",
-		Platform:      provider.PlatformAll,
+		Platforms:     []provider.Platform{provider.PlatformAll},
 		ResourceClass: provider.ClassKVConfig,
 		FilePrefix:    "git-config",
 	}
@@ -60,7 +60,7 @@ func (p *ConfigProvider) Probe(ctx context.Context, sf *state.File) ([]provider.
 
 // Plan computes actions for git config entries.
 func (p *ConfigProvider) Plan(_ context.Context, desired *hamsfile.File, observed *state.File) ([]provider.Action, error) {
-	apps := desired.Tags()
+	apps := desired.ListApps()
 	return provider.ComputePlan(apps, observed, observed.ConfigHash), nil
 }
 
@@ -88,19 +88,16 @@ func (p *ConfigProvider) Remove(ctx context.Context, resourceID string) error {
 	return cmd.Run()
 }
 
-// List returns configured git values with status.
-func (p *ConfigProvider) List(_ context.Context, _ *hamsfile.File, sf *state.File) (string, error) {
-	var sb strings.Builder
-	for id, r := range sf.Resources {
-		fmt.Fprintf(&sb, "  %-40s %-10s %s\n", id, r.State, r.Value)
-	}
-	return sb.String(), nil
+// List returns git config entries with diff between desired and observed.
+func (p *ConfigProvider) List(_ context.Context, desired *hamsfile.File, sf *state.File) (string, error) {
+	diff := provider.DiffDesiredVsState(desired, sf)
+	return provider.FormatDiff(diff), nil
 }
 
 // HandleCommand processes CLI subcommands for git config.
-func (p *ConfigProvider) HandleCommand(args []string, flags *cliutil.GlobalFlags) error {
+func (p *ConfigProvider) HandleCommand(args []string, _ map[string]string, flags *provider.GlobalFlags) error {
 	if len(args) < 2 {
-		return cliutil.NewUserError(cliutil.ExitUsageError,
+		return hamserr.NewUserError(hamserr.ExitUsageError,
 			"git-config requires key and value",
 			"Usage: hams git-config <key> <value>",
 			"Example: hams git-config user.name zthxxx",

@@ -1,0 +1,101 @@
+#!/usr/bin/env bash
+# Shared E2E assertion helpers.
+# Source this file from per-distro test scripts.
+
+assert_success() {
+  local desc="$1"
+  shift
+  echo "Testing: $desc"
+  if ! "$@"; then
+    echo "FAIL: $desc"
+    exit 1
+  fi
+  echo ""
+}
+
+assert_output_contains() {
+  local desc="$1"
+  local expected="$2"
+  shift 2
+  echo "Testing: $desc"
+  local output
+  output=$("$@" 2>&1)
+  if ! printf '%s\n' "$output" | grep -qF "$expected"; then
+    echo "FAIL: $desc"
+    echo "  expected output to contain: $expected"
+    echo "  actual output: $output"
+    exit 1
+  fi
+  echo "  ok: output contains '$expected'"
+  echo ""
+}
+
+# run_smoke_tests runs CLI framework tests common to all distros.
+run_smoke_tests() {
+  echo "--- CLI smoke tests ---"
+  assert_output_contains "hams --version" "hams version" hams --version
+  assert_output_contains "hams --help renders" "Declarative IaC environment management" hams --help
+  assert_output_contains "hams brew --help routes to provider" "Manage Homebrew packages" hams brew --help
+
+  # Config loading from the basic fixture store.
+  assert_output_contains "config list reads fixture store" "Profile tag:       test" \
+    hams --store=/fixtures/test-store config list
+  assert_output_contains "config get profile_tag" "test" \
+    hams --store=/fixtures/test-store config get profile_tag
+  echo ""
+}
+
+# create_store_repo creates a local git repo from fixture files.
+# Usage: create_store_repo <store_dir> <fixture_src_dir> <machine_id>
+# Runs in a subshell to avoid changing the caller's working directory.
+create_store_repo() {
+  local store_dir="$1"
+  local fixture_src="$2"
+  local machine_id="$3"
+
+  mkdir -p "$store_dir/test"
+  (
+    cd "$store_dir" || exit 1
+    git init --quiet
+
+    # Unquoted heredoc is intentional: ${machine_id} must be interpolated.
+    cat > hams.config.yaml << YAML
+profile_tag: test
+machine_id: ${machine_id}
+YAML
+
+    cp "$fixture_src"/test/*.hams.yaml test/
+
+    git add -A
+    git config user.email "test@hams.dev"
+    git config user.name "hams-test"
+    git commit -m "e2e fixture" --quiet
+  )
+}
+
+# verify_bash_marker checks that the bash provider created the marker file.
+verify_bash_marker() {
+  assert_success "bash marker file exists" test -f /tmp/hams-e2e-marker
+}
+
+# verify_git_config checks that git config values were applied.
+verify_git_config() {
+  assert_output_contains "git config e2e.hams.test was applied" "true" \
+    git config --global --get e2e.hams.test
+}
+
+# verify_config_roundtrip tests config set/get persistence.
+verify_config_roundtrip() {
+  assert_success "hams config set machine_id" \
+    hams config set machine_id "e2e-verified"
+  assert_output_contains "hams config get machine_id reads back" "e2e-verified" \
+    hams config get machine_id
+}
+
+# verify_idempotent_reapply checks that re-applying is idempotent.
+verify_idempotent_reapply() {
+  local store_dir="$1"
+  local only_flag="$2"
+  assert_success "hams apply idempotent re-run" \
+    hams apply --from-repo="$store_dir" --only="$only_flag"
+}

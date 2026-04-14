@@ -49,6 +49,21 @@ tasks:
     generates:
       - "{{.BUILD_DIR}}/{{.APP_NAME}}"
 
+  build:linux:
+    desc: Build linux/amd64 binary for e2e tests
+    env:
+      CGO_ENABLED: "0"
+      GOOS: linux
+      GOARCH: amd64
+    cmds:
+      - go build -ldflags "{{.LDFLAGS}}" -o {{.BUILD_DIR}}/hams-linux-amd64 ./cmd/hams
+    sources:
+      - ./**/*.go
+      - go.mod
+      - go.sum
+    generates:
+      - "{{.BUILD_DIR}}/hams-linux-amd64"
+
   build:all:
     desc: Cross-compile for all target platforms (CGO_ENABLED=0)
     cmds:
@@ -85,10 +100,37 @@ tasks:
     cmds:
       - go test -race -count=1 -run "TestProperty" ./...
 
+  # ---------------------------------------------------------------------------
+  # Integration & E2E tests — all run through act against .github/workflows/ci.yml
+  # Never invoke docker build/run directly for these; act ensures local ≡ CI.
+  # ---------------------------------------------------------------------------
+
   test:e2e:
-    desc: Run e2e tests in Docker containers
+    desc: Run all e2e targets via act (debian + alpine + openwrt)
     cmds:
-      - docker compose -f e2e/docker-compose.yml up --build --abort-on-container-exit
+      - act push --container-architecture linux/amd64 -j build -j e2e --matrix goos:linux --matrix goarch:amd64 --artifact-server-path /tmp/act-artifacts --rm
+
+  test:e2e:one:
+    desc: "Run a single e2e target via act (usage: task test:e2e:one TARGET=alpine)"
+    cmds:
+      - act push --container-architecture linux/amd64 -j build -j e2e --matrix goos:linux --matrix goarch:amd64 --matrix target:{{.TARGET}} --artifact-server-path /tmp/act-artifacts --rm
+    requires:
+      vars: [TARGET]
+
+  test:integration:
+    desc: Run integration tests via act
+    cmds:
+      - act push --container-architecture linux/amd64 -j integration --rm
+
+  ci:
+    desc: Run full CI pipeline locally via act (lint + test + build + integration + e2e)
+    cmds:
+      - act push --container-architecture linux/amd64 --artifact-server-path /tmp/act-artifacts --rm
+
+  ci:test:
+    desc: Run CI unit-test job via act
+    cmds:
+      - act push --container-architecture linux/amd64 -j test --rm
 
   lint:
     desc: Run all linters

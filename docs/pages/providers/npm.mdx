@@ -1,0 +1,28 @@
+import { Callout } from 'nextra/components'
+
+# npm Provider
+
+Wraps [npm](https://www.npmjs.com/) to manage globally installed Node.js packages.
+
+**Platforms:** macOS, Linux
+
+## Usage
+
+```bash
+hams npm install --global <package>
+hams npm uninstall --global <package>
+hams npm list
+```
+
+## Hamsfile Example
+
+```yaml
+- app: prettier
+  intro: Opinionated code formatter.
+- app: eslint
+  intro: JavaScript and TypeScript linter.
+```
+
+<Callout type="info">
+  Full documentation coming soon.
+</Callout>

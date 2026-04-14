@@ -6,26 +6,32 @@ import (
 	"log/slog"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 
-	"github.com/zthxxx/hams/internal/cliutil"
+	"gopkg.in/yaml.v3"
+
+	"github.com/zthxxx/hams/internal/config"
+	hamserr "github.com/zthxxx/hams/internal/error"
 	"github.com/zthxxx/hams/internal/hamsfile"
 	"github.com/zthxxx/hams/internal/provider"
 	"github.com/zthxxx/hams/internal/state"
 )
 
 // CloneProvider implements the git clone filesystem provider.
-type CloneProvider struct{}
+type CloneProvider struct {
+	cfg *config.Config
+}
 
 // NewCloneProvider creates a new git clone provider.
-func NewCloneProvider() *CloneProvider { return &CloneProvider{} }
+func NewCloneProvider(cfg *config.Config) *CloneProvider { return &CloneProvider{cfg: cfg} }
 
 // Manifest returns the git clone provider metadata.
 func (p *CloneProvider) Manifest() provider.Manifest {
 	return provider.Manifest{
 		Name:          "git-clone",
 		DisplayName:   "git clone",
-		Platform:      provider.PlatformAll,
+		Platforms:     []provider.Platform{provider.PlatformAll},
 		ResourceClass: provider.ClassFilesystem,
 		FilePrefix:    "git-clone",
 	}
@@ -63,24 +69,59 @@ func (p *CloneProvider) Probe(_ context.Context, sf *state.File) ([]provider.Pro
 	return results, nil
 }
 
-// Plan computes actions for git clone entries.
+// cloneResource holds parsed fields from a git-clone hamsfile entry.
+type cloneResource struct {
+	Remote string
+	Path   string
+	Branch string
+}
+
+// Plan computes actions for git clone entries, parsing structured YAML fields.
 func (p *CloneProvider) Plan(_ context.Context, desired *hamsfile.File, observed *state.File) ([]provider.Action, error) {
-	apps := desired.Tags()
-	return provider.ComputePlan(apps, observed, observed.ConfigHash), nil
+	resourceByID, err := cloneParseResources(desired)
+	if err != nil {
+		return nil, err
+	}
+
+	// Build app list from parsed resources for ComputePlan.
+	var apps []string
+	for id := range resourceByID {
+		apps = append(apps, id)
+	}
+
+	actions := provider.ComputePlan(apps, observed, observed.ConfigHash)
+	for i := range actions {
+		res, ok := resourceByID[actions[i].ID]
+		if ok {
+			actions[i].Resource = res
+		}
+	}
+	return actions, nil
 }
 
 // Apply clones a repository to the specified path.
 func (p *CloneProvider) Apply(ctx context.Context, action provider.Action) error {
-	remote, localPath, branch := parseCloneResource(action.ID)
+	var remote, localPath, branch string
+
+	// Try structured resource first, then fall back to parsing the ID.
+	if res, ok := action.Resource.(cloneResource); ok {
+		remote = res.Remote
+		localPath = res.Path
+		branch = res.Branch
+	} else {
+		remote, localPath, branch = parseCloneResource(action.ID)
+	}
+
 	if remote == "" || localPath == "" {
-		return fmt.Errorf("git-clone: resource must be 'remote -> local-path [branch]'")
+		return fmt.Errorf("git-clone: resource must have remote and path")
 	}
 
 	slog.Info("git clone", "remote", remote, "path", localPath)
-	args := []string{"clone", remote, localPath}
+	args := []string{"clone"}
 	if branch != "" {
 		args = append(args, "--branch", branch)
 	}
+	args = append(args, remote, localPath)
 
 	cmd := exec.CommandContext(ctx, "git", args...) //nolint:gosec // git clone args from hamsfile declarations
 	cmd.Stdout = os.Stdout
@@ -104,14 +145,103 @@ func (p *CloneProvider) List(_ context.Context, _ *hamsfile.File, sf *state.File
 }
 
 // HandleCommand processes CLI subcommands for git clone.
-func (p *CloneProvider) HandleCommand(args []string, flags *cliutil.GlobalFlags) error {
-	if len(args) < 2 {
-		return cliutil.NewUserError(cliutil.ExitUsageError,
-			"git-clone requires a remote URL and local path",
-			"Usage: hams git-clone <remote-url> <local-path> [--branch=<branch>]",
+func (p *CloneProvider) HandleCommand(args []string, hamsFlags map[string]string, flags *provider.GlobalFlags) error {
+	verb, remaining := provider.ParseVerb(args)
+
+	switch verb {
+	case "add":
+		return p.handleAdd(remaining, hamsFlags, flags)
+	case "remove":
+		return p.handleRemove(remaining, hamsFlags, flags)
+	case "list":
+		fmt.Println("git clone managed repositories:")
+		return nil
+	default:
+		// Passthrough: treat as raw git clone.
+		if len(args) < 2 {
+			return hamserr.NewUserError(hamserr.ExitUsageError,
+				"git-clone requires a subcommand or remote URL and local path",
+				"Usage: hams git-clone add <remote> --hams-path=<path>",
+				"       hams git-clone remove <urn-id>",
+				"       hams git-clone list",
+			)
+		}
+		return p.clonePassthrough(args, flags)
+	}
+}
+
+func (p *CloneProvider) handleAdd(args []string, hamsFlags map[string]string, flags *provider.GlobalFlags) error {
+	if len(args) == 0 {
+		return hamserr.NewUserError(hamserr.ExitUsageError,
+			"git-clone add requires a remote URL",
+			"Usage: hams git-clone add <remote> --hams-path=<path>",
 		)
 	}
 
+	remote := args[0]
+	localPath := hamsFlags["path"]
+	if localPath == "" {
+		return hamserr.NewUserError(hamserr.ExitUsageError,
+			"git-clone add requires --hams-path",
+			"Usage: hams git-clone add <remote> --hams-path=<path>",
+		)
+	}
+
+	if flags.DryRun {
+		fmt.Printf("[dry-run] Would clone: git clone %s %s\n", remote, localPath)
+		return nil
+	}
+
+	cmd := exec.CommandContext(context.Background(), "git", "clone", remote, localPath) //nolint:gosec // git clone from CLI input
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		return err
+	}
+
+	// Record in hamsfile using "remote -> local-path" as the resource ID.
+	resourceID := remote + " -> " + localPath
+	hf, err := p.loadOrCreateHamsfile(hamsFlags, flags)
+	if err != nil {
+		return err
+	}
+	hf.AddApp("repos", resourceID, "")
+	if err := hf.Write(); err != nil {
+		return fmt.Errorf("git-clone: failed to write hamsfile: %w", err)
+	}
+
+	slog.Info("git-clone: cloned and recorded", "remote", remote, "path", localPath)
+	return nil
+}
+
+func (p *CloneProvider) handleRemove(args []string, hamsFlags map[string]string, flags *provider.GlobalFlags) error {
+	if len(args) == 0 {
+		return hamserr.NewUserError(hamserr.ExitUsageError,
+			"git-clone remove requires a resource ID",
+			"Usage: hams git-clone remove <urn-id>",
+		)
+	}
+
+	resourceID := args[0]
+	if flags.DryRun {
+		fmt.Printf("[dry-run] Would remove entry: %s (directory NOT deleted)\n", resourceID)
+		return nil
+	}
+
+	hf, err := p.loadOrCreateHamsfile(hamsFlags, flags)
+	if err != nil {
+		return err
+	}
+	hf.RemoveApp(resourceID)
+	if err := hf.Write(); err != nil {
+		return fmt.Errorf("git-clone: failed to write hamsfile: %w", err)
+	}
+
+	slog.Warn("git-clone: entry removed from Hamsfile. Local directory was NOT deleted.", "resource", resourceID)
+	return nil
+}
+
+func (p *CloneProvider) clonePassthrough(args []string, flags *provider.GlobalFlags) error {
 	remote := args[0]
 	localPath := args[1]
 
@@ -132,27 +262,154 @@ func (p *CloneProvider) Name() string { return "git-clone" }
 // DisplayName returns the display name.
 func (p *CloneProvider) DisplayName() string { return "git clone" }
 
+func (p *CloneProvider) loadOrCreateHamsfile(hamsFlags map[string]string, flags *provider.GlobalFlags) (*hamsfile.File, error) {
+	path, err := p.hamsfilePath(hamsFlags, flags)
+	if err != nil {
+		return nil, err
+	}
+
+	if _, err := os.Stat(path); err == nil {
+		return hamsfile.Read(path)
+	} else if !os.IsNotExist(err) {
+		return nil, fmt.Errorf("stat hamsfile %s: %w", path, err)
+	}
+
+	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
+		return nil, fmt.Errorf("create profile dir for %s: %w", path, err)
+	}
+
+	return &hamsfile.File{
+		Path: path,
+		Root: &yaml.Node{
+			Kind: yaml.DocumentNode,
+			Content: []*yaml.Node{
+				{Kind: yaml.MappingNode, Tag: "!!map"},
+			},
+		},
+	}, nil
+}
+
+func (p *CloneProvider) hamsfilePath(hamsFlags map[string]string, flags *provider.GlobalFlags) (string, error) {
+	cfg := p.effectiveConfig(flags)
+	if cfg.StorePath == "" {
+		return "", hamserr.NewUserError(hamserr.ExitUsageError,
+			"no store directory configured",
+			"Set store_path in hams config or pass --store",
+		)
+	}
+
+	suffix := ".hams.yaml"
+	if _, ok := hamsFlags["local"]; ok {
+		suffix = ".hams.local.yaml"
+	}
+
+	return filepath.Join(cfg.ProfileDir(), p.Manifest().FilePrefix+suffix), nil
+}
+
+func (p *CloneProvider) effectiveConfig(flags *provider.GlobalFlags) *config.Config {
+	if p.cfg == nil {
+		p.cfg = &config.Config{}
+	}
+	cfg := *p.cfg
+	if flags.Store != "" {
+		cfg.StorePath = flags.Store
+	}
+	return &cfg
+}
+
 func extractLocalPath(resourceID string) string {
 	_, localPath, _ := parseCloneResource(resourceID)
 	return localPath
 }
 
 func parseCloneResource(id string) (remote, localPath, branch string) {
-	// Format: "remote -> local-path" or "remote -> local-path branch"
+	// Format: "remote -> local-path"
+	// Branch is not encoded in the ID — use structured YAML fields instead.
 	parts := strings.SplitN(id, " -> ", 2)
 	if len(parts) != 2 {
 		return "", "", ""
 	}
 	remote = strings.TrimSpace(parts[0])
-	rest := strings.TrimSpace(parts[1])
+	localPath = strings.TrimSpace(parts[1])
+	return remote, localPath, ""
+}
 
-	spaceIdx := strings.LastIndex(rest, " ")
-	if spaceIdx > 0 {
-		localPath = rest[:spaceIdx]
-		branch = rest[spaceIdx+1:]
-	} else {
-		localPath = rest
+// cloneParseResources parses structured git-clone entries from the hamsfile.
+// Supports both structured (remote/path/branch fields) and legacy (urn as "remote -> path") formats.
+func cloneParseResources(f *hamsfile.File) (map[string]cloneResource, error) {
+	if f.Root == nil || len(f.Root.Content) == 0 {
+		return map[string]cloneResource{}, nil
 	}
 
-	return remote, localPath, branch
+	doc := f.Root
+	if doc.Kind == yaml.DocumentNode && len(doc.Content) > 0 {
+		doc = doc.Content[0]
+	}
+	if doc.Kind != yaml.MappingNode {
+		return nil, fmt.Errorf("git-clone provider: hamsfile root must be a mapping")
+	}
+
+	resourceByID := make(map[string]cloneResource)
+	for i := 1; i < len(doc.Content); i += 2 {
+		seq := doc.Content[i]
+		if seq.Kind != yaml.SequenceNode {
+			continue
+		}
+
+		for _, item := range seq.Content {
+			if item.Kind == yaml.ScalarNode {
+				// Simple string entry: treat as "remote -> path" format.
+				id := item.Value
+				remote, localPath, branch := parseCloneResource(id)
+				if remote != "" && localPath != "" {
+					resourceByID[id] = cloneResource{Remote: remote, Path: localPath, Branch: branch}
+				}
+				continue
+			}
+			if item.Kind != yaml.MappingNode {
+				continue
+			}
+
+			var id string
+			var res cloneResource
+			for j := 0; j < len(item.Content)-1; j += 2 {
+				key := item.Content[j].Value
+				value := item.Content[j+1].Value
+				switch key {
+				case "urn":
+					id = value
+				case "app":
+					id = value
+				case "remote":
+					res.Remote = value
+				case "path", "local_path":
+					res.Path = value
+				case "branch", "default_branch":
+					res.Branch = value
+				}
+			}
+
+			if id == "" {
+				continue
+			}
+
+			// If structured fields present, use them. Otherwise try to parse ID.
+			if res.Remote == "" || res.Path == "" {
+				remote, localPath, branch := parseCloneResource(id)
+				if remote != "" {
+					res.Remote = remote
+				}
+				if localPath != "" {
+					res.Path = localPath
+				}
+				if branch != "" && res.Branch == "" {
+					res.Branch = branch
+				}
+			}
+
+			resourceByID[id] = res
+		}
+	}
+
+	return resourceByID, nil
 }

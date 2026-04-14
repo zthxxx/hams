@@ -66,8 +66,8 @@ func TestLoad_EmptyStore(t *testing.T) {
 	if len(cfg.ProviderPriority) == 0 {
 		t.Error("expected default ProviderPriority to be populated")
 	}
-	if cfg.ProviderPriority[0] != "homebrew" {
-		t.Errorf("first default priority = %q, want 'homebrew'", cfg.ProviderPriority[0])
+	if cfg.ProviderPriority[0] != "brew" {
+		t.Errorf("first default priority = %q, want 'brew'", cfg.ProviderPriority[0])
 	}
 }
 
@@ -136,6 +136,35 @@ func TestStateDir(t *testing.T) {
 	cfg := &Config{StorePath: "/store", MachineID: "MyMac"}
 	if got := cfg.StateDir(); got != "/store/.state/MyMac" {
 		t.Errorf("StateDir() = %q, want /store/.state/MyMac", got)
+	}
+}
+
+func TestIsSensitiveKey_ExactMatch(t *testing.T) {
+	t.Parallel()
+	if !IsSensitiveKey("llm_cli") {
+		t.Error("llm_cli should be sensitive (exact match)")
+	}
+}
+
+func TestIsSensitiveKey_SubstringMatch(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		key       string
+		sensitive bool
+	}{
+		{"notification.bark_token", true},
+		{"api_secret", true},
+		{"db_password", true},
+		{"oauth_credential", true},
+		{"profile_tag", false},
+		{"machine_id", false},
+		{"store_path", false},
+	}
+
+	for _, tc := range cases {
+		if IsSensitiveKey(tc.key) != tc.sensitive {
+			t.Errorf("IsSensitiveKey(%q) = %v, want %v", tc.key, !tc.sensitive, tc.sensitive)
+		}
 	}
 }
 

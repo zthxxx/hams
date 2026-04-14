@@ -38,7 +38,7 @@ func newStub(name, display string) *stubProvider {
 		manifest: Manifest{
 			Name:        name,
 			DisplayName: display,
-			Platform:    PlatformAll,
+			Platforms:   []Platform{PlatformAll},
 		},
 	}
 }

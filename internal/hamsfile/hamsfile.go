@@ -10,8 +10,9 @@ import (
 )
 
 const (
-	fieldApp = "app"
-	fieldURN = "urn"
+	fieldApp        = "app"
+	fieldURN        = "urn"
+	fieldPreviewCmd = "preview-cmd"
 )
 
 // File represents a loaded Hamsfile with its raw YAML node tree
@@ -229,6 +230,61 @@ func (f *File) RemoveApp(appName string) bool {
 	}
 
 	return found
+}
+
+// SetPreviewCmd sets or updates the preview-cmd field on a resource entry.
+// Searches by app or urn name across all tags.
+func (f *File) SetPreviewCmd(resourceName, previewCmd string) {
+	mu.Lock()
+	defer mu.Unlock()
+
+	doc := f.Root
+	if doc.Kind == yaml.DocumentNode && len(doc.Content) > 0 {
+		doc = doc.Content[0]
+	}
+
+	if doc.Kind != yaml.MappingNode {
+		return
+	}
+
+	for i := 0; i < len(doc.Content)-1; i += 2 {
+		valNode := doc.Content[i+1]
+		if valNode.Kind != yaml.SequenceNode {
+			continue
+		}
+
+		for _, item := range valNode.Content {
+			if item.Kind != yaml.MappingNode {
+				continue
+			}
+			// Check if this entry matches the resource name.
+			isMatch := false
+			for k := 0; k < len(item.Content)-1; k += 2 {
+				key := item.Content[k].Value
+				if (key == fieldApp || key == fieldURN) && item.Content[k+1].Value == resourceName {
+					isMatch = true
+					break
+				}
+			}
+			if !isMatch {
+				continue
+			}
+
+			// Update or add preview-cmd field.
+			for k := 0; k < len(item.Content)-1; k += 2 {
+				if item.Content[k].Value == fieldPreviewCmd {
+					item.Content[k+1].Value = previewCmd
+					return
+				}
+			}
+			// Field doesn't exist yet — add it.
+			item.Content = append(item.Content,
+				&yaml.Node{Kind: yaml.ScalarNode, Value: fieldPreviewCmd, Tag: "!!str"},
+				&yaml.Node{Kind: yaml.ScalarNode, Value: previewCmd, Tag: "!!str"},
+			)
+			return
+		}
+	}
 }
 
 func buildAppEntry(appName, intro string) *yaml.Node {

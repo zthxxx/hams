@@ -1,0 +1,58 @@
+import { Callout } from 'nextra/components'
+
+# Provider Commands
+
+Provider commands follow the pattern `hams <provider> <verb> [args]`. Each provider
+registers its own set of verbs that map to the underlying package manager's operations.
+
+## Routing Pattern
+
+```bash
+hams <provider> <verb> [args] [--hams-flags] [-- <passthrough>]
+```
+
+## Common Verbs
+
+| Verb | Description | Example |
+|------|-------------|---------|
+| `install` / `add` | Install a package and record it in the Hamsfile | `hams brew install bat` |
+| `remove` / `uninstall` | Remove a package and delete it from the Hamsfile | `hams brew remove htop` |
+| `list` | List packages managed by this provider | `hams brew list` |
+| `enrich` | Add metadata (tags, intro) to an already-recorded package | `hams brew enrich bat` |
+
+## Examples
+
+```bash
+# Install via Homebrew
+hams brew install bat
+
+# Install a global pnpm package
+hams pnpm add serve
+
+# Install a global npm package
+hams npm install --global prettier
+
+# Remove a Homebrew package
+hams brew remove htop
+
+# List Homebrew packages
+hams brew list
+
+# Enrich a package with metadata
+hams brew enrich bat --hams-tag=cli --hams-intro="A cat clone with syntax highlighting"
+```
+
+## The `--hams-` Flag Convention
+
+Provider-scoped flags use the `--hams-` prefix to avoid colliding with the wrapped tool's flags:
+
+| Flag | Description |
+|------|-------------|
+| `--hams-tag=<tags>` | Comma-separated tags to assign to the recorded resource |
+| `--hams-intro=<text>` | One-line description to store in the Hamsfile |
+| `--hams-local` | Write to `<Provider>.hams.local.yaml` instead of the main Hamsfile |
+
+<Callout type="info">
+  Full documentation coming soon. See the [Providers](/docs/providers) chapter for
+  provider-specific verb references.
+</Callout>

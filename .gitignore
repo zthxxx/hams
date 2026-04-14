@@ -30,6 +30,7 @@ Thumbs.db
 # Debug
 __debug_bin*
 *.log
+.cache
 
 # Environment
 .env
@@ -55,7 +56,4 @@ __debug_bin*
 # Node.js
 *.tsbuildinfo
 .eslintcache
-
-# build bin
-hams
 

@@ -3,12 +3,13 @@ package pnpm
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"os/exec"
 	"strings"
 
-	"github.com/zthxxx/hams/internal/cliutil"
+	hamserr "github.com/zthxxx/hams/internal/error"
 	"github.com/zthxxx/hams/internal/hamsfile"
 	"github.com/zthxxx/hams/internal/provider"
 	"github.com/zthxxx/hams/internal/state"
@@ -28,7 +29,7 @@ func (p *Provider) Manifest() provider.Manifest {
 	return provider.Manifest{
 		Name:          "pnpm",
 		DisplayName:   "pnpm",
-		Platform:      provider.PlatformAll,
+		Platforms:     []provider.Platform{provider.PlatformAll},
 		ResourceClass: provider.ClassPackage,
 		DependsOn: []provider.DependOn{
 			{Provider: "npm", Package: "pnpm"},
@@ -69,7 +70,7 @@ func (p *Provider) Probe(ctx context.Context, sf *state.File) ([]provider.ProbeR
 
 // Plan computes actions for pnpm packages.
 func (p *Provider) Plan(_ context.Context, desired *hamsfile.File, observed *state.File) ([]provider.Action, error) {
-	apps := desired.Tags()
+	apps := desired.ListApps()
 	return provider.ComputePlan(apps, observed, observed.ConfigHash), nil
 }
 
@@ -86,22 +87,19 @@ func (p *Provider) Remove(ctx context.Context, resourceID string) error {
 }
 
 // List returns installed packages with status.
-func (p *Provider) List(_ context.Context, _ *hamsfile.File, sf *state.File) (string, error) {
-	var sb strings.Builder
-	for id, r := range sf.Resources {
-		fmt.Fprintf(&sb, "  %-30s %-10s %s\n", id, r.State, r.Version)
-	}
-	return sb.String(), nil
+func (p *Provider) List(_ context.Context, desired *hamsfile.File, sf *state.File) (string, error) {
+	diff := provider.DiffDesiredVsState(desired, sf)
+	return provider.FormatDiff(diff), nil
 }
 
 // HandleCommand processes CLI subcommands for pnpm.
-func (p *Provider) HandleCommand(args []string, flags *cliutil.GlobalFlags) error {
+func (p *Provider) HandleCommand(args []string, _ map[string]string, flags *provider.GlobalFlags) error {
 	verb, remaining := provider.ParseVerb(args)
 
 	switch verb {
 	case "add", "install", "i":
 		if len(remaining) == 0 {
-			return cliutil.NewUserError(cliutil.ExitUsageError,
+			return hamserr.NewUserError(hamserr.ExitUsageError,
 				"pnpm install requires a package name",
 				"Usage: hams pnpm add <package>",
 				"To install all recorded packages, use: hams apply --only=pnpm",
@@ -130,17 +128,15 @@ func (p *Provider) Name() string { return "pnpm" }
 func (p *Provider) DisplayName() string { return "pnpm" }
 
 func parsePnpmList(output string) map[string]string {
-	// Simplified JSON parsing for pnpm list -g --json.
 	result := make(map[string]string)
-	for line := range strings.SplitSeq(output, "\n") {
-		line = strings.TrimSpace(line)
-		if strings.HasPrefix(line, `"`) && strings.Contains(line, ":") {
-			parts := strings.SplitN(line, ":", 2)
-			name := strings.Trim(parts[0], `" `)
-			if name != "" && name != "dependencies" {
-				result[name] = ""
-			}
-		}
+	var data struct {
+		Dependencies map[string]json.RawMessage `json:"dependencies"`
+	}
+	if err := json.Unmarshal([]byte(output), &data); err != nil {
+		return result
+	}
+	for name := range data.Dependencies {
+		result[name] = ""
 	}
 	return result
 }

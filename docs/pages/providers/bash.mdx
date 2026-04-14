@@ -1,0 +1,32 @@
+import { Callout } from 'nextra/components'
+
+# bash Provider
+
+Runs arbitrary shell scripts with idempotency checks. Each resource includes a `run:` command
+and a `check:` command. The check command determines whether the resource needs to be applied.
+
+**Platforms:** macOS, Linux
+
+## Usage
+
+```bash
+hams bash run <urn>
+```
+
+## Hamsfile Example
+
+```yaml
+- urn: "urn:hams:bash:install-homebrew"
+  step: Install Homebrew
+  run: /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+  check: command -v brew
+
+- urn: "urn:hams:bash:git-rerere"
+  step: Enable git rerere
+  run: git config --global rerere.autoUpdate true
+  check: git config --global --get rerere.autoUpdate
+```
+
+<Callout type="info">
+  Full documentation coming soon.
+</Callout>

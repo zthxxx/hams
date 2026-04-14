@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os/exec"
+	"strings"
 
 	"github.com/zthxxx/hams/internal/state"
 )
@@ -39,41 +40,59 @@ type HookSet struct {
 }
 
 // RunPreInstallHooks executes pre-install hooks for a resource.
-// Returns an error if any hook fails (blocks the install).
 func RunPreInstallHooks(ctx context.Context, hooks []Hook, resourceID string) error {
-	for _, h := range hooks {
-		if h.Defer {
-			continue // Deferred hooks are collected, not run here.
-		}
-		if err := runHook(ctx, h, resourceID); err != nil {
-			return fmt.Errorf("pre-install hook for %s failed: %w", resourceID, err)
-		}
-	}
-	return nil
+	return runPreHooks(ctx, hooks, resourceID, "pre-install")
+}
+
+// RunPreUpdateHooks executes pre-update hooks for a resource.
+func RunPreUpdateHooks(ctx context.Context, hooks []Hook, resourceID string) error {
+	return runPreHooks(ctx, hooks, resourceID, "pre-update")
 }
 
 // RunPostInstallHooks executes non-deferred post-install hooks.
-// Returns hook-failed errors without stopping.
 func RunPostInstallHooks(ctx context.Context, hooks []Hook, resourceID string, sf *state.File) error {
+	return runPostHooks(ctx, hooks, resourceID, "post-install", sf)
+}
+
+// RunPostUpdateHooks executes non-deferred post-update hooks.
+func RunPostUpdateHooks(ctx context.Context, hooks []Hook, resourceID string, sf *state.File) error {
+	return runPostHooks(ctx, hooks, resourceID, "post-update", sf)
+}
+
+// runPreHooks runs non-deferred pre-phase hooks. Returns error on first failure.
+func runPreHooks(ctx context.Context, hooks []Hook, resourceID, phase string) error {
 	for _, h := range hooks {
 		if h.Defer {
 			continue
 		}
 		if err := runHook(ctx, h, resourceID); err != nil {
-			slog.Error("post-install hook failed", "resource", resourceID, "error", err)
+			return fmt.Errorf("%s hook for %s failed: %w", phase, resourceID, err)
+		}
+	}
+	return nil
+}
+
+// runPostHooks runs non-deferred post-phase hooks. Records hook-failed state on error.
+func runPostHooks(ctx context.Context, hooks []Hook, resourceID, phase string, sf *state.File) error {
+	for _, h := range hooks {
+		if h.Defer {
+			continue
+		}
+		if err := runHook(ctx, h, resourceID); err != nil {
+			slog.Error(phase+" hook failed", "resource", resourceID, "error", err)
 			sf.SetResource(resourceID, state.StateHookFailed, state.WithError(err.Error()))
-			return fmt.Errorf("post-install hook for %s failed: %w", resourceID, err)
+			return fmt.Errorf("%s hook for %s failed: %w", phase, resourceID, err)
 		}
 	}
 	return nil
 }
 
 // CollectDeferredHooks returns all hooks with defer=true from the given hook set.
-func CollectDeferredHooks(hooks []Hook) []DeferredHook {
+func CollectDeferredHooks(resourceID string, hooks []Hook) []DeferredHook {
 	var deferred []DeferredHook
 	for _, h := range hooks {
 		if h.Defer {
-			deferred = append(deferred, DeferredHook{Hook: h})
+			deferred = append(deferred, DeferredHook{Hook: h, ResourceID: resourceID})
 		}
 	}
 	return deferred
@@ -100,6 +119,13 @@ func RunDeferredHooks(ctx context.Context, deferred []DeferredHook, sf *state.Fi
 
 func runHook(ctx context.Context, h Hook, resourceID string) error {
 	slog.Debug("running hook", "type", h.Type, "resource", resourceID, "command", h.Command)
+
+	// Nested hams invocations run as subprocess; in-process dispatch not yet supported.
+	if strings.HasPrefix(strings.TrimSpace(h.Command), "hams ") {
+		slog.Warn("nested hams invocation detected in hook; running as subprocess",
+			"resource", resourceID, "command", h.Command)
+	}
+
 	cmd := exec.CommandContext(ctx, "sh", "-c", h.Command) //nolint:gosec // hook commands are user-defined in hamsfile, not external input
 	output, err := cmd.CombinedOutput()
 	if err != nil {

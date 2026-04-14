@@ -1,10 +1,20 @@
-// Package i18n handles locale detection and message catalog loading for internationalized CLI output.
+// Package i18n handles locale detection and message translation using nicksnyder/go-i18n.
 package i18n
 
 import (
+	"embed"
+	"io/fs"
 	"os"
+	"sort"
 	"strings"
+
+	"github.com/nicksnyder/go-i18n/v2/i18n"
+	"golang.org/x/text/language"
+	"gopkg.in/yaml.v3"
 )
+
+//go:embed locales/*.yaml
+var localeFS embed.FS
 
 // Locale represents the detected user locale.
 type Locale struct {
@@ -15,10 +25,96 @@ type Locale struct {
 // DefaultLocale is en_US.
 var DefaultLocale = Locale{Language: "en", Region: "US"}
 
+var localizer *i18n.Localizer
+
+// Init detects the locale and initializes the go-i18n localizer.
+func Init() {
+	locale := DetectLocale()
+
+	bundle := i18n.NewBundle(language.English)
+	bundle.RegisterUnmarshalFunc("yaml", yaml.Unmarshal)
+
+	// Always load English as the default.
+	_, _ = bundle.LoadMessageFileFS(localeFS, "locales/en.yaml")
+
+	// Load a non-English locale file using the fallback chain:
+	// 1. Exact match: lang-REGION.yaml (e.g., zh-TW.yaml)
+	// 2. Base language: lang.yaml (e.g., zh.yaml)
+	// 3. First lang-*.yaml alphabetically (e.g., zh-CN.yaml)
+	// 4. If none found, rely on English only.
+	var loadedTag string
+	if locale.Language != "en" {
+		if file := resolveLocaleFile(locale); file != "" {
+			_, _ = bundle.LoadMessageFileFS(localeFS, file)
+			// Extract the BCP-47 tag from the filename (e.g., "locales/zh-CN.yaml" → "zh-CN").
+			loadedTag = strings.TrimSuffix(strings.TrimPrefix(file, "locales/"), ".yaml")
+		}
+	}
+
+	// Build the localizer with fallback chain.
+	// Include both the user's locale tag and the actually-loaded file's tag,
+	// so go-i18n can match even when they differ (e.g., zh-TW user loads zh-CN).
+	userTag := locale.Language
+	if locale.Region != "" {
+		userTag = locale.Language + "-" + locale.Region
+	}
+	tags := []string{userTag}
+	if loadedTag != "" && loadedTag != userTag {
+		tags = append(tags, loadedTag)
+	}
+	tags = append(tags, "en")
+	localizer = i18n.NewLocalizer(bundle, tags...)
+}
+
+// resolveLocaleFile finds the best matching locale file for the given locale.
+// Fallback chain: lang-REGION.yaml → lang.yaml → first lang-*.yaml alphabetically → "".
+func resolveLocaleFile(locale Locale) string {
+	// Step 1: exact match (e.g., zh-TW.yaml).
+	if locale.Region != "" {
+		candidate := "locales/" + locale.Language + "-" + locale.Region + ".yaml"
+		if fileExists(candidate) {
+			return candidate
+		}
+	}
+
+	// Step 2: base language (e.g., zh.yaml).
+	candidate := "locales/" + locale.Language + ".yaml"
+	if fileExists(candidate) {
+		return candidate
+	}
+
+	// Step 3: first lang-*.yaml alphabetically (e.g., zh-CN.yaml).
+	prefix := locale.Language + "-"
+	entries, err := fs.ReadDir(localeFS, "locales")
+	if err != nil {
+		return ""
+	}
+
+	var matches []string
+	for _, e := range entries {
+		name := e.Name()
+		if strings.HasPrefix(name, prefix) && strings.HasSuffix(name, ".yaml") {
+			matches = append(matches, name)
+		}
+	}
+	if len(matches) > 0 {
+		sort.Strings(matches)
+		return "locales/" + matches[0]
+	}
+
+	return ""
+}
+
+// fileExists checks if a file exists in the embedded locale filesystem.
+func fileExists(path string) bool {
+	_, err := fs.Stat(localeFS, path)
+	return err == nil
+}
+
 // DetectLocale reads LC_ALL, LC_CTYPE, LANG environment variables
 // in priority order and parses the locale string.
 func DetectLocale() Locale {
-	// Priority: LC_ALL > LC_CTYPE > LANG
+	// Priority: LC_ALL > LC_CTYPE > LANG.
 	for _, env := range []string{"LC_ALL", "LC_CTYPE", "LANG"} {
 		if val := os.Getenv(env); val != "" {
 			if loc, ok := parseLocale(val); ok {
@@ -63,14 +159,39 @@ func (l Locale) String() string {
 }
 
 // IsSupported checks if translations exist for this locale.
-// Currently only en_US is supported.
 func (l Locale) IsSupported() bool {
-	return l.Language == "en"
+	if l.Language == "en" {
+		return true
+	}
+	return resolveLocaleFile(l) != ""
 }
 
-// T returns the translated string for the given key.
-// Currently returns the key itself (en_US passthrough).
-// Future: load translations from message catalogs.
-func T(key string) string {
-	return key
+// T returns the translated string for the given message ID.
+// Falls back to English if the active locale has no translation for this key.
+// Falls back to the key itself if English also has no translation.
+func T(msgID string) string {
+	if localizer == nil {
+		return msgID
+	}
+	msg, err := localizer.Localize(&i18n.LocalizeConfig{MessageID: msgID})
+	if err != nil || msg == "" {
+		return msgID
+	}
+	return msg
+}
+
+// Tf returns the translated string with template data interpolation.
+// Falls back the same way as T.
+func Tf(msgID string, data map[string]any) string {
+	if localizer == nil {
+		return msgID
+	}
+	msg, err := localizer.Localize(&i18n.LocalizeConfig{
+		MessageID:    msgID,
+		TemplateData: data,
+	})
+	if err != nil || msg == "" {
+		return msgID
+	}
+	return msg
 }

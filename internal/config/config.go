@@ -3,8 +3,12 @@ package config
 
 import (
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
+
+	"gopkg.in/yaml.v3"
 )
 
 // Config holds the merged hams configuration from all levels.
@@ -24,15 +28,17 @@ type Config struct {
 }
 
 // DefaultProviderPriority is the built-in provider execution order.
+// Names must match provider Manifest().Name (lowercased by registry).
 var DefaultProviderPriority = []string{
-	"homebrew", "apt", "pnpm", "npm", "uv", "go", "cargo",
-	"vscode-ext", "mas", "git", "defaults", "duti", "bash",
+	"brew", "apt", "pnpm", "npm", "uv", "goinstall", "cargo",
+	"code-ext", "mas", "git-config", "git-clone", "defaults", "duti", "bash", "ansible",
 }
 
 // Paths holds the resolved directory paths for hams.
 type Paths struct {
-	ConfigHome string // HAMS_CONFIG_HOME (~/.config/hams/)
-	DataHome   string // HAMS_DATA_HOME (~/.local/share/hams/)
+	ConfigHome     string // HAMS_CONFIG_HOME (~/.config/hams/)
+	DataHome       string // HAMS_DATA_HOME (~/.local/share/hams/)
+	ConfigFilePath string // Explicit config file path from --config flag (overrides GlobalConfigPath).
 }
 
 // ResolvePaths determines the hams directory paths from environment variables.
@@ -64,7 +70,11 @@ func ResolvePaths() Paths {
 }
 
 // GlobalConfigPath returns the path to the global hams config file.
+// If ConfigFilePath is set (via --config flag), it takes precedence.
 func (p Paths) GlobalConfigPath() string {
+	if p.ConfigFilePath != "" {
+		return p.ConfigFilePath
+	}
 	return filepath.Join(p.ConfigHome, "hams.config.yaml")
 }
 
@@ -80,10 +90,21 @@ func Load(paths Paths, storePath string) (*Config, error) {
 
 	// Level 1: built-in defaults (already set above).
 
-	// Level 2: global config.
+	// Level 2a: global config.
 	globalPath := paths.GlobalConfigPath()
 	if err := mergeFromFile(cfg, globalPath); err != nil && !os.IsNotExist(err) {
 		return nil, fmt.Errorf("loading global config %s: %w", globalPath, err)
+	}
+
+	// Level 2b: global local overrides (for sensitive keys written outside a store context).
+	globalLocalPath := filepath.Join(paths.ConfigHome, "hams.config.local.yaml")
+	if err := mergeFromFile(cfg, globalLocalPath); err != nil && !os.IsNotExist(err) {
+		return nil, fmt.Errorf("loading global local config %s: %w", globalLocalPath, err)
+	}
+
+	// If no explicit storePath but the global config defines one, use it.
+	if storePath == "" && cfg.StorePath != "" {
+		storePath = cfg.StorePath
 	}
 
 	// Level 3: project-level config.
@@ -124,4 +145,112 @@ func (c *Config) StateDir() string {
 		id = "unknown"
 	}
 	return filepath.Join(c.StorePath, ".state", id)
+}
+
+// sensitiveKeys are config keys that should be written to .local.yaml files.
+var sensitiveKeys = map[string]bool{
+	"llm_cli": true,
+}
+
+// sensitivePatterns are substrings that mark a key as sensitive.
+var sensitivePatterns = []string{
+	"token", "secret", "password", "credential",
+}
+
+// IsSensitiveKey returns true if the key should be stored in a .local.yaml file.
+// Matches exact keys in sensitiveKeys or keys containing sensitive substrings.
+func IsSensitiveKey(key string) bool {
+	if sensitiveKeys[key] {
+		return true
+	}
+	lower := strings.ToLower(key)
+	for _, pattern := range sensitivePatterns {
+		if strings.Contains(lower, pattern) {
+			return true
+		}
+	}
+	return false
+}
+
+// ValidConfigKeys lists the keys that can be set via `hams config set`.
+var ValidConfigKeys = []string{"profile_tag", "machine_id", "store_path", "store_repo", "llm_cli"}
+
+// IsValidConfigKey returns true if the key is a recognized settable config key.
+func IsValidConfigKey(key string) bool {
+	for _, k := range ValidConfigKeys {
+		if k == key {
+			return true
+		}
+	}
+	return false
+}
+
+// WriteConfigKey reads the appropriate config file, updates a single key, and writes it back atomically.
+// Sensitive keys are written to the store's local config; other keys go to the global config file.
+func WriteConfigKey(paths Paths, storePath, key, value string) error {
+	var targetPath string
+	if IsSensitiveKey(key) {
+		slog.Info("sensitive key detected, routing to .local.yaml", "key", key)
+		if storePath == "" {
+			// Fall back to a global local config next to the global config.
+			targetPath = filepath.Join(paths.ConfigHome, "hams.config.local.yaml")
+		} else {
+			targetPath = filepath.Join(storePath, "hams.config.local.yaml")
+		}
+	} else {
+		targetPath = paths.GlobalConfigPath()
+	}
+
+	// Read existing file into a generic map to preserve unknown fields.
+	existing := make(map[string]interface{})
+	data, err := os.ReadFile(targetPath) //nolint:gosec // config paths are user-specified
+	if err == nil {
+		if unmarshalErr := yaml.Unmarshal(data, &existing); unmarshalErr != nil {
+			return fmt.Errorf("parsing config %s: %w", targetPath, unmarshalErr)
+		}
+	} else if !os.IsNotExist(err) {
+		return fmt.Errorf("reading config %s: %w", targetPath, err)
+	}
+
+	existing[key] = value
+
+	out, err := yaml.Marshal(existing)
+	if err != nil {
+		return fmt.Errorf("marshaling config: %w", err)
+	}
+
+	dir := filepath.Dir(targetPath)
+	if mkdirErr := os.MkdirAll(dir, 0o750); mkdirErr != nil {
+		return fmt.Errorf("creating config directory %s: %w", dir, mkdirErr)
+	}
+
+	tmp, err := os.CreateTemp(dir, ".config-*.tmp")
+	if err != nil {
+		return fmt.Errorf("creating temp file: %w", err)
+	}
+	tmpName := tmp.Name()
+
+	success := false
+	defer func() {
+		if !success {
+			tmp.Close()        //nolint:errcheck,gosec // best-effort cleanup on error path
+			os.Remove(tmpName) //nolint:errcheck,gosec // best-effort cleanup on error path
+		}
+	}()
+
+	if _, err := tmp.Write(out); err != nil {
+		return fmt.Errorf("writing config: %w", err)
+	}
+	if err := tmp.Sync(); err != nil {
+		return fmt.Errorf("syncing config: %w", err)
+	}
+	if err := tmp.Close(); err != nil {
+		return fmt.Errorf("closing config: %w", err)
+	}
+	if err := os.Rename(tmpName, targetPath); err != nil {
+		return fmt.Errorf("renaming config: %w", err)
+	}
+
+	success = true
+	return nil
 }

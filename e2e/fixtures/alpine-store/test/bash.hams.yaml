@@ -1,0 +1,5 @@
+setup:
+  - urn: "urn:hams:bash:create-marker"
+    step: "Create E2E marker file"
+    run: "touch /tmp/hams-e2e-marker"
+    check: "test -f /tmp/hams-e2e-marker"

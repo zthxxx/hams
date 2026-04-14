@@ -9,7 +9,7 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/zthxxx/hams/internal/cliutil"
+	hamserr "github.com/zthxxx/hams/internal/error"
 	"github.com/zthxxx/hams/internal/hamsfile"
 	"github.com/zthxxx/hams/internal/provider"
 	"github.com/zthxxx/hams/internal/state"
@@ -30,7 +30,7 @@ func (p *Provider) Manifest() provider.Manifest {
 	return provider.Manifest{
 		Name:          "apt",
 		DisplayName:   "apt",
-		Platform:      provider.PlatformLinux,
+		Platforms:     []provider.Platform{provider.PlatformLinux},
 		ResourceClass: provider.ClassPackage,
 		FilePrefix:    "apt",
 	}
@@ -70,7 +70,7 @@ func (p *Provider) Probe(ctx context.Context, sf *state.File) ([]provider.ProbeR
 
 // Plan computes actions for apt packages.
 func (p *Provider) Plan(_ context.Context, desired *hamsfile.File, observed *state.File) ([]provider.Action, error) {
-	apps := desired.Tags()
+	apps := desired.ListApps()
 	return provider.ComputePlan(apps, observed, observed.ConfigHash), nil
 }
 
@@ -91,22 +91,19 @@ func (p *Provider) Remove(ctx context.Context, resourceID string) error {
 }
 
 // List returns installed packages with status.
-func (p *Provider) List(_ context.Context, _ *hamsfile.File, sf *state.File) (string, error) {
-	var sb strings.Builder
-	for id, r := range sf.Resources {
-		fmt.Fprintf(&sb, "  %-30s %-10s %s\n", id, r.State, r.Version)
-	}
-	return sb.String(), nil
+func (p *Provider) List(_ context.Context, desired *hamsfile.File, sf *state.File) (string, error) {
+	diff := provider.DiffDesiredVsState(desired, sf)
+	return provider.FormatDiff(diff), nil
 }
 
 // HandleCommand processes CLI subcommands for apt.
-func (p *Provider) HandleCommand(args []string, flags *cliutil.GlobalFlags) error {
+func (p *Provider) HandleCommand(args []string, _ map[string]string, flags *provider.GlobalFlags) error {
 	verb, remaining := provider.ParseVerb(args)
 
 	switch verb {
 	case "install":
 		if len(remaining) == 0 {
-			return cliutil.NewUserError(cliutil.ExitUsageError,
+			return hamserr.NewUserError(hamserr.ExitUsageError,
 				"apt install requires a package name",
 				"Usage: hams apt install <package>",
 			)

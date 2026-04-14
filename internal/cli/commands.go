@@ -2,17 +2,22 @@ package cli
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strings"
 
 	"github.com/urfave/cli/v3"
+	"gopkg.in/yaml.v3"
 
-	"github.com/zthxxx/hams/internal/cliutil"
 	"github.com/zthxxx/hams/internal/config"
+	hamserr "github.com/zthxxx/hams/internal/error"
 	"github.com/zthxxx/hams/internal/logging"
 	"github.com/zthxxx/hams/internal/provider"
+	"github.com/zthxxx/hams/internal/selfupdate"
 	"github.com/zthxxx/hams/internal/state"
 )
 
@@ -33,18 +38,30 @@ Only resources already tracked in state are probed — no new resources are disc
 	}
 }
 
-func runRefresh(ctx context.Context, flags *cliutil.GlobalFlags, registry *provider.Registry, only, except string) error {
-	paths := config.ResolvePaths()
+func runRefresh(ctx context.Context, flags *provider.GlobalFlags, registry *provider.Registry, only, except string) error {
+	paths := resolvePaths(flags)
 	cfg, err := config.Load(paths, flags.Store)
 	if err != nil {
 		return fmt.Errorf("loading config: %w", err)
 	}
+	if flags.Profile != "" {
+		cfg.ProfileTag = flags.Profile
+	}
 
 	stateDir := cfg.StateDir()
-	providers := filterProviders(registry.Ordered(cfg.ProviderPriority), only, except)
+	providers, filterErr := filterProviders(registry.Ordered(cfg.ProviderPriority), only, except, registry.Names())
+	if filterErr != nil {
+		return filterErr
+	}
 
 	slog.Info("refreshing state", "providers", len(providers))
-	provider.ProbeAll(ctx, providers, stateDir, cfg.MachineID)
+	probeResults := provider.ProbeAll(ctx, providers, stateDir, cfg.MachineID)
+	for name, sf := range probeResults {
+		statePath := filepath.Join(stateDir, name+".state.yaml")
+		if saveErr := sf.Save(statePath); saveErr != nil {
+			slog.Error("failed to save probed state", "provider", name, "error", saveErr)
+		}
+	}
 
 	fmt.Printf("Refresh complete: %d providers probed\n", len(providers))
 	return nil
@@ -60,7 +77,7 @@ func configCmd() *cli.Command {
 				Usage: "Show all configuration values",
 				Action: func(_ context.Context, cmd *cli.Command) error {
 					flags := globalFlags(cmd)
-					paths := config.ResolvePaths()
+					paths := resolvePaths(flags)
 					cfg, loadErr := config.Load(paths, flags.Store)
 					if loadErr != nil {
 						return fmt.Errorf("loading config: %w", loadErr)
@@ -82,18 +99,84 @@ func configCmd() *cli.Command {
 				ArgsUsage: "<key>",
 				Action: func(_ context.Context, cmd *cli.Command) error {
 					if cmd.Args().Len() < 1 {
-						return cliutil.NewUserError(cliutil.ExitUsageError,
+						return hamserr.NewUserError(hamserr.ExitUsageError,
 							"config get requires a key",
 							"Usage: hams config get <key>",
 						)
 					}
 					flags := globalFlags(cmd)
-					paths := config.ResolvePaths()
+					paths := resolvePaths(flags)
 					cfg, loadErr := config.Load(paths, flags.Store)
 					if loadErr != nil {
 						return fmt.Errorf("loading config: %w", loadErr)
 					}
 					return printConfigKey(cfg, paths, cmd.Args().First())
+				},
+			},
+			{
+				Name:      "set",
+				Usage:     "Set a configuration value",
+				ArgsUsage: "<key> <value>",
+				Action: func(_ context.Context, cmd *cli.Command) error {
+					if cmd.Args().Len() < 2 { //nolint:mnd // exactly 2 args required: key and value
+						return hamserr.NewUserError(hamserr.ExitUsageError,
+							"config set requires a key and value",
+							"Usage: hams config set <key> <value>",
+							"Valid keys: "+strings.Join(config.ValidConfigKeys, ", "),
+						)
+					}
+					key := cmd.Args().Get(0)
+					value := cmd.Args().Get(1)
+					if !config.IsValidConfigKey(key) {
+						return hamserr.NewUserError(hamserr.ExitUsageError,
+							fmt.Sprintf("unknown config key %q", key),
+							"Valid keys: "+strings.Join(config.ValidConfigKeys, ", "),
+						)
+					}
+					flags := globalFlags(cmd)
+					paths := resolvePaths(flags)
+					if err := config.WriteConfigKey(paths, flags.Store, key, value); err != nil {
+						return fmt.Errorf("writing config: %w", err)
+					}
+					target := "global config"
+					if config.IsSensitiveKey(key) {
+						target = "local config"
+					}
+					fmt.Printf("Set %s = %s (in %s)\n", key, value, target)
+					return nil
+				},
+			},
+			{
+				Name:  "edit",
+				Usage: "Open the global config file in your editor",
+				Action: func(_ context.Context, cmd *cli.Command) error {
+					flags := globalFlags(cmd)
+					paths := resolvePaths(flags)
+					configPath := paths.GlobalConfigPath()
+
+					// Ensure the config file exists.
+					if _, statErr := os.Stat(configPath); os.IsNotExist(statErr) {
+						if mkdirErr := os.MkdirAll(filepath.Dir(configPath), 0o750); mkdirErr != nil {
+							return fmt.Errorf("creating config directory: %w", mkdirErr)
+						}
+						if writeErr := os.WriteFile(configPath, []byte("# hams global configuration\n"), 0o640); writeErr != nil {
+							return fmt.Errorf("creating config file: %w", writeErr)
+						}
+					}
+
+					editor := os.Getenv("EDITOR")
+					if editor == "" {
+						editor = os.Getenv("VISUAL")
+					}
+					if editor == "" {
+						editor = "vi"
+					}
+
+					editorCmd := exec.Command(editor, configPath) //nolint:gosec // editor is user-specified via $EDITOR
+					editorCmd.Stdin = os.Stdin
+					editorCmd.Stdout = os.Stdout
+					editorCmd.Stderr = os.Stderr
+					return editorCmd.Run()
 				},
 			},
 		},
@@ -117,7 +200,7 @@ func printConfigKey(cfg *config.Config, paths config.Paths, key string) error {
 	case "data_home":
 		fmt.Println(logging.TildePath(paths.DataHome))
 	default:
-		return cliutil.NewUserError(cliutil.ExitUsageError,
+		return hamserr.NewUserError(hamserr.ExitUsageError,
 			fmt.Sprintf("unknown config key %q", key),
 			"Valid keys: profile_tag, machine_id, store_path, store_repo, llm_cli, config_home, data_home",
 		)
@@ -126,66 +209,235 @@ func printConfigKey(cfg *config.Config, paths config.Paths, key string) error {
 }
 
 func storeCmd() *cli.Command {
+	storeStatusAction := func(_ context.Context, cmd *cli.Command) error {
+		flags := globalFlags(cmd)
+		paths := resolvePaths(flags)
+		cfg, err := config.Load(paths, flags.Store)
+		if err != nil {
+			return fmt.Errorf("loading config: %w", err)
+		}
+
+		storePath := cfg.StorePath
+		if storePath == "" {
+			return hamserr.NewUserError(hamserr.ExitUsageError,
+				"no store directory configured",
+				"Set store_path in ~/.config/hams/hams.config.yaml",
+				"Or use 'hams apply --from-repo=<user/repo>' to set up a store",
+			)
+		}
+
+		fmt.Printf("Store path:    %s\n", logging.TildePath(storePath))
+		fmt.Printf("Profile dir:   %s\n", logging.TildePath(cfg.ProfileDir()))
+		fmt.Printf("State dir:     %s\n", logging.TildePath(cfg.StateDir()))
+
+		profileDir := cfg.ProfileDir()
+		entries, readErr := os.ReadDir(profileDir)
+		if readErr != nil {
+			fmt.Printf("Profile dir:   (not found)\n")
+			return nil //nolint:nilerr // intentional: missing profile dir is not an error
+		}
+
+		hamsfiles := 0
+		for _, e := range entries {
+			if !e.IsDir() && filepath.Ext(e.Name()) == ".yaml" {
+				hamsfiles++
+			}
+		}
+		fmt.Printf("Hamsfiles:     %d\n", hamsfiles)
+
+		return nil
+	}
+
 	return &cli.Command{
-		Name:  "store",
-		Usage: "Show store directory path and status",
-		Action: func(_ context.Context, cmd *cli.Command) error {
-			flags := globalFlags(cmd)
-			paths := config.ResolvePaths()
-			cfg, err := config.Load(paths, flags.Store)
-			if err != nil {
-				return fmt.Errorf("loading config: %w", err)
-			}
+		Name:   "store",
+		Usage:  "Manage the hams store directory",
+		Action: storeStatusAction,
+		Commands: []*cli.Command{
+			{
+				Name:  "init",
+				Usage: "Initialize a new store directory structure",
+				Action: func(_ context.Context, cmd *cli.Command) error {
+					flags := globalFlags(cmd)
+					paths := resolvePaths(flags)
+					cfg, err := config.Load(paths, flags.Store)
+					if err != nil {
+						return fmt.Errorf("loading config: %w", err)
+					}
 
-			storePath := cfg.StorePath
-			if storePath == "" {
-				return cliutil.NewUserError(cliutil.ExitUsageError,
-					"no store directory configured",
-					"Set store_path in ~/.config/hams/hams.config.yaml",
-					"Or use 'hams apply --from-repo=<user/repo>' to set up a store",
-				)
-			}
+					storePath := cfg.StorePath
+					if storePath == "" {
+						return hamserr.NewUserError(hamserr.ExitUsageError,
+							"no store directory configured",
+							"Set store_path first: hams config set store_path <path>",
+						)
+					}
 
-			fmt.Printf("Store path:    %s\n", logging.TildePath(storePath))
-			fmt.Printf("Profile dir:   %s\n", logging.TildePath(cfg.ProfileDir()))
-			fmt.Printf("State dir:     %s\n", logging.TildePath(cfg.StateDir()))
+					// Create profile directory.
+					profileDir := cfg.ProfileDir()
+					if mkErr := os.MkdirAll(profileDir, 0o750); mkErr != nil {
+						return fmt.Errorf("creating profile directory: %w", mkErr)
+					}
 
-			profileDir := cfg.ProfileDir()
-			entries, readErr := os.ReadDir(profileDir)
-			if readErr != nil {
-				fmt.Printf("Profile dir:   (not found)\n")
-				return nil //nolint:nilerr // intentional: missing profile dir is not an error
-			}
+					// Create .state directory.
+					stateDir := cfg.StateDir()
+					if mkErr := os.MkdirAll(stateDir, 0o750); mkErr != nil {
+						return fmt.Errorf("creating state directory: %w", mkErr)
+					}
 
-			hamsfiles := 0
-			for _, e := range entries {
-				if !e.IsDir() && filepath.Ext(e.Name()) == ".yaml" {
-					hamsfiles++
-				}
-			}
-			fmt.Printf("Hamsfiles:     %d\n", hamsfiles)
+					// Create initial hams.config.yaml if it does not exist.
+					storeConfigPath := filepath.Join(storePath, "hams.config.yaml")
+					if _, statErr := os.Stat(storeConfigPath); os.IsNotExist(statErr) {
+						initial := config.Config{
+							ProfileTag: cfg.ProfileTag,
+							MachineID:  cfg.MachineID,
+						}
+						data, marshalErr := yaml.Marshal(&initial)
+						if marshalErr != nil {
+							return fmt.Errorf("marshaling initial config: %w", marshalErr)
+						}
+						if writeErr := os.WriteFile(storeConfigPath, data, 0o640); writeErr != nil {
+							return fmt.Errorf("writing initial config: %w", writeErr)
+						}
+					}
 
-			return nil
+					fmt.Printf("Store initialized at %s\n", logging.TildePath(storePath))
+					fmt.Printf("  Profile dir: %s\n", logging.TildePath(profileDir))
+					fmt.Printf("  State dir:   %s\n", logging.TildePath(stateDir))
+					return nil
+				},
+			},
+			{
+				Name:  "push",
+				Usage: "Commit and push store changes to the remote repository",
+				Action: func(_ context.Context, cmd *cli.Command) error {
+					flags := globalFlags(cmd)
+					paths := resolvePaths(flags)
+					cfg, err := config.Load(paths, flags.Store)
+					if err != nil {
+						return fmt.Errorf("loading config: %w", err)
+					}
+
+					storePath := cfg.StorePath
+					if storePath == "" {
+						return hamserr.NewUserError(hamserr.ExitUsageError,
+							"no store directory configured",
+							"Set store_path in ~/.config/hams/hams.config.yaml",
+						)
+					}
+
+					gitAdd := exec.Command("git", "-C", storePath, "add", "-A") //nolint:gosec // storePath is user-configured
+					gitAdd.Stdin = os.Stdin
+					gitAdd.Stdout = os.Stdout
+					gitAdd.Stderr = os.Stderr
+					if runErr := gitAdd.Run(); runErr != nil {
+						return fmt.Errorf("git add: %w", runErr)
+					}
+
+					gitCommit := exec.Command("git", "-C", storePath, "commit", "-m", "hams: update store") //nolint:gosec // storePath is user-configured
+					gitCommit.Stdin = os.Stdin
+					gitCommit.Stdout = os.Stdout
+					gitCommit.Stderr = os.Stderr
+					if runErr := gitCommit.Run(); runErr != nil {
+						return fmt.Errorf("git commit: %w", runErr)
+					}
+
+					gitPush := exec.Command("git", "-C", storePath, "push") //nolint:gosec // storePath is user-configured
+					gitPush.Stdin = os.Stdin
+					gitPush.Stdout = os.Stdout
+					gitPush.Stderr = os.Stderr
+					if runErr := gitPush.Run(); runErr != nil {
+						return fmt.Errorf("git push: %w", runErr)
+					}
+
+					return nil
+				},
+			},
+			{
+				Name:  "pull",
+				Usage: "Pull latest store changes from the remote repository",
+				Action: func(_ context.Context, cmd *cli.Command) error {
+					flags := globalFlags(cmd)
+					paths := resolvePaths(flags)
+					cfg, err := config.Load(paths, flags.Store)
+					if err != nil {
+						return fmt.Errorf("loading config: %w", err)
+					}
+
+					storePath := cfg.StorePath
+					if storePath == "" {
+						return hamserr.NewUserError(hamserr.ExitUsageError,
+							"no store directory configured",
+							"Set store_path in ~/.config/hams/hams.config.yaml",
+						)
+					}
+
+					gitPull := exec.Command("git", "-C", storePath, "pull", "--rebase") //nolint:gosec // storePath is user-configured
+					gitPull.Stdin = os.Stdin
+					gitPull.Stdout = os.Stdout
+					gitPull.Stderr = os.Stderr
+					return gitPull.Run()
+				},
+			},
 		},
 	}
+}
+
+// listResource is used for JSON serialization of list output.
+type listResource struct {
+	Provider    string `json:"provider"`
+	DisplayName string `json:"display_name"`
+	ID          string `json:"id"`
+	Status      string `json:"status"`
+	Version     string `json:"version,omitempty"`
 }
 
 func listCmd(registry *provider.Registry) *cli.Command {
 	return &cli.Command{
 		Name:  "list",
 		Usage: "List all managed resources across providers",
+		Flags: []cli.Flag{
+			&cli.StringFlag{Name: "only", Usage: "Only list these providers (comma-separated)"},
+			&cli.StringFlag{Name: "except", Usage: "Skip these providers (comma-separated)"},
+			&cli.StringFlag{Name: "status", Usage: "Filter by resource status (ok, failed, pending, removed)"},
+		},
 		Action: func(_ context.Context, cmd *cli.Command) error {
 			flags := globalFlags(cmd)
-			paths := config.ResolvePaths()
+			paths := resolvePaths(flags)
 			cfg, err := config.Load(paths, flags.Store)
 			if err != nil {
 				return fmt.Errorf("loading config: %w", err)
 			}
 
+			providers, filterErr := filterProviders(
+				registry.Ordered(cfg.ProviderPriority),
+				cmd.String("only"),
+				cmd.String("except"),
+				registry.Names(),
+			)
+			if filterErr != nil {
+				return filterErr
+			}
+
+			statusFilter := cmd.String("status")
+			var statusSet map[string]bool
+			if statusFilter != "" {
+				statusSet = make(map[string]bool)
+				for _, s := range strings.Split(statusFilter, ",") {
+					statusSet[strings.TrimSpace(s)] = true
+				}
+			}
+
 			stateDir := cfg.StateDir()
-			for _, p := range registry.Ordered(cfg.ProviderPriority) {
-				name := p.Manifest().Name
-				statePath := filepath.Join(stateDir, name+".state.yaml")
+			var jsonResults []listResource
+
+			for _, p := range providers {
+				manifest := p.Manifest()
+				displayName := manifest.DisplayName
+				filePrefix := manifest.FilePrefix
+				if filePrefix == "" {
+					filePrefix = manifest.Name
+				}
+				statePath := filepath.Join(stateDir, filePrefix+".state.yaml")
 
 				sf, loadErr := state.Load(statePath)
 				if loadErr != nil {
@@ -196,15 +448,53 @@ func listCmd(registry *provider.Registry) *cli.Command {
 					continue
 				}
 
-				fmt.Printf("\n%s (%d resources):\n", p.Manifest().DisplayName, len(sf.Resources))
+				// Collect filtered resources for this provider.
+				var filteredIDs []string
 				for id, r := range sf.Resources {
-					status := string(r.State)
-					ver := ""
-					if r.Version != "" {
-						ver = " " + r.Version
+					if statusSet != nil && !statusSet[string(r.State)] {
+						continue
 					}
-					fmt.Printf("  %-30s %s%s\n", id, status, ver)
+					filteredIDs = append(filteredIDs, id)
 				}
+
+				if len(filteredIDs) == 0 {
+					continue
+				}
+
+				if flags.JSON {
+					for _, id := range filteredIDs {
+						r := sf.Resources[id]
+						jsonResults = append(jsonResults, listResource{
+							Provider:    manifest.Name,
+							DisplayName: displayName,
+							ID:          id,
+							Status:      string(r.State),
+							Version:     r.Version,
+						})
+					}
+				} else {
+					fmt.Printf("\n%s (%d resources):\n", displayName, len(filteredIDs))
+					for _, id := range filteredIDs {
+						r := sf.Resources[id]
+						status := string(r.State)
+						ver := ""
+						if r.Version != "" {
+							ver = " " + r.Version
+						}
+						fmt.Printf("  %-30s %s%s\n", id, status, ver)
+					}
+				}
+			}
+
+			if flags.JSON {
+				if jsonResults == nil {
+					jsonResults = []listResource{}
+				}
+				data, marshalErr := json.MarshalIndent(jsonResults, "", "  ")
+				if marshalErr != nil {
+					return fmt.Errorf("marshaling JSON output: %w", marshalErr)
+				}
+				fmt.Println(string(data))
 			}
 
 			return nil
@@ -219,11 +509,83 @@ func selfUpgradeCmd() *cli.Command {
 		Description: `Detects how hams was installed and upgrades accordingly:
 - Binary download: fetches latest from GitHub Releases
 - Homebrew: runs 'brew upgrade hams'`,
-		Action: func(_ context.Context, _ *cli.Command) error {
-			fmt.Println("self-upgrade: not yet implemented")
-			fmt.Println("For now, use: brew upgrade zthxxx/tap/hams")
-			fmt.Println("Or download from: https://github.com/zthxxx/hams/releases")
-			return nil
+		Action: func(ctx context.Context, _ *cli.Command) error {
+			return runSelfUpgrade(ctx)
 		},
 	}
+}
+
+func runSelfUpgrade(ctx context.Context) error {
+	paths := config.ResolvePaths()
+	channel := selfupdate.DetectChannel(paths)
+
+	switch channel {
+	case selfupdate.ChannelHomebrew:
+		return runHomebrewUpgrade(ctx)
+	case selfupdate.ChannelBinary:
+		return runBinaryUpgrade(ctx)
+	default:
+		return fmt.Errorf("unknown install channel %q", channel)
+	}
+}
+
+func runHomebrewUpgrade(ctx context.Context) error {
+	fmt.Println("Detected Homebrew install, running brew upgrade...")
+	cmd := exec.CommandContext(ctx, "brew", "upgrade", "zthxxx/tap/hams")
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("brew upgrade failed: %w", err)
+	}
+	return nil
+}
+
+func runBinaryUpgrade(ctx context.Context) error {
+	updater := selfupdate.NewUpdater()
+	current := selfupdate.CurrentVersion()
+
+	release, err := updater.LatestRelease(ctx)
+	if err != nil {
+		return fmt.Errorf("checking latest version: %w", err)
+	}
+
+	if selfupdate.IsUpToDate(current, release.Version) {
+		fmt.Printf("Already up-to-date (version %s)\n", current)
+		return nil
+	}
+
+	wantName := selfupdate.AssetName()
+	var downloadURL string
+	for _, asset := range release.Assets {
+		if asset.Name == wantName {
+			downloadURL = asset.DownloadURL
+			break
+		}
+	}
+	if downloadURL == "" {
+		return hamserr.NewUserError(hamserr.ExitGeneralError,
+			fmt.Sprintf("no release asset found for %s", wantName),
+			"Download manually from https://github.com/zthxxx/hams/releases",
+		)
+	}
+
+	fmt.Printf("Downloading %s (v%s -> v%s)...\n", wantName, current, release.Version)
+	body, err := updater.DownloadAsset(ctx, downloadURL)
+	if err != nil {
+		return fmt.Errorf("downloading release: %w", err)
+	}
+	defer body.Close() //nolint:errcheck // response body close errors are non-actionable
+
+	exePath, err := os.Executable()
+	if err != nil {
+		return fmt.Errorf("resolving executable path: %w", err)
+	}
+
+	if err := selfupdate.ReplaceBinary(exePath, body, ""); err != nil {
+		return fmt.Errorf("replacing binary: %w", err)
+	}
+
+	fmt.Printf("Successfully upgraded hams from v%s to v%s\n", current, release.Version)
+	return nil
 }

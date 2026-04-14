@@ -9,7 +9,7 @@ import (
 	"os/exec"
 	"strings"
 
-	"github.com/zthxxx/hams/internal/cliutil"
+	hamserr "github.com/zthxxx/hams/internal/error"
 	"github.com/zthxxx/hams/internal/hamsfile"
 	"github.com/zthxxx/hams/internal/provider"
 	"github.com/zthxxx/hams/internal/state"
@@ -26,7 +26,7 @@ func (p *Provider) Manifest() provider.Manifest {
 	return provider.Manifest{
 		Name:          "ansible",
 		DisplayName:   "Ansible",
-		Platform:      provider.PlatformAll,
+		Platforms:     []provider.Platform{provider.PlatformAll},
 		ResourceClass: provider.ClassCheckBased,
 		FilePrefix:    "ansible",
 	}
@@ -53,9 +53,14 @@ func (p *Provider) Probe(_ context.Context, sf *state.File) ([]provider.ProbeRes
 }
 
 // Plan computes actions for ansible playbooks.
+// Each resource ID is the playbook path, attached as the action Resource.
 func (p *Provider) Plan(_ context.Context, desired *hamsfile.File, observed *state.File) ([]provider.Action, error) {
-	apps := desired.Tags()
-	return provider.ComputePlan(apps, observed, observed.ConfigHash), nil
+	apps := desired.ListApps()
+	actions := provider.ComputePlan(apps, observed, observed.ConfigHash)
+	for i := range actions {
+		actions[i].Resource = actions[i].ID
+	}
+	return actions, nil
 }
 
 // Apply runs an ansible playbook.
@@ -79,18 +84,15 @@ func (p *Provider) Remove(_ context.Context, resourceID string) error {
 }
 
 // List returns playbook entries with status.
-func (p *Provider) List(_ context.Context, _ *hamsfile.File, sf *state.File) (string, error) {
-	var sb strings.Builder
-	for id, r := range sf.Resources {
-		fmt.Fprintf(&sb, "  %-50s %s\n", id, r.State)
-	}
-	return sb.String(), nil
+func (p *Provider) List(_ context.Context, desired *hamsfile.File, sf *state.File) (string, error) {
+	diff := provider.DiffDesiredVsState(desired, sf)
+	return provider.FormatDiff(diff), nil
 }
 
 // HandleCommand processes CLI subcommands for ansible.
-func (p *Provider) HandleCommand(args []string, flags *cliutil.GlobalFlags) error {
+func (p *Provider) HandleCommand(args []string, _ map[string]string, flags *provider.GlobalFlags) error {
 	if len(args) == 0 {
-		return cliutil.NewUserError(cliutil.ExitUsageError,
+		return hamserr.NewUserError(hamserr.ExitUsageError,
 			"ansible requires a playbook path",
 			"Usage: hams ansible <playbook.yml>",
 		)

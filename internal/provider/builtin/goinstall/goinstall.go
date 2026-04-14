@@ -8,7 +8,7 @@ import (
 	"os/exec"
 	"strings"
 
-	"github.com/zthxxx/hams/internal/cliutil"
+	hamserr "github.com/zthxxx/hams/internal/error"
 	"github.com/zthxxx/hams/internal/hamsfile"
 	"github.com/zthxxx/hams/internal/provider"
 	"github.com/zthxxx/hams/internal/state"
@@ -25,7 +25,7 @@ func (p *Provider) Manifest() provider.Manifest {
 	return provider.Manifest{
 		Name:          "goinstall",
 		DisplayName:   "go install",
-		Platform:      provider.PlatformAll,
+		Platforms:     []provider.Platform{provider.PlatformAll},
 		ResourceClass: provider.ClassPackage,
 		FilePrefix:    "goinstall",
 	}
@@ -74,7 +74,7 @@ func (p *Provider) Probe(ctx context.Context, sf *state.File) ([]provider.ProbeR
 
 // Plan computes actions for go install packages.
 func (p *Provider) Plan(_ context.Context, desired *hamsfile.File, observed *state.File) ([]provider.Action, error) {
-	apps := desired.Tags()
+	apps := desired.ListApps()
 	return provider.ComputePlan(apps, observed, observed.ConfigHash), nil
 }
 
@@ -100,22 +100,19 @@ func (p *Provider) Remove(_ context.Context, resourceID string) error {
 }
 
 // List returns installed go packages with status.
-func (p *Provider) List(_ context.Context, _ *hamsfile.File, sf *state.File) (string, error) {
-	var sb strings.Builder
-	for id, r := range sf.Resources {
-		fmt.Fprintf(&sb, "  %-50s %-10s\n", id, r.State)
-	}
-	return sb.String(), nil
+func (p *Provider) List(_ context.Context, desired *hamsfile.File, sf *state.File) (string, error) {
+	diff := provider.DiffDesiredVsState(desired, sf)
+	return provider.FormatDiff(diff), nil
 }
 
 // HandleCommand processes CLI subcommands for goinstall.
-func (p *Provider) HandleCommand(args []string, flags *cliutil.GlobalFlags) error {
+func (p *Provider) HandleCommand(args []string, _ map[string]string, flags *provider.GlobalFlags) error {
 	verb, remaining := provider.ParseVerb(args)
 
 	switch verb {
 	case "install", "i":
 		if len(remaining) == 0 {
-			return cliutil.NewUserError(cliutil.ExitUsageError,
+			return hamserr.NewUserError(hamserr.ExitUsageError,
 				"goinstall requires a package path",
 				"Usage: hams goinstall install <pkg[@version]>",
 				"To install all recorded packages, use: hams apply --only=goinstall",

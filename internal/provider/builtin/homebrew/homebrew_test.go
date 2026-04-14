@@ -7,7 +7,7 @@ import (
 )
 
 func TestManifest(t *testing.T) {
-	p := New()
+	p := New(nil)
 	m := p.Manifest()
 	if m.Name != "brew" {
 		t.Errorf("Name = %q, want 'brew'", m.Name)
@@ -27,7 +27,7 @@ func TestManifest(t *testing.T) {
 }
 
 func TestName(t *testing.T) {
-	p := New()
+	p := New(nil)
 	if p.Name() != "brew" {
 		t.Errorf("Name() = %q, want 'brew'", p.Name())
 	}
