@@ -45,7 +45,7 @@ func registerBuiltins(registry *provider.Registry) {
 		goinstall.New(),
 		cargo.New(),
 		git.NewConfigProvider(),
-		git.NewCloneProvider(),
+		git.NewCloneProvider(builtinCfg),
 		defaults.New(),
 		duti.New(),
 		mas.New(),

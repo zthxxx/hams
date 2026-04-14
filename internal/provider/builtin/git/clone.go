@@ -6,8 +6,12 @@ import (
 	"log/slog"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 
+	"gopkg.in/yaml.v3"
+
+	"github.com/zthxxx/hams/internal/config"
 	hamserr "github.com/zthxxx/hams/internal/error"
 	"github.com/zthxxx/hams/internal/hamsfile"
 	"github.com/zthxxx/hams/internal/provider"
@@ -15,10 +19,12 @@ import (
 )
 
 // CloneProvider implements the git clone filesystem provider.
-type CloneProvider struct{}
+type CloneProvider struct {
+	cfg *config.Config
+}
 
 // NewCloneProvider creates a new git clone provider.
-func NewCloneProvider() *CloneProvider { return &CloneProvider{} }
+func NewCloneProvider(cfg *config.Config) *CloneProvider { return &CloneProvider{cfg: cfg} }
 
 // Manifest returns the git clone provider metadata.
 func (p *CloneProvider) Manifest() provider.Manifest {
@@ -158,11 +164,22 @@ func (p *CloneProvider) handleAdd(args []string, hamsFlags map[string]string, fl
 		return err
 	}
 
+	// Record in hamsfile using "remote -> local-path" as the resource ID.
+	resourceID := remote + " -> " + localPath
+	hf, err := p.loadOrCreateHamsfile(hamsFlags, flags)
+	if err != nil {
+		return err
+	}
+	hf.AddApp("repos", resourceID, "")
+	if err := hf.Write(); err != nil {
+		return fmt.Errorf("git-clone: failed to write hamsfile: %w", err)
+	}
+
 	slog.Info("git-clone: cloned and recorded", "remote", remote, "path", localPath)
 	return nil
 }
 
-func (p *CloneProvider) handleRemove(args []string, _ map[string]string, flags *provider.GlobalFlags) error {
+func (p *CloneProvider) handleRemove(args []string, hamsFlags map[string]string, flags *provider.GlobalFlags) error {
 	if len(args) == 0 {
 		return hamserr.NewUserError(hamserr.ExitUsageError,
 			"git-clone remove requires a resource ID",
@@ -174,6 +191,15 @@ func (p *CloneProvider) handleRemove(args []string, _ map[string]string, flags *
 	if flags.DryRun {
 		fmt.Printf("[dry-run] Would remove entry: %s (directory NOT deleted)\n", resourceID)
 		return nil
+	}
+
+	hf, err := p.loadOrCreateHamsfile(hamsFlags, flags)
+	if err != nil {
+		return err
+	}
+	hf.RemoveApp(resourceID)
+	if err := hf.Write(); err != nil {
+		return fmt.Errorf("git-clone: failed to write hamsfile: %w", err)
 	}
 
 	slog.Warn("git-clone: entry removed from Hamsfile. Local directory was NOT deleted.", "resource", resourceID)
@@ -200,6 +226,61 @@ func (p *CloneProvider) Name() string { return "git-clone" }
 
 // DisplayName returns the display name.
 func (p *CloneProvider) DisplayName() string { return "git clone" }
+
+func (p *CloneProvider) loadOrCreateHamsfile(hamsFlags map[string]string, flags *provider.GlobalFlags) (*hamsfile.File, error) {
+	path, err := p.hamsfilePath(hamsFlags, flags)
+	if err != nil {
+		return nil, err
+	}
+
+	if _, err := os.Stat(path); err == nil {
+		return hamsfile.Read(path)
+	} else if !os.IsNotExist(err) {
+		return nil, fmt.Errorf("stat hamsfile %s: %w", path, err)
+	}
+
+	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
+		return nil, fmt.Errorf("create profile dir for %s: %w", path, err)
+	}
+
+	return &hamsfile.File{
+		Path: path,
+		Root: &yaml.Node{
+			Kind: yaml.DocumentNode,
+			Content: []*yaml.Node{
+				{Kind: yaml.MappingNode, Tag: "!!map"},
+			},
+		},
+	}, nil
+}
+
+func (p *CloneProvider) hamsfilePath(hamsFlags map[string]string, flags *provider.GlobalFlags) (string, error) {
+	cfg := p.effectiveConfig(flags)
+	if cfg.StorePath == "" {
+		return "", hamserr.NewUserError(hamserr.ExitUsageError,
+			"no store directory configured",
+			"Set store_path in hams config or pass --store",
+		)
+	}
+
+	suffix := ".hams.yaml"
+	if _, ok := hamsFlags["local"]; ok {
+		suffix = ".hams.local.yaml"
+	}
+
+	return filepath.Join(cfg.ProfileDir(), p.Manifest().FilePrefix+suffix), nil
+}
+
+func (p *CloneProvider) effectiveConfig(flags *provider.GlobalFlags) *config.Config {
+	if p.cfg == nil {
+		p.cfg = &config.Config{}
+	}
+	cfg := *p.cfg
+	if flags.Store != "" {
+		cfg.StorePath = flags.Store
+	}
+	return &cfg
+}
 
 func extractLocalPath(resourceID string) string {
 	_, localPath, _ := parseCloneResource(resourceID)

@@ -55,7 +55,7 @@ func (p *Provider) Bootstrap(_ context.Context) error {
 }
 
 // Probe runs the check command for each resource in state to detect drift.
-func (p *Provider) Probe(_ context.Context, sf *state.File) ([]provider.ProbeResult, error) {
+func (p *Provider) Probe(ctx context.Context, sf *state.File) ([]provider.ProbeResult, error) {
 	var results []provider.ProbeResult
 	for id, r := range sf.Resources {
 		if r.State == state.StateRemoved {
@@ -69,7 +69,7 @@ func (p *Provider) Probe(_ context.Context, sf *state.File) ([]provider.ProbeRes
 
 		// If a check command is stored in state, re-run it to detect drift.
 		if r.CheckCmd != "" {
-			stdout, passed := RunCheck(context.Background(), r.CheckCmd)
+			stdout, passed := RunCheck(ctx, r.CheckCmd)
 			if !passed {
 				pr.State = state.StatePending
 				slog.Info("bash probe: check failed, marking pending", "resource", id, "check", r.CheckCmd)
