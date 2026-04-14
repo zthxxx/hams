@@ -1,0 +1,103 @@
+import { Callout } from 'nextra/components'
+
+# duti Provider
+
+Uses [duti](https://github.com/moretension/duti) to manage "which app opens which file type" on
+macOS. Want every `.md` to open in VS Code, every `.ts` in Cursor, every image in IINA? That's
+what this provider is for.
+
+**Platforms:** macOS only
+
+## Usage
+
+```bash
+# Make VS Code the default for TypeScript files
+hams duti set com.microsoft.VSCode public.typescript editor
+
+# See what's managed
+hams duti list
+
+# Undo (reverts to system default)
+hams duti unset com.microsoft.VSCode public.typescript editor
+```
+
+Three positional arguments: the **app's bundle ID**, the **UTI** (file type), and the **role**
+(`viewer` / `editor` / `shell` / `all`).
+
+## Hamsfile example
+
+```yaml
+# macOS/duti.hams.yaml
+schema_version: 1
+provider: duti
+
+groups:
+  - tag: code
+    items:
+      - urn: "urn:hams:duti:vscode-ts"
+        step: Open TypeScript files with VS Code
+        bundle_id: com.microsoft.VSCode
+        uti: public.typescript
+        role: editor
+
+      - urn: "urn:hams:duti:vscode-md"
+        step: Open Markdown with VS Code
+        bundle_id: com.microsoft.VSCode
+        uti: net.daringfireball.markdown
+        role: editor
+
+  - tag: media
+    items:
+      - urn: "urn:hams:duti:iina-video"
+        step: Open video with IINA
+        bundle_id: com.colliderli.iina
+        uti: public.movie
+        role: viewer
+```
+
+## Common UTIs
+
+| File type | UTI |
+|-----------|-----|
+| Markdown | `net.daringfireball.markdown` |
+| TypeScript | `public.typescript` |
+| JavaScript | `com.netscape.javascript-source` |
+| JSON | `public.json` |
+| Image (generic) | `public.image` |
+| Video (generic) | `public.movie` |
+| PDF | `com.adobe.pdf` |
+| Plain text | `public.plain-text` |
+
+Want to know the UTI for a specific extension? `duti -x md` will tell you.
+
+## Finding an app's bundle ID
+
+```bash
+# VS Code, for example
+osascript -e 'id of app "Visual Studio Code"'
+# com.microsoft.VSCode
+
+# Or with mdls
+mdls -name kMDItemCFBundleIdentifier /Applications/Visual\ Studio\ Code.app
+```
+
+## How state is probed
+
+For each entry, hams runs `duti -x <ext>` or `duti -d <uti>` to see which app macOS currently
+associates with that type, and compares against the Hamsfile's `bundle_id`.
+
+## Bootstrap
+
+Install duti first:
+
+```yaml
+# Homebrew.hams.yaml
+- app: duti
+  intro: Set default applications for file types.
+```
+
+<Callout type="tip">
+  `duti` writes to the Launch Services database. Sometimes new associations only take effect after
+  restarting Finder or logging out and back in. If apply finishes but nothing seems to change, a
+  quick logout/login usually sorts it.
+</Callout>

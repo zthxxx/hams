@@ -4,10 +4,11 @@ package state
 import (
 	"fmt"
 	"os"
-	"path/filepath"
 	"time"
 
 	"gopkg.in/yaml.v3"
+
+	"github.com/zthxxx/hams/internal/hamsfile"
 )
 
 // SchemaVersion is the current state file format version.
@@ -83,45 +84,12 @@ func Load(path string) (*File, error) {
 
 // Save writes the state file to disk atomically.
 func (f *File) Save(path string) error {
-	dir := filepath.Dir(path)
-	if err := os.MkdirAll(dir, 0o750); err != nil {
-		return fmt.Errorf("creating state directory %s: %w", dir, err)
-	}
-
 	data, err := yaml.Marshal(f)
 	if err != nil {
 		return fmt.Errorf("marshaling state: %w", err)
 	}
 
-	tmp, err := os.CreateTemp(dir, ".state-*.tmp")
-	if err != nil {
-		return fmt.Errorf("creating temp file: %w", err)
-	}
-	tmpName := tmp.Name()
-
-	success := false
-	defer func() {
-		if !success {
-			tmp.Close()        //nolint:errcheck,gosec // best-effort cleanup on error path
-			os.Remove(tmpName) //nolint:errcheck,gosec // best-effort cleanup on error path
-		}
-	}()
-
-	if _, err := tmp.Write(data); err != nil {
-		return fmt.Errorf("writing state: %w", err)
-	}
-	if err := tmp.Sync(); err != nil {
-		return fmt.Errorf("syncing state: %w", err)
-	}
-	if err := tmp.Close(); err != nil {
-		return fmt.Errorf("closing state: %w", err)
-	}
-	if err := os.Rename(tmpName, path); err != nil {
-		return fmt.Errorf("renaming state: %w", err)
-	}
-
-	success = true
-	return nil
+	return hamsfile.AtomicWrite(path, data)
 }
 
 // SetResource updates or creates a resource entry in state.

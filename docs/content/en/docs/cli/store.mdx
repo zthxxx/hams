@@ -1,0 +1,112 @@
+import { Callout } from 'nextra/components'
+
+# hams store
+
+Manage the store repo — the git repository that holds your Hamsfiles and `hams.config.yaml`. The
+store is hams's source of truth: it's what `apply --from-repo` pulls from and what your everyday
+changes get pushed to.
+
+## Usage
+
+```bash
+hams store <subcommand> [flags]
+```
+
+## Subcommands
+
+### `hams store init`
+
+Spin up a new store in the current directory. Creates `hams.config.yaml`, a profile directory,
+and a `.gitignore` (which auto-ignores `.state/` and `*.local.*`).
+
+```bash
+mkdir my-hams-store && cd my-hams-store
+hams store init
+# Prompts for profile tag and machine ID
+```
+
+Turn it into a git repo, push it to GitHub, and you're ready to share across machines.
+
+### `hams store clone <repo>`
+
+Pull someone else's store (or your own on another machine) down to this box and point hams at it.
+
+```bash
+# From GitHub
+hams store clone zthxxx/hams-store
+
+# Now just apply
+hams apply
+```
+
+Essentially a `git clone` followed by `hams config set store_path`, in one step.
+
+### `hams store status`
+
+Show the store's current state: uncommitted changes, ahead/behind remote, which profile is active.
+
+```bash
+hams store status
+```
+
+Sample output:
+
+```
+Store:       /Users/you/Projects/hams-store
+Branch:      main (up to date with origin/main)
+Profile:     macOS
+Machine:     MacbookProM3
+
+Modified:
+  macOS/Homebrew.hams.yaml
+  macOS/pnpm.hams.yaml
+
+Untracked:
+  (none)
+```
+
+### `hams store push`
+
+Stage, commit, and push Hamsfile changes in a single step. Let hams generate a commit message
+from the diff, or pass your own.
+
+```bash
+# The full shortcut
+hams store push
+
+# Use your own message
+hams store push -m "Add ripgrep and bat"
+
+# Only the current profile's changes (skip cross-profile edits for now)
+hams store push --profile-only
+```
+
+`store push` won't push `.state/` or `*.local.*` files — those are already gitignored.
+
+### `hams store pull`
+
+Grab the latest Hamsfiles from the remote. If there are changes, run `hams apply` to put them into
+effect.
+
+```bash
+hams store pull
+hams apply   # bring this machine in line with the updated Hamsfiles
+```
+
+## Store layout
+
+```text
+hams-store/
+├── hams.config.yaml              # Project config (committed)
+├── hams.config.local.yaml        # Local overrides (not committed)
+├── .state/<machine-id>/          # Per-machine state (gitignored)
+└── macOS/                        # Profile directory. You can have several: macOS/, openwrt/, work-linux/
+    ├── Homebrew.hams.yaml        # Main Hamsfile (committed)
+    └── Homebrew.hams.local.yaml  # Machine-specific (not committed)
+```
+
+<Callout type="tip">
+  One store can hold multiple profiles — your personal Mac, a work Linux box, a home NAS — all in
+  the same repo. Switching profiles is just switching directories. `hams.config.local.yaml` on each
+  machine decides which profile is "home."
+</Callout>

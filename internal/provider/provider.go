@@ -3,6 +3,7 @@ package provider
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/zthxxx/hams/internal/hamsfile"
 	"github.com/zthxxx/hams/internal/state"
@@ -21,6 +22,22 @@ const (
 	// ClassFilesystem checks file/directory existence.
 	ClassFilesystem
 )
+
+// String returns the human-readable name of the resource class.
+func (c ResourceClass) String() string {
+	switch c {
+	case ClassPackage:
+		return "package"
+	case ClassKVConfig:
+		return "kv-config"
+	case ClassCheckBased:
+		return "check-based"
+	case ClassFilesystem:
+		return "filesystem"
+	default:
+		return fmt.Sprintf("ResourceClass(%d)", int(c))
+	}
+}
 
 // Platform represents a supported operating system.
 type Platform string
@@ -62,10 +79,10 @@ type Manifest struct {
 	Platforms     []Platform        `yaml:"platforms"`
 	ResourceClass ResourceClass     `yaml:"resource_class"`
 	DependsOn     []DependOn        `yaml:"depends_on,omitempty"`
-	FilePrefix    string            `yaml:"file_prefix"`              // e.g., "Homebrew" → Homebrew.hams.yaml
-	VerbRouting   []VerbRoute       `yaml:"verb_routing,omitempty"`   // Maps verbs to provider actions.
-	AutoInject    map[string]string `yaml:"auto_inject,omitempty"`    // Flags auto-injected per verb.
-	HamsFlags     []FlagDef         `yaml:"hams_flags,omitempty"`     // Provider-specific --hams- flags.
+	FilePrefix    string            `yaml:"file_prefix"`            // e.g., "Homebrew" → Homebrew.hams.yaml
+	VerbRouting   []VerbRoute       `yaml:"verb_routing,omitempty"` // Maps verbs to provider actions.
+	AutoInject    map[string]string `yaml:"auto_inject,omitempty"`  // Flags auto-injected per verb.
+	HamsFlags     []FlagDef         `yaml:"hams_flags,omitempty"`   // Provider-specific --hams- flags.
 }
 
 // ProbeResult represents the outcome of probing a single resource.
@@ -100,6 +117,22 @@ const (
 	// ActionSkip leaves the resource unchanged.
 	ActionSkip
 )
+
+// String returns the human-readable name of the action type.
+func (a ActionType) String() string {
+	switch a {
+	case ActionInstall:
+		return "install"
+	case ActionUpdate:
+		return "update"
+	case ActionRemove:
+		return "remove"
+	case ActionSkip:
+		return "skip"
+	default:
+		return fmt.Sprintf("ActionType(%d)", int(a))
+	}
+}
 
 // Provider is the interface that all providers (builtin and external) must implement.
 type Provider interface {

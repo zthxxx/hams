@@ -13,6 +13,19 @@ import (
 
 const heartbeatInterval = 4 * time.Minute
 
+// Acquirer manages one-time sudo credential acquisition and keepalive.
+// Unit tests inject NoopAcquirer; production uses Manager.
+type Acquirer interface {
+	Acquire(ctx context.Context) error
+	Stop()
+}
+
+// CmdBuilder constructs exec.Cmd instances with optional sudo wrapping.
+// Unit tests inject DirectBuilder; production uses Builder.
+type CmdBuilder interface {
+	Command(ctx context.Context, name string, args ...string) *exec.Cmd
+}
+
 // isRoot reports whether the current process runs as uid 0.
 // Overridable in tests to verify both branches without requiring actual root.
 var isRoot = func() bool { return os.Getuid() == 0 }
@@ -109,10 +122,11 @@ func (m *Manager) startHeartbeat(parentCtx context.Context) {
 	})
 }
 
-// RunWithSudo creates a command that runs with sudo.
-// When already running as root (uid 0), the command runs directly — sudo
-// wrapping is skipped because the process already has root privileges.
-func RunWithSudo(ctx context.Context, name string, args ...string) *exec.Cmd {
+// Builder wraps commands with sudo when not running as root.
+type Builder struct{}
+
+// Command returns an exec.Cmd, prepending sudo if not root.
+func (s *Builder) Command(ctx context.Context, name string, args ...string) *exec.Cmd {
 	if isRoot() {
 		return exec.CommandContext(ctx, name, args...) //nolint:gosec // root-skip path; args from hamsfile declarations
 	}

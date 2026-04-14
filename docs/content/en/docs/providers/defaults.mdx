@@ -1,0 +1,107 @@
+import { Callout } from 'nextra/components'
+
+# macOS defaults Provider
+
+Manages all those `defaults write` tweaks that make a fresh Mac actually usable — showing every
+file extension, auto-hiding the Dock, killing the shadow on screenshots, and so on. This is the
+provider that turns "first day with a new Mac" from tedium into a one-liner.
+
+**Platforms:** macOS only
+
+## Usage
+
+```bash
+# Set a value (recorded to the Hamsfile)
+hams defaults set NSGlobalDomain AppleShowAllExtensions -bool true
+
+# See what's managed
+hams defaults list
+
+# Unset (resets to default, drops from Hamsfile)
+hams defaults unset NSGlobalDomain AppleShowAllExtensions
+```
+
+## Hamsfile example
+
+```yaml
+# macOS/defaults.hams.yaml
+schema_version: 1
+provider: defaults
+
+groups:
+  - tag: finder
+    items:
+      - urn: "urn:hams:defaults:finder-show-extensions"
+        step: Show all file extensions in Finder
+        domain: NSGlobalDomain
+        key: AppleShowAllExtensions
+        type: bool
+        value: true
+
+      - urn: "urn:hams:defaults:finder-show-hidden"
+        step: Show hidden files in Finder
+        domain: com.apple.finder
+        key: AppleShowAllFiles
+        type: bool
+        value: true
+
+  - tag: dock
+    items:
+      - urn: "urn:hams:defaults:dock-autohide"
+        step: Auto-hide the Dock
+        domain: com.apple.dock
+        key: autohide
+        type: bool
+        value: true
+
+  - tag: screenshot
+    items:
+      - urn: "urn:hams:defaults:screenshot-no-shadow"
+        step: Disable screenshot shadow
+        domain: com.apple.screencapture
+        key: disable-shadow
+        type: bool
+        value: true
+```
+
+Fields:
+
+- `domain` — the defaults domain, usually reverse-DNS (`com.apple.dock`) or `NSGlobalDomain`
+- `key` — the setting key
+- `type` — the value type: `bool`, `int`, `float`, `string`, `array`, `dict`. Affects the flag passed to `defaults write`
+- `value` — the desired value
+
+## How state is probed
+
+For each entry, hams runs `defaults read <domain> <key>` and compares the output to the Hamsfile
+value. Types have to match — `"true"` (a string) and `true` (a bool) are different values to
+`defaults`.
+
+## Making changes visible right away
+
+`defaults write` updates plists, but plenty of apps only read their config at launch. Dock, Finder,
+and friends need to be restarted before changes become visible:
+
+```yaml
+- urn: "urn:hams:bash:restart-dock"
+  step: Restart Dock to apply defaults
+  run: killall Dock
+  check: "false"   # always run — killall Dock is safe to repeat
+```
+
+Alternatively, once hams apply's post-hooks land, you'll be able to hook this into the end of apply
+instead of re-running it manually.
+
+## How to discover new defaults
+
+Three routes:
+
+1. **Google and blogs** — "mac defaults write tricks" surfaces plenty of tribal knowledge
+2. **Reference scripts** — [mathiasbynens/dotfiles](https://github.com/mathiasbynens/dotfiles)'s `.macos` is the canonical compendium
+3. **Diff trick** — change a setting manually, `defaults read > before.txt` and `after.txt`, diff the two
+
+<Callout type="info">
+  Some defaults are read-only (macOS overwrites them) or require SIP-disabled/reboot to take effect.
+  hams can't always tell the difference — apply reports success, refresh sees the value reverted,
+  and it loops. When that happens, investigate manually rather than blaming hams.
+</Callout>

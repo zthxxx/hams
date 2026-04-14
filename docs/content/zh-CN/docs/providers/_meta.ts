@@ -1,0 +1,18 @@
+export default {
+  index: '提供者目录',
+  homebrew: 'Homebrew',
+  apt: 'apt',
+  pnpm: 'pnpm',
+  npm: 'npm',
+  uv: 'uv (Python)',
+  go: 'go install',
+  cargo: 'cargo',
+  'vscode-ext': 'VS Code 扩展',
+  mas: 'Mac App Store',
+  'git-config': 'git config',
+  'git-clone': 'git clone',
+  defaults: 'macOS defaults',
+  duti: 'duti',
+  bash: 'bash',
+  ansible: 'Ansible',
+}

@@ -1,0 +1,74 @@
+import { Callout } from 'nextra/components'
+
+# npm Provider
+
+Uses [npm](https://www.npmjs.com/) to manage globally installed Node.js tools. If your team lives
+on npm (or some tool needs npm specifically), this is the provider you want.
+
+**Platforms:** macOS, Linux
+
+## Usage
+
+```bash
+# Install globally (and yes, --global matters)
+hams npm install --global prettier
+
+# Remove
+hams npm uninstall --global prettier
+
+# See what hams is managing
+hams npm list
+```
+
+The `--global` isn't added for you. That's deliberate — it prevents accidentally declaring a
+project dependency as a global install.
+
+## Hamsfile example
+
+```yaml
+# macOS/npm.hams.yaml
+schema_version: 1
+provider: npm
+
+groups:
+  - tag: lint
+    items:
+      - app: prettier
+        intro: Opinionated code formatter.
+      - app: eslint
+        intro: JavaScript and TypeScript linter.
+
+  - tag: dev-tools
+    items:
+      - app: "@anthropic-ai/claude-code"
+        intro: Claude Code CLI.
+      - app: nodemon
+        intro: Auto-restart Node scripts on file change.
+```
+
+Scoped packages (like `@anthropic-ai/claude-code`) need quotes in YAML. Otherwise the `@` trips
+the parser.
+
+## How state is probed
+
+hams runs `npm list -g --depth=0 --json` and pulls the globals from the JSON. Same shape as the
+pnpm provider, different tool.
+
+## pnpm or npm?
+
+With no strong preference, pnpm is the better default: faster, disk-efficient, and its ecosystem
+is friendly. Reasons to pick npm anyway:
+
+- You're using the npm that ships with Node and don't want a second tool
+- A tool's README only shows `npm install -g` and you don't want to think about compatibility
+- Team standard is npm, and mixing in pnpm would be noise
+
+The two providers can coexist, but **each package should belong to exactly one of them**. Otherwise
+apply will install/remove on both sides — confusing, and it won't do what you want.
+
+<Callout type="warning">
+  If you manage Node versions via `nvm` or `fnm`, npm's global install directory lives under the
+  currently-active Node version. Switch Node versions and `hams refresh` will (correctly) report
+  previously-installed globals as missing — because the new version has a clean globals directory.
+  Run `hams apply` to put them back under the new version.
+</Callout>

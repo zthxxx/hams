@@ -43,12 +43,12 @@ func (m *MockRunner) LookPath(name string) (string, error) {
 	return m.LookPathResult, m.LookPathErr
 }
 
-func TestOSRunner_ImplementsRunner(t *testing.T) {
+func TestOSRunner_ImplementsRunner(_ *testing.T) {
 	var _ runner.Runner = (*runner.OSRunner)(nil)
-	var _ runner.Runner = runner.DefaultRunner()
+	_ = runner.DefaultRunner()
 }
 
-func TestMockRunner_ImplementsRunner(t *testing.T) {
+func TestMockRunner_ImplementsRunner(_ *testing.T) {
 	var _ runner.Runner = (*MockRunner)(nil)
 }
 
@@ -113,7 +113,9 @@ func TestMockRunner_Property_RunPreservesArgs(t *testing.T) {
 		}
 
 		mock := &MockRunner{}
-		_, _ = mock.Run(context.Background(), name, args...)
+		if _, err := mock.Run(context.Background(), name, args...); err != nil {
+			t.Fatalf("mock.Run unexpected error: %v", err)
+		}
 
 		if len(mock.RunCalls) != 1 {
 			t.Fatalf("expected 1 call, got %d", len(mock.RunCalls))

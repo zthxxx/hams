@@ -60,7 +60,11 @@ func ProbeAll(ctx context.Context, providers []Provider, stateDir, machineID str
 		})
 	}
 
-	_ = g.Wait() // Errors already logged per-provider.
+	if err := g.Wait(); err != nil {
+		// Per-provider errors are already logged inside g.Go; nothing returns a non-nil error,
+		// so this path is only reached if the errgroup itself fails (e.g., ctx canceled).
+		slog.Debug("probe errgroup returned error", "error", err)
+	}
 	return results
 }
 

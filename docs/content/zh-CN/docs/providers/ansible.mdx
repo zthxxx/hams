@@ -1,0 +1,90 @@
+import { Callout } from 'nextra/components'
+
+# Ansible Provider
+
+包装 [Ansible](https://www.ansible.com/) 来跑 playbook 和一次性任务。hams 和 Ansible 有点像，
+但定位不同 —— hams 是 CLI 优先、自动记录、按机器追状态；Ansible 是 playbook 优先、内置几百个模块。
+两者互补：不归 hams 管的复杂编排，扔给 ansible provider 去做，hams 负责在对的时机触发它。
+
+**支持平台：** macOS、Linux
+
+## 怎么用
+
+```bash
+# 跑一个 urn 对应的 Ansible 任务
+hams ansible run "urn:hams:ansible:setup-dev-env"
+
+# 列出被管的 Ansible 资源
+hams ansible list
+```
+
+## Hamsfile 长什么样
+
+```yaml
+# macOS/ansible.hams.yaml
+schema_version: 1
+provider: ansible
+
+groups:
+  - tag: dev-env
+    items:
+      - urn: "urn:hams:ansible:setup-dev-env"
+        step: Configure development environment
+        playbook: playbooks/dev-env.yml
+        check: test -f ~/.dev-env-configured
+
+      - urn: "urn:hams:ansible:install-docker-linux"
+        step: Install Docker on Linux
+        playbook: playbooks/docker.yml
+        check: command -v docker
+```
+
+字段：
+
+- `playbook` — playbook 文件路径，相对于 store 根目录
+- `check` — 跟 bash provider 一样的幂等检查。返回 0 就跳过
+- `tags` / `extra_vars` — 可选，用来控制 playbook 执行范围或传参
+
+## 为什么要有 check？
+
+Ansible 模块本身设计上就是幂等的 —— "状态已经对了就不做事"。那为啥 hams 还要 check？
+
+因为**跑一个 Ansible playbook 本身的启动开销就不小**：Python 启动 + 模块加载 + 连接 SSH（即便是 localhost）。
+一个只有几条任务的 playbook 也要十几秒。hams 的 `check` 是一层快速短路 —— 如果一眼就能看出来"这事儿已经干完了"，
+就根本不用启动 ansible-playbook。
+
+## 适合用 Ansible 的场景
+
+- **多步骤、有依赖的系统初始化** —— 比如 Linux 上装 Docker：加源、装包、改组、启服务，四步，用 Ansible 比 bash 清爽
+- **需要 idempotent 的系统配置** —— 改 `/etc/ssh/sshd_config` 这种，Ansible 的 `lineinfile` 模块比 sed 安全得多
+- **你已经有 Ansible playbook** —— 直接用上，不用重写
+
+## 不适合的场景
+
+- **单条命令就能搞定的事** —— 去用 bash provider，别劳烦 Ansible
+- **装一个包** —— 去用 Homebrew / apt provider
+- **远程管理其他机器** —— hams 是本机工具，不是 Ansible 那种 orchestrator
+
+## 前提条件
+
+得先装 Ansible：
+
+```yaml
+# Homebrew.hams.yaml
+- app: ansible
+  intro: Automation and configuration management.
+```
+
+## 执行细节
+
+hams 跑 ansible 的时候：
+
+- 工作目录切到你的 store 根目录
+- `-i "localhost,"`、`-c local` —— 直接本机跑，不走 SSH
+- `ANSIBLE_STDOUT_CALLBACK=yaml` —— 输出格式对 hams 的 TUI 更友好
+- 如果 playbook 需要 sudo，hams 会传 `--become` 并复用已经拿到的 sudo 票据
+
+<Callout type="info">
+  Ansible 启动慢、依赖 Python、生态重 —— 如果你的所有需求 bash provider 都能覆盖，就别引入 Ansible。
+  但一旦事情复杂到用 bash 写变成一堆难以维护的脚本，果断切 Ansible，模块化程度完全不是一个级别。
+</Callout>

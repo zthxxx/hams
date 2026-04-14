@@ -16,6 +16,7 @@ import (
 	"github.com/zthxxx/hams/internal/hamsfile"
 	"github.com/zthxxx/hams/internal/provider"
 	"github.com/zthxxx/hams/internal/state"
+	"github.com/zthxxx/hams/internal/sudo"
 )
 
 type applyTestProvider struct {
@@ -111,8 +112,16 @@ func TestRunApply_UsesFilePrefixStatePathAndProviderPlan(t *testing.T) {
 		t.Fatalf("Register provider: %v", err)
 	}
 
-	if err := runApply(context.Background(), flags, registry, "", true, "", ""); err != nil {
+	spy := &sudo.SpyAcquirer{}
+	if err := runApply(context.Background(), flags, registry, spy, "", true, "", ""); err != nil {
 		t.Fatalf("runApply error: %v", err)
+	}
+
+	if spy.AcquireCalls != 1 {
+		t.Fatalf("Acquire calls = %d, want 1", spy.AcquireCalls)
+	}
+	if spy.StopCalls != 1 {
+		t.Fatalf("Stop calls = %d, want 1 (via defer)", spy.StopCalls)
 	}
 
 	if planCalls != 1 {
@@ -181,11 +190,11 @@ func TestRunApply_PersistsConfigHashAndRemovesOnNextRun(t *testing.T) {
 		t.Fatalf("Register provider: %v", err)
 	}
 
-	if err := runApply(context.Background(), flags, registry, "", true, "", ""); err != nil {
+	if err := runApply(context.Background(), flags, registry, sudo.NoopAcquirer{}, "", true, "", ""); err != nil {
 		t.Fatalf("first runApply error: %v", err)
 	}
 	writeApplyTestFile(t, hamsfilePath, "packages: []\n")
-	if err := runApply(context.Background(), flags, registry, "", true, "", ""); err != nil {
+	if err := runApply(context.Background(), flags, registry, sudo.NoopAcquirer{}, "", true, "", ""); err != nil {
 		t.Fatalf("second runApply error: %v", err)
 	}
 
@@ -255,7 +264,7 @@ func TestRunApply_BootstrapsProvidersInDAGOrderBeforePlanning(t *testing.T) {
 		}
 	}
 
-	if err := runApply(context.Background(), flags, registry, "", true, "", ""); err != nil {
+	if err := runApply(context.Background(), flags, registry, sudo.NoopAcquirer{}, "", true, "", ""); err != nil {
 		t.Fatalf("runApply error: %v", err)
 	}
 

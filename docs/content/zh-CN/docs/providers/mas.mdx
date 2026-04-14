@@ -1,0 +1,87 @@
+import { Callout } from 'nextra/components'
+
+# Mac App Store Provider
+
+包装 [mas](https://github.com/mas-cli/mas) 来管 Mac App Store 上买的/免费下载的应用，
+比如 Xcode、Tailscale、Keka、Amphetamine 这些只在 App Store 里能装的东西。
+
+**支持平台：** 仅 macOS
+
+## 怎么用
+
+```bash
+# 用 App ID 装（不是应用名）
+hams mas install 497799835   # Xcode
+
+# 列出管的
+hams mas list
+
+# 卸掉
+hams mas remove 497799835
+```
+
+## 怎么知道 App ID
+
+```bash
+# 搜索：拿到候选列表
+mas search "Tailscale"
+# 1475387142  Tailscale  (1.66.4)
+
+# 或者：列出你已经装了的 App Store 应用
+mas list
+```
+
+把那个数字 ID 抄下来就行。
+
+## Hamsfile 长什么样
+
+```yaml
+# macOS/mas.hams.yaml
+schema_version: 1
+provider: mas
+
+groups:
+  - tag: dev-required
+    items:
+      - app: "497799835"
+        intro: Xcode - Apple's IDE for macOS and iOS development.
+      - app: "1475387142"
+        intro: Tailscale - Mesh VPN.
+
+  - tag: productivity
+    items:
+      - app: "937984704"
+        intro: Amphetamine - Keep your Mac awake.
+      - app: "1147396723"
+        intro: WhatsApp.
+```
+
+App ID 是纯数字，但 YAML 里必须用引号包起来，不然会被解析成数字丢掉前导零（虽然 App ID 不带前导零，但习惯是好习惯）。
+
+## 状态探测
+
+探测方式：`mas list` 输出所有已装 App Store 应用的 ID 和名字，hams 对照 Hamsfile 里的 ID 比对。
+
+## 前提条件
+
+先装 mas。Homebrew 一行：
+
+```yaml
+# Homebrew.hams.yaml
+- app: mas
+  intro: Mac App Store CLI.
+```
+
+装好之后**你必须先在 App Store 图形界面登录一次**。mas 本身不能帮你登账号 ——
+这是 Apple 的限制，不是 hams 的锅。登过一次之后，hams 的自动化就能正常跑了。
+
+## 局限
+
+- **不能购买** —— mas 不能替你买付费应用，你得先在 App Store 里自己买一次。之后 `hams apply` 会把它下到新机器上
+- **需要登录 Apple ID** —— 见上
+- **不能装老版本** —— App Store 只给最新版，hams 也没法回退
+
+<Callout type="warning">
+  Apple 偶尔会改 App Store 的后端协议，导致 `mas` 暂时挂掉。遇到了看 mas 仓库的 issue，
+  通常几天内会有新版本修复。先手动装那几个应用，等 mas 恢复了再 `hams apply` 补上。
+</Callout>

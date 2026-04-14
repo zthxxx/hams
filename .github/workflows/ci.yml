@@ -111,8 +111,49 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Build and run integration tests
-        run: docker build -f e2e/integration/Dockerfile -t hams-integration . && docker run --rm hams-integration
+      - name: Build integration image (cached by content hash)
+        run: |
+          HASH=$(cat e2e/integration/Dockerfile go.mod go.sum | sha256sum | head -c 12)
+          IMAGE="hams-integration:${HASH}"
+          if ! docker image inspect "$IMAGE" >/dev/null 2>&1; then
+            docker build -f e2e/integration/Dockerfile -t "$IMAGE" .
+            docker images --format '{{.Repository}}:{{.Tag}}' \
+              | grep '^hams-integration:' | grep -v ":${HASH}$" \
+              | xargs -r docker rmi 2>/dev/null || true
+          fi
+          echo "INTEGRATION_IMAGE=$IMAGE" >> "$GITHUB_ENV"
+
+      - name: Run integration tests
+        run: |
+          docker run --rm \
+            -v "$(pwd):/src" \
+            "$INTEGRATION_IMAGE" \
+            go test -v -tags=integration -race -count=1 ./...
+
+  sudo:
+    name: Sudo Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build sudo test image (cached by content hash)
+        run: |
+          HASH=$(cat e2e/sudo/Dockerfile go.mod go.sum | sha256sum | head -c 12)
+          IMAGE="hams-sudo:${HASH}"
+          if ! docker image inspect "$IMAGE" >/dev/null 2>&1; then
+            docker build -f e2e/sudo/Dockerfile -t "$IMAGE" .
+            docker images --format '{{.Repository}}:{{.Tag}}' \
+              | grep '^hams-sudo:' | grep -v ":${HASH}$" \
+              | xargs -r docker rmi 2>/dev/null || true
+          fi
+          echo "SUDO_IMAGE=$IMAGE" >> "$GITHUB_ENV"
+
+      - name: Run sudo tests
+        run: |
+          docker run --rm \
+            -v "$(pwd):/src" \
+            "$SUDO_IMAGE" \
+            bash /src/e2e/sudo/run-tests.sh
 
   e2e:
     name: E2E (${{ matrix.target }})
@@ -134,7 +175,24 @@ jobs:
       - name: Make binary executable
         run: chmod +x bin/hams-linux-amd64
 
+      - name: Build e2e base image (cached by content hash)
+        run: |
+          HASH=$(sha256sum e2e/${{ matrix.target }}/Dockerfile | head -c 12)
+          IMAGE="hams-e2e-${{ matrix.target }}:${HASH}"
+          if ! docker image inspect "$IMAGE" >/dev/null 2>&1; then
+            docker build -f e2e/${{ matrix.target }}/Dockerfile -t "$IMAGE" e2e/${{ matrix.target }}
+            docker images --format '{{.Repository}}:{{.Tag}}' \
+              | grep '^hams-e2e-${{ matrix.target }}:' | grep -v ":${HASH}$" \
+              | xargs -r docker rmi 2>/dev/null || true
+          fi
+          echo "E2E_IMAGE=$IMAGE" >> "$GITHUB_ENV"
+
       - name: Run ${{ matrix.target }} e2e tests
         run: |
-          docker build -f e2e/${{ matrix.target }}/Dockerfile -t hams-e2e-${{ matrix.target }} .
-          docker run --rm -v "$(pwd)/e2e/fixtures:/fixtures:ro" hams-e2e-${{ matrix.target }}
+          docker run --rm \
+            -v "$(pwd)/bin/hams-linux-amd64:/usr/local/bin/hams:ro" \
+            -v "$(pwd)/e2e/lib:/e2e/lib:ro" \
+            -v "$(pwd)/e2e/${{ matrix.target }}/run-tests.sh:/run-tests.sh:ro" \
+            -v "$(pwd)/e2e/fixtures:/fixtures:ro" \
+            "$E2E_IMAGE" \
+            bash /run-tests.sh

@@ -1,0 +1,96 @@
+import { Callout } from 'nextra/components'
+
+# Ansible Provider
+
+Uses [Ansible](https://www.ansible.com/) to run playbooks and one-off tasks. Ansible and hams
+overlap a bit — both chase idempotency — but their roles are different. hams is CLI-first,
+auto-record, per-machine state. Ansible is playbook-first, with hundreds of mature modules.
+The two complement each other: delegate the complex orchestration to Ansible, and let hams trigger
+it at the right time.
+
+**Platforms:** macOS, Linux
+
+## Usage
+
+```bash
+# Run an Ansible-backed resource by its URN
+hams ansible run "urn:hams:ansible:setup-dev-env"
+
+# See what's managed
+hams ansible list
+```
+
+## Hamsfile example
+
+```yaml
+# macOS/ansible.hams.yaml
+schema_version: 1
+provider: ansible
+
+groups:
+  - tag: dev-env
+    items:
+      - urn: "urn:hams:ansible:setup-dev-env"
+        step: Configure development environment
+        playbook: playbooks/dev-env.yml
+        check: test -f ~/.dev-env-configured
+
+      - urn: "urn:hams:ansible:install-docker-linux"
+        step: Install Docker on Linux
+        playbook: playbooks/docker.yml
+        check: command -v docker
+```
+
+Fields:
+
+- `playbook` — path to the playbook, relative to the store root
+- `check` — same idempotency check as the bash provider. Exit 0, skip
+- `tags` / `extra_vars` — optional, for controlling playbook execution and variables
+
+## Why does Ansible also need a check?
+
+Ansible modules are designed to be idempotent — "state's already correct, do nothing." So why
+does hams add its own check on top?
+
+Because **starting a playbook is itself expensive**. Python startup, module loading, SSH
+connection (even to localhost) — a playbook with a handful of tasks still takes a dozen seconds to
+launch. hams's `check` is a short-circuit: if a single shell command can tell you "this is
+already done," there's no point even starting `ansible-playbook`.
+
+## When Ansible is the right pick
+
+- **Multi-step system initialisation with dependencies** — installing Docker on Linux (add repo,
+  install package, adjust groups, start service) is cleaner as a playbook than as bash
+- **Idempotent system config** — `/etc/ssh/sshd_config` edits with `lineinfile` are far safer than sed tricks
+- **You already have playbooks** — use them, don't rewrite
+
+## When it isn't
+
+- **Anything a single command solves.** Use the bash provider, don't summon Ansible
+- **Installing a package.** Use Homebrew / apt
+- **Remote orchestration.** hams is a local tool — it's not trying to be an orchestrator
+
+## Bootstrap
+
+Install Ansible first:
+
+```yaml
+# Homebrew.hams.yaml
+- app: ansible
+  intro: Automation and configuration management.
+```
+
+## Execution details
+
+When hams calls Ansible:
+
+- Changes the working directory to the store root
+- `-i "localhost,"`, `-c local` — runs against the local machine, no SSH
+- `ANSIBLE_STDOUT_CALLBACK=yaml` — output plays nicely with hams's TUI
+- If the playbook needs sudo, hams passes `--become` and reuses the sudo ticket it already has
+
+<Callout type="info">
+  Ansible is heavy: slow startup, Python dependencies, a big ecosystem. If the bash provider can
+  do it, don't pull in Ansible. But once things get complex enough that bash scripts start feeling
+  unmaintainable, switch — Ansible's modularity is in a different league.
+</Callout>

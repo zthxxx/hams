@@ -1,0 +1,52 @@
+import { Callout } from 'nextra/components'
+
+# hams refresh
+
+Scan the machine and write the findings to `.state/`. Doesn't install, uninstall, or change a
+single thing.
+
+The reason this exists: anything you installed, removed, or changed outside hams is invisible to
+`.state/`. Next apply would diff against stale data and maybe do something weird. A quick refresh
+gets state back in sync with reality.
+
+## Usage
+
+```bash
+hams refresh [flags]
+```
+
+## Examples
+
+```bash
+# Full sweep — every provider re-scans the machine
+hams refresh
+
+# Just Homebrew (you just did some manual brew uninstalls)
+hams refresh --only=homebrew
+
+# Noisy mode, see exactly what each provider probes
+hams --debug refresh
+```
+
+## When to use it
+
+- **After manual installs.** You ran `brew install` or `pnpm add -g` outside hams
+- **Right after pulling from the store.** The Hamsfiles changed, but `.state/` is still from the last apply
+- **Troubleshooting why apply wants to redo something.** Refresh first, check what state looks like, then decide
+- **After a big environment shift.** System upgrade, Xcode CLT reinstall, etc.
+
+<Callout type="info">
+  `hams apply` already runs a refresh at the start, so in the normal flow you don't need to run
+  this by hand. It's for "I want to look, but not touch" situations.
+</Callout>
+
+## Refresh vs apply
+
+| | refresh | apply |
+|---|---------|-------|
+| Reads machine state | ✓ | ✓ |
+| Writes `.state/` files | ✓ | ✓ |
+| Installs, removes, or modifies resources | ✗ | ✓ |
+| Needs sudo | ✗ | Depends on the provider |
+
+Short version: `refresh` looks, `apply` looks *and* acts.

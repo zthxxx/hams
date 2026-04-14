@@ -20,6 +20,7 @@ import (
 	"github.com/zthxxx/hams/internal/provider/builtin/pnpm"
 	"github.com/zthxxx/hams/internal/provider/builtin/uv"
 	"github.com/zthxxx/hams/internal/provider/builtin/vscodeext"
+	"github.com/zthxxx/hams/internal/sudo"
 )
 
 // cliProvider is a provider that also implements ProviderHandler for CLI routing.
@@ -31,13 +32,13 @@ type cliProvider interface {
 // registerBuiltins registers all builtin providers in the registry.
 // Each provider is instantiated once and used for both the provider registry
 // and CLI handler routing (avoiding double instantiation).
-func registerBuiltins(registry *provider.Registry) {
+func registerBuiltins(registry *provider.Registry, sudoCmd sudo.CmdBuilder) {
 	builtinCfg := loadBuiltinProviderConfig()
 
 	// Providers that implement both Provider and ProviderHandler.
 	cliProviders := []cliProvider{
 		homebrew.New(builtinCfg),
-		apt.New(),
+		apt.New(sudoCmd),
 		npm.New(),
 		pnpm.New(),
 		uv.New(),

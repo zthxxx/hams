@@ -1,0 +1,77 @@
+import { Callout } from 'nextra/components'
+
+# uv Provider
+
+Uses [uv](https://github.com/astral-sh/uv)'s `uv tool` subcommand to manage global Python CLI tools.
+
+Why `uv tool` rather than `pip install --user` or `pipx`? uv is fast, its resolver is sharp, and
+it sandboxes each tool into its own venv, so installing `ruff` can't accidentally wreck `black`'s
+dependencies. If your work touches Python, `uv tool` is probably the quietest way to do this.
+
+**Platforms:** macOS, Linux
+
+## Usage
+
+```bash
+# Install a Python CLI tool
+hams uv tool install ruff
+
+# Remove
+hams uv tool uninstall ruff
+
+# See what hams is managing
+hams uv list
+```
+
+## Hamsfile example
+
+```yaml
+# macOS/uv.hams.yaml
+schema_version: 1
+provider: uv
+
+groups:
+  - tag: python-dev
+    items:
+      - app: ruff
+        intro: Fast Python linter and formatter.
+      - app: httpie
+        intro: User-friendly HTTP client for the terminal.
+      - app: poetry
+        intro: Python dependency management and packaging.
+```
+
+`app` is the PyPI package name.
+
+## How state is probed
+
+hams calls `uv tool list --json` to see what's installed and at what version.
+
+## Bootstrap
+
+You need uv first. Same chicken-and-egg story as pnpm — solve it with a one-shot `bash` step:
+
+```yaml
+- urn: "urn:hams:bash:install-uv"
+  step: Install uv
+  run: curl -LsSf https://astral.sh/uv/install.sh | sh
+  check: command -v uv
+```
+
+## About the Python it uses
+
+uv installs its own Python interpreters when needed and won't touch the system Python. Practical
+implications:
+
+- Your `ruff` runs against uv's Python, not `/usr/bin/python3`
+- A system upgrade can't break your tool chain
+- Switching Python versions is easy: `uv python install 3.12`, then `hams apply` to reinstall
+  tools against the new version
+
+That isolation is genuinely helpful for hams — `.state/` doesn't need to worry about the system
+Python wobbling underneath.
+
+<Callout type="tip">
+  Want a specific Python version for one tool? Add `python: 3.12` to the `app` entry, and hams
+  will pass `--python 3.12` to `uv tool install`.
+</Callout>

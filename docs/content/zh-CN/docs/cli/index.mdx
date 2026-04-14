@@ -1,0 +1,119 @@
+import { Callout } from 'nextra/components'
+
+# CLI 总览
+
+hams 所有命令都长这个样子：
+
+```
+hams [全局 flag] <命令> [参数] [--hams-标志] [-- <透传参数>]
+```
+
+记住三件事就不会用错：
+
+- **全局 flag** 放在 `hams` 和命令名之间，出了这个位置就不再被当作全局 flag
+- **`--hams-` 前缀的 flag** 是 hams 自己的，不会传给底层工具
+- **`--` 之后的所有东西**原封不动扔给底层工具，hams 碰都不碰
+
+## 命令分类
+
+### 核心命令
+
+| 命令 | 说明 |
+|------|------|
+| [`hams apply`](./apply) | 把 Hamsfile 应用到本机（装/卸/改） |
+| [`hams refresh`](./refresh) | 只扫机器现状、更新 `.state/`，不动真格 |
+| [`hams list`](./list) | 列出 hams 管的所有资源 |
+| [`hams config`](./config) | 读写 hams 自己的配置 |
+| [`hams store`](./store) | 管 store 仓库（init、clone、push、pull） |
+| [`hams self-upgrade`](./self-upgrade) | 把 hams 自己升级到最新版 |
+
+### Provider 命令
+
+Provider 命令都是 `hams <provider> <verb> [args]` 的形式，动词映射到底下包管理器的操作：
+
+```bash
+hams brew install bat
+hams pnpm add serve
+hams npm install --global prettier
+hams brew remove htop
+hams brew list
+hams brew enrich bat
+```
+
+完整的动词规则见 [Provider 命令](./provider-commands)；每个 provider 自己特有的用法见 [Providers](../providers) 章节。
+
+## 全局 flag
+
+| Flag | 类型 | 默认 | 说明 |
+|------|------|------|------|
+| `--debug` | bool | `false` | 打开 debug 日志 |
+| `--dry-run` | bool | `false` | 只打印计划，不真执行 |
+| `--json` | bool | `false` | 输出 JSON，给脚本 / AI 用 |
+| `--no-color` | bool | `false` | 关闭 ANSI 颜色 |
+| `--config=<path>` | string | `~/.config/hams/hams.config.yaml` | 指定另一份配置 |
+| `--store=<path>` | string | 来自配置 | 覆盖 store 目录 |
+| `--profile=<tag>` | string | 来自配置 | 临时切换 profile |
+| `--help` | bool | `false` | 打印帮助 |
+| `--version` | bool | `false` | 打印版本 |
+
+详细解释见 [全局 flag](./global-flags)。
+
+## 退出码
+
+| 代码 | 含义 |
+|------|------|
+| `0` | 成功 |
+| `1` | 一般错误 |
+| `2` | 用法/参数错误（flag 拼错、缺参数） |
+| `3` | 锁冲突（另一个 hams 进程正在跑） |
+| `4` | 部分失败（一些资源成功、一些失败） |
+| `10` | 需要 sudo 但没拿到 |
+| `11-19` | 某个 provider 自己的错误 |
+| `126` | 命令不可执行（POSIX） |
+| `127` | 命令没找到（POSIX） |
+
+## 错误信息对 AI 友好
+
+hams 的错误输出都是结构化的，脚本和 AI agent 都好解析。文本模式下：
+
+```
+ERROR LOCK_CONFLICT: Another hams session is running.
+  PID: 42567  command: apply  started: 20260412T143022
+  Suggestions:
+    - Wait for the existing session to complete
+    - Run: kill 42567  (if the process is stuck)
+```
+
+加 `--json`：
+
+```json
+{
+  "code": "LOCK_CONFLICT",
+  "message": "Another hams session is running. PID: 42567, command: apply, started: 20260412T143022.",
+  "suggestions": [
+    "Wait for the existing session to complete",
+    "kill 42567"
+  ]
+}
+```
+
+<Callout type="info">
+  `--hams-` 前缀让你能在同一条命令里同时传 hams 自己的 flag 和给底层工具的 flag，互不干扰。
+  比如 `hams brew install bat --hams-tag=cli`：`bat` 被 brew 装上，`--hams-tag=cli` 被 hams 拦下来记到 Hamsfile 里，`brew` 对这个 flag 一无所知。
+</Callout>
+
+## `--hams-` 前缀一览
+
+| Flag | 说明 |
+|------|------|
+| `--hams-tag=<tags>` | 给记录加标签，多个标签用逗号分隔 |
+| `--hams-intro=<text>` | 写进 Hamsfile 的一句话说明 |
+| `--hams-local` | 写到 `<Provider>.hams.local.yaml`（不跟 git）而不是主 Hamsfile |
+
+```bash
+# 装 ripgrep，带上 search,cli 的标签和说明
+hams brew install ripgrep --hams-tag=search,cli --hams-intro="Fast recursive grep alternative"
+
+# 只自己用、不推仓库的工具，走 local
+hams brew install zoom --hams-local
+```

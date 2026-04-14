@@ -4,7 +4,7 @@
 #
 # Note:
 #   - To override variables when calling another task,
-#     you need to pass the variable with `vars` key everytime.
+#     you need to pass the variable with `vars` key every time.
 #   - shell command run in [`gosh`](https://github.com/mvdan/sh) shell,
 #     interpreter with bash support
 ---
@@ -86,6 +86,13 @@ tasks:
   test:
     desc: Run tests with race detection
     cmds:
+      - task: test:unit
+      - task: test:e2e
+      - task: test:integration
+
+  test:unit:
+    desc: Run unit tests with race detection
+    cmds:
       - go test -race -count=1 -coverprofile=coverage.out ./...
 
   test:cover:
@@ -122,6 +129,11 @@ tasks:
     cmds:
       - act push --container-architecture linux/amd64 -j integration --rm
 
+  test:sudo:
+    desc: Run sudo DI tests in Docker
+    cmds:
+      - act push --container-architecture linux/amd64 -j sudo --rm
+
   ci:
     desc: Run full CI pipeline locally via act (lint + test + build + integration + e2e)
     cmds:
@@ -137,7 +149,7 @@ tasks:
     cmds:
       - task: lint:go
       - task: lint:md
-      - task: lint:spell
+      - task: lint:no-run-with-sudo
 
   lint:go:
     desc: Run golangci-lint
@@ -158,6 +170,15 @@ tasks:
     desc: Run cspell spell checker
     cmds:
       - bun cspell lint --no-progress "**"
+
+  lint:no-run-with-sudo:
+    desc: Guard against reintroduction of the removed sudo.RunWithSudo helper
+    cmds:
+      - |
+        if rg --type go --line-number 'RunWithSudo' internal cmd pkg; then
+          echo "error: 'RunWithSudo' must not reappear; use sudo.CmdBuilder.Command instead" >&2
+          exit 1
+        fi
 
   fmt:
     desc: Format Go source files

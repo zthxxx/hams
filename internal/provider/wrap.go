@@ -67,10 +67,6 @@ func injectFlags(args []string, autoInject map[string]string) []string {
 	existing := make(map[string]bool)
 	for _, arg := range args {
 		existing[arg] = true
-		// Also check short/long equivalents.
-		if strings.HasPrefix(arg, "--") {
-			existing[arg] = true
-		}
 	}
 
 	var injected []string
@@ -89,11 +85,15 @@ func injectFlags(args []string, autoInject map[string]string) []string {
 }
 
 // ParseVerb extracts the verb (first non-flag argument) from args.
-// Returns (verb, remainingArgs).
+// Returns (verb, remainingArgs). The returned remaining slice is a new
+// allocation and never mutates the caller's underlying array.
 func ParseVerb(args []string) (verb string, remaining []string) {
 	for i, arg := range args {
 		if !strings.HasPrefix(arg, "-") {
-			return arg, append(args[:i], args[i+1:]...)
+			remaining = make([]string, 0, len(args)-1)
+			remaining = append(remaining, args[:i]...)
+			remaining = append(remaining, args[i+1:]...)
+			return arg, remaining
 		}
 	}
 	return "", args

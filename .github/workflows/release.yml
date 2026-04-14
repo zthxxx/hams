@@ -43,13 +43,13 @@ jobs:
             -X github.com/zthxxx/hams/internal/version.version=${VERSION} \
             -X github.com/zthxxx/hams/internal/version.commit=${COMMIT} \
             -X github.com/zthxxx/hams/internal/version.date=${DATE}"
-          go build -ldflags "${LDFLAGS}" -o hams-${{ matrix.goos }}-${{ matrix.goarch }} ./cmd/hams
+          go build -ldflags "${LDFLAGS}" -o bin/hams-${{ matrix.goos }}-${{ matrix.goarch }} ./cmd/hams
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: hams-${{ matrix.goos }}-${{ matrix.goarch }}
-          path: hams-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: bin/hams-${{ matrix.goos }}-${{ matrix.goarch }}
 
   release:
     name: Create Release

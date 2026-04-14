@@ -41,6 +41,22 @@ func Read(path string) (*File, error) {
 	return &File{Path: path, Root: &root}, nil
 }
 
+// DocMapping returns the top-level mapping node, unwrapping the document node if present.
+// Returns nil if the file is empty or the root is not a mapping.
+func (f *File) DocMapping() *yaml.Node {
+	if f.Root == nil || len(f.Root.Content) == 0 {
+		return nil
+	}
+	doc := f.Root
+	if doc.Kind == yaml.DocumentNode && len(doc.Content) > 0 {
+		doc = doc.Content[0]
+	}
+	if doc.Kind != yaml.MappingNode {
+		return nil
+	}
+	return doc
+}
+
 // Write saves the Hamsfile back to disk atomically, preserving comments.
 // This operation acquires the global write lock.
 func (f *File) Write() error {
@@ -52,22 +68,13 @@ func (f *File) Write() error {
 		return fmt.Errorf("marshaling hamsfile: %w", err)
 	}
 
-	return atomicWrite(f.Path, data)
+	return AtomicWrite(f.Path, data)
 }
 
 // Tags returns all top-level tag names (category keys) in the Hamsfile.
 func (f *File) Tags() []string {
-	if f.Root == nil || len(f.Root.Content) == 0 {
-		return nil
-	}
-
-	// yaml.Unmarshal wraps in a Document node.
-	doc := f.Root
-	if doc.Kind == yaml.DocumentNode && len(doc.Content) > 0 {
-		doc = doc.Content[0]
-	}
-
-	if doc.Kind != yaml.MappingNode {
+	doc := f.DocMapping()
+	if doc == nil {
 		return nil
 	}
 
@@ -82,16 +89,8 @@ func (f *File) Tags() []string {
 
 // ListApps returns all app/URN names from all tags in the Hamsfile.
 func (f *File) ListApps() []string {
-	if f.Root == nil || len(f.Root.Content) == 0 {
-		return nil
-	}
-
-	doc := f.Root
-	if doc.Kind == yaml.DocumentNode && len(doc.Content) > 0 {
-		doc = doc.Content[0]
-	}
-
-	if doc.Kind != yaml.MappingNode {
+	doc := f.DocMapping()
+	if doc == nil {
 		return nil
 	}
 
@@ -121,16 +120,8 @@ func (f *File) ListApps() []string {
 // FindApp searches all tags for a package entry with the given app name.
 // Returns the tag name and index within the tag's sequence, or -1 if not found.
 func (f *File) FindApp(appName string) (tag string, index int) {
-	if f.Root == nil || len(f.Root.Content) == 0 {
-		return "", -1
-	}
-
-	doc := f.Root
-	if doc.Kind == yaml.DocumentNode && len(doc.Content) > 0 {
-		doc = doc.Content[0]
-	}
-
-	if doc.Kind != yaml.MappingNode {
+	doc := f.DocMapping()
+	if doc == nil {
 		return "", -1
 	}
 
@@ -163,18 +154,13 @@ func (f *File) AddApp(tag, appName, intro string) {
 	mu.Lock()
 	defer mu.Unlock()
 
-	doc := f.Root
-	if doc.Kind == yaml.DocumentNode && len(doc.Content) > 0 {
-		doc = doc.Content[0]
+	doc := f.DocMapping()
+	if doc == nil {
+		return
 	}
 
 	// Build the new app entry node.
 	entry := buildAppEntry(appName, intro)
-
-	// Find or create the tag section.
-	if doc.Kind != yaml.MappingNode {
-		return
-	}
 
 	for i := 0; i < len(doc.Content)-1; i += 2 {
 		if doc.Content[i].Kind == yaml.ScalarNode && doc.Content[i].Value == tag {
@@ -199,12 +185,8 @@ func (f *File) RemoveApp(appName string) bool {
 	mu.Lock()
 	defer mu.Unlock()
 
-	doc := f.Root
-	if doc.Kind == yaml.DocumentNode && len(doc.Content) > 0 {
-		doc = doc.Content[0]
-	}
-
-	if doc.Kind != yaml.MappingNode {
+	doc := f.DocMapping()
+	if doc == nil {
 		return false
 	}
 
@@ -238,12 +220,8 @@ func (f *File) SetPreviewCmd(resourceName, previewCmd string) {
 	mu.Lock()
 	defer mu.Unlock()
 
-	doc := f.Root
-	if doc.Kind == yaml.DocumentNode && len(doc.Content) > 0 {
-		doc = doc.Content[0]
-	}
-
-	if doc.Kind != yaml.MappingNode {
+	doc := f.DocMapping()
+	if doc == nil {
 		return
 	}
 

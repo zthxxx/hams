@@ -91,11 +91,11 @@ func (p *ConfigProvider) Remove(ctx context.Context, resourceID string) error {
 // List returns git config entries with diff between desired and observed.
 func (p *ConfigProvider) List(_ context.Context, desired *hamsfile.File, sf *state.File) (string, error) {
 	diff := provider.DiffDesiredVsState(desired, sf)
-	return provider.FormatDiff(diff), nil
+	return provider.FormatDiff(&diff), nil
 }
 
 // HandleCommand processes CLI subcommands for git config.
-func (p *ConfigProvider) HandleCommand(args []string, _ map[string]string, flags *provider.GlobalFlags) error {
+func (p *ConfigProvider) HandleCommand(_ context.Context, args []string, _ map[string]string, flags *provider.GlobalFlags) error {
 	if len(args) < 2 {
 		return hamserr.NewUserError(hamserr.ExitUsageError,
 			"git-config requires key and value",

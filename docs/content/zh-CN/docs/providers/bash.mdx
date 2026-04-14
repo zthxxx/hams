@@ -1,0 +1,105 @@
+import { Callout } from 'nextra/components'
+
+# bash Provider
+
+最灵活的 provider —— 让你跑任意 shell 脚本。如果某个东西 hams 其他 provider 管不了（比如装 Homebrew 本身、
+跑一个第三方的安装脚本、配置一个特殊的环境变量文件），bash 都能兜底。
+
+但灵活是有代价的：bash 自己不知道怎么判断"这事儿已经做过了"，所以你必须显式提供一个
+`check:` 命令。有这个 check，hams 才能幂等地跑 apply。
+
+**支持平台：** macOS、Linux
+
+## 怎么用
+
+```bash
+# 跑一个 urn 对应的脚本
+hams bash run "urn:hams:bash:install-homebrew"
+
+# 列出被管的 bash 步骤
+hams bash list
+```
+
+bash provider 没有 `install` / `remove` 的概念 —— 每一条都是一次声明式的"要做的一件事"。
+
+## Hamsfile 长什么样
+
+```yaml
+# macOS/bash.hams.yaml
+schema_version: 1
+provider: bash
+
+groups:
+  - tag: bootstrap
+    items:
+      - urn: "urn:hams:bash:install-homebrew"
+        step: Install Homebrew
+        run: /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+        check: command -v brew
+
+      - urn: "urn:hams:bash:install-pnpm"
+        step: Install pnpm
+        run: curl -fsSL https://get.pnpm.io/install.sh | sh -
+        check: command -v pnpm
+
+  - tag: config
+    items:
+      - urn: "urn:hams:bash:git-rerere"
+        step: Enable git rerere globally
+        run: git config --global rerere.autoUpdate true
+        check: git config --global --get rerere.autoUpdate
+```
+
+字段：
+
+- `run` — 要执行的脚本。可以是一行，也可以是 YAML 多行字符串（`run: |`）
+- `check` — 幂等性检查。退出码 `0` 表示"已完成不用跑"，非 `0` 表示"还得跑一次"
+
+## check 命令怎么写才靠谱
+
+`check` 是整个 bash provider 的灵魂。写得好，hams apply 能幂等反复跑；写得差，要么每次重复装，要么漏装了也不知道。
+
+几条实战经验：
+
+- **查命令是否存在**：`command -v foo`，而不是 `which foo`（`which` 在某些系统上行为不一致）
+- **查文件存在**：`test -f /path/to/file`
+- **查配置值**：`git config --global --get some.key | grep -q "expected"`
+- **查环境变量**：`test -n "$FOO"`
+- **不要在 check 里产生副作用** —— check 会被反复跑，想象它被跑 100 次也没事
+
+**反模式**：
+
+```yaml
+# ❌ 每次都会返回 0，apply 永远觉得"已完成"
+check: "true"
+
+# ❌ 每次都会返回非 0，apply 永远重跑
+check: "false"
+
+# ❌ 依赖当前目录 —— hams 的 cwd 可能不是你期望的
+check: test -f ./some-file
+```
+
+## 执行环境
+
+hams 跑 `run` 命令时：
+
+- **shell** — 默认 `/bin/bash`，可以在 `hams.config.yaml` 里全局换成 `/bin/sh` 或 `/bin/zsh`
+- **cwd** — `$HOME`（想要别的路径就在脚本里 `cd`）
+- **env** — 继承 hams 自己的环境变量。敏感值用 `env_from_keychain` 字段注入
+- **stdin** — 关闭。脚本需要交互输入就用别的 provider，或者改成非交互模式（带 `-y`）
+
+## 什么时候不该用 bash
+
+bash 很强大，但它缺少其他 provider 的结构化信息。优先考虑专门的 provider：
+
+- 装 Homebrew formula？用 Homebrew provider，别自己写 `brew install` 脚本
+- 配 git 全局设置？用 git-config provider，比 bash 写 `git config --global` 可读得多
+- 克隆仓库？用 git-clone provider
+
+bash 最适合那些**无处可放**的一次性操作：安装 Homebrew 自己、跑第三方 installer、触发系统级初始化。
+
+<Callout type="warning">
+  bash provider 没有"卸载"对应物 —— Hamsfile 里删掉一条 bash 记录，hams 不会自动反向执行脚本。
+  要撤销请在 apply 之外手动处理，或者写一条反向的 bash 记录。
+</Callout>

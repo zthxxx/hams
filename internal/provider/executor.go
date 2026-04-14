@@ -45,7 +45,7 @@ func Execute(ctx context.Context, p Provider, actions []Action, sf *state.File, 
 		case <-ctx.Done():
 			result.Errors = append(result.Errors, ctx.Err())
 			if session != nil && providerSpan != nil {
-				session.EndSpan(providerSpan, "cancelled")
+				session.EndSpan(providerSpan, "canceled")
 			}
 			return result
 		default:
@@ -56,11 +56,11 @@ func Execute(ctx context.Context, p Provider, actions []Action, sf *state.File, 
 			result.Skipped++
 			continue
 		case ActionInstall:
-			executeInstall(ctx, p, action, sf, &result, session)
+			executeAction(ctx, p, action, sf, &result, session, phaseInstall)
 		case ActionUpdate:
-			executeUpdate(ctx, p, action, sf, &result, session)
+			executeAction(ctx, p, action, sf, &result, session, phaseUpdate)
 		case ActionRemove:
-			executeRemove(ctx, p, action, sf, &result, session)
+			executeAction(ctx, p, action, sf, &result, session, phaseRemove)
 		}
 	}
 
@@ -78,152 +78,128 @@ func Execute(ctx context.Context, p Provider, actions []Action, sf *state.File, 
 	return result
 }
 
-func executeInstall(ctx context.Context, p Provider, action Action, sf *state.File, result *ExecuteResult, session *otel.Session) {
+const (
+	phaseInstall = "install"
+	phaseUpdate  = "update"
+	phaseRemove  = "remove"
+)
+
+// executeAction is the unified helper for install, update, and remove phases.
+// The phase parameter must be one of phaseInstall, phaseUpdate, or phaseRemove.
+func executeAction(ctx context.Context, p Provider, action Action, sf *state.File, result *ExecuteResult, session *otel.Session, phase string) {
 	name := p.Manifest().Name
 
 	var span *otel.Span
 	if session != nil {
-		span = session.StartSpan("hams.resource.install", "", map[string]string{
+		span = session.StartSpan("hams.resource."+phase, "", map[string]string{
 			"provider": name, "resource": action.ID,
 		})
 	}
 
-	// Set state to pending before executing.
-	sf.SetResource(action.ID, state.StatePending)
-
-	// Run pre-install hooks (non-deferred).
-	if action.Hooks != nil && len(action.Hooks.PreInstall) > 0 {
-		if err := RunPreInstallHooks(ctx, action.Hooks.PreInstall, action.ID); err != nil {
-			slog.Error("pre-install hook failed, skipping install", "provider", name, "resource", action.ID, "error", err)
-			sf.SetResource(action.ID, state.StateFailed, state.WithError(err.Error()))
-			result.Failed++
-			result.Errors = append(result.Errors, fmt.Errorf("%s: pre-install hook %s: %w", name, action.ID, err))
-			if session != nil {
-				session.EndSpan(span, "error")
-			}
-			return
-		}
+	// Set state to pending before executing (install only).
+	if phase == phaseInstall {
+		sf.SetResource(action.ID, state.StatePending)
 	}
 
-	slog.Info("installing", "provider", name, "resource", action.ID)
-	if err := p.Apply(ctx, action); err != nil {
-		slog.Error("install failed", "provider", name, "resource", action.ID, "error", err)
+	// Run pre-hooks (install and update only).
+	if err := runPhasePreHooks(ctx, action, phase); err != nil {
+		slog.Error("pre-"+phase+" hook failed, skipping "+phase, "provider", name, "resource", action.ID, "error", err)
 		sf.SetResource(action.ID, state.StateFailed, state.WithError(err.Error()))
 		result.Failed++
-		result.Errors = append(result.Errors, fmt.Errorf("%s: install %s: %w", name, action.ID, err))
-		if session != nil {
-			session.EndSpan(span, "error")
-		}
+		result.Errors = append(result.Errors, fmt.Errorf("%s: pre-%s hook %s: %w", name, phase, action.ID, err))
+		endSpan(session, span, "error")
 		return
 	}
 
-	// Run post-install hooks (non-deferred).
-	if action.Hooks != nil && len(action.Hooks.PostInstall) > 0 {
-		if err := RunPostInstallHooks(ctx, action.Hooks.PostInstall, action.ID, sf); err != nil {
-			// Install succeeded but hook failed — state is hook-failed.
-			result.Installed++
-			result.Errors = append(result.Errors, fmt.Errorf("%s: post-install hook %s: %w", name, action.ID, err))
-			slog.Info("installed (hook failed)", "provider", name, "resource", action.ID)
-			if session != nil {
-				session.EndSpan(span, "ok")
-			}
-			return
-		}
+	// Execute the action.
+	slog.Info(phase+"ing", "provider", name, "resource", action.ID)
+	var execErr error
+	if phase == phaseRemove {
+		execErr = p.Remove(ctx, action.ID)
+	} else {
+		execErr = p.Apply(ctx, action)
+	}
+	if execErr != nil {
+		slog.Error(phase+" failed", "provider", name, "resource", action.ID, "error", execErr)
+		sf.SetResource(action.ID, state.StateFailed, state.WithError(execErr.Error()))
+		result.Failed++
+		result.Errors = append(result.Errors, fmt.Errorf("%s: %s %s: %w", name, phase, action.ID, execErr))
+		endSpan(session, span, "error")
+		return
 	}
 
-	sf.SetResource(action.ID, state.StateOK, action.StateOpts...)
-	result.Installed++
-	slog.Info("installed", "provider", name, "resource", action.ID)
+	// Run post-hooks (install and update only).
+	if err := runPhasePostHooks(ctx, action, phase, sf); err != nil {
+		// Action succeeded but hook failed — state is hook-failed.
+		incrementCounter(result, phase)
+		result.Errors = append(result.Errors, fmt.Errorf("%s: post-%s hook %s: %w", name, phase, action.ID, err))
+		slog.Info(phase+"d (hook failed)", "provider", name, "resource", action.ID)
+		endSpan(session, span, "ok")
+		return
+	}
+
+	// Success.
+	if phase == phaseRemove {
+		sf.SetResource(action.ID, state.StateRemoved)
+	} else {
+		sf.SetResource(action.ID, state.StateOK, action.StateOpts...)
+	}
+	incrementCounter(result, phase)
+	slog.Info(phase+"d", "provider", name, "resource", action.ID)
+	endSpan(session, span, "ok")
+}
+
+// runPhasePreHooks runs pre-hooks for the given phase. Returns nil if no hooks apply.
+func runPhasePreHooks(ctx context.Context, action Action, phase string) error {
+	if action.Hooks == nil {
+		return nil
+	}
+	switch phase {
+	case phaseInstall:
+		if len(action.Hooks.PreInstall) > 0 {
+			return RunPreInstallHooks(ctx, action.Hooks.PreInstall, action.ID)
+		}
+	case phaseUpdate:
+		if len(action.Hooks.PreUpdate) > 0 {
+			return RunPreUpdateHooks(ctx, action.Hooks.PreUpdate, action.ID)
+		}
+	}
+	return nil
+}
+
+// runPhasePostHooks runs post-hooks for the given phase. Returns nil if no hooks apply.
+func runPhasePostHooks(ctx context.Context, action Action, phase string, sf *state.File) error {
+	if action.Hooks == nil {
+		return nil
+	}
+	switch phase {
+	case phaseInstall:
+		if len(action.Hooks.PostInstall) > 0 {
+			return RunPostInstallHooks(ctx, action.Hooks.PostInstall, action.ID, sf)
+		}
+	case phaseUpdate:
+		if len(action.Hooks.PostUpdate) > 0 {
+			return RunPostUpdateHooks(ctx, action.Hooks.PostUpdate, action.ID, sf)
+		}
+	}
+	return nil
+}
+
+// endSpan closes an OTel span if the session is active.
+func endSpan(session *otel.Session, span *otel.Span, status string) {
 	if session != nil {
-		session.EndSpan(span, "ok")
+		session.EndSpan(span, status)
 	}
 }
 
-func executeUpdate(ctx context.Context, p Provider, action Action, sf *state.File, result *ExecuteResult, session *otel.Session) {
-	name := p.Manifest().Name
-
-	var span *otel.Span
-	if session != nil {
-		span = session.StartSpan("hams.resource.update", "", map[string]string{
-			"provider": name, "resource": action.ID,
-		})
-	}
-
-	// Run pre-update hooks (non-deferred).
-	if action.Hooks != nil && len(action.Hooks.PreUpdate) > 0 {
-		if err := RunPreUpdateHooks(ctx, action.Hooks.PreUpdate, action.ID); err != nil {
-			slog.Error("pre-update hook failed, skipping update", "provider", name, "resource", action.ID, "error", err)
-			sf.SetResource(action.ID, state.StateFailed, state.WithError(err.Error()))
-			result.Failed++
-			result.Errors = append(result.Errors, fmt.Errorf("%s: pre-update hook %s: %w", name, action.ID, err))
-			if session != nil {
-				session.EndSpan(span, "error")
-			}
-			return
-		}
-	}
-
-	slog.Info("updating", "provider", name, "resource", action.ID)
-	if err := p.Apply(ctx, action); err != nil {
-		slog.Error("update failed", "provider", name, "resource", action.ID, "error", err)
-		sf.SetResource(action.ID, state.StateFailed, state.WithError(err.Error()))
-		result.Failed++
-		result.Errors = append(result.Errors, fmt.Errorf("%s: update %s: %w", name, action.ID, err))
-		if session != nil {
-			session.EndSpan(span, "error")
-		}
-		return
-	}
-
-	// Run post-update hooks (non-deferred).
-	if action.Hooks != nil && len(action.Hooks.PostUpdate) > 0 {
-		if err := RunPostUpdateHooks(ctx, action.Hooks.PostUpdate, action.ID, sf); err != nil {
-			// Update succeeded but hook failed — state is hook-failed.
-			result.Updated++
-			result.Errors = append(result.Errors, fmt.Errorf("%s: post-update hook %s: %w", name, action.ID, err))
-			slog.Info("updated (hook failed)", "provider", name, "resource", action.ID)
-			if session != nil {
-				session.EndSpan(span, "ok")
-			}
-			return
-		}
-	}
-
-	sf.SetResource(action.ID, state.StateOK, action.StateOpts...)
-	result.Updated++
-	slog.Info("updated", "provider", name, "resource", action.ID)
-	if session != nil {
-		session.EndSpan(span, "ok")
-	}
-}
-
-func executeRemove(ctx context.Context, p Provider, action Action, sf *state.File, result *ExecuteResult, session *otel.Session) {
-	name := p.Manifest().Name
-
-	var span *otel.Span
-	if session != nil {
-		span = session.StartSpan("hams.resource.remove", "", map[string]string{
-			"provider": name, "resource": action.ID,
-		})
-	}
-
-	slog.Info("removing", "provider", name, "resource", action.ID)
-	if err := p.Remove(ctx, action.ID); err != nil {
-		slog.Error("remove failed", "provider", name, "resource", action.ID, "error", err)
-		sf.SetResource(action.ID, state.StateFailed, state.WithError(err.Error()))
-		result.Failed++
-		result.Errors = append(result.Errors, fmt.Errorf("%s: remove %s: %w", name, action.ID, err))
-		if session != nil {
-			session.EndSpan(span, "error")
-		}
-		return
-	}
-
-	sf.SetResource(action.ID, state.StateRemoved)
-	result.Removed++
-	slog.Info("removed", "provider", name, "resource", action.ID)
-	if session != nil {
-		session.EndSpan(span, "ok")
+func incrementCounter(result *ExecuteResult, phase string) {
+	switch phase {
+	case phaseInstall:
+		result.Installed++
+	case phaseUpdate:
+		result.Updated++
+	case phaseRemove:
+		result.Removed++
 	}
 }
 

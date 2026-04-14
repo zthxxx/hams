@@ -19,6 +19,13 @@ func Info() string {
 		version, commit, date, runtime.GOOS, runtime.GOARCH)
 }
 
+// Brief returns the short form used by `hams --version`: "<version> (<commit>)".
+// Dev builds: "dev (a6f4218)" when ldflags inject commit, "dev (unknown)" otherwise.
+// Release builds: "v1.2.4 (a6f4218)".
+func Brief() string {
+	return fmt.Sprintf("%s (%s)", version, commit)
+}
+
 // Version returns the semantic version string.
 func Version() string {
 	return version

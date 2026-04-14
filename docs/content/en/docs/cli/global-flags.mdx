@@ -1,0 +1,69 @@
+import { Callout } from 'nextra/components'
+
+# Global Flags
+
+Global flags apply to every command. They go between `hams` and the command name:
+
+```bash
+hams [global-flags] <command> [args]
+```
+
+So `hams --debug apply` works. `hams apply --debug` doesn't — the second one is treated as a flag
+*for* `apply`.
+
+## The full list
+
+| Flag | Type | Default | What it does |
+|------|------|---------|--------------|
+| `--debug` | bool | `false` | Turn on debug-level logging. The fastest way to understand what's going wrong |
+| `--dry-run` | bool | `false` | Print the plan, don't execute |
+| `--json` | bool | `false` | Machine-readable output, for scripts and AI agents |
+| `--no-color` | bool | `false` | Disable ANSI colors (for file redirects, plain terminals) |
+| `--config=<path>` | string | `~/.config/hams/hams.config.yaml` | Use a different config file |
+| `--store=<path>` | string | from config | Override the store directory |
+| `--profile=<tag>` | string | from config | Switch profile for this run only |
+| `--help` | bool | `false` | Print help |
+| `--version` | bool | `false` | Print version info |
+
+## How you'll actually use these
+
+```bash
+# Debug a stuck apply
+hams --debug apply
+
+# Preview before committing
+hams --dry-run apply
+
+# Test a new config without touching the real one
+hams --config=/tmp/test-config.yaml apply
+
+# Pipe list output through jq
+hams --json list | jq '.[] | select(.state == "missing")'
+
+# Try a different profile once, without changing global config
+hams --profile=work-linux apply
+```
+
+## Why split global and command flags?
+
+To dodge ambiguity. Take `hams brew install bat --debug` — is that debug for hams, or debug for
+`brew`? hams's rule: global flags come before the command name; anything after belongs to the
+command (or gets passed through). That way, hams can parse cleanly, `brew` gets what `brew`
+expects, and nothing collides.
+
+## More about `--dry-run`
+
+When `--dry-run` is on, hams:
+
+- Runs `refresh` as usual to read machine state (read-only, no side effects)
+- Computes the diff and prints the plan
+- **Doesn't** run any provider install/remove/write steps
+- **Doesn't** update `.state/` (so a real apply later won't be confused)
+- Uses the same exit codes as a real run
+
+In other words: a genuine trial run. Safe to use for reviewing your own Hamsfile changes.
+
+<Callout type="tip">
+  `--json` and `--no-color` together are great for CI: machine-parseable output, no color-code
+  noise in the logs.
+</Callout>

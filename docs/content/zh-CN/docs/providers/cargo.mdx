@@ -1,0 +1,79 @@
+import { Callout } from 'nextra/components'
+
+# cargo Provider
+
+包装 `cargo install`，用来装用 Rust 写的 CLI 工具。像 `ripgrep`、`fd`、`bat` 这类，虽然 Homebrew 里也有，
+但如果你想要最新版、或者某个工具还没进 Homebrew，直接从 crates.io 装最灵活。
+
+**支持平台：** macOS、Linux
+
+## 怎么用
+
+```bash
+# 从 crates.io 装
+hams cargo install ripgrep
+
+# 从 git 仓库装（指定 feature 或者要最新 main 分支时常用）
+hams cargo install --git https://github.com/cli/cli
+
+# 卸掉
+hams cargo uninstall ripgrep
+
+# 看看被管的 cargo 包
+hams cargo list
+```
+
+## Hamsfile 长什么样
+
+```yaml
+# macOS/cargo.hams.yaml
+schema_version: 1
+provider: cargo
+
+groups:
+  - tag: cli
+    items:
+      - app: ripgrep
+        intro: Fast recursive grep.
+      - app: fd-find
+        intro: Simple and fast alternative to find.
+      - app: bottom
+        intro: Graphical process monitor.
+
+  - tag: from-git
+    items:
+      - app: gh
+        git: https://github.com/cli/cli
+        intro: GitHub CLI (bleeding edge).
+```
+
+- `app` 是 crate 名（crates.io 上的），**不是**最终的二进制名。有时两者不一致，比如 `fd-find` 装出来的命令是 `fd`
+- 加 `git:` 就改成从 git 仓库装，可以配合 `rev:` 或 `branch:` 锁死版本
+
+## 状态探测
+
+`cargo` 本身有 `cargo install --list`，输出每个已装 crate 的名字和版本。hams 直接调它解析，够用也可靠。
+
+## 前提条件
+
+得先有 `cargo`（装 Rust 工具链就有）。建议用 `bash` provider 走 rustup 的官方脚本：
+
+```yaml
+- urn: "urn:hams:bash:install-rust"
+  step: Install Rust toolchain
+  run: curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+  check: command -v cargo
+```
+
+rustup 会把 cargo 装到 `~/.cargo/bin`，记得加进 PATH。
+
+## 编译时间
+
+提醒一句：`cargo install` 是**本地编译**，每个 crate 都要从源码编一遍，网络快不一定等得快。
+装 `ripgrep` 这种中等规模的 crate，在 M 系列 Mac 上大概 30 秒，在老 Linux 服务器上可能几分钟。
+对时间敏感就优先用 Homebrew / apt 的预编译版本。
+
+<Callout type="tip">
+  cargo 装的二进制默认在 `~/.cargo/bin`。想换位置就设 `CARGO_HOME` 环境变量，
+  hams 会按这个路径去找。
+</Callout>

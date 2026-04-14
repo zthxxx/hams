@@ -1,0 +1,58 @@
+import Link from 'next/link'
+import { Pre } from 'nextra/components'
+
+<div className="landing-container">
+  <div className="landing-hero">
+    <h1 className="landing-title">hams 🐹</h1>
+    <div className="landing-tagline">Declarative workstation setup that actually feels normal to use</div>
+    <div className="landing-description">
+      A hamster stuffs its cheek pouches with food to save for later. hams does the same for your
+      packages, system tweaks, dotfiles, and git repos — all tucked into YAML so a fresh machine
+      is one command away from feeling like home.
+    </div>
+    <div className="landing-actions">
+      <Link href="/en/docs/why-hams" className="landing-btn-primary">
+        Get Started →
+      </Link>
+      <Link href="https://github.com/zthxxx/hams" className="landing-btn-secondary" target="_blank">
+        GitHub
+      </Link>
+    </div>
+  </div>
+
+  <div className="landing-features">
+    <div className="landing-feature">
+      <h3>Install and record, same step</h3>
+      <div>Type <code>hams brew install git</code>. It installs and writes the Hamsfile entry. No editing YAML first.</div>
+    </div>
+    <div className="landing-feature">
+      <h3>One command on a new machine</h3>
+      <div><code>hams apply --from-repo=user/store</code> and walk away. Come back to a ready workstation.</div>
+    </div>
+    <div className="landing-feature">
+      <h3>15 providers ready out of the box</h3>
+      <div>Homebrew, apt, pnpm, npm, cargo, go, VS Code, git, macOS defaults — the usual suspects.</div>
+    </div>
+    <div className="landing-feature">
+      <h3>Edit the YAML, hams does the math</h3>
+      <div>Change a Hamsfile, run <code>hams apply</code>. It figures out the diff and only touches what's different.</div>
+    </div>
+  </div>
+
+  <div className="landing-example">
+    <h2>What it looks like day-to-day</h2>
+
+    <div className="landing-example-code">
+      ```bash
+      # Install something, hams quietly writes it down
+      hams brew install htop
+
+      # Three months later, brand-new laptop
+      hams apply --from-repo=zthxxx/hams-store
+
+      # Curious what's managed?
+      hams list
+      ```
+    </div>
+  </div>
+</div>

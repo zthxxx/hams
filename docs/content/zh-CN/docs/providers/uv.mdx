@@ -1,0 +1,74 @@
+import { Callout } from 'nextra/components'
+
+# uv Provider
+
+包装 [uv](https://github.com/astral-sh/uv) 的 `uv tool` 子命令，用来管全局装的 Python 命令行工具。
+
+为什么是 `uv tool` 而不是 `pip install --user` 或者 `pipx`？uv 写得快、依赖解析准，而且把每个工具
+装进独立的虚拟环境，彼此隔离，不会因为装了 `ruff` 顺手把 `black` 的依赖搞坏。如果你在 Python 生态里
+打转，`uv tool` 基本是最舒服的选择。
+
+**支持平台：** macOS、Linux
+
+## 怎么用
+
+```bash
+# 装一个 Python 命令行工具
+hams uv tool install ruff
+
+# 卸掉
+hams uv tool uninstall ruff
+
+# 看看 hams 管了哪些 uv 工具
+hams uv list
+```
+
+## Hamsfile 长什么样
+
+```yaml
+# macOS/uv.hams.yaml
+schema_version: 1
+provider: uv
+
+groups:
+  - tag: python-dev
+    items:
+      - app: ruff
+        intro: Fast Python linter and formatter.
+      - app: httpie
+        intro: User-friendly HTTP client for the terminal.
+      - app: poetry
+        intro: Python dependency management and packaging.
+```
+
+`app` 就是 PyPI 上的包名。
+
+## 状态探测
+
+探测方式：hams 跑 `uv tool list --json`，读出所有已经装的工具和版本。
+
+## 前提条件
+
+得先有 uv。跟 pnpm 一样的鸡生蛋问题，推荐在 `bash` provider 里一次性装好：
+
+```yaml
+- urn: "urn:hams:bash:install-uv"
+  step: Install uv
+  run: curl -LsSf https://astral.sh/uv/install.sh | sh
+  check: command -v uv
+```
+
+## 跟系统 Python 的关系
+
+uv 自己会帮你装 Python 解释器（如果需要），不会碰系统 Python。这意味着：
+
+- 你装的 `ruff` 跑在 uv 管的 Python 里，跟 `/usr/bin/python3` 没关系
+- 系统升级不会弄坏你的工具链
+- 切换 Python 版本也很容易：`uv python install 3.12`，再 `hams apply` 重装一遍工具
+
+这种隔离对环境管理来说挺友好 —— 你的 `.state/` 不用操心系统 Python 升级带来的变化。
+
+<Callout type="tip">
+  想指定某个工具用特定 Python 版本？在 Hamsfile 的 `app` 上加 `python: 3.12` 字段，
+  hams 会在 `uv tool install` 时带上 `--python 3.12`。
+</Callout>

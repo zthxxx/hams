@@ -153,11 +153,13 @@ func (p *Provider) Remove(ctx context.Context, resourceID string) error {
 // List returns a formatted list of bash resources.
 func (p *Provider) List(_ context.Context, desired *hamsfile.File, sf *state.File) (string, error) {
 	diff := provider.DiffDesiredVsState(desired, sf)
-	return provider.FormatDiff(diff), nil
+	return provider.FormatDiff(&diff), nil
 }
 
 // RunCheck executes a check command and returns (stdout, exit code 0 = ok).
 // Uses bitfield/script for shell execution.
+// NOTE: ctx is accepted for interface consistency but not yet propagated
+// because script.Exec does not support context cancellation.
 func RunCheck(_ context.Context, checkCmd string) (string, bool) {
 	if checkCmd == "" {
 		return "", false

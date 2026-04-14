@@ -74,8 +74,8 @@ func TestApply_CheckPassesSkipsRun(t *testing.T) {
 		ID:   "test-check-pass",
 		Type: provider.ActionInstall,
 		Resource: bashResource{
-			Run:   "exit 1",           // Would fail if actually run.
-			Check: "echo already-ok",  // Passes → run is skipped.
+			Run:   "exit 1",          // Would fail if actually run.
+			Check: "echo already-ok", // Passes → run is skipped.
 		},
 	}
 

@@ -1,0 +1,72 @@
+import { Callout } from 'nextra/components'
+
+# hams list
+
+Show everything hams is managing. Each row tells you: here's a resource I know about, and here's
+its current state.
+
+## Usage
+
+```bash
+hams list [flags]
+```
+
+## Examples
+
+```bash
+# Take a look: what's managed on this machine, and how's it doing?
+hams list
+
+# Piping into a script or an AI agent? JSON it is
+hams list --json
+
+# Narrow to one provider
+hams list --only=homebrew
+
+# Filter by tag (only the cli-tagged tools)
+hams list --tag=cli
+```
+
+## What you'll see
+
+Text mode looks roughly like this:
+
+```
+Provider     App              State        Version
+─────────────────────────────────────────────────────
+Homebrew     ripgrep          ok           14.1.0
+Homebrew     bat              ok           0.24.0
+Homebrew     fd               missing      --
+pnpm         serve            ok           14.2.1
+pnpm         prettier         outdated     3.1.0 → 3.2.5
+git-config   user.name        ok           Your Name
+```
+
+Each resource has a state:
+
+- `ok` — declared, installed, versions match
+- `missing` — declared in the Hamsfile, not present on the machine
+- `outdated` — installed, but the version doesn't match what the Hamsfile wants (some providers only)
+- `failed` — last apply couldn't get this one working. Logs have the details
+- `unmanaged` — present on the machine but not in any Hamsfile. Only listed if you pass `--show-unmanaged`
+
+## JSON output
+
+`--json` gives you a flat structure that's easy to pipe into agents or shell pipelines:
+
+```json
+[
+  {
+    "provider": "Homebrew",
+    "app": "ripgrep",
+    "state": "ok",
+    "version": "14.1.0",
+    "tags": ["cli", "search"]
+  }
+]
+```
+
+<Callout type="tip">
+  `hams list` shows what was recorded at the last `refresh` or `apply`. It doesn't re-scan the
+  machine. For fresh data, run `hams refresh` first.
+</Callout>

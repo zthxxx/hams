@@ -1,0 +1,83 @@
+import { Callout } from 'nextra/components'
+
+# apt Provider
+
+Manages system packages on Debian-family Linux (Ubuntu, Debian, Pop!_OS, and friends). Under the
+hood it uses `apt-get`, not the interactive `apt` command — cleaner output, and none of those
+warnings about `apt` not being meant for scripts.
+
+**Platforms:** Linux (Debian / Ubuntu family)
+
+## Usage
+
+```bash
+# Install a package
+hams apt install curl
+
+# Remove
+hams apt remove htop
+
+# See what hams is managing
+hams apt list
+```
+
+Before each install, hams runs `apt-get update` for you — but at most once an hour, so back-to-back
+installs don't keep hitting the mirrors. No need to manage update timing yourself.
+
+## Needs sudo
+
+`apt` touches system directories, so sudo isn't optional. hams asks for your password once at the
+start of apply and then keeps the sudo ticket alive in the background (refreshed every 4 minutes),
+so it won't interrupt you later. If there's no sudo available (e.g. you're running as root inside a
+container), hams figures that out and skips the password prompt.
+
+## Hamsfile example
+
+```yaml
+# linux/apt.hams.yaml
+schema_version: 1
+provider: apt
+
+groups:
+  - tag: base
+    items:
+      - app: curl
+        intro: Command-line HTTP client.
+      - app: build-essential
+        intro: C/C++ compiler and make utilities.
+      - app: ca-certificates
+        intro: Common CA certificates.
+
+  - tag: dev
+    items:
+      - app: git
+      - app: tmux
+      - app: ripgrep
+```
+
+`app` is the package name you'd type after `apt-get install`. Multiple packages in the same group?
+Good — hams batches them into a single install call, which is noticeably faster than one-at-a-time.
+
+## How state is probed
+
+hams calls `dpkg-query -W -f='${Status} ${Package} ${Version}\n'` to get the full list of installed
+packages and matches the Hamsfile entries against it. It's faster than `apt list --installed` and
+doesn't depend on parsing the human-readable output.
+
+## PPAs and third-party repos
+
+The `apt` provider doesn't manage `add-apt-repository` or `apt-key add`. Those are one-time "configure
+the sources" jobs, usually done on one or two machines at most. The suggested pattern:
+
+- Use a `bash` provider step: `add-apt-repository ppa:xxx` with `check: grep -r "xxx" /etc/apt/sources.list.d/`
+- Or use the Ansible provider's `apt_repository` module
+
+Either way, the first apply sets up the source and the `hams apt install` calls work normally
+afterwards.
+
+<Callout type="info">
+  hams doesn't `apt upgrade` packages for you. Version upgrades are "machine maintenance," not
+  "environment declaration," and hams tries not to blur that line. If you want to upgrade a
+  specific package, run `sudo apt-get install --only-upgrade <pkg>` yourself, then `hams refresh`
+  to sync state.
+</Callout>

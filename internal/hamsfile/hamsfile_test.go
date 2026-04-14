@@ -191,9 +191,9 @@ func TestAtomicWrite_CreatesFile(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "subdir", "test.yaml")
 
-	err := atomicWrite(path, []byte("hello"))
+	err := AtomicWrite(path, []byte("hello"))
 	if err != nil {
-		t.Fatalf("atomicWrite error: %v", err)
+		t.Fatalf("AtomicWrite error: %v", err)
 	}
 
 	data, err := os.ReadFile(path)
@@ -209,8 +209,8 @@ func TestAtomicWrite_NoTempFileOnSuccess(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "test.yaml")
 
-	if err := atomicWrite(path, []byte("data")); err != nil {
-		t.Fatalf("atomicWrite error: %v", err)
+	if err := AtomicWrite(path, []byte("data")); err != nil {
+		t.Fatalf("AtomicWrite error: %v", err)
 	}
 
 	entries, readDirErr := os.ReadDir(dir)
@@ -284,7 +284,7 @@ func TestProperty_PreviewCmdSurvivesRoundTrip(t *testing.T) {
 		}
 
 		// Re-read and verify.
-		data, dataErr := os.ReadFile(path) //nolint:gosec // test
+		data, dataErr := os.ReadFile(path)
 		if dataErr != nil {
 			t.Fatalf("ReadFile: %v", dataErr)
 		}

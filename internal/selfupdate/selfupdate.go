@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 
 	"github.com/zthxxx/hams/internal/config"
@@ -147,9 +148,50 @@ func (u *Updater) latestRelease(ctx context.Context) (*ghRelease, error) {
 	return &rel, nil
 }
 
-// IsUpToDate returns true when the running version matches the latest release.
+// IsUpToDate returns true when the running version matches or exceeds the latest release.
+// It compares major.minor.patch numerically, ignoring pre-release suffixes.
 func IsUpToDate(current, latest string) bool {
-	return strings.TrimPrefix(current, "v") == strings.TrimPrefix(latest, "v")
+	cur := normalizeVersion(current)
+	lat := normalizeVersion(latest)
+	if cur == "" || lat == "" {
+		// Fallback to string equality if parsing fails.
+		return strings.TrimPrefix(current, "v") == strings.TrimPrefix(latest, "v")
+	}
+	return cur == lat || compareVersions(cur, lat) >= 0
+}
+
+// normalizeVersion strips the "v" prefix and any pre-release/build metadata.
+func normalizeVersion(v string) string {
+	v = strings.TrimPrefix(v, "v")
+	// Strip pre-release suffix (-rc1, -beta, etc.) and build metadata (+build123).
+	if idx := strings.IndexAny(v, "-+"); idx >= 0 {
+		v = v[:idx]
+	}
+	return v
+}
+
+// compareVersions compares two dot-separated version strings numerically.
+// Returns -1, 0, or 1.
+func compareVersions(a, b string) int {
+	aParts := strings.Split(a, ".")
+	bParts := strings.Split(b, ".")
+	maxLen := max(len(aParts), len(bParts))
+	for i := range maxLen {
+		var ai, bi int
+		if i < len(aParts) {
+			ai, _ = strconv.Atoi(aParts[i]) //nolint:errcheck // non-numeric parts default to 0
+		}
+		if i < len(bParts) {
+			bi, _ = strconv.Atoi(bParts[i]) //nolint:errcheck // non-numeric parts default to 0
+		}
+		if ai < bi {
+			return -1
+		}
+		if ai > bi {
+			return 1
+		}
+	}
+	return 0
 }
 
 // AssetName returns the expected release asset filename for the current platform.

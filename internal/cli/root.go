@@ -14,6 +14,7 @@ import (
 	hamserr "github.com/zthxxx/hams/internal/error"
 	"github.com/zthxxx/hams/internal/i18n"
 	"github.com/zthxxx/hams/internal/provider"
+	"github.com/zthxxx/hams/internal/sudo"
 	"github.com/zthxxx/hams/internal/version"
 )
 
@@ -41,13 +42,13 @@ func resolvePaths(flags *provider.GlobalFlags) config.Paths {
 }
 
 // NewApp creates the top-level hams urfave/cli application.
-func NewApp(registry *provider.Registry) *cli.Command {
+func NewApp(registry *provider.Registry, sudoAcq sudo.Acquirer) *cli.Command {
 	flags := globalFlagDefs()
 
 	app := &cli.Command{
 		Name:    "hams",
 		Usage:   "Declarative IaC environment management for workstations",
-		Version: version.Version(),
+		Version: version.Brief(),
 		Description: `hams (hamster) wraps existing package managers to auto-record installations
 into declarative YAML config files, enabling one-command environment
 restoration on new machines.
@@ -56,7 +57,7 @@ Use 'hams <provider> install <package>' to install and record.
 Use 'hams apply' to replay all installations from config.`,
 		Flags: flags,
 		Commands: []*cli.Command{
-			applyCmd(registry),
+			applyCmd(registry, sudoAcq),
 			refreshCmd(registry),
 			configCmd(),
 			storeCmd(),
@@ -90,15 +91,15 @@ func Execute() {
 
 	// Create provider registry and register builtins.
 	registry := provider.NewRegistry()
-	registerBuiltins(registry)
+	registerBuiltins(registry, &sudo.Builder{})
 
-	app := NewApp(registry)
+	app := NewApp(registry, sudo.NewManager())
 
 	if err := app.Run(context.Background(), os.Args); err != nil {
 		flags := &provider.GlobalFlags{}
 		// Check if --json was passed.
 		for _, arg := range os.Args {
-			if arg == "--json" {
+			if arg == jsonFlag {
 				flags.JSON = true
 			}
 		}

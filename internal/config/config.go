@@ -6,9 +6,12 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"gopkg.in/yaml.v3"
+
+	"github.com/zthxxx/hams/internal/hamsfile"
 )
 
 // Config holds the merged hams configuration from all levels.
@@ -126,6 +129,10 @@ func Load(paths Paths, storePath string) (*Config, error) {
 		cfg.StorePath = storePath
 	}
 
+	if err := cfg.Validate(); err != nil {
+		return nil, err
+	}
+
 	return cfg, nil
 }
 
@@ -145,6 +152,22 @@ func (c *Config) StateDir() string {
 		id = "unknown"
 	}
 	return filepath.Join(c.StorePath, ".state", id)
+}
+
+// Validate checks that required configuration fields are set.
+// Returns nil if the configuration is valid for operations that need a store.
+func (c *Config) Validate() error {
+	// StorePath is allowed to be empty (not all commands need it).
+	// ProfileTag and MachineID have defaults, so just warn if empty.
+	if c.StorePath != "" {
+		if c.ProfileTag == "" {
+			slog.Warn("profile_tag is empty, using 'default'")
+		}
+		if c.MachineID == "" {
+			slog.Warn("machine_id is empty, using 'unknown'")
+		}
+	}
+	return nil
 }
 
 // sensitiveKeys are config keys that should be written to .local.yaml files.
@@ -177,12 +200,7 @@ var ValidConfigKeys = []string{"profile_tag", "machine_id", "store_path", "store
 
 // IsValidConfigKey returns true if the key is a recognized settable config key.
 func IsValidConfigKey(key string) bool {
-	for _, k := range ValidConfigKeys {
-		if k == key {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(ValidConfigKeys, key)
 }
 
 // WriteConfigKey reads the appropriate config file, updates a single key, and writes it back atomically.
@@ -202,7 +220,7 @@ func WriteConfigKey(paths Paths, storePath, key, value string) error {
 	}
 
 	// Read existing file into a generic map to preserve unknown fields.
-	existing := make(map[string]interface{})
+	existing := make(map[string]any)
 	data, err := os.ReadFile(targetPath) //nolint:gosec // config paths are user-specified
 	if err == nil {
 		if unmarshalErr := yaml.Unmarshal(data, &existing); unmarshalErr != nil {
@@ -219,38 +237,5 @@ func WriteConfigKey(paths Paths, storePath, key, value string) error {
 		return fmt.Errorf("marshaling config: %w", err)
 	}
 
-	dir := filepath.Dir(targetPath)
-	if mkdirErr := os.MkdirAll(dir, 0o750); mkdirErr != nil {
-		return fmt.Errorf("creating config directory %s: %w", dir, mkdirErr)
-	}
-
-	tmp, err := os.CreateTemp(dir, ".config-*.tmp")
-	if err != nil {
-		return fmt.Errorf("creating temp file: %w", err)
-	}
-	tmpName := tmp.Name()
-
-	success := false
-	defer func() {
-		if !success {
-			tmp.Close()        //nolint:errcheck,gosec // best-effort cleanup on error path
-			os.Remove(tmpName) //nolint:errcheck,gosec // best-effort cleanup on error path
-		}
-	}()
-
-	if _, err := tmp.Write(out); err != nil {
-		return fmt.Errorf("writing config: %w", err)
-	}
-	if err := tmp.Sync(); err != nil {
-		return fmt.Errorf("syncing config: %w", err)
-	}
-	if err := tmp.Close(); err != nil {
-		return fmt.Errorf("closing config: %w", err)
-	}
-	if err := os.Rename(tmpName, targetPath); err != nil {
-		return fmt.Errorf("renaming config: %w", err)
-	}
-
-	success = true
-	return nil
+	return hamsfile.AtomicWrite(targetPath, out)
 }

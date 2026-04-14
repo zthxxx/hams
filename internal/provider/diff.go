@@ -9,11 +9,25 @@ import (
 	"github.com/zthxxx/hams/internal/state"
 )
 
+// DiffType categorizes a resource's relationship between desired and observed state.
+type DiffType string
+
+const (
+	// DiffAddition indicates a resource exists in desired but not in observed state.
+	DiffAddition DiffType = "addition"
+	// DiffRemoval indicates a resource exists in observed but not in desired state.
+	DiffRemoval DiffType = "removal"
+	// DiffMatched indicates a resource exists in both and is in sync.
+	DiffMatched DiffType = "matched"
+	// DiffDiverged indicates a resource exists in both but has drifted.
+	DiffDiverged DiffType = "diverged"
+)
+
 // DiffEntry represents a single resource in the diff between desired and observed state.
 type DiffEntry struct {
-	ID     string `json:"id"`
-	Type   string `json:"type"`   // "addition", "removal", "matched", "diverged"
-	Status string `json:"status"` // State from state file (empty for additions).
+	ID     string   `json:"id"`
+	Type   DiffType `json:"type"`
+	Status string   `json:"status"` // State from state file (empty for additions).
 }
 
 // DiffResult holds the full diff between Hamsfile (desired) and state (observed).
@@ -44,21 +58,21 @@ func DiffDesiredVsState(desired *hamsfile.File, observed *state.File) DiffResult
 	// Single pass over desired: classify as addition, matched, or diverged.
 	for app := range desiredSet {
 		if !observedSet[app] {
-			result.Additions = append(result.Additions, DiffEntry{ID: app, Type: "addition"})
+			result.Additions = append(result.Additions, DiffEntry{ID: app, Type: DiffAddition})
 			continue
 		}
 		r := observed.Resources[app]
 		if r.State == state.StateOK {
-			result.Matched = append(result.Matched, DiffEntry{ID: app, Type: "matched", Status: string(r.State)})
+			result.Matched = append(result.Matched, DiffEntry{ID: app, Type: DiffMatched, Status: string(r.State)})
 		} else {
-			result.Diverged = append(result.Diverged, DiffEntry{ID: app, Type: "diverged", Status: string(r.State)})
+			result.Diverged = append(result.Diverged, DiffEntry{ID: app, Type: DiffDiverged, Status: string(r.State)})
 		}
 	}
 
 	for id := range observedSet {
 		if !desiredSet[id] {
 			r := observed.Resources[id]
-			result.Removals = append(result.Removals, DiffEntry{ID: id, Type: "removal", Status: string(r.State)})
+			result.Removals = append(result.Removals, DiffEntry{ID: id, Type: DiffRemoval, Status: string(r.State)})
 		}
 	}
 
@@ -66,7 +80,7 @@ func DiffDesiredVsState(desired *hamsfile.File, observed *state.File) DiffResult
 }
 
 // FormatDiff renders a DiffResult as a human-readable string with +/-/~ markers.
-func FormatDiff(diff DiffResult) string {
+func FormatDiff(diff *DiffResult) string {
 	var sb strings.Builder
 
 	for _, e := range diff.Additions {
@@ -86,7 +100,7 @@ func FormatDiff(diff DiffResult) string {
 }
 
 // FormatDiffJSON renders a DiffResult as JSON.
-func FormatDiffJSON(diff DiffResult) (string, error) {
+func FormatDiffJSON(diff *DiffResult) (string, error) {
 	data, err := json.MarshalIndent(diff, "", "  ")
 	if err != nil {
 		return "", fmt.Errorf("marshaling diff: %w", err)
