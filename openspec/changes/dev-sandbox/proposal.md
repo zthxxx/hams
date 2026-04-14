@@ -1,4 +1,4 @@
-# Dev Sandbox — Design Proposal (v2)
+# Dev Sandbox — Design Proposal (v3)
 
 ## Why
 
@@ -8,7 +8,7 @@ Developers need a fast feedback loop when changing hams code. Unit tests are iso
 
 Add a `task dev EXAMPLE=<name>` workflow that:
 
-1. Auto-creates `examples/<name>/` from `examples/.template/` if missing.
+1. Auto-creates `examples/<name>/` from `examples/.template/` if missing (with store_path pre-seeded in the global config).
 2. Builds a per-example Docker image (with `apt-get update` pre-warmed; optional package installs per example).
 3. Launches a throwaway container `hams-dev` with directory bind-mounts for binary, config, store, and state.
 4. Runs a Go-native file watcher (`fsnotify`-based) on the host that rebuilds `bin/hams-linux-<arch>` on `.go` save. Container sees the new binary on next invocation via directory mount.
@@ -22,15 +22,19 @@ host: task dev EXAMPLE=basic-debian
  │
  ├─ (A) ensure-example.sh
  │       └─ if examples/basic-debian/ missing → cp -r examples/.template examples/basic-debian/
+ │           (template includes config/hams.config.yaml with
+ │            store_path: /workspace/store pre-seeded)
  │
  ├─ (B) build-image.sh
- │       └─ docker build -f examples/<name>/Dockerfile -t hams-dev-<name>:<hash> .
- │           hash = sha256(Dockerfile + go.sum)[0:12]; skip if already built
+ │       └─ docker build -t hams-dev-<name> \
+ │              -f examples/<name>/Dockerfile examples/<name>/
+ │           (Docker layer cache handles incremental; no manual hash tagging)
  │
  ├─ (C) detect-arch
  │       └─ uname -m → GOARCH (amd64|arm64)
  │
- ├─ (D) initial build: go build -o bin/hams-linux-$GOARCH ./cmd/hams
+ ├─ (D) initial build (GOOS=linux GOARCH=$GOARCH CGO_ENABLED=0):
+ │       go build -o bin/hams-linux-$GOARCH ./cmd/hams
  │       LDFLAGS version=dev commit=$(git rev-parse --short HEAD)
  │
  ├─ (E) start-container.sh
@@ -41,13 +45,14 @@ host: task dev EXAMPLE=basic-debian
  │         -v $(pwd)/examples/<name>/store:/workspace/store \
  │         -v $(pwd)/examples/<name>/state:/workspace/store/.state \
  │         -e HAMS_CONFIG_HOME=/home/dev/.config/hams \
- │         hams-dev-<name>:<hash> sleep infinity
+ │         hams-dev-<name> sleep infinity
  │
  ├─ (F) print: "Attach with: docker exec -it hams-dev bash  (or: task dev:shell)"
  │
  └─ (G) go run scripts/commands/dev/watch.go --arch $GOARCH
-         fsnotify on ./cmd ./internal ./pkg
-         debounce 500ms → go build -o bin/hams-linux-$GOARCH ./cmd/hams
+         fsnotify on ./cmd ./internal ./pkg (recursive, auto-add new subdirs)
+         debounce 500ms, coalesce concurrent saves
+         invokes: GOOS=linux GOARCH=$GOARCH CGO_ENABLED=0 go build -o bin/hams-linux-$GOARCH ./cmd/hams
          prints: "[watch] built <commit-sha> in 1.2s"
 
 Ctrl+C: trap → docker stop hams-dev → --rm cleans up
@@ -81,7 +86,13 @@ exec /hams-bin/hams-linux-$(uname -m | sed -e s/x86_64/amd64/ -e s/aarch64/arm64
 
 air/CompileDaemon/reflex all force a run phase after build — our target binary is a Linux binary on a macOS host (can't run), and the container is long-lived (we don't need to restart it).
 
-Solution: a small `scripts/commands/dev/watch.go` using `github.com/fsnotify/fsnotify`. Watches `./cmd ./internal ./pkg` recursively, debounces 500ms, invokes `go build` (which itself uses `$GOCACHE` for incremental builds). ~100 lines, no external framework dependency, idiomatic Go.
+Solution: a small `scripts/commands/dev/watch.go` using `github.com/fsnotify/fsnotify`. Behaviour:
+
+1. **Recursive watching**: fsnotify does not recurse by default. On start, `filepath.WalkDir` over `./cmd ./internal ./pkg` and `Add()` each directory. On `Create` events for directories, add a watcher for the new directory too.
+2. **Debounce**: 500ms quiet window. Every save resets the timer; build fires after 500ms of no further changes.
+3. **Coalesce concurrent saves**: if a save arrives while a build is in flight, set a `pending` flag; when current build finishes and flag is set, run another build immediately. Never queue more than one pending build.
+4. **Build env**: `GOOS=linux GOARCH=$GOARCH CGO_ENABLED=0` — without these, macOS hosts produce a darwin binary that the container cannot execute. `go build` uses `$GOCACHE` for incremental compilation.
+5. **Output**: on success, prints `[watch] built <short-commit-sha> in 1.2s`. On failure, prints stderr and keeps watching — next save retries.
 
 ### Per-example Dockerfile with pre-warmed apt
 
@@ -100,11 +111,11 @@ RUN useradd -m -u 1000 -s /bin/bash dev && \
 WORKDIR /workspace
 ```
 
-Example-specific Dockerfiles can `FROM hams-dev-base` or override entirely; build cache keyed on content hash.
+Image tag strategy: `hams-dev-<example>` (no version/hash suffix). Docker's layer cache handles incremental rebuilds automatically; a plain `docker build` on unchanged sources is a ~100ms no-op. This keeps `build-image.sh` simple (no hash math, no orphan-tag cleanup).
 
 ### `hams --version` format
 
-`cmd/hams/main.go` (or wherever `app.Version` is set) formats as:
+`cmd/hams/main.go` (where `app.Version` is set) formats as:
 
 ```
 dev builds:     "dev (a6f4218)"
@@ -115,23 +126,31 @@ Implementation: `fmt.Sprintf("%s (%s)", version.Version(), version.Commit())`. N
 
 ### Examples layout + auto-create
 
+hams has two layers of config: the **global** config at `$HAMS_CONFIG_HOME/hams.config.yaml` (with `store_path`) and the **store** config at `<store>/hams.config.yaml` (with `profile_tag`, `machine_id`). The template seeds both so the user can run `hams apply` inside the container with no flags.
+
 ```
 examples/
   .template/                    # default skeleton, copied on missing EXAMPLE
-    hams.config.yaml
     Dockerfile
-    config/.gitkeep             # → container ~/.config/hams/
-    store/.gitkeep              # → container /workspace/store
-    state/.gitkeep              # → container /workspace/store/.state
-  basic-debian/                 # example scenario
-    hams.config.yaml
-    Dockerfile                  # optional override of .template/Dockerfile
     config/
+      hams.config.yaml          # global: store_path: /workspace/store
+                                # → container ~/.config/hams/
     store/
+      hams.config.yaml          # store:  profile_tag: dev
+                                #         machine_id:  sandbox
+      dev/                      # profile_tag dir, hamsfiles live here
+        .gitkeep
+    state/                      # empty; hams writes .state artifacts here
+      .gitkeep                  # → container /workspace/store/.state
+  basic-debian/                 # example scenario
+    Dockerfile                  # optional override
+    config/hams.config.yaml
+    store/
+      hams.config.yaml
       dev/
         apt.hams.yaml
         bash.hams.yaml
-    state/                      # hams writes here, gitignored
+    state/                      # gitignored; hams writes here
 ```
 
 State leakage across dev sessions is accepted — developers know what they're doing. No auto-wipe, no `dev:clean` task. To reset: delete `examples/<name>/state/`.
@@ -145,9 +164,9 @@ scripts/commands/dev/
   main.sh                 # entry point, arg parsing, orchestration, trap
   ensure-example.sh       # copy .template → examples/<name> if missing
   detect-arch.sh          # uname -m → echo GOARCH
-  build-image.sh          # docker build with content-hash caching
+  build-image.sh          # docker build -t hams-dev-<example>
   start-container.sh      # docker run with bind-mounts
-  watch.go                # fsnotify + debounce + go build loop
+  watch.go                # fsnotify (recursive) + debounce + coalesce + go build loop
 ```
 
 Taskfile.yml stays thin:
@@ -177,10 +196,10 @@ dev:shell:
 | `scripts/commands/dev/main.sh` | Orchestrator: ensure → build image → initial build → start container → print hint → watch → trap cleanup |
 | `scripts/commands/dev/ensure-example.sh` | Auto-create example from `.template/` on first use |
 | `scripts/commands/dev/detect-arch.sh` | Map host arch → linux GOARCH |
-| `scripts/commands/dev/build-image.sh` | Content-hash cached `docker build` |
+| `scripts/commands/dev/build-image.sh` | `docker build -t hams-dev-<example>` (relies on Docker layer cache) |
 | `scripts/commands/dev/start-container.sh` | `docker run` with correct mounts and user mapping |
-| `scripts/commands/dev/watch.go` | fsnotify → debounced `go build` |
-| `examples/.template/` | Default Dockerfile + empty config/store/state |
+| `scripts/commands/dev/watch.go` | Recursive fsnotify watch, 500ms debounce, coalesce concurrent saves, `GOOS=linux GOARCH=$GOARCH CGO_ENABLED=0 go build` |
+| `examples/.template/` | Default Dockerfile + pre-seeded config/hams.config.yaml (store_path) + store/hams.config.yaml (profile_tag) + empty state/ |
 | `examples/<name>/` | Per-scenario config, Dockerfile overrides, hamsfiles |
 | `Taskfile.yml` | Thin wrappers: `dev`, `dev:shell` |
 | `cmd/hams/main.go` | `--version` format change: `<version> (<commit>)` |
@@ -202,3 +221,4 @@ dev:shell:
 - Automatic `hams apply` on binary update (developer drives the container manually).
 - Port forwarding (no current use case).
 - Watching `.yaml` config changes (hot reload is binary-only; config edits are picked up on next `hams` invocation via R/W mount anyway).
+- MOTD banner in the attached shell (not worth the Dockerfile noise; if developers want it, they can add to their own example's Dockerfile).
