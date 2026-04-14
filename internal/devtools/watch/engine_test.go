@@ -100,8 +100,8 @@ func (t *fakeTimer) Stop() bool {
 type fakeBuilder struct {
 	starts   atomic.Int64
 	finishes atomic.Int64
-	// Each Build blocks until release is signalled exactly once per call.
-	gate    chan struct{}
+	// Each Build blocks until release is signaled exactly once per call.
+	gate      chan struct{}
 	failAfter int64 // if > 0, the Nth build returns an error; 0 = always succeed
 }
 
@@ -154,10 +154,13 @@ func (r *fakeReporter) snapshot() (started, finished, failed int) {
 	return r.started, r.finished, r.failed
 }
 
-// waitUntil polls the predicate until it holds or the deadline elapses.
-func waitUntil(t *testing.T, d time.Duration, pred func() bool, msg string) {
+// waitUntil polls the predicate until it holds or the one-second deadline
+// elapses. The timeout is fixed; every call in this package shares the same
+// tolerance so tests remain uniformly non-flaky across hosts.
+func waitUntil(t *testing.T, pred func() bool, msg string) {
 	t.Helper()
-	deadline := time.Now().Add(d)
+	const timeout = time.Second
+	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
 		if pred() {
 			return
@@ -182,7 +185,7 @@ func TestEngine_SingleEventProducesOneBuild(t *testing.T) {
 
 	events <- struct{}{}
 	// Wait for engine to arm the timer.
-	waitUntil(t, time.Second, func() bool {
+	waitUntil(t, func() bool {
 		clock.mu.Lock()
 		defer clock.mu.Unlock()
 		for _, tt := range clock.timers {
@@ -196,10 +199,10 @@ func TestEngine_SingleEventProducesOneBuild(t *testing.T) {
 	clock.Tick(500 * time.Millisecond)
 
 	// Wait for Build to be entered before releasing.
-	waitUntil(t, time.Second, func() bool { return builder.starts.Load() == 1 }, "build started")
+	waitUntil(t, func() bool { return builder.starts.Load() == 1 }, "build started")
 	builder.releaseOne()
 
-	waitUntil(t, time.Second, func() bool {
+	waitUntil(t, func() bool {
 		s, f, _ := reporter.snapshot()
 		return s == 1 && f == 1
 	}, "build reported")
@@ -224,7 +227,7 @@ func TestEngine_ConcurrentSavesCoalesce(t *testing.T) {
 
 	// First event fires a build after debounce.
 	events <- struct{}{}
-	waitUntil(t, time.Second, func() bool {
+	waitUntil(t, func() bool {
 		clock.mu.Lock()
 		defer clock.mu.Unlock()
 		for _, tt := range clock.timers {
@@ -235,7 +238,7 @@ func TestEngine_ConcurrentSavesCoalesce(t *testing.T) {
 		return false
 	}, "timer armed")
 	clock.Tick(500 * time.Millisecond)
-	waitUntil(t, time.Second, func() bool { return builder.starts.Load() == 1 }, "first build started")
+	waitUntil(t, func() bool { return builder.starts.Load() == 1 }, "first build started")
 
 	// While the first build is in flight, flood events.
 	for range 10 {
@@ -250,11 +253,11 @@ func TestEngine_ConcurrentSavesCoalesce(t *testing.T) {
 
 	// Release first build. Engine should immediately start exactly one more.
 	builder.releaseOne()
-	waitUntil(t, time.Second, func() bool { return builder.starts.Load() == 2 }, "second build started")
+	waitUntil(t, func() bool { return builder.starts.Load() == 2 }, "second build started")
 
 	// Drain the second build.
 	builder.releaseOne()
-	waitUntil(t, time.Second, func() bool {
+	waitUntil(t, func() bool {
 		s, f, _ := reporter.snapshot()
 		return s == 2 && f == 2
 	}, "second build reported")
@@ -283,7 +286,7 @@ func TestEngine_BuildFailureKeepsRunning(t *testing.T) {
 	go func() { eng.Run(ctx, events); close(done) }()
 
 	events <- struct{}{}
-	waitUntil(t, time.Second, func() bool {
+	waitUntil(t, func() bool {
 		clock.mu.Lock()
 		defer clock.mu.Unlock()
 		for _, tt := range clock.timers {
@@ -294,16 +297,16 @@ func TestEngine_BuildFailureKeepsRunning(t *testing.T) {
 		return false
 	}, "timer armed")
 	clock.Tick(500 * time.Millisecond)
-	waitUntil(t, time.Second, func() bool { return builder.starts.Load() == 1 }, "first build started")
+	waitUntil(t, func() bool { return builder.starts.Load() == 1 }, "first build started")
 	builder.releaseOne()
-	waitUntil(t, time.Second, func() bool {
+	waitUntil(t, func() bool {
 		_, f, fails := reporter.snapshot()
 		return f == 1 && fails == 1
 	}, "first failed build reported")
 
 	// Subsequent event triggers another build.
 	events <- struct{}{}
-	waitUntil(t, time.Second, func() bool {
+	waitUntil(t, func() bool {
 		clock.mu.Lock()
 		defer clock.mu.Unlock()
 		for _, tt := range clock.timers {
@@ -314,9 +317,9 @@ func TestEngine_BuildFailureKeepsRunning(t *testing.T) {
 		return false
 	}, "timer re-armed")
 	clock.Tick(500 * time.Millisecond)
-	waitUntil(t, time.Second, func() bool { return builder.starts.Load() == 2 }, "second build started")
+	waitUntil(t, func() bool { return builder.starts.Load() == 2 }, "second build started")
 	builder.releaseOne()
-	waitUntil(t, time.Second, func() bool {
+	waitUntil(t, func() bool {
 		s, f, _ := reporter.snapshot()
 		return s == 2 && f == 2
 	}, "second build reported")
@@ -409,7 +412,7 @@ func TestEngine_Invariants(t *testing.T) {
 	})
 }
 
-// TestEngine_ContextCancelStopsTimer: cancelling mid-debounce aborts cleanly.
+// TestEngine_ContextCancelStopsTimer: canceling mid-debounce aborts cleanly.
 func TestEngine_ContextCancelStopsTimer(t *testing.T) {
 	clock := newFakeClock()
 	builder := newFakeBuilder()

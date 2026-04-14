@@ -80,7 +80,7 @@ func NewEngine(debounce time.Duration, clock Clock, builder Builder, reporter Re
 	}
 }
 
-// Run drives the engine until ctx is cancelled.
+// Run drives the engine until ctx is canceled.
 //
 // Events are delivered on events. A closed events channel is treated the
 // same as a cancellation and causes Run to drain the in-flight build then

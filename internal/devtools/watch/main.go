@@ -25,7 +25,7 @@ func main() {
 		Level: slog.LevelInfo,
 	}))
 
-	if err := run(cfg, logger); err != nil {
+	if err := run(&cfg, logger); err != nil {
 		logger.Error("watcher exited with error", "err", err)
 		os.Exit(1)
 	}
@@ -54,7 +54,7 @@ func parseFlags(args []string) (config, error) {
 	if err != nil {
 		return config{}, fmt.Errorf("watch: getwd: %w", err)
 	}
-	output := filepath.Join("bin", fmt.Sprintf("hams-linux-%s", *arch))
+	output := filepath.Join("bin", "hams-linux-"+*arch)
 	return config{
 		arch:     *arch,
 		roots:    []string{"cmd", "internal", "pkg"},
@@ -76,7 +76,7 @@ func validateArch(arch string) error {
 	}
 }
 
-func run(cfg config, logger *slog.Logger) error {
+func run(cfg *config, logger *slog.Logger) error {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 
@@ -89,7 +89,11 @@ func run(cfg config, logger *slog.Logger) error {
 	if err != nil {
 		return err
 	}
-	defer func() { _ = notifier.Close() }()
+	defer func() {
+		if err := notifier.Close(); err != nil {
+			logger.Warn("watch: close notifier", "err", err)
+		}
+	}()
 
 	builder := NewGoBuilder(cfg.arch, cfg.output, cfg.pkg, cfg.repoRoot)
 	reporter := NewSlogReporter(logger)
@@ -114,6 +118,7 @@ func run(cfg config, logger *slog.Logger) error {
 func filterExistingRoots(roots []string, logger *slog.Logger) []string {
 	out := make([]string, 0, len(roots))
 	for _, r := range roots {
+		//nolint:gosec // roots come from the watcher's compile-time default list, not user input.
 		if info, err := os.Stat(r); err == nil && info.IsDir() {
 			out = append(out, r)
 			continue

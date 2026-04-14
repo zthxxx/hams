@@ -46,7 +46,9 @@ func NewFSNotifier(roots []string, logger *slog.Logger) (*FSNotifier, error) {
 	fn := &FSNotifier{watcher: w, roots: roots, logger: logger}
 	for _, root := range roots {
 		if err := fn.addTree(root); err != nil {
-			_ = w.Close()
+			if closeErr := w.Close(); closeErr != nil {
+				logger.Warn("fswatch: close watcher after error", "err", closeErr)
+			}
 			return nil, err
 		}
 	}
@@ -57,7 +59,7 @@ func NewFSNotifier(roots []string, logger *slog.Logger) (*FSNotifier, error) {
 func (f *FSNotifier) Close() error { return f.watcher.Close() }
 
 // Run translates raw fsnotify events into debounce ticks sent on out.
-// It returns when ctx is cancelled or the fsnotify channel closes.
+// It returns when ctx is canceled or the fsnotify channel closes.
 func (f *FSNotifier) Run(ctx context.Context, out chan<- struct{}) {
 	for {
 		select {

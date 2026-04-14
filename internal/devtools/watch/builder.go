@@ -33,22 +33,29 @@ func NewGoBuilder(arch, outputPath, pkg, repoRoot string) *GoBuilder {
 }
 
 // Build invokes `go build` and returns the outcome.
+//
+// The short HEAD SHA is resolved before the build and injected via
+// -ldflags so the resulting binary's `hams --version` output reflects the
+// commit it was built from. GOCACHE-driven compilation is unaffected (only
+// the link step sees the new ldflags string), so incremental rebuilds stay
+// fast even as HEAD advances.
 func (b *GoBuilder) Build(ctx context.Context) BuildResult {
 	start := b.clock.Now()
-	cmd := exec.CommandContext(ctx, "go", "build", "-o", b.OutputPath, b.Package) //nolint:gosec // go build target args are fixed by the watcher config.
+	commit := readCommitSHA(ctx, b.RepoRoot)
+	ldflags := fmt.Sprintf("-X github.com/zthxxx/hams/internal/version.commit=%s", commit)
+	cmd := exec.CommandContext(ctx, "go", "build", "-ldflags", ldflags, "-o", b.OutputPath, b.Package) //nolint:gosec // go build target args are fixed by the watcher config; commit comes from `git rev-parse`.
 	cmd.Dir = b.RepoRoot
 	cmd.Env = buildEnv(b.Arch, b.ExtraEnv)
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	err := cmd.Run()
 	dur := b.clock.Now().Sub(start)
-	res := BuildResult{
+	return BuildResult{
 		Err:       err,
 		Stderr:    strings.TrimRight(stderr.String(), "\n"),
 		Duration:  dur,
-		CommitSHA: readCommitSHA(ctx, b.RepoRoot),
+		CommitSHA: commit,
 	}
-	return res
 }
 
 // buildEnv returns the environment for a cross-compile `go build` invocation.

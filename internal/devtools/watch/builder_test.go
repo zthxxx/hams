@@ -32,8 +32,8 @@ func TestBuildEnv_ForcesLinuxArchAndCGO(t *testing.T) {
 	// Ensure no duplicate GOOS/GOARCH/CGO_ENABLED leaked through.
 	counts := make(map[string]int)
 	for _, kv := range got {
-		if idx := strings.IndexByte(kv, '='); idx >= 0 {
-			counts[kv[:idx]]++
+		if key, _, ok := strings.Cut(kv, "="); ok {
+			counts[key]++
 		}
 	}
 	for _, k := range []string{"GOOS", "GOARCH", "CGO_ENABLED"} {
@@ -53,8 +53,8 @@ func TestBuildEnv_AppendsExtra(t *testing.T) {
 func parseEnv(kv []string) map[string]string {
 	m := make(map[string]string, len(kv))
 	for _, e := range kv {
-		if i := strings.IndexByte(e, '='); i >= 0 {
-			m[e[:i]] = e[i+1:]
+		if key, val, ok := strings.Cut(e, "="); ok {
+			m[key] = val
 		}
 	}
 	return m

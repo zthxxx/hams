@@ -50,7 +50,11 @@ func TestFSNotifier_DetectsGoFileChange(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewFSNotifier: %v", err)
 	}
-	defer func() { _ = n.Close() }()
+	t.Cleanup(func() {
+		if err := n.Close(); err != nil {
+			t.Logf("close notifier: %v", err)
+		}
+	})
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -81,7 +85,11 @@ func TestFSNotifier_IgnoresNonGo(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer func() { _ = n.Close() }()
+	t.Cleanup(func() {
+		if err := n.Close(); err != nil {
+			t.Logf("close notifier: %v", err)
+		}
+	})
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -114,7 +122,11 @@ func TestFSNotifier_AddsNewSubdirectory(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer func() { _ = n.Close() }()
+	t.Cleanup(func() {
+		if err := n.Close(); err != nil {
+			t.Logf("close notifier: %v", err)
+		}
+	})
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -151,15 +163,21 @@ func TestFSNotifier_AddsNewSubdirectory(t *testing.T) {
 
 func TestFSNotifier_SkipsHiddenAndNodeModules(t *testing.T) {
 	root := t.TempDir()
-	_ = os.Mkdir(filepath.Join(root, ".git"), 0o755)
-	_ = os.Mkdir(filepath.Join(root, "node_modules"), 0o755)
-	_ = os.Mkdir(filepath.Join(root, "ok"), 0o755)
+	for _, sub := range []string{".git", "node_modules", "ok"} {
+		if err := os.Mkdir(filepath.Join(root, sub), 0o755); err != nil {
+			t.Fatalf("mkdir %s: %v", sub, err)
+		}
+	}
 
 	n, err := NewFSNotifier([]string{root}, discardLogger())
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer func() { _ = n.Close() }()
+	t.Cleanup(func() {
+		if err := n.Close(); err != nil {
+			t.Logf("close notifier: %v", err)
+		}
+	})
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -169,12 +187,18 @@ func TestFSNotifier_SkipsHiddenAndNodeModules(t *testing.T) {
 
 	time.Sleep(30 * time.Millisecond)
 
+	writeGoFile := func(rel string) {
+		t.Helper()
+		if err := os.WriteFile(filepath.Join(root, rel), []byte("package x\n"), 0o644); err != nil {
+			t.Fatalf("write %s: %v", rel, err)
+		}
+	}
 	// Writes into skipped dirs must not produce events.
-	_ = os.WriteFile(filepath.Join(root, ".git", "x.go"), []byte("package x\n"), 0o644)
-	_ = os.WriteFile(filepath.Join(root, "node_modules", "y.go"), []byte("package y\n"), 0o644)
+	writeGoFile(".git/x.go")
+	writeGoFile("node_modules/y.go")
 	// Writes into ok/ must produce an event.
 	time.Sleep(30 * time.Millisecond)
-	_ = os.WriteFile(filepath.Join(root, "ok", "z.go"), []byte("package z\n"), 0o644)
+	writeGoFile("ok/z.go")
 
 	got := drainFor(events, 500*time.Millisecond)
 	if got < 1 {

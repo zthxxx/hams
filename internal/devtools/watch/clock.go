@@ -15,6 +15,6 @@ type realTimer struct {
 	t *time.Timer
 }
 
-func (r *realTimer) C() <-chan time.Time      { return r.t.C }
+func (r *realTimer) C() <-chan time.Time        { return r.t.C }
 func (r *realTimer) Reset(d time.Duration) bool { return r.t.Reset(d) }
 func (r *realTimer) Stop() bool                 { return r.t.Stop() }
