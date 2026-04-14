@@ -31,6 +31,22 @@ const (
 	HookPostUpdate
 )
 
+// String returns the human-readable name of the hook type.
+func (h HookType) String() string {
+	switch h {
+	case HookPreInstall:
+		return "pre-install"
+	case HookPostInstall:
+		return "post-install"
+	case HookPreUpdate:
+		return "pre-update"
+	case HookPostUpdate:
+		return "post-update"
+	default:
+		return fmt.Sprintf("HookType(%d)", int(h))
+	}
+}
+
 // HookSet holds all hooks for a resource, grouped by type.
 type HookSet struct {
 	PreInstall  []Hook

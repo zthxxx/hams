@@ -1,0 +1,121 @@
+import { Callout } from 'nextra/components'
+
+# CLI 参考
+
+hams 命令遵循一致的路由模式：
+
+```
+hams [全局标志] <命令> [参数] [--hams-标志] [-- <透传参数>]
+```
+
+- **全局标志** 必须出现在 `hams` 和命令名之间。
+- **`--hams-` 标志** 是 provider 级别的标志，由 hams 拦截后不会传递给底层工具。
+- **`--` 分隔符** 强制将其后的所有参数原样转发给包装的工具。
+
+## 命令分类
+
+### 核心命令
+
+| 命令 | 描述 |
+|------|------|
+| [`hams apply`](./apply) | 将所有 Hamsfile 应用到当前机器（安装/移除/更新） |
+| [`hams refresh`](./refresh) | 探测已安装状态并更新状态文件 |
+| [`hams list`](./list) | 列出 hams 管理的所有资源 |
+| [`hams config`](./config) | 读取和写入 hams 配置 |
+| [`hams store`](./store) | 管理 store 仓库 |
+| [`hams self-upgrade`](./self-upgrade) | 升级 hams 二进制文件 |
+
+### Provider 命令
+
+Provider 命令遵循 `hams <provider> <verb> [args]` 的模式：
+
+```bash
+hams brew install bat
+hams pnpm add serve
+hams npm install --global prettier
+hams brew remove htop
+hams brew list
+hams brew enrich bat
+```
+
+参阅 [Provider 命令](./provider-commands) 获取完整的动词参考，以及
+[提供者](../providers) 章节获取各 provider 的具体文档。
+
+## 全局标志
+
+| 标志 | 类型 | 默认值 | 描述 |
+|------|------|--------|------|
+| `--debug` | bool | `false` | 启用调试级别日志 |
+| `--dry-run` | bool | `false` | 显示计划操作但不执行 |
+| `--json` | bool | `false` | 以 JSON 格式输出，便于机器/AI 解析 |
+| `--no-color` | bool | `false` | 禁用 ANSI 颜色代码 |
+| `--config=<path>` | string | `~/.config/hams/hams.config.yaml` | 覆盖配置文件路径 |
+| `--store=<path>` | string | 来自配置 | 覆盖 store 目录路径 |
+| `--profile=<tag>` | string | 来自配置 | 覆盖当前活动的 profile tag |
+| `--help` | bool | `false` | 显示帮助文本 |
+| `--version` | bool | `false` | 显示版本和构建信息 |
+
+参阅 [全局标志](./global-flags) 获取详细描述和示例。
+
+## 退出码
+
+| 代码 | 含义 |
+|------|------|
+| `0` | 成功 |
+| `1` | 一般错误 |
+| `2` | 用法/参数错误（无效标志、缺少参数） |
+| `3` | 锁冲突（另一个 hams 进程正在运行） |
+| `4` | 部分失败（部分资源成功，部分失败） |
+| `10` | 需要 sudo 但未授予或已超时 |
+| `11-19` | Provider 特定错误 |
+| `126` | 命令不可执行（POSIX） |
+| `127` | 命令未找到（POSIX） |
+
+## AI Agent 友好的错误
+
+所有错误输出都是结构化的，便于机器解析。在文本模式下：
+
+```
+ERROR LOCK_CONFLICT: Another hams session is running.
+  PID: 42567  command: apply  started: 20260412T143022
+  Suggestions:
+    - Wait for the existing session to complete
+    - Run: kill 42567  (if the process is stuck)
+```
+
+使用 `--json` 时：
+
+```json
+{
+  "code": "LOCK_CONFLICT",
+  "message": "Another hams session is running. PID: 42567, command: apply, started: 20260412T143022.",
+  "suggestions": [
+    "Wait for the existing session to complete",
+    "kill 42567"
+  ]
+}
+```
+
+<Callout type="info">
+  `--hams-` 前缀约定允许你在 provider 透传参数旁边传递 hams 特定的标志。
+  例如，`hams brew install bat --hams-tag=cli` 将 `bat` 记录在 `cli` 标签下，
+  而不会将 `--hams-tag=cli` 转发给 `brew`。
+</Callout>
+
+## `--hams-` 标志约定
+
+Provider 级别的 hams 标志使用 `--hams-` 前缀，避免与包装工具自身的标志冲突：
+
+| 标志 | 描述 |
+|------|------|
+| `--hams-tag=<tags>` | 逗号分隔的标签，用于分配给记录的资源 |
+| `--hams-intro=<text>` | 一行描述，存储在 Hamsfile 中 |
+| `--hams-local` | 写入 `<Provider>.hams.local.yaml` 而非主 Hamsfile |
+
+```bash
+# 安装 ripgrep，标记为 'search,cli'，并添加描述
+hams brew install ripgrep --hams-tag=search,cli --hams-intro="Fast recursive grep alternative"
+
+# 将仅工作用途的工具安装到本地（不提交的）Hamsfile 中
+hams brew install zoom --hams-local
+```

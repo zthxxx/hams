@@ -1,0 +1,31 @@
+import { Callout } from 'nextra/components'
+
+# go install Provider
+
+<Callout type="info">
+  此页面尚未完成翻译，以下为英文原文。欢迎贡献翻译。
+</Callout>
+
+Wraps `go install` to manage Go binaries installed from source.
+
+**Platforms:** macOS, Linux
+
+## Usage
+
+```bash
+hams go install <module@version>
+hams go list
+```
+
+## Hamsfile Example
+
+```yaml
+- app: github.com/golangci/golangci-lint/v2/cmd/golangci-lint
+  intro: Go linter aggregator.
+- app: golang.org/x/tools/cmd/goimports
+  intro: Go import organizer.
+```
+
+<Callout type="info">
+  Full documentation coming soon.
+</Callout>

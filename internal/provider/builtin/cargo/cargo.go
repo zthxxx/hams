@@ -83,11 +83,11 @@ func (p *Provider) Remove(ctx context.Context, resourceID string) error {
 // List returns installed cargo packages with status.
 func (p *Provider) List(_ context.Context, desired *hamsfile.File, sf *state.File) (string, error) {
 	diff := provider.DiffDesiredVsState(desired, sf)
-	return provider.FormatDiff(diff), nil
+	return provider.FormatDiff(&diff), nil
 }
 
 // HandleCommand processes CLI subcommands for cargo.
-func (p *Provider) HandleCommand(args []string, _ map[string]string, flags *provider.GlobalFlags) error {
+func (p *Provider) HandleCommand(_ context.Context, args []string, _ map[string]string, flags *provider.GlobalFlags) error {
 	verb, remaining := provider.ParseVerb(args)
 
 	switch verb {

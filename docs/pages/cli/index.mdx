@@ -18,12 +18,12 @@ hams [global-flags] <command> [args] [--hams-flags] [-- <passthrough>]
 
 | Command | Description |
 |---------|-------------|
-| [`hams apply`](/docs/cli/apply) | Apply all Hamsfiles to the current machine (install/remove/update) |
-| [`hams refresh`](/docs/cli/refresh) | Probe installed state and update state files |
-| [`hams list`](/docs/cli/list) | List all resources managed by hams |
-| [`hams config`](/docs/cli/config) | Read and write hams configuration |
-| [`hams store`](/docs/cli/store) | Manage the store repository |
-| [`hams self-upgrade`](/docs/cli/self-upgrade) | Upgrade the hams binary |
+| [`hams apply`](./apply) | Apply all Hamsfiles to the current machine (install/remove/update) |
+| [`hams refresh`](./refresh) | Probe installed state and update state files |
+| [`hams list`](./list) | List all resources managed by hams |
+| [`hams config`](./config) | Read and write hams configuration |
+| [`hams store`](./store) | Manage the store repository |
+| [`hams self-upgrade`](./self-upgrade) | Upgrade the hams binary |
 
 ### Provider Commands
 
@@ -38,8 +38,8 @@ hams brew list
 hams brew enrich bat
 ```
 
-See [Provider Commands](/docs/cli/provider-commands) for the full verb reference, and the
-[Providers](/docs/providers) chapter for provider-specific documentation.
+See [Provider Commands](./provider-commands) for the full verb reference, and the
+[Providers](../providers) chapter for provider-specific documentation.
 
 ## Global Flags
 
@@ -55,7 +55,7 @@ See [Provider Commands](/docs/cli/provider-commands) for the full verb reference
 | `--help` | bool | `false` | Display help text |
 | `--version` | bool | `false` | Display version and build info |
 
-See [Global Flags](/docs/cli/global-flags) for detailed descriptions and examples.
+See [Global Flags](./global-flags) for detailed descriptions and examples.
 
 ## Exit Codes
 

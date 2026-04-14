@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
@@ -15,7 +16,7 @@ type ProviderHandler interface {
 	// DisplayName returns the provider's display name (e.g., "Homebrew", "pnpm").
 	DisplayName() string
 	// HandleCommand receives passthrough args and pre-split --hams- flags.
-	HandleCommand(args []string, hamsFlags map[string]string, flags *provider.GlobalFlags) error
+	HandleCommand(ctx context.Context, args []string, hamsFlags map[string]string, flags *provider.GlobalFlags) error
 }
 
 // providerRegistry holds registered provider handlers.
@@ -35,7 +36,7 @@ func routeToProvider(handler ProviderHandler, args []string, flags *provider.Glo
 		// --help was found.
 		return showProviderHelp(handler)
 	}
-	return handler.HandleCommand(passthrough, hamsFlags, flags)
+	return handler.HandleCommand(context.TODO(), passthrough, hamsFlags, flags)
 }
 
 // parseProviderArgs processes provider args in a single pass:

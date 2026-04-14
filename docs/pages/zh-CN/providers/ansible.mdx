@@ -1,0 +1,32 @@
+import { Callout } from 'nextra/components'
+
+# Ansible Provider
+
+<Callout type="info">
+  此页面尚未完成翻译，以下为英文原文。欢迎贡献翻译。
+</Callout>
+
+Wraps [Ansible](https://www.ansible.com/) to run playbooks and ad-hoc tasks as part
+of your hams environment setup.
+
+**Platforms:** macOS, Linux
+
+## Usage
+
+```bash
+hams ansible run <urn>
+hams ansible list
+```
+
+## Hamsfile Example
+
+```yaml
+- urn: "urn:hams:ansible:setup-dev-env"
+  step: Configure development environment
+  playbook: playbooks/dev-env.yml
+  check: test -f ~/.dev-env-configured
+```
+
+<Callout type="info">
+  Full documentation coming soon.
+</Callout>

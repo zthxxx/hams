@@ -1,0 +1,73 @@
+# Schema 参考
+
+hams 使用三种类型的 YAML 文件。所有文件在读写过程中都会保留注释。
+
+## 全局配置
+
+位于 `~/.config/hams/hams.config.yaml`：
+
+```yaml
+profile_tag: macOS
+machine_id: MacbookProM5X
+store_repo: zthxxx/hams-store
+store_path: ~/.local/share/hams/repo/zthxxx/hams-store
+llm_cli: claude
+provider_priority:
+  - homebrew
+  - apt
+  - pnpm
+  - npm
+  - bash
+```
+
+## Hamsfile
+
+### 包管理 Provider（Homebrew、pnpm、npm 等）
+
+```yaml
+terminal-tool:
+  - app: lazygit
+    intro: Simple terminal UI for git commands
+  - app: htop
+    intro: Improved top (interactive process viewer)
+```
+
+### KV 配置 Provider（defaults、git config）
+
+```yaml
+configs:
+  - urn: "urn:hams:defaults:com.apple.dock.autohide"
+    args:
+      domain: com.apple.dock
+      key: autohide
+      type: bool
+      value: "true"
+    preview-cmd: "defaults write com.apple.dock autohide -bool true"
+    check: "defaults read com.apple.dock autohide"
+```
+
+### Bash Provider
+
+```yaml
+setup:
+  - urn: "urn:hams:bash:init-zsh"
+    step: "Install ZSH theme"
+    run: "curl -sSL .../installer.sh | bash"
+    check: "test -f ~/.oh-my-zsh/custom/themes/jovial.zsh-theme"
+```
+
+## 状态文件
+
+位于 `<store>/.state/<machine-id>/<Provider>.state.yaml`：
+
+```yaml
+schema_version: 1
+provider: homebrew
+machine_id: MacbookProM5X
+last_apply_session: "20260413T100000"
+resources:
+  htop:
+    state: ok
+    version: "3.3.0"
+    install_at: "20260413T100000"
+```

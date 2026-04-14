@@ -1,0 +1,32 @@
+import { Callout } from 'nextra/components'
+
+# VS Code 扩展 Provider
+
+<Callout type="info">
+  此页面尚未完成翻译，以下为英文原文。欢迎贡献翻译。
+</Callout>
+
+Wraps the `code` CLI to manage Visual Studio Code extensions.
+
+**Platforms:** macOS, Linux
+
+## Usage
+
+```bash
+hams vscode-ext install <extension-id>
+hams vscode-ext uninstall <extension-id>
+hams vscode-ext list
+```
+
+## Hamsfile Example
+
+```yaml
+- app: esbenp.prettier-vscode
+  intro: Prettier formatter for VS Code.
+- app: golang.go
+  intro: Rich Go language support.
+```
+
+<Callout type="info">
+  Full documentation coming soon.
+</Callout>

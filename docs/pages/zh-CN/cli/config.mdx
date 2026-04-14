@@ -1,0 +1,33 @@
+import { Callout } from 'nextra/components'
+
+# hams config
+
+<Callout type="info">
+  此页面尚未完成翻译，以下为英文原文。欢迎贡献翻译。
+</Callout>
+
+Read and write hams configuration values. Configuration is stored in
+`~/.config/hams/hams.config.yaml` by default.
+
+## Usage
+
+```bash
+hams config <subcommand> [flags]
+```
+
+## Examples
+
+```bash
+# Show the current configuration
+hams config show
+
+# Get a specific config value
+hams config get store_path
+
+# Set a config value
+hams config set store_path ~/Projects/my-hams-store
+```
+
+<Callout type="info">
+  Full documentation coming soon.
+</Callout>

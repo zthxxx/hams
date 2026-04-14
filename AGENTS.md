@@ -154,3 +154,4 @@ Loop repeatedly until all of the following tasks are completed.
 @.claude/rules/code-conventions.md
 @.claude/rules/development-process.md
 @.claude/rules/agent-behavior.md
+@.claude/rules/docs-verification.md

@@ -70,7 +70,7 @@ func TestFormatDiff_ShowsMarkers(t *testing.T) {
 		Diverged:  []provider.DiffEntry{{ID: "vim", Type: "diverged", Status: "failed"}},
 	}
 
-	out := provider.FormatDiff(diff)
+	out := provider.FormatDiff(&diff)
 
 	if !strings.Contains(out, "+ curl") {
 		t.Error("expected + marker for additions")
@@ -91,7 +91,7 @@ func TestFormatDiffJSON_ValidJSON(t *testing.T) {
 	diff := provider.DiffResult{
 		Additions: []provider.DiffEntry{{ID: "curl", Type: "addition"}},
 	}
-	out, err := provider.FormatDiffJSON(diff)
+	out, err := provider.FormatDiffJSON(&diff)
 	if err != nil {
 		t.Fatalf("FormatDiffJSON error: %v", err)
 	}

@@ -3,6 +3,8 @@ package otel
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -30,6 +32,7 @@ type Config struct {
 type Session struct {
 	config    Config
 	startTime time.Time
+	traceID   string
 	spans     []Span
 	metrics   []Metric
 }
@@ -60,14 +63,15 @@ func NewSession(cfg Config) *Session {
 	return &Session{
 		config:    cfg,
 		startTime: time.Now(),
+		traceID:   randomHex(16), // 32 hex chars, W3C trace-id format.
 	}
 }
 
 // StartSpan begins a new span and returns it.
 func (s *Session) StartSpan(name, parentID string, attrs map[string]string) *Span {
 	span := Span{
-		TraceID:   fmt.Sprintf("%d", s.startTime.UnixNano()),
-		SpanID:    fmt.Sprintf("%d", time.Now().UnixNano()),
+		TraceID:   s.traceID,
+		SpanID:    randomHex(8), // 16 hex chars, unique per span.
 		ParentID:  parentID,
 		Name:      name,
 		StartTime: time.Now(),
@@ -155,6 +159,13 @@ func (s *Session) Shutdown(ctx context.Context) error {
 		slog.Warn("OTel shutdown timed out, traces may be lost")
 		return ctx.Err()
 	}
+}
+
+// randomHex generates a random hex string of n bytes (2n hex characters).
+func randomHex(n int) string {
+	b := make([]byte, n)
+	_, _ = rand.Read(b) // crypto/rand.Read never returns an error on supported platforms.
+	return hex.EncodeToString(b)
 }
 
 func writeJSON(dir string, data any) error {

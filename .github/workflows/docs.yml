@@ -1,0 +1,55 @@
+name: Deploy Docs
+
+on:
+  push:
+    branches: [main, dev]
+  pull_request:
+    branches: [main, dev]
+    types: [closed]
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-deploy:
+    # Only deploy on push or merged PRs (not closed-without-merge)
+    if: github.event_name == 'push' || github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --filter hams-docs...
+
+      - name: Build docs
+        working-directory: docs
+        run: pnpm build
+
+      - name: Prepare deploy directory
+        run: |
+          mkdir -p deploy/docs
+          # English (default locale) content at /docs/ root
+          cp -r docs/out/en/* deploy/docs/
+          cp docs/out/en.html deploy/docs/index.html
+          # Chinese locale at /docs/zh-CN/
+          cp -r docs/out/zh-CN deploy/docs/zh-CN
+          cp docs/out/zh-CN.html deploy/docs/zh-CN/index.html
+          # Shared assets and error page
+          cp -r docs/out/_next deploy/docs/_next
+          cp docs/out/404.html deploy/docs/404.html
+          # Custom domain
+          cp docs/public/CNAME deploy/CNAME
+
+      - name: Deploy to gh-pages
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: deploy
+          publish_branch: gh-pages

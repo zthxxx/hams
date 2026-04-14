@@ -104,11 +104,11 @@ func (p *Provider) Remove(ctx context.Context, resourceID string) error {
 // List returns defaults entries with status.
 func (p *Provider) List(_ context.Context, desired *hamsfile.File, sf *state.File) (string, error) {
 	diff := provider.DiffDesiredVsState(desired, sf)
-	return provider.FormatDiff(diff), nil
+	return provider.FormatDiff(&diff), nil
 }
 
 // HandleCommand processes CLI subcommands for defaults.
-func (p *Provider) HandleCommand(args []string, hamsFlags map[string]string, flags *provider.GlobalFlags) error {
+func (p *Provider) HandleCommand(_ context.Context, args []string, hamsFlags map[string]string, flags *provider.GlobalFlags) error {
 	if len(args) < 3 {
 		return hamserr.NewUserError(hamserr.ExitUsageError,
 			"defaults requires: write <domain> <key> -<type> <value>",

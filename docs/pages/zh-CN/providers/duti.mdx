@@ -1,0 +1,33 @@
+import { Callout } from 'nextra/components'
+
+# duti Provider
+
+<Callout type="info">
+  此页面尚未完成翻译，以下为英文原文。欢迎贡献翻译。
+</Callout>
+
+Wraps [duti](https://github.com/moretension/duti) to manage default application associations
+for file types on macOS.
+
+**Platforms:** macOS only
+
+## Usage
+
+```bash
+hams duti set <bundle-id> <uti> <role>
+hams duti list
+```
+
+## Hamsfile Example
+
+```yaml
+- urn: "urn:hams:duti:vscode-ts"
+  step: Open TypeScript files with VS Code
+  bundle_id: com.microsoft.VSCode
+  uti: public.typescript
+  role: editor
+```
+
+<Callout type="info">
+  Full documentation coming soon.
+</Callout>

@@ -232,30 +232,69 @@ THEN the page SHALL explain the four resource classes and their probe contracts:
 4. Filesystem (path existence)
 AND each class SHALL include the required state fields and an example.
 
+### Requirement: Explicit Top-Level Navigation
+
+The documentation site SHALL use Nextra's `_meta.ts` files with explicit configuration for all top-level navigation entries. Navigation structure MUST NOT rely on implicit file-path-based conventions.
+
+#### Scenario: Top-level navigation entries
+
+WHEN a user views the site sidebar
+THEN all top-level navigation entries SHALL be explicitly declared in `pages/_meta.ts` (or locale-specific `pages/<locale>/_meta.ts`)
+AND adding or removing a top-level section SHALL require an explicit edit to the `_meta.ts` file
+AND the `_meta.ts` file SHALL define display names for all entries.
+
+#### Scenario: Nested navigation
+
+WHEN a documentation section has sub-pages (e.g., CLI Reference with subcommands)
+THEN a `_meta.ts` file SHALL exist in each subdirectory to define the navigation order and display names
+AND the navigation order SHALL match the `_meta.ts` declaration order, not filesystem alphabetical order.
+
 ### Requirement: i18n Support
 
-The documentation site SHALL support internationalization with English as the primary language and Chinese as the first additional locale.
+The documentation site SHALL support internationalization with English (`en`) as the default language and Simplified Chinese (`zh-CN`) as the first additional locale. The i18n system SHALL be designed for easy extension to additional locales.
 
-#### Scenario: English as default locale
+#### Scenario: English as default locale (no prefix)
 
-WHEN a user visits `hams.zthxxx.me` without a locale prefix
+WHEN a user visits `hams.zthxxx.me/docs/` without a locale prefix
 THEN the site SHALL render in English
-AND the URL structure SHALL NOT include a `/en/` prefix for English pages.
+AND the URL structure SHALL NOT include an `/en/` prefix for English pages
+AND visiting `/en` or `/en/*` SHALL automatically redirect to `/` (the root without locale prefix).
 
-#### Scenario: Chinese locale availability
+#### Scenario: Chinese locale at /zh-CN path
 
-WHEN a user switches to Chinese via the Nextra locale switcher
-THEN Chinese-translated pages SHALL be served where available
-AND pages without Chinese translations SHALL fall back to English content
-AND the locale switcher SHALL be visible in the site navigation.
+WHEN a user visits `hams.zthxxx.me/docs/zh-CN/`
+THEN the site SHALL render the Simplified Chinese Landing Page
+AND all Chinese-locale pages SHALL be served under the `/zh-CN/` path prefix
+AND the `/zh-CN/*` path SHALL be a sibling of the default (unprefixed) English paths.
 
-#### Scenario: i18n file structure
+#### Scenario: Locale switcher
+
+WHEN a user clicks the locale switcher in the site navigation
+THEN the switcher SHALL display all available locales with their native names (e.g., "English", "中文")
+AND switching locales SHALL navigate to the equivalent page in the selected locale
+AND the locale preference SHALL be persisted.
+
+#### Scenario: i18n file structure (directory-based)
 
 WHEN a developer adds a new documentation page
-THEN the i18n structure SHALL follow Nextra conventions:
-- English content in `pages/<path>.mdx` (or `pages/<path>/index.mdx`)
-- Chinese content in `pages/<path>.zh-CN.mdx` (or equivalent Nextra i18n pattern)
-AND the `next.config.mjs` SHALL configure `i18n` with locales `['en', 'zh-CN']` and `defaultLocale: 'en'`.
+THEN the i18n structure SHALL use Nextra's directory-based locale convention:
+- English content in `pages/<path>.mdx` (root level, no locale directory)
+- Chinese content in `pages/zh-CN/<path>.mdx` (under locale directory)
+AND the `next.config.mjs` SHALL configure `i18n` with `locales: ['', 'zh-CN']` and `defaultLocale: ''` (empty string = no prefix for default)
+AND each locale directory SHALL have its own `_meta.ts` file with localized navigation labels.
+
+#### Scenario: i18n content synchronization
+
+WHEN any documentation content is added, modified, or removed in any locale
+THEN ALL other locale versions of that content SHALL be updated in the same change
+AND the CI pipeline SHALL verify that every English page has a corresponding Chinese page (and vice versa)
+AND missing translations SHALL cause a build warning (not failure) until full coverage is achieved.
+
+#### Scenario: Fallback for untranslated content
+
+WHEN a Chinese-locale page does not yet have translated content
+THEN the page SHALL display the English content as a fallback
+AND a visible notice SHALL indicate that the page is not yet translated.
 
 ### Requirement: Built-in Search
 

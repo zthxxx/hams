@@ -1,0 +1,31 @@
+import { Callout } from 'nextra/components'
+
+# Mac App Store Provider
+
+<Callout type="info">
+  此页面尚未完成翻译，以下为英文原文。欢迎贡献翻译。
+</Callout>
+
+Wraps [mas](https://github.com/mas-cli/mas) to manage Mac App Store applications.
+
+**Platforms:** macOS only
+
+## Usage
+
+```bash
+hams mas install <app-id>
+hams mas list
+```
+
+## Hamsfile Example
+
+```yaml
+- app: "497799835"
+  intro: Xcode - Apple's IDE for macOS and iOS development.
+- app: "1475387142"
+  intro: Tailscale - Mesh VPN.
+```
+
+<Callout type="info">
+  Full documentation coming soon.
+</Callout>

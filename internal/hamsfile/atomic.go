@@ -6,8 +6,9 @@ import (
 	"path/filepath"
 )
 
-// atomicWrite writes data to path atomically using temp-file + fsync + rename.
-func atomicWrite(path string, data []byte) error {
+// AtomicWrite writes data to path atomically using temp-file + fsync + rename.
+// Creates parent directories if needed.
+func AtomicWrite(path string, data []byte) error {
 	dir := filepath.Dir(path)
 
 	if err := os.MkdirAll(dir, 0o750); err != nil {

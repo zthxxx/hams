@@ -97,11 +97,11 @@ func (p *Provider) Remove(_ context.Context, resourceID string) error {
 // List returns duti associations with status.
 func (p *Provider) List(_ context.Context, desired *hamsfile.File, sf *state.File) (string, error) {
 	diff := provider.DiffDesiredVsState(desired, sf)
-	return provider.FormatDiff(diff), nil
+	return provider.FormatDiff(&diff), nil
 }
 
 // HandleCommand processes CLI subcommands for duti.
-func (p *Provider) HandleCommand(args []string, _ map[string]string, flags *provider.GlobalFlags) error {
+func (p *Provider) HandleCommand(_ context.Context, args []string, _ map[string]string, flags *provider.GlobalFlags) error {
 	if len(args) == 0 {
 		return hamserr.NewUserError(hamserr.ExitUsageError,
 			"duti requires arguments",

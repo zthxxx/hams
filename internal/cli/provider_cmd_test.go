@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"testing"
 
 	"github.com/zthxxx/hams/internal/provider"
@@ -50,7 +51,7 @@ type mockProvider struct {
 
 func (m *mockProvider) Name() string        { return m.name }
 func (m *mockProvider) DisplayName() string { return m.displayName }
-func (m *mockProvider) HandleCommand(args []string, hamsFlags map[string]string, flags *provider.GlobalFlags) error {
+func (m *mockProvider) HandleCommand(_ context.Context, args []string, hamsFlags map[string]string, flags *provider.GlobalFlags) error {
 	m.lastArgs = args
 	m.lastHamsFlags = hamsFlags
 	m.lastFlags = flags

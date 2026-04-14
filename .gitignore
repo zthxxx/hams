@@ -57,3 +57,10 @@ __debug_bin*
 *.tsbuildinfo
 .eslintcache
 
+
+# https://github.com/microsoft/playwright-cli
+.playwright/
+.playwright-cli/
+
+.next
+out

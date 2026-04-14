@@ -1,0 +1,121 @@
+import { Callout } from 'nextra/components'
+
+# 提供者目录
+
+hams 内置 15 个 provider，涵盖工作站配置的方方面面。
+每个 provider 包装一个现有的 CLI 工具，为其提供自动记录、状态追踪和基于差异的 apply 功能。
+
+## 内置 Provider
+
+| Provider | 包装 | 平台 | 描述 |
+|----------|------|------|------|
+| [Homebrew](./homebrew) | `brew` | macOS、Linux | 通过 Homebrew 管理 formulae 和 cask |
+| [apt](./apt) | `apt-get` | Linux (Debian/Ubuntu) | 通过 APT 管理系统软件包 |
+| [pnpm](./pnpm) | `pnpm` | macOS、Linux | 通过 pnpm 管理全局 Node.js 包 |
+| [npm](./npm) | `npm` | macOS、Linux | 通过 npm 管理全局 Node.js 包 |
+| [uv](./uv) | `uv` | macOS、Linux | 通过 uv 管理 Python 工具 |
+| [go](./go) | `go install` | macOS、Linux | 通过 `go install` 安装 Go 二进制文件 |
+| [cargo](./cargo) | `cargo install` | macOS、Linux | 通过 Cargo 安装 Rust 二进制文件 |
+| [vscode-ext](./vscode-ext) | `code` | macOS、Linux | VS Code 扩展 |
+| [mas](./mas) | `mas` | 仅 macOS | Mac App Store 应用 |
+| [git-config](./git-config) | `git config` | macOS、Linux | Git 配置键值对 |
+| [git-clone](./git-clone) | `git clone` | macOS、Linux | 在固定本地路径克隆仓库 |
+| [defaults](./defaults) | `defaults` | 仅 macOS | macOS `defaults write` 设置 |
+| [duti](./duti) | `duti` | 仅 macOS | 文件类型的默认应用关联 |
+| [bash](./bash) | `bash` | macOS、Linux | 带幂等性检查的任意 shell 脚本 |
+| [Ansible](./ansible) | `ansible` | macOS、Linux | Ansible playbook 和临时任务 |
+
+## 资源分类
+
+每个 provider 的资源都属于以下四种分类之一，各自有不同的探测策略：
+
+### Package（原生列表）
+
+Provider：Homebrew、apt、pnpm、npm、uv、go、cargo、mas、vscode-ext
+
+探测方式：provider 运行其原生列表命令（例如 `brew list --formula`、`npm list -g`），
+检查包名是否出现在输出中。版本信息从列表输出中记录。
+
+```yaml
+- app: ripgrep
+  intro: Fast recursive grep alternative.
+```
+
+### KV Config（读回验证）
+
+Provider：defaults、git-config、duti
+
+探测方式：provider 通过读取命令（例如 `defaults read`、`git config --get`）读回当前值，
+并与期望值进行比较。如果匹配，资源状态为 `ok`。
+
+```yaml
+- urn: "urn:hams:defaults:finder-show-extensions"
+  step: Show all file extensions in Finder
+  domain: NSGlobalDomain
+  key: AppleShowAllExtensions
+  value: true
+```
+
+### Check-based（用户提供 check:）
+
+Provider：bash、ansible
+
+探测方式：用户提供一个 `check:` shell 命令。如果命令退出码为 0，资源状态为 `ok`；
+如果退出码非 0，则需要执行 apply。
+
+```yaml
+- urn: "urn:hams:bash:install-homebrew"
+  step: Install Homebrew
+  run: /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+  check: command -v brew
+```
+
+### Filesystem（路径存在检查）
+
+Provider：git-clone、file
+
+探测方式：provider 检查目标路径是否存在于磁盘上。对于 git-clone，还会验证远程 URL 是否匹配。
+
+```yaml
+- urn: "urn:hams:git-clone:dotfiles"
+  step: Clone dotfiles repository
+  remote: https://github.com/zthxxx/dotfiles.git
+  local_path: ~/Projects/dotfiles
+  default_branch: main
+```
+
+## Provider 的执行顺序
+
+在 `hams apply` 期间，provider 按配置中 `provider_priority` 定义的顺序执行。
+默认顺序的设计确保依赖项优先（例如 `bash` 在 `Homebrew` 之前运行，这样你可以
+通过 bash 步骤来引导安装 Homebrew）：
+
+```yaml
+# ~/.config/hams/hams.config.yaml
+provider_priority:
+  - bash
+  - Homebrew
+  - apt
+  - pnpm
+  - npm
+  - uv
+  - go
+  - cargo
+  - vscode-ext
+  - mas
+  - git-config
+  - git-clone
+  - defaults
+  - duti
+  - ansible
+```
+
+<Callout type="info">
+  在你的 store 的 `hams.config.yaml` 中覆盖顺序，或在 `hams apply` 时使用 `--only` / `--except` 标志
+  来仅运行特定的 provider。
+</Callout>
+
+## 添加自定义 Provider
+
+hams 支持通过 `hashicorp/go-plugin`（本地 gRPC）扩展外部 provider。有关完整的开发指南和 Go SDK 参考，
+请参阅 Provider API 章节（即将推出）。

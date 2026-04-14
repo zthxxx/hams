@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "next build && next export",
+    "build": "next build",
     "start": "next start"
   },
   "dependencies": {
@@ -13,5 +13,9 @@
     "nextra-theme-docs": "^3.2.0",
     "react": "^18.3.0",
     "react-dom": "^18.3.0"
+  },
+  "devDependencies": {
+    "@types/node": "25.6.0",
+    "@types/react": "19.2.14"
   }
 }

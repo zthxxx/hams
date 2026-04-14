@@ -6,10 +6,6 @@ const config: DocsThemeConfig = {
   docsRepositoryBase: 'https://github.com/zthxxx/hams/tree/main/docs',
   footer: { content: 'hams — Declarative IaC for workstations' },
   darkMode: true,
-  primaryHue: 35,
-  useNextSeoProps() {
-    return { titleTemplate: '%s – hams' }
-  },
 }
 
 export default config

@@ -1,0 +1,34 @@
+import { Callout } from 'nextra/components'
+
+# Homebrew Provider
+
+<Callout type="info">
+  此页面尚未完成翻译，以下为英文原文。欢迎贡献翻译。
+</Callout>
+
+Wraps [Homebrew](https://brew.sh/) (`brew`) to manage formulae and casks on macOS and Linux.
+
+**Platforms:** macOS, Linux
+
+## Usage
+
+```bash
+hams brew install <formula>
+hams brew install --cask <cask>
+hams brew remove <formula>
+hams brew list
+```
+
+## Hamsfile Example
+
+```yaml
+- app: ripgrep
+  intro: Fast recursive grep alternative.
+- app: bat
+  tags: [cli]
+  intro: A cat clone with syntax highlighting.
+```
+
+<Callout type="info">
+  Full documentation coming soon.
+</Callout>

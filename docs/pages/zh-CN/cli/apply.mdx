@@ -1,0 +1,49 @@
+import { Callout } from 'nextra/components'
+
+# hams apply
+
+<Callout type="info">
+  此页面尚未完成翻译，以下为英文原文。欢迎贡献翻译。
+</Callout>
+
+Apply all Hamsfiles to the current machine. This command reads your declared resources,
+diffs them against the current machine state, and reconciles by installing, removing, or
+updating packages as needed.
+
+## Usage
+
+```bash
+hams apply [flags]
+```
+
+## Examples
+
+```bash
+# Apply all Hamsfiles in the current store
+hams apply
+
+# Apply from a remote store repository
+hams apply --from-repo=zthxxx/hams-store
+
+# Dry-run to preview changes without executing
+hams apply --dry-run
+
+# Apply only specific providers
+hams apply --only=homebrew,pnpm
+
+# Apply all except certain providers
+hams apply --except=ansible
+```
+
+## Flags
+
+| Flag | Type | Description |
+|------|------|-------------|
+| `--from-repo` | string | Clone and apply from a remote GitHub repo |
+| `--only` | string | Comma-separated list of providers to apply |
+| `--except` | string | Comma-separated list of providers to skip |
+| `--dry-run` | bool | Preview changes without executing |
+
+<Callout type="info">
+  Full documentation coming soon.
+</Callout>

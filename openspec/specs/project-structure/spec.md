@@ -384,33 +384,32 @@ The following tasks SHALL be defined:
 
 ---
 
-### Requirement: Docker Compose E2E Testing Infrastructure
+### Requirement: Docker-Based Testing Infrastructure
 
-The `e2e/` directory SHALL contain a Docker Compose configuration and Dockerfiles for end-to-end testing across target environments. E2E tests SHALL validate that the statically linked hams binary operates correctly on each target OS, including provider interactions, state management, and Hamsfile read/write.
+The `e2e/` directory SHALL contain Dockerfiles for end-to-end and integration testing across target environments. E2E tests SHALL validate that the statically linked hams binary operates correctly on each target OS, including provider interactions, state management, and Hamsfile read/write.
 
 ```
 e2e/
-  docker-compose.yml      # Orchestrates all e2e test containers
+  integration/
+    Dockerfile            # Go toolchain for integration tests
   debian/
     Dockerfile            # Debian-based e2e test environment
+    run-tests.sh          # Test runner script for Debian
   alpine/
     Dockerfile            # Alpine (musl libc) e2e test environment
+    run-tests.sh          # Test runner script for Alpine
   openwrt/
-    Dockerfile            # OpenWrt-like ARM64 environment (uses alpine + busybox)
-  fixtures/               # Shared test Hamsfiles and configs
-    test-store/
-      macOS/
-        Homebrew.hams.yaml
-      linux/
-        apt.hams.yaml
-  scripts/
-    run-e2e.sh            # Test runner script executed inside containers
+    Dockerfile            # OpenWrt-like environment (uses alpine + busybox)
+    run-tests.sh          # Test runner script for OpenWrt
+  lib/
+    assertions.sh         # Shared E2E assertion helpers
+  fixtures/               # Shared test Hamsfiles, configs, and store repos
 ```
 
 #### Scenario: Debian container validates full install flow
 
 - **WHEN** the Debian e2e container starts
-- **THEN** it SHALL copy in the pre-built `hams-linux-amd64` binary
+- **THEN** the pre-built `hams-linux-amd64` binary SHALL be mounted (not baked) into the container
 - **AND** it SHALL execute `hams apply` against test fixtures
 - **AND** it SHALL verify that apt packages listed in fixtures are installed
 - **AND** the container SHALL exit with code 0 on success, non-zero on failure
@@ -435,6 +434,48 @@ e2e/
 - **THEN** it SHALL contain representative Hamsfiles for testing
 - **AND** fixtures SHALL include YAML comments to validate comment preservation
 - **AND** fixtures SHALL NOT contain real credentials, API keys, or machine-specific paths
+
+---
+
+### Requirement: Docker Image Caching and Disk Efficiency
+
+Docker images for testing SHALL be designed for maximal cache reuse and minimal disk waste. The guiding principle is: **images contain only the stable environment (OS, toolchains, package caches); all volatile artifacts (binaries, test scripts, fixtures, source code) are mounted at container runtime.**
+
+**Mount-based design**: Dockerfiles for E2E tests SHALL NOT use `COPY` or `ADD` for the hams binary, test scripts (`run-tests.sh`, `assertions.sh`), hamsfiles, state files, config files, or verification scripts. These SHALL be bind-mounted via `docker run -v` flags at container start. This ensures the image itself remains unchanged across code iterations and can be reused from cache.
+
+**Integration test images** SHALL cache only slow-changing layers (Go module downloads via `COPY go.mod go.sum` + `go mod download`). The full source tree SHALL be mounted at runtime, not baked into the image.
+
+**Content-hash image tags**: Every Docker image SHALL be tagged with a content hash derived from the files that affect image contents (the Dockerfile itself, plus `go.mod`/`go.sum` for integration images). The tag format SHALL be `<base-name>:<hash12>` where `hash12` is the first 12 characters of the SHA-256 hash of the concatenated input files. Before building, the CI SHALL check if an image with the current hash already exists and skip the build if so.
+
+**Stale image cleanup**: After a successful image build with a new hash, all images sharing the same `<base-name>` repository but with a different tag SHALL be removed via `docker rmi` to reclaim disk space. This prevents accumulation of obsolete images when Dockerfiles or dependency files change.
+
+**Ephemeral containers**: All test containers SHALL be started with `docker run --rm` so they are automatically removed after exit, preventing container accumulation.
+
+#### Scenario: E2E image is reused across code changes
+
+- **WHEN** a developer modifies Go source code or test scripts but does not modify `e2e/debian/Dockerfile`
+- **THEN** the existing `hams-e2e-debian:<hash>` image SHALL be reused without rebuilding
+- **AND** the updated binary and test scripts SHALL be bind-mounted into the container at runtime
+
+#### Scenario: Dockerfile change triggers rebuild and cleanup
+
+- **WHEN** a developer modifies `e2e/debian/Dockerfile`
+- **THEN** the content hash SHALL change, producing a new tag
+- **AND** the build step SHALL detect no image with the new tag exists and trigger a build
+- **AND** after the build succeeds, the old `hams-e2e-debian:<old-hash>` image SHALL be removed
+
+#### Scenario: Integration image caches Go modules
+
+- **WHEN** the integration test image is built
+- **THEN** it SHALL contain `go.mod`, `go.sum`, and the downloaded module cache (`go mod download`)
+- **AND** the full source tree SHALL NOT be baked into the image
+- **AND** at runtime, the source tree SHALL be mounted at `/src` via `-v "$(pwd):/src"`
+
+#### Scenario: No stale images accumulate on disk
+
+- **WHEN** the E2E or integration Dockerfile is updated N times
+- **THEN** at most one image per test target SHALL exist at any time
+- **AND** `docker images | grep hams-` SHALL show only images with current content hashes
 
 ---
 

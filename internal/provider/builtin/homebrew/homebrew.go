@@ -14,12 +14,17 @@ import (
 
 	"gopkg.in/yaml.v3"
 
-	hamserr "github.com/zthxxx/hams/internal/error"
 	"github.com/zthxxx/hams/internal/config"
+	hamserr "github.com/zthxxx/hams/internal/error"
 	"github.com/zthxxx/hams/internal/hamsfile"
 	"github.com/zthxxx/hams/internal/provider"
 	"github.com/zthxxx/hams/internal/state"
 )
+
+// BrewResource holds provider-specific data for a Homebrew action.
+type BrewResource struct {
+	IsCask bool
+}
 
 // Provider implements the Homebrew package manager provider.
 type Provider struct {
@@ -99,7 +104,7 @@ func (p *Provider) Probe(ctx context.Context, sf *state.File) ([]provider.ProbeR
 
 // listTaps returns installed tap names.
 func listTaps(ctx context.Context) ([]string, error) {
-	cmd := exec.CommandContext(ctx, "brew", "tap") //nolint:gosec // brew is a trusted command
+	cmd := exec.CommandContext(ctx, "brew", "tap")
 	output, err := cmd.Output()
 	if err != nil {
 		return nil, fmt.Errorf("brew tap: %w", err)
@@ -128,17 +133,17 @@ func (p *Provider) Plan(_ context.Context, desired *hamsfile.File, observed *sta
 	actions := provider.ComputePlan(apps, observed, observed.ConfigHash)
 	for i := range actions {
 		if caskSet[actions[i].ID] {
-			actions[i].Resource = true // Marks this as a cask install.
+			actions[i].Resource = BrewResource{IsCask: true}
 		}
 	}
 	return actions, nil
 }
 
-// Apply installs a brew package. If the action is marked as a cask (Resource == true),
+// Apply installs a brew package. If the action carries a BrewResource with IsCask set,
 // --cask is appended to the install command.
 func (p *Provider) Apply(ctx context.Context, action provider.Action) error {
 	args := []string{"install"}
-	if isCask, ok := action.Resource.(bool); ok && isCask {
+	if res, ok := action.Resource.(BrewResource); ok && res.IsCask {
 		args = append(args, "--cask")
 	}
 	args = append(args, action.ID)
@@ -195,26 +200,26 @@ func (p *Provider) Remove(ctx context.Context, resourceID string) error {
 // List returns packages with diff between Hamsfile (desired) and state (observed).
 func (p *Provider) List(_ context.Context, desired *hamsfile.File, sf *state.File) (string, error) {
 	diff := provider.DiffDesiredVsState(desired, sf)
-	return provider.FormatDiff(diff), nil
+	return provider.FormatDiff(&diff), nil
 }
 
 // HandleCommand processes CLI subcommands for the brew provider.
-func (p *Provider) HandleCommand(args []string, hamsFlags map[string]string, flags *provider.GlobalFlags) error {
+func (p *Provider) HandleCommand(ctx context.Context, args []string, hamsFlags map[string]string, flags *provider.GlobalFlags) error {
 	verb, remaining := provider.ParseVerb(args)
 
 	switch verb {
 	case "install":
-		return p.handleInstall(remaining, hamsFlags, flags)
+		return p.handleInstall(ctx, remaining, hamsFlags, flags)
 	case "remove", "uninstall":
-		return p.handleRemove(remaining, hamsFlags, flags)
+		return p.handleRemove(ctx, remaining, hamsFlags, flags)
 	case "list":
 		return p.handleList(hamsFlags, flags)
 	case "tap":
-		return p.handleTap(remaining, hamsFlags, flags)
+		return p.handleTap(ctx, remaining, hamsFlags, flags)
 	default:
 		// Passthrough to brew.
 		slog.Debug("passthrough to brew", "args", args)
-		return provider.WrapExecPassthrough(context.Background(), "brew", args, nil)
+		return provider.WrapExecPassthrough(ctx, "brew", args, nil)
 	}
 }
 
@@ -242,18 +247,18 @@ func (p *Provider) handleList(hamsFlags map[string]string, flags *provider.Globa
 
 	diff := provider.DiffDesiredVsState(hf, sf)
 	if flags.JSON {
-		out, jsonErr := provider.FormatDiffJSON(diff)
+		out, jsonErr := provider.FormatDiffJSON(&diff)
 		if jsonErr != nil {
 			return jsonErr
 		}
 		fmt.Println(out)
 	} else {
-		fmt.Print(provider.FormatDiff(diff))
+		fmt.Print(provider.FormatDiff(&diff))
 	}
 	return nil
 }
 
-func (p *Provider) handleTap(args []string, hamsFlags map[string]string, flags *provider.GlobalFlags) error {
+func (p *Provider) handleTap(ctx context.Context, args []string, hamsFlags map[string]string, flags *provider.GlobalFlags) error {
 	if len(args) == 0 {
 		return hamserr.NewUserError(hamserr.ExitUsageError,
 			"brew tap requires a repository name",
@@ -267,7 +272,7 @@ func (p *Provider) handleTap(args []string, hamsFlags map[string]string, flags *
 		return nil
 	}
 
-	if err := provider.WrapExecPassthrough(context.Background(), "brew", []string{"tap", repo}, nil); err != nil {
+	if err := provider.WrapExecPassthrough(ctx, "brew", []string{"tap", repo}, nil); err != nil {
 		return err
 	}
 
@@ -280,7 +285,7 @@ func (p *Provider) handleTap(args []string, hamsFlags map[string]string, flags *
 	return hf.Write()
 }
 
-func (p *Provider) handleInstall(args []string, hamsFlags map[string]string, flags *provider.GlobalFlags) error {
+func (p *Provider) handleInstall(ctx context.Context, args []string, hamsFlags map[string]string, flags *provider.GlobalFlags) error {
 	if len(args) == 0 {
 		return hamserr.NewUserError(hamserr.ExitUsageError,
 			"brew install requires a package name",
@@ -311,7 +316,7 @@ func (p *Provider) handleInstall(args []string, hamsFlags map[string]string, fla
 		return nil
 	}
 
-	if err := provider.WrapExecPassthrough(context.Background(), "brew", append([]string{"install"}, args...), nil); err != nil {
+	if err := provider.WrapExecPassthrough(ctx, "brew", append([]string{"install"}, args...), nil); err != nil {
 		return err
 	}
 
@@ -327,7 +332,7 @@ func (p *Provider) handleInstall(args []string, hamsFlags map[string]string, fla
 	return hf.Write()
 }
 
-func (p *Provider) handleRemove(args []string, hamsFlags map[string]string, flags *provider.GlobalFlags) error {
+func (p *Provider) handleRemove(ctx context.Context, args []string, hamsFlags map[string]string, flags *provider.GlobalFlags) error {
 	if len(args) == 0 {
 		return hamserr.NewUserError(hamserr.ExitUsageError,
 			"brew remove requires a package name",
@@ -348,7 +353,7 @@ func (p *Provider) handleRemove(args []string, hamsFlags map[string]string, flag
 		return nil
 	}
 
-	if err := provider.WrapExecPassthrough(context.Background(), "brew", append([]string{"uninstall"}, args...), nil); err != nil {
+	if err := provider.WrapExecPassthrough(ctx, "brew", append([]string{"uninstall"}, args...), nil); err != nil {
 		return err
 	}
 

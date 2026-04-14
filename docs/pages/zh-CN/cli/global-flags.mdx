@@ -1,0 +1,49 @@
+import { Callout } from 'nextra/components'
+
+# 全局标志
+
+<Callout type="info">
+  此页面尚未完成翻译，以下为英文原文。欢迎贡献翻译。
+</Callout>
+
+Global flags must appear between `hams` and the command name. They apply to all commands.
+
+## Usage
+
+```bash
+hams [global-flags] <command> [args]
+```
+
+## Flag Reference
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--debug` | bool | `false` | Enable debug-level logging |
+| `--dry-run` | bool | `false` | Show planned actions without executing |
+| `--json` | bool | `false` | Output in JSON format for machine/AI parsing |
+| `--no-color` | bool | `false` | Disable ANSI color codes |
+| `--config=<path>` | string | `~/.config/hams/hams.config.yaml` | Override config file path |
+| `--store=<path>` | string | from config | Override store directory path |
+| `--profile=<tag>` | string | from config | Override active profile tag |
+| `--help` | bool | `false` | Display help text |
+| `--version` | bool | `false` | Display version and build info |
+
+## Examples
+
+```bash
+# Run apply with debug output
+hams --debug apply
+
+# Preview changes without executing
+hams --dry-run apply
+
+# Use a custom config file
+hams --config=/path/to/config.yaml apply
+
+# Get JSON output for scripting
+hams --json list
+```
+
+<Callout type="info">
+  Full documentation coming soon.
+</Callout>

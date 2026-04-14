@@ -1,0 +1,33 @@
+import { Callout } from 'nextra/components'
+
+# hams list
+
+<Callout type="info">
+  此页面尚未完成翻译，以下为英文原文。欢迎贡献翻译。
+</Callout>
+
+List all resources currently managed by hams. Shows declared resources from Hamsfiles
+along with their current state (installed, missing, outdated).
+
+## Usage
+
+```bash
+hams list [flags]
+```
+
+## Examples
+
+```bash
+# List all managed resources
+hams list
+
+# List resources in JSON format
+hams list --json
+
+# List resources for a specific provider
+hams list --only=homebrew
+```
+
+<Callout type="info">
+  Full documentation coming soon.
+</Callout>

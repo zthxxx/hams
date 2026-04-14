@@ -145,7 +145,7 @@ func (p *CloneProvider) List(_ context.Context, _ *hamsfile.File, sf *state.File
 }
 
 // HandleCommand processes CLI subcommands for git clone.
-func (p *CloneProvider) HandleCommand(args []string, hamsFlags map[string]string, flags *provider.GlobalFlags) error {
+func (p *CloneProvider) HandleCommand(_ context.Context, args []string, hamsFlags map[string]string, flags *provider.GlobalFlags) error {
 	verb, remaining := provider.ParseVerb(args)
 
 	switch verb {

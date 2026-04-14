@@ -4,11 +4,7 @@ FROM alpine:3.20
 # Real OpenWrt uses opkg, but for testing hams on musl/ARM64 this is sufficient.
 RUN apk add --no-cache ca-certificates bash git
 
-COPY bin/hams-linux-amd64 /usr/local/bin/hams
-COPY e2e/lib/ /e2e/lib/
-COPY e2e/openwrt/run-tests.sh /run-tests.sh
-RUN chmod +x /usr/local/bin/hams /run-tests.sh
-
 WORKDIR /workspace
 
-CMD ["/run-tests.sh"]
+# Binary, test scripts, fixtures, and configs are bind-mounted at runtime.
+# See .github/workflows/ci.yml for the docker run -v flags.

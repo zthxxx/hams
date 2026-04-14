@@ -1,0 +1,37 @@
+import { Callout } from 'nextra/components'
+
+# git config Provider
+
+<Callout type="info">
+  此页面尚未完成翻译，以下为英文原文。欢迎贡献翻译。
+</Callout>
+
+Manages Git configuration key-value pairs via `git config`. Probes the current value
+with `git config --get` and writes with `git config --global`.
+
+**Platforms:** macOS, Linux
+
+## Usage
+
+```bash
+hams git-config set <key> <value>
+hams git-config list
+```
+
+## Hamsfile Example
+
+```yaml
+- urn: "urn:hams:git-config:user-name"
+  step: Set git user name
+  key: user.name
+  value: "Your Name"
+
+- urn: "urn:hams:git-config:rerere"
+  step: Enable git rerere
+  key: rerere.autoUpdate
+  value: "true"
+```
+
+<Callout type="info">
+  Full documentation coming soon.
+</Callout>

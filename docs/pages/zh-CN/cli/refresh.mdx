@@ -1,0 +1,34 @@
+import { Callout } from 'nextra/components'
+
+# hams refresh
+
+<Callout type="info">
+  此页面尚未完成翻译，以下为英文原文。欢迎贡献翻译。
+</Callout>
+
+Probe the current machine state for all managed providers and update the local state files.
+This does not install or remove anything -- it only reads current reality and persists it
+to `.state/` files.
+
+## Usage
+
+```bash
+hams refresh [flags]
+```
+
+## Examples
+
+```bash
+# Refresh state for all providers
+hams refresh
+
+# Refresh only Homebrew state
+hams refresh --only=homebrew
+
+# Refresh with debug output
+hams --debug refresh
+```
+
+<Callout type="info">
+  Full documentation coming soon.
+</Callout>
