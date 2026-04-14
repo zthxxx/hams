@@ -50,15 +50,18 @@ func resolveLocalRepo(repo string) (string, error) {
 		return "", fmt.Errorf("resolving path: %w", err)
 	}
 
-	// Must be a directory with .git.
+	// Must be a directory with .git (non-bare) or HEAD (bare repo).
 	info, statErr := os.Stat(absPath)
 	if statErr != nil || !info.IsDir() {
 		return "", fmt.Errorf("not a local directory: %s", absPath)
 	}
 
 	gitDir := filepath.Join(absPath, ".git")
+	headFile := filepath.Join(absPath, "HEAD")
 	if _, gitErr := os.Stat(gitDir); gitErr != nil {
-		return "", fmt.Errorf("no .git directory in %s", absPath)
+		if _, headErr := os.Stat(headFile); headErr != nil {
+			return "", fmt.Errorf("not a git repository (no .git or HEAD): %s", absPath)
+		}
 	}
 
 	return absPath, nil

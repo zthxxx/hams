@@ -214,7 +214,14 @@ func runApply(ctx context.Context, flags *provider.GlobalFlags, registry *provid
 			mergeStrategy = hamsfile.MergeOverride
 		}
 
-		hf, readErr := hamsfile.ReadMerged(hamsfilePath, hamsfileLocalPath, mergeStrategy)
+		var hf *hamsfile.File
+		var readErr error
+		if mainExists {
+			hf, readErr = hamsfile.ReadMerged(hamsfilePath, hamsfileLocalPath, mergeStrategy)
+		} else {
+			// Only local file exists — read it directly.
+			hf, readErr = hamsfile.Read(hamsfileLocalPath)
+		}
 		if readErr != nil {
 			slog.Error("failed to read hamsfile", "provider", name, "error", readErr)
 			continue

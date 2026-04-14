@@ -69,17 +69,51 @@ func (p *CloneProvider) Probe(_ context.Context, sf *state.File) ([]provider.Pro
 	return results, nil
 }
 
-// Plan computes actions for git clone entries.
+// cloneResource holds parsed fields from a git-clone hamsfile entry.
+type cloneResource struct {
+	Remote string
+	Path   string
+	Branch string
+}
+
+// Plan computes actions for git clone entries, parsing structured YAML fields.
 func (p *CloneProvider) Plan(_ context.Context, desired *hamsfile.File, observed *state.File) ([]provider.Action, error) {
-	apps := desired.ListApps()
-	return provider.ComputePlan(apps, observed, observed.ConfigHash), nil
+	resourceByID, err := cloneParseResources(desired)
+	if err != nil {
+		return nil, err
+	}
+
+	// Build app list from parsed resources for ComputePlan.
+	var apps []string
+	for id := range resourceByID {
+		apps = append(apps, id)
+	}
+
+	actions := provider.ComputePlan(apps, observed, observed.ConfigHash)
+	for i := range actions {
+		res, ok := resourceByID[actions[i].ID]
+		if ok {
+			actions[i].Resource = res
+		}
+	}
+	return actions, nil
 }
 
 // Apply clones a repository to the specified path.
 func (p *CloneProvider) Apply(ctx context.Context, action provider.Action) error {
-	remote, localPath, branch := parseCloneResource(action.ID)
+	var remote, localPath, branch string
+
+	// Try structured resource first, then fall back to parsing the ID.
+	if res, ok := action.Resource.(cloneResource); ok {
+		remote = res.Remote
+		localPath = res.Path
+		branch = res.Branch
+	} else {
+		remote, localPath, branch = parseCloneResource(action.ID)
+	}
+
 	if remote == "" || localPath == "" {
-		return fmt.Errorf("git-clone: resource must be 'remote -> local-path [branch]'")
+		return fmt.Errorf("git-clone: resource must have remote and path")
 	}
 
 	slog.Info("git clone", "remote", remote, "path", localPath)
@@ -305,4 +339,86 @@ func parseCloneResource(id string) (remote, localPath, branch string) {
 	}
 
 	return remote, localPath, branch
+}
+
+// cloneParseResources parses structured git-clone entries from the hamsfile.
+// Supports both structured (remote/path/branch fields) and legacy (urn as "remote -> path") formats.
+func cloneParseResources(f *hamsfile.File) (map[string]cloneResource, error) {
+	if f.Root == nil || len(f.Root.Content) == 0 {
+		return map[string]cloneResource{}, nil
+	}
+
+	doc := f.Root
+	if doc.Kind == yaml.DocumentNode && len(doc.Content) > 0 {
+		doc = doc.Content[0]
+	}
+	if doc.Kind != yaml.MappingNode {
+		return nil, fmt.Errorf("git-clone provider: hamsfile root must be a mapping")
+	}
+
+	resourceByID := make(map[string]cloneResource)
+	for i := 1; i < len(doc.Content); i += 2 {
+		seq := doc.Content[i]
+		if seq.Kind != yaml.SequenceNode {
+			continue
+		}
+
+		for _, item := range seq.Content {
+			if item.Kind == yaml.ScalarNode {
+				// Simple string entry: treat as "remote -> path" format.
+				id := item.Value
+				remote, localPath, branch := parseCloneResource(id)
+				if remote != "" && localPath != "" {
+					resourceByID[id] = cloneResource{Remote: remote, Path: localPath, Branch: branch}
+				}
+				continue
+			}
+			if item.Kind != yaml.MappingNode {
+				continue
+			}
+
+			var id string
+			var res cloneResource
+			for j := 0; j < len(item.Content)-1; j += 2 {
+				key := item.Content[j].Value
+				value := item.Content[j+1].Value
+				switch key {
+				case "urn":
+					id = value
+				case "app":
+					id = value
+				case "remote":
+					res.Remote = value
+				case "path", "local_path":
+					res.Path = value
+				case "branch", "default_branch":
+					res.Branch = value
+				}
+			}
+
+			if id == "" {
+				continue
+			}
+
+			// If structured fields present, use them. Otherwise try to parse ID.
+			if res.Remote == "" || res.Path == "" {
+				remote, localPath, branch := parseCloneResource(id)
+				if remote != "" {
+					res.Remote = remote
+				}
+				if localPath != "" {
+					res.Path = localPath
+				}
+				if branch == "" {
+					// Keep any branch from structured fields.
+				} else if res.Branch == "" {
+					res.Branch = branch
+				}
+			}
+
+			resourceByID[id] = res
+		}
+	}
+
+	return resourceByID, nil
 }
