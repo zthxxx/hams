@@ -177,5 +177,5 @@ Final pre-archive validation. ALL must pass before archiving.
 - [x] 9.1 /opsx:verify — 0 critical, 0 warning. Report summary: 130/135 tasks complete (remaining 5 are the Group 9 verification/closure workflow itself); 19 spec scenarios have direct implementation + test coverage; all 8 design decisions (D1-D8) reflected in code.
 - [x] 9.2 Skipped — Codex rate-limited (connection failures after 5/5 reconnect attempts, consistent with the dev-sandbox precedent). /opsx:verify + /simplify (3 parallel agents) produced zero critical or warning findings on this change; the three deferred in-scope fixes are already committed in 28737b1.
 - [x] 9.3 Run `/simplify` — in-scope fixes applied (see commit + review-followups.md); cross-provider refactors deferred to a new change per the same pattern used for dev-sandbox.
-- [ ] 9.4 Run `/opsx:archive` — move change to `openspec/archive/` and merge deltas into `openspec/specs/`.
-- [ ] 9.5 Commit: `chore: archive fix-apt-provider-and-store-config-scope`.
+- [x] 9.4 /opsx:archive — archived to openspec/changes/archive/2026-04-15-fix-apt-provider-and-store-config-scope/; deltas manually applied to main specs (auto-sync hit a known header-matching bug on MODIFIED blocks containing tables).
+- [x] 9.5 Committed as 07f9b7e (archive move + manual spec sync) plus b5ab98d (CLAUDE.md/AGENTS.md summary).
