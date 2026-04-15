@@ -66,7 +66,14 @@ func runRefresh(ctx context.Context, flags *provider.GlobalFlags, registry *prov
 		return filterErr
 	}
 	if len(providers) == 0 {
-		fmt.Println("No providers match: no hamsfile or state file present for any registered provider (after --only/--except filtering).")
+		// Distinguish stage-1 empty (no artifacts anywhere) from stage-2
+		// empty (artifacts exist but --only/--except excluded them all).
+		switch {
+		case len(stageOneProviders) == 0:
+			fmt.Println("No providers match: no hamsfile or state file present for any registered provider.")
+		default:
+			fmt.Println("No providers match: --only/--except excluded every provider that has artifacts.")
+		}
 		return nil
 	}
 
