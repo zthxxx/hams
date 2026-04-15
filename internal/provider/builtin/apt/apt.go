@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"strings"
 
@@ -150,16 +151,27 @@ func (p *Provider) handleInstall(ctx context.Context, args []string, hamsFlags m
 		return err
 	}
 
+	sf := p.loadOrCreateStateFile(flags)
+
 	for _, pkg := range packages {
 		// AddApp is a no-op on duplicate append at the YAML level, so guard
 		// with FindApp to keep the hamsfile idempotent.
-		if existingTag, _ := hf.FindApp(pkg); existingTag != "" {
-			continue
+		if existingTag, _ := hf.FindApp(pkg); existingTag == "" {
+			hf.AddApp(tagCLI, pkg, "")
 		}
-		hf.AddApp(tagCLI, pkg, "")
+		// Capture the installed version best-effort; an empty result is fine
+		// (omitted from YAML via omitempty).
+		_, version, probeErr := p.runner.IsInstalled(ctx, pkg)
+		if probeErr != nil {
+			slog.Warn("post-install version probe failed", "package", pkg, "error", probeErr)
+		}
+		sf.SetResource(pkg, state.StateOK, state.WithVersion(version))
 	}
 
-	return hf.Write()
+	if writeErr := hf.Write(); writeErr != nil {
+		return writeErr
+	}
+	return sf.Save(p.statePath(flags))
 }
 
 func (p *Provider) handleRemove(ctx context.Context, args []string, hamsFlags map[string]string, flags *provider.GlobalFlags) error {
@@ -194,11 +206,35 @@ func (p *Provider) handleRemove(ctx context.Context, args []string, hamsFlags ma
 		return err
 	}
 
+	sf := p.loadOrCreateStateFile(flags)
+
 	for _, pkg := range packages {
 		hf.RemoveApp(pkg)
+		sf.SetResource(pkg, state.StateRemoved)
 	}
 
-	return hf.Write()
+	if writeErr := hf.Write(); writeErr != nil {
+		return writeErr
+	}
+	return sf.Save(p.statePath(flags))
+}
+
+// statePath returns the absolute path to apt.state.yaml for the active machine.
+func (p *Provider) statePath(flags *provider.GlobalFlags) string {
+	cfg := p.effectiveConfig(flags)
+	return filepath.Join(cfg.StateDir(), p.Manifest().FilePrefix+".state.yaml")
+}
+
+// loadOrCreateStateFile reads the apt state file or returns a fresh one when
+// the file is absent or unreadable. Mirrors the lossy-on-error pattern used
+// by internal/provider/probe.go's loadOrCreateState helper.
+func (p *Provider) loadOrCreateStateFile(flags *provider.GlobalFlags) *state.File {
+	cfg := p.effectiveConfig(flags)
+	sf, err := state.Load(p.statePath(flags))
+	if err != nil {
+		sf = state.New(p.Name(), cfg.MachineID)
+	}
+	return sf
 }
 
 // packageArgs filters out flag-looking arguments so that passthrough flags

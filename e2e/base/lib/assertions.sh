@@ -109,12 +109,23 @@ verify_git_config() {
     git config --global --get e2e.hams.test
 }
 
-# verify_config_roundtrip tests config set/get persistence.
+# verify_config_roundtrip tests config set/get persistence, then restores
+# the original machine_id so subsequent tests that scope state files by
+# machine_id keep writing to / asserting against the same .state/<id>/ dir.
 verify_config_roundtrip() {
+  local original_machine_id
+  original_machine_id=$(hams config get machine_id)
+
   assert_success "hams config set machine_id" \
     hams config set machine_id "e2e-verified"
   assert_output_contains "hams config get machine_id reads back" "e2e-verified" \
     hams config get machine_id
+
+  # Restore the original machine_id so the apt imperative tests (and any
+  # other state-scoped assertions) read/write under the same .state/<id>/
+  # directory the bootstrap apply already populated.
+  assert_success "hams config set machine_id (restore)" \
+    hams config set machine_id "$original_machine_id"
 }
 
 # verify_idempotent_reapply checks that re-applying is idempotent.

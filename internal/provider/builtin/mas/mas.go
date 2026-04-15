@@ -14,8 +14,10 @@ import (
 	"github.com/zthxxx/hams/internal/state"
 )
 
-// displayName is the human-readable name of this provider.
-const displayName = "Mac App Store"
+const (
+	cliName     = "mas"
+	displayName = "Mac App Store"
+)
 
 // Provider implements the Mac App Store provider.
 type Provider struct{}
@@ -26,25 +28,25 @@ func New() *Provider { return &Provider{} }
 // Manifest returns the mas provider metadata.
 func (p *Provider) Manifest() provider.Manifest {
 	return provider.Manifest{
-		Name:          "mas",
+		Name:          cliName,
 		DisplayName:   displayName,
 		Platforms:     []provider.Platform{provider.PlatformDarwin},
 		ResourceClass: provider.ClassPackage,
-		FilePrefix:    "mas",
+		FilePrefix:    cliName,
 	}
 }
 
 // Bootstrap checks if mas is available.
 func (p *Provider) Bootstrap(_ context.Context) error {
-	if _, err := exec.LookPath("mas"); err != nil {
-		return fmt.Errorf("mas not found in PATH (macOS only; install via: brew install mas)")
+	if _, err := exec.LookPath(cliName); err != nil {
+		return fmt.Errorf("%s not found in PATH (macOS only; install via: brew install %s)", cliName, cliName)
 	}
 	return nil
 }
 
 // Probe queries mas for installed apps.
 func (p *Provider) Probe(ctx context.Context, sf *state.File) ([]provider.ProbeResult, error) {
-	cmd := exec.CommandContext(ctx, "mas", "list")
+	cmd := exec.CommandContext(ctx, cliName, "list")
 	output, err := cmd.Output()
 	if err != nil {
 		return nil, fmt.Errorf("mas list: %w", err)
@@ -74,13 +76,13 @@ func (p *Provider) Plan(_ context.Context, desired *hamsfile.File, observed *sta
 // Apply installs a Mac App Store app by numeric ID.
 func (p *Provider) Apply(ctx context.Context, action provider.Action) error {
 	slog.Info("mas install", "app_id", action.ID)
-	return provider.WrapExecPassthrough(ctx, "mas", []string{"install", action.ID}, nil)
+	return provider.WrapExecPassthrough(ctx, cliName, []string{"install", action.ID}, nil)
 }
 
 // Remove uninstalls a Mac App Store app by numeric ID.
 func (p *Provider) Remove(ctx context.Context, resourceID string) error {
 	slog.Info("mas uninstall", "app_id", resourceID)
-	return provider.WrapExecPassthrough(ctx, "mas", []string{"uninstall", resourceID}, nil)
+	return provider.WrapExecPassthrough(ctx, cliName, []string{"uninstall", resourceID}, nil)
 }
 
 // List returns installed mas apps with status.
@@ -106,20 +108,20 @@ func (p *Provider) HandleCommand(_ context.Context, args []string, _ map[string]
 			fmt.Printf("[dry-run] Would install: mas install %s\n", strings.Join(remaining, " "))
 			return nil
 		}
-		return provider.WrapExecPassthrough(context.Background(), "mas", append([]string{"install"}, remaining...), nil)
+		return provider.WrapExecPassthrough(context.Background(), cliName, append([]string{"install"}, remaining...), nil)
 	case "remove", "uninstall", "rm":
 		if flags.DryRun {
 			fmt.Printf("[dry-run] Would remove: mas uninstall %s\n", strings.Join(remaining, " "))
 			return nil
 		}
-		return provider.WrapExecPassthrough(context.Background(), "mas", append([]string{"uninstall"}, remaining...), nil)
+		return provider.WrapExecPassthrough(context.Background(), cliName, append([]string{"uninstall"}, remaining...), nil)
 	default:
-		return provider.WrapExecPassthrough(context.Background(), "mas", args, nil)
+		return provider.WrapExecPassthrough(context.Background(), cliName, args, nil)
 	}
 }
 
 // Name returns the CLI name.
-func (p *Provider) Name() string { return "mas" }
+func (p *Provider) Name() string { return cliName }
 
 // DisplayName returns the display name.
 func (p *Provider) DisplayName() string { return displayName }

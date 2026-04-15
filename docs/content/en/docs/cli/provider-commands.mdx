@@ -22,10 +22,10 @@ hams <provider> <verb> [args] [--hams-flags] [-- <passthrough>]
 
 | Verb | What it does | Example |
 |------|--------------|---------|
-| `install` / `add` | Install a package and record it in the Hamsfile | `hams brew install bat` |
+| `install` / `add` | Install a package and record it in the Hamsfile | `hams brew install htop` |
 | `remove` / `uninstall` | Remove a package and drop it from the Hamsfile | `hams brew remove htop` |
 | `list` | List packages managed by this provider | `hams brew list` |
-| `enrich` | Add metadata (tags, intro) to an already-recorded package | `hams brew enrich bat` |
+| `enrich` | Add metadata (tags, intro) to an already-recorded package | `hams brew enrich htop` |
 
 Not every provider supports every verb. `git-clone` uses `add` instead of `install`; `bash` uses
 `run`. Check the individual provider doc for specifics.
@@ -34,7 +34,7 @@ Not every provider supports every verb. `git-clone` uses `add` instead of `insta
 
 ```bash
 # Homebrew: install a formula
-hams brew install bat
+hams brew install htop
 
 # pnpm: install globally
 hams pnpm add serve
@@ -49,7 +49,7 @@ hams brew remove htop
 hams brew list
 
 # Attach metadata to an existing entry
-hams brew enrich bat --hams-tag=cli --hams-intro="A cat clone with syntax highlighting"
+hams brew enrich htop --hams-tag=cli --hams-intro="An interactive process viewer"
 ```
 
 ## The `--hams-` flag convention
@@ -78,7 +78,7 @@ as its own, put `--` in between.
 
 ```bash
 # The --verbose goes to brew, not to hams
-hams brew install bat -- --verbose
+hams brew install htop -- --verbose
 
 # Similarly, --save-dev goes to pnpm
 hams pnpm add typescript -- --save-dev

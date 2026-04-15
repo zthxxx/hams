@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
-source /e2e/lib/assertions.sh
+source /e2e/base/lib/assertions.sh
 
 echo "=== hams E2E Test (Alpine) ==="
 echo ""

@@ -221,6 +221,10 @@ func TestRunApply_PersistsConfigHashAndRemovesOnNextRun(t *testing.T) {
 func TestRunApply_BootstrapsProvidersInDAGOrderBeforePlanning(t *testing.T) {
 	_, profileDir, _, flags := setupApplyTestEnv(t, []string{"bash", "brew"})
 	writeApplyTestFile(t, filepath.Join(profileDir, "Homebrew.hams.yaml"), "packages: []\n")
+	// bash must have its own hamsfile for the stage-1 artifact-presence
+	// filter to include it; otherwise brew's DAG dependency points at a
+	// provider that has nothing to do and is correctly pruned.
+	writeApplyTestFile(t, filepath.Join(profileDir, "bash.hams.yaml"), "packages: []\n")
 
 	var sequence []string
 

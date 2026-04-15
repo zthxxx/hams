@@ -245,7 +245,7 @@ tasks:
         fi
         docker run --rm \
           -v "$(pwd)/bin/hams-linux-amd64:/usr/local/bin/hams:ro" \
-          -v "$(pwd)/e2e/lib:/e2e/lib:ro" \
+          -v "$(pwd)/e2e/base/lib:/e2e/base/lib:ro" \
           -v "$(pwd)/e2e/${TARGET}:/e2e/${TARGET}:ro" \
           -v "$(pwd)/e2e/${TARGET}/run-tests.sh:/run-tests.sh:ro" \
           -v "$(pwd)/e2e/fixtures:/fixtures:ro" \
@@ -253,6 +253,107 @@ tasks:
           bash /run-tests.sh
     requires:
       vars: [TARGET]
+
+  # ---------------------------------------------------------------------------
+  # Per-provider integration tests (ci:itest:*).
+  #
+  # Every linux-containerizable builtin provider owns its integration test
+  # under `internal/provider/builtin/<provider>/integration/`. The tests run
+  # in docker, one container per provider; the `hams-itest-base` image
+  # holds only debian-slim + ca-certs, curl, bash, git, sudo, yq. Each
+  # provider's `Dockerfile` is `FROM ${BASE}` with minimal delta and its
+  # `integration.sh` installs whatever runtime hams itself would install
+  # (python, node, go, rust, brew, …) — because that's exactly what hams
+  # has to do for real users. Base and per-provider images are both
+  # content-addressed so rebuilds only happen when the relevant Dockerfile
+  # changes.
+  # ---------------------------------------------------------------------------
+
+  ci:itest:base:
+    desc: Build the shared hams-itest-base image (debian-slim + yq + sudo). Cached by content hash.
+    vars:
+      BASE_HASH:
+        sh: sha256sum e2e/base/Dockerfile | head -c 12
+    cmds:
+      - |
+        IMAGE="hams-itest-base:{{.BASE_HASH}}"
+        if ! docker image inspect "$IMAGE" >/dev/null 2>&1; then
+          docker build -f e2e/base/Dockerfile -t "$IMAGE" e2e/base
+          docker images --format '{{"{{"}}.Repository{{"}}"}}:{{"{{"}}.Tag{{"}}"}}' \
+            | grep '^hams-itest-base:' | grep -v ':{{.BASE_HASH}}$' \
+            | xargs -r docker rmi 2>/dev/null || true
+        fi
+
+  ci:itest:run:
+    desc: "CI per-provider integration — build provider image and run its integration.sh (usage: PROVIDER=apt task ci:itest:run)"
+    deps: [ci:itest:base]
+    vars:
+      BASE_HASH:
+        sh: sha256sum e2e/base/Dockerfile | head -c 12
+      PROV_DIR: 'internal/provider/builtin/{{.PROVIDER}}/integration'
+      # IMPORTANT: PROV_HASH must compose the BASE Dockerfile + the
+      # provider Dockerfile so a base-image bump invalidates downstream
+      # provider images. Hashing only the provider Dockerfile would let
+      # cached `hams-itest-<provider>:<old>` images keep using stale
+      # base layers after `hams-itest-base` was rebuilt.
+      PROV_HASH:
+        sh: 'cat e2e/base/Dockerfile internal/provider/builtin/{{.PROVIDER}}/integration/Dockerfile | sha256sum | head -c 12'
+    cmds:
+      - |
+        BASE="hams-itest-base:{{.BASE_HASH}}"
+        IMAGE="hams-itest-{{.PROVIDER}}:{{.PROV_HASH}}"
+        if ! docker image inspect "$IMAGE" >/dev/null 2>&1; then
+          docker build \
+            --build-arg BASE="$BASE" \
+            -f {{.PROV_DIR}}/Dockerfile \
+            -t "$IMAGE" \
+            {{.PROV_DIR}}
+          docker images --format '{{"{{"}}.Repository{{"}}"}}:{{"{{"}}.Tag{{"}}"}}' \
+            | grep '^hams-itest-{{.PROVIDER}}:' | grep -v ':{{.PROV_HASH}}$' \
+            | xargs -r docker rmi 2>/dev/null || true
+        fi
+        docker run --rm \
+          -v "$(pwd)/bin/hams-linux-amd64:/usr/local/bin/hams:ro" \
+          -v "$(pwd)/e2e/base/lib:/e2e/base/lib:ro" \
+          -v "$(pwd)/{{.PROV_DIR}}:/integration:ro" \
+          "$IMAGE" \
+          bash /integration/integration.sh
+    requires:
+      vars: [PROVIDER]
+
+  ci:itest:
+    desc: Run per-provider integration tests for every in-scope builtin provider (linux-containerizable only).
+    cmds:
+      - |
+        # In-scope providers (11 linux-containerizable). macOS-only providers
+        # (defaults, duti, mas) are intentionally excluded.
+        PROVIDERS="apt ansible bash cargo git goinstall homebrew npm pnpm uv vscodeext"
+        FAILED=""
+        for P in $PROVIDERS; do
+          echo ""
+          echo "=============================================="
+          echo " integration: $P"
+          echo "=============================================="
+          if [ ! -f "internal/provider/builtin/$P/integration/integration.sh" ]; then
+            echo "  skipped (integration/integration.sh not yet written for $P)"
+            continue
+          fi
+          if ! PROVIDER=$P task ci:itest:run; then
+            FAILED="$FAILED $P"
+          fi
+        done
+        if [ -n "$FAILED" ]; then
+          echo ""
+          echo "Integration tests FAILED for:$FAILED"
+          exit 1
+        fi
+
+  test:itest:one:
+    desc: "Run a single provider integration test via act (usage: PROVIDER=apt task test:itest:one)"
+    cmds:
+      - act push --container-architecture linux/amd64 -j itest --matrix provider:{{.PROVIDER}} --rm
+    requires:
+      vars: [PROVIDER]
 
   ci:test:
     desc: Run CI unit-test job via act
@@ -307,11 +408,11 @@ tasks:
       - go mod tidy
 
   check:
-    desc: Run all checks (fmt, lint, test)
+    desc: Run all local checks (fmt, lint, unit tests) — no Docker required
     cmds:
       - task: fmt
       - task: lint
-      - task: test
+      - task: test:unit
 
   clean:
     desc: Clean build artifacts

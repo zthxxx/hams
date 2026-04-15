@@ -1,9 +1,20 @@
 schema_version: 2
 provider: apt
 machine_id: sandbox
-last_apply_config_hash: ef8d2be62f95fb486ab086ef4dce774ee72d675dba2db8fc92497b614fe3652f
+last_apply_config_hash: 65f7407a3d578581827b0bf5a43367d57d55a1f437674e63ac2d9dc31e79c3da
 resources:
-    bat:
+    btop:
         state: ok
+        version: 1.2.13-1
+        first_install_at: 20260415T101007
+        updated_at: 20260415T104002
+    htop:
+        state: ok
+        version: 3.2.2-2
         first_install_at: 20260414T171014
-        updated_at: 20260415T013047
+        updated_at: 20260415T104002
+    jq:
+        state: ok
+        version: 1.6-2.1+deb12u1
+        first_install_at: 20260415T100820
+        updated_at: 20260415T104002

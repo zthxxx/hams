@@ -3,7 +3,7 @@
 A minimal end-to-end scenario demonstrating the dev sandbox against a
 Debian bookworm container. Covers two builtin providers:
 
-- `apt`  — installs `bat` (a cat clone with syntax highlighting).
+- `apt`  — installs `htop` (an interactive process viewer).
 - `bash` — sets a safe global git option.
 
 ## Run

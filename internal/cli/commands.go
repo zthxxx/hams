@@ -49,9 +49,32 @@ func runRefresh(ctx context.Context, flags *provider.GlobalFlags, registry *prov
 	}
 
 	stateDir := cfg.StateDir()
-	providers, filterErr := filterProviders(registry.Ordered(cfg.ProviderPriority), only, except, registry.Names())
+	profileDir := cfg.ProfileDir()
+
+	// Two-stage provider filter (same shape as runApply):
+	//   Stage 1 — artifact presence (hamsfile OR state file).
+	//   Stage 2 — user-supplied --only / --except.
+	allProviders := registry.Ordered(cfg.ProviderPriority)
+	stageOneProviders := provider.FilterByArtifacts(allProviders, profileDir, stateDir)
+	for _, p := range allProviders {
+		if !provider.HasArtifacts(p, profileDir, stateDir) {
+			slog.Debug("provider skipped (no hamsfile or state file)", "provider", p.Manifest().Name)
+		}
+	}
+	providers, filterErr := filterProviders(stageOneProviders, only, except, registry.Names())
 	if filterErr != nil {
 		return filterErr
+	}
+	if len(providers) == 0 {
+		// Distinguish stage-1 empty (no artifacts anywhere) from stage-2
+		// empty (artifacts exist but --only/--except excluded them all).
+		switch {
+		case len(stageOneProviders) == 0:
+			fmt.Println("No providers match: no hamsfile or state file present for any registered provider.")
+		default:
+			fmt.Println("No providers match: --only/--except excluded every provider that has artifacts.")
+		}
+		return nil
 	}
 
 	slog.Info("refreshing state", "providers", len(providers))

@@ -1,7 +1,7 @@
 FROM debian:bookworm-slim
 
 # yq (Mike Farah's Go implementation) powers the YAML assertions in
-# e2e/lib/yaml_assert.sh. Installed from the official GitHub release to avoid
+# e2e/base/lib/yaml_assert.sh. Installed from the official GitHub release to avoid
 # the Debian repo's older packaging of a different tool.
 ARG YQ_VERSION=v4.44.3
 RUN apt-get update && apt-get install -y --no-install-recommends \

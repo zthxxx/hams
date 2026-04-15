@@ -116,9 +116,9 @@ The sudoers policy baked into the template Dockerfile SHALL grant passwordless s
 
 #### Scenario: Hams apply succeeds end-to-end via sudo
 
-- **WHEN** an example's hamsfile declares an `apt` package (e.g., `bat`)
+- **WHEN** an example's hamsfile declares an `apt` package (e.g., `htop`)
 - **AND** the developer runs `docker exec hams-<example> hams apply`
-- **THEN** hams invokes `sudo apt-get install -y bat` inside the container
+- **THEN** hams invokes `sudo apt-get install -y htop` inside the container
 - **AND** the command succeeds
 - **AND** resulting `.state/<machine_id>/apt.state.yaml` is written with state `ok`
 - **AND** the state file on the host is owned by the host uid (not root, not uid 1000)

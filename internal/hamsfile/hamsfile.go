@@ -2,8 +2,11 @@
 package hamsfile
 
 import (
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
+	"path/filepath"
 	"sync"
 
 	"gopkg.in/yaml.v3"
@@ -39,6 +42,35 @@ func Read(path string) (*File, error) {
 	}
 
 	return &File{Path: path, Root: &root}, nil
+}
+
+// LoadOrCreateEmpty reads a Hamsfile, returning an empty in-memory File
+// rooted at path when the file does not exist on disk. Callers persist
+// the result by calling Write(). errors.Is + fs.ErrNotExist is required
+// because Read wraps the underlying PathError with %w; the legacy
+// os.IsNotExist API does not traverse wrapped chains.
+func LoadOrCreateEmpty(path string) (*File, error) {
+	f, err := Read(path)
+	if err == nil {
+		return f, nil
+	}
+	if !errors.Is(err, fs.ErrNotExist) {
+		return nil, err
+	}
+
+	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
+		return nil, fmt.Errorf("create profile dir for %s: %w", path, err)
+	}
+
+	return &File{
+		Path: path,
+		Root: &yaml.Node{
+			Kind: yaml.DocumentNode,
+			Content: []*yaml.Node{
+				{Kind: yaml.MappingNode, Tag: "!!map"},
+			},
+		},
+	}, nil
 }
 
 // DocMapping returns the top-level mapping node, unwrapping the document node if present.

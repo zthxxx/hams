@@ -179,3 +179,46 @@ jobs:
       - env:
           TARGET: ${{ matrix.target }}
         run: task ci:e2e:run
+
+  itest:
+    name: Integration (${{ matrix.provider }})
+    runs-on: ubuntu-latest
+    needs: [build]
+    strategy:
+      # fail-fast: false so one flaky provider doesn't mask others.
+      fail-fast: false
+      matrix:
+        # 11 linux-containerizable builtin providers. macOS-only providers
+        # (defaults, duti, mas) are intentionally excluded — no docker path.
+        provider:
+          - apt
+          - ansible
+          - bash
+          - cargo
+          - git
+          - goinstall
+          - homebrew
+          - npm
+          - pnpm
+          - uv
+          - vscodeext
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: go-task/setup-task@v2
+        with:
+          version: 3.x
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Download linux/amd64 binary
+        uses: actions/download-artifact@v4
+        with:
+          name: hams-linux-amd64
+          path: bin/
+
+      - name: Make binary executable
+        run: chmod +x bin/hams-linux-amd64
+
+      - env:
+          PROVIDER: ${{ matrix.provider }}
+        run: task ci:itest:run

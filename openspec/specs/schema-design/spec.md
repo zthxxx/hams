@@ -529,7 +529,7 @@ resources:
 
 #### Scenario: Remove transitions record removed_at
 
-- **WHEN** the user runs `hams apt remove bat` (or any equivalent provider remove) for a resource with `first_install_at: T0`
+- **WHEN** the user runs `hams apt remove htop` (or any equivalent provider remove) for a resource with `first_install_at: T0`
 - **THEN** the state entry SHALL have `state: removed`, `first_install_at: T0` (unchanged), `updated_at: T1`, and `removed_at: T1` where T1 is the current timestamp.
 - **AND** the entry SHALL NOT be deleted from the state file — it remains for audit.
 

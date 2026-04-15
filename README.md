@@ -24,7 +24,7 @@ brew install zthxxx/tap/hams
 
 ```bash
 # Install a package and auto-record it
-hams brew install bat
+hams brew install htop
 
 # Install via pnpm (auto-adds --global)
 hams pnpm add serve

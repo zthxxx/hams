@@ -14,6 +14,9 @@ import (
 	"github.com/zthxxx/hams/internal/state"
 )
 
+// configProviderName is the manifest name and CLI verb for this provider.
+const configProviderName = "git-config"
+
 // ConfigProvider implements the git config KV provider.
 type ConfigProvider struct{}
 
@@ -23,11 +26,11 @@ func NewConfigProvider() *ConfigProvider { return &ConfigProvider{} }
 // Manifest returns the git config provider metadata.
 func (p *ConfigProvider) Manifest() provider.Manifest {
 	return provider.Manifest{
-		Name:          "git-config",
+		Name:          configProviderName,
 		DisplayName:   "git config",
 		Platforms:     []provider.Platform{provider.PlatformAll},
 		ResourceClass: provider.ClassKVConfig,
-		FilePrefix:    "git-config",
+		FilePrefix:    configProviderName,
 	}
 }
 
@@ -117,7 +120,7 @@ func (p *ConfigProvider) HandleCommand(_ context.Context, args []string, _ map[s
 }
 
 // Name returns the CLI name.
-func (p *ConfigProvider) Name() string { return "git-config" }
+func (p *ConfigProvider) Name() string { return configProviderName }
 
 // DisplayName returns the display name.
 func (p *ConfigProvider) DisplayName() string { return "git config" }

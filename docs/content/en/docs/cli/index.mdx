@@ -33,12 +33,12 @@ Provider commands all follow `hams <provider> <verb> [args]`. The verbs map to w
 underlying tool exposes:
 
 ```bash
-hams brew install bat
+hams brew install htop
 hams pnpm add serve
 hams npm install --global prettier
-hams brew remove htop
+hams brew remove ripgrep
 hams brew list
-hams brew enrich bat
+hams brew enrich htop
 ```
 
 The verb rulebook lives in [Provider Commands](./provider-commands). Per-provider specifics live
@@ -101,7 +101,7 @@ With `--json`:
 
 <Callout type="info">
   The `--hams-` prefix is how you pass hams-specific flags in the same command as flags for the
-  wrapped tool. Example: `hams brew install bat --hams-tag=cli` records `bat` tagged `cli`, while
+  wrapped tool. Example: `hams brew install htop --hams-tag=cli` records `htop` tagged `cli`, while
   `brew` has no idea that flag ever existed.
 </Callout>
 
