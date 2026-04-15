@@ -161,6 +161,99 @@ tasks:
     cmds:
       - act push --container-architecture linux/amd64 --artifact-server-path /tmp/act-artifacts --rm
 
+  # ---------------------------------------------------------------------------
+  # ci:* — direct-command tasks invoked from .github/workflows/ci.yml. These
+  # are NOT run through act; they perform the underlying work that CI steps
+  # used to inline as raw commands. Running `task ci:<name>` on a dev machine
+  # executes the identical recipe CI runs, guaranteeing local/CI isomorphism.
+  # ---------------------------------------------------------------------------
+
+  ci:lint:go:
+    desc: CI lint — golangci-lint
+    cmds:
+      - task: lint:go
+
+  ci:lint:md:
+    desc: CI lint — markdownlint
+    cmds:
+      - task: lint:md
+
+  ci:lint:spell:
+    desc: CI lint — cspell
+    cmds:
+      - task: lint:spell
+
+  ci:unit:
+    desc: CI unit tests — go test -race -count=1 with coverage
+    cmds:
+      - go test -race -count=1 -coverprofile=coverage.out ./...
+
+  ci:build:
+    desc: "CI build — single target from GOOS/GOARCH env (usage: GOOS=linux GOARCH=amd64 task ci:build)"
+    env:
+      CGO_ENABLED: "0"
+    cmds:
+      - go build -ldflags "{{.LDFLAGS}}" -o {{.BUILD_DIR}}/{{.APP_NAME}}-${GOOS}-${GOARCH} ./cmd/hams
+    requires:
+      vars: []
+
+  ci:integration:run:
+    desc: CI integration — build Dockerfile and run go test -tags=integration inside it
+    cmds:
+      - |
+        HASH=$(cat e2e/integration/Dockerfile go.mod go.sum | sha256sum | head -c 12)
+        IMAGE="hams-integration:${HASH}"
+        if ! docker image inspect "$IMAGE" >/dev/null 2>&1; then
+          docker build -f e2e/integration/Dockerfile -t "$IMAGE" .
+          docker images --format '{{"{{"}}.Repository{{"}}"}}:{{"{{"}}.Tag{{"}}"}}' \
+            | grep '^hams-integration:' | grep -v ":${HASH}$" \
+            | xargs -r docker rmi 2>/dev/null || true
+        fi
+        docker run --rm \
+          -v "$(pwd):/src" \
+          "$IMAGE" \
+          go test -v -tags=integration -race -count=1 ./...
+
+  ci:sudo:run:
+    desc: CI sudo — build Dockerfile and run sudo tests inside it
+    cmds:
+      - |
+        HASH=$(cat e2e/sudo/Dockerfile go.mod go.sum | sha256sum | head -c 12)
+        IMAGE="hams-sudo:${HASH}"
+        if ! docker image inspect "$IMAGE" >/dev/null 2>&1; then
+          docker build -f e2e/sudo/Dockerfile -t "$IMAGE" .
+          docker images --format '{{"{{"}}.Repository{{"}}"}}:{{"{{"}}.Tag{{"}}"}}' \
+            | grep '^hams-sudo:' | grep -v ":${HASH}$" \
+            | xargs -r docker rmi 2>/dev/null || true
+        fi
+        docker run --rm \
+          -v "$(pwd):/src" \
+          "$IMAGE" \
+          bash /src/e2e/sudo/run-tests.sh
+
+  ci:e2e:run:
+    desc: "CI e2e — build target Dockerfile and run its run-tests.sh (usage: TARGET=debian task ci:e2e:run)"
+    cmds:
+      - |
+        HASH=$(sha256sum e2e/${TARGET}/Dockerfile | head -c 12)
+        IMAGE="hams-e2e-${TARGET}:${HASH}"
+        if ! docker image inspect "$IMAGE" >/dev/null 2>&1; then
+          docker build -f e2e/${TARGET}/Dockerfile -t "$IMAGE" e2e/${TARGET}
+          docker images --format '{{"{{"}}.Repository{{"}}"}}:{{"{{"}}.Tag{{"}}"}}' \
+            | grep "^hams-e2e-${TARGET}:" | grep -v ":${HASH}$" \
+            | xargs -r docker rmi 2>/dev/null || true
+        fi
+        docker run --rm \
+          -v "$(pwd)/bin/hams-linux-amd64:/usr/local/bin/hams:ro" \
+          -v "$(pwd)/e2e/lib:/e2e/lib:ro" \
+          -v "$(pwd)/e2e/${TARGET}:/e2e/${TARGET}:ro" \
+          -v "$(pwd)/e2e/${TARGET}/run-tests.sh:/run-tests.sh:ro" \
+          -v "$(pwd)/e2e/fixtures:/fixtures:ro" \
+          "$IMAGE" \
+          bash /run-tests.sh
+    requires:
+      vars: [TARGET]
+
   ci:test:
     desc: Run CI unit-test job via act
     cmds:

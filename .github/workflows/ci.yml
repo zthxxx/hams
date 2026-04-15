@@ -20,9 +20,15 @@ jobs:
         with:
           go-version: "1.25"
 
-      - uses: golangci/golangci-lint-action@v7
+      - uses: go-task/setup-task@v2
         with:
-          version: latest
+          version: 3.x
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install golangci-lint
+        run: go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
+
+      - run: task ci:lint:go
 
   lint-markdown:
     name: Markdown Lint
@@ -30,8 +36,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Run markdownlint
-        uses: DavidAnson/markdownlint-cli2-action@v19
+      - uses: oven-sh/setup-bun@v2
+
+      - uses: go-task/setup-task@v2
+        with:
+          version: 3.x
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - run: bun install --frozen-lockfile
+
+      - run: task ci:lint:md
 
   lint-spell:
     name: Spell Check
@@ -39,10 +53,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Run cspell
-        uses: streetsidesoftware/cspell-action@v6
+      - uses: oven-sh/setup-bun@v2
+
+      - uses: go-task/setup-task@v2
         with:
-          files: "**"
+          version: 3.x
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - run: bun install --frozen-lockfile
+
+      - run: task ci:lint:spell
 
   test:
     name: Test
@@ -54,8 +74,12 @@ jobs:
         with:
           go-version: "1.25"
 
-      - name: Run tests
-        run: go test -race -count=1 -coverprofile=coverage.out ./...
+      - uses: go-task/setup-task@v2
+        with:
+          version: 3.x
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - run: task ci:unit
 
       - name: Upload coverage
         uses: actions/upload-artifact@v4
@@ -84,20 +108,16 @@ jobs:
         with:
           go-version: "1.25"
 
+      - uses: go-task/setup-task@v2
+        with:
+          version: 3.x
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Build
         env:
-          CGO_ENABLED: "0"
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
-        run: |
-          VERSION="$(git describe --tags --always --dirty 2>/dev/null || echo 'dev')"
-          COMMIT="$(git rev-parse --short HEAD)"
-          DATE="$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
-          LDFLAGS="-s -w \
-            -X github.com/zthxxx/hams/internal/version.version=${VERSION} \
-            -X github.com/zthxxx/hams/internal/version.commit=${COMMIT} \
-            -X github.com/zthxxx/hams/internal/version.date=${DATE}"
-          go build -ldflags "${LDFLAGS}" -o bin/hams-${{ matrix.goos }}-${{ matrix.goarch }} ./cmd/hams
+        run: task ci:build
 
       - name: Upload binary
         uses: actions/upload-artifact@v4
@@ -111,24 +131,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Build integration image (cached by content hash)
-        run: |
-          HASH=$(cat e2e/integration/Dockerfile go.mod go.sum | sha256sum | head -c 12)
-          IMAGE="hams-integration:${HASH}"
-          if ! docker image inspect "$IMAGE" >/dev/null 2>&1; then
-            docker build -f e2e/integration/Dockerfile -t "$IMAGE" .
-            docker images --format '{{.Repository}}:{{.Tag}}' \
-              | grep '^hams-integration:' | grep -v ":${HASH}$" \
-              | xargs -r docker rmi 2>/dev/null || true
-          fi
-          echo "INTEGRATION_IMAGE=$IMAGE" >> "$GITHUB_ENV"
+      - uses: go-task/setup-task@v2
+        with:
+          version: 3.x
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Run integration tests
-        run: |
-          docker run --rm \
-            -v "$(pwd):/src" \
-            "$INTEGRATION_IMAGE" \
-            go test -v -tags=integration -race -count=1 ./...
+      - run: task ci:integration:run
 
   sudo:
     name: Sudo Tests
@@ -136,24 +144,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Build sudo test image (cached by content hash)
-        run: |
-          HASH=$(cat e2e/sudo/Dockerfile go.mod go.sum | sha256sum | head -c 12)
-          IMAGE="hams-sudo:${HASH}"
-          if ! docker image inspect "$IMAGE" >/dev/null 2>&1; then
-            docker build -f e2e/sudo/Dockerfile -t "$IMAGE" .
-            docker images --format '{{.Repository}}:{{.Tag}}' \
-              | grep '^hams-sudo:' | grep -v ":${HASH}$" \
-              | xargs -r docker rmi 2>/dev/null || true
-          fi
-          echo "SUDO_IMAGE=$IMAGE" >> "$GITHUB_ENV"
+      - uses: go-task/setup-task@v2
+        with:
+          version: 3.x
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Run sudo tests
-        run: |
-          docker run --rm \
-            -v "$(pwd):/src" \
-            "$SUDO_IMAGE" \
-            bash /src/e2e/sudo/run-tests.sh
+      - run: task ci:sudo:run
 
   e2e:
     name: E2E (${{ matrix.target }})
@@ -166,6 +162,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - uses: go-task/setup-task@v2
+        with:
+          version: 3.x
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Download linux/amd64 binary
         uses: actions/download-artifact@v4
         with:
@@ -175,24 +176,6 @@ jobs:
       - name: Make binary executable
         run: chmod +x bin/hams-linux-amd64
 
-      - name: Build e2e base image (cached by content hash)
-        run: |
-          HASH=$(sha256sum e2e/${{ matrix.target }}/Dockerfile | head -c 12)
-          IMAGE="hams-e2e-${{ matrix.target }}:${HASH}"
-          if ! docker image inspect "$IMAGE" >/dev/null 2>&1; then
-            docker build -f e2e/${{ matrix.target }}/Dockerfile -t "$IMAGE" e2e/${{ matrix.target }}
-            docker images --format '{{.Repository}}:{{.Tag}}' \
-              | grep '^hams-e2e-${{ matrix.target }}:' | grep -v ":${HASH}$" \
-              | xargs -r docker rmi 2>/dev/null || true
-          fi
-          echo "E2E_IMAGE=$IMAGE" >> "$GITHUB_ENV"
-
-      - name: Run ${{ matrix.target }} e2e tests
-        run: |
-          docker run --rm \
-            -v "$(pwd)/bin/hams-linux-amd64:/usr/local/bin/hams:ro" \
-            -v "$(pwd)/e2e/lib:/e2e/lib:ro" \
-            -v "$(pwd)/e2e/${{ matrix.target }}/run-tests.sh:/run-tests.sh:ro" \
-            -v "$(pwd)/e2e/fixtures:/fixtures:ro" \
-            "$E2E_IMAGE" \
-            bash /run-tests.sh
+      - env:
+          TARGET: ${{ matrix.target }}
+        run: task ci:e2e:run

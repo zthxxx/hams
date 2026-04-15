@@ -136,14 +136,14 @@ Delivers: debian E2E integration covering real apt-get end-to-end + store-level 
 
 Delivers: project-structure GitHub Actions CI Pipeline requirement additions.
 
-- [ ] 6.1 Audit current `.github/workflows/ci.yml`. Record which steps inline raw commands.
-- [ ] 6.2 For each inlined raw command, ensure a Taskfile task exists. Add missing ones under `ci:*` namespace (e.g., `ci:lint`, `ci:lint:md`, `ci:lint:spell`, `ci:unit`, `ci:build`).
-- [ ] 6.3 Add `go-task/setup-task@v2` step to every job that needs to invoke `task`. Pin to `@v2`.
-- [ ] 6.4 Replace each inlined command with `run: task <name>`.
-- [ ] 6.5 Retain `actions/checkout@v4`, `actions/setup-go@v5`, `actions/upload-artifact@v4`, and other setup/upload actions (per the carve-out in the spec).
-- [ ] 6.6 Verify workflow runs locally via `act pull_request -j lint` (dry-run compile + one job) — smoke test.
-- [ ] 6.7 `task lint` and `task test` still pass after any Taskfile additions.
-- [ ] 6.8 Commit: `ci: route all workflow steps through Taskfile tasks via setup-task`.
+- [x] 6.1 Audit current `.github/workflows/ci.yml`. Record which steps inline raw commands.
+- [x] 6.2 For each inlined raw command, ensure a Taskfile task exists. Add missing ones under `ci:*` namespace (e.g., `ci:lint`, `ci:lint:md`, `ci:lint:spell`, `ci:unit`, `ci:build`).
+- [x] 6.3 Add `go-task/setup-task@v2` step to every job that needs to invoke `task`. Pin to `@v2`.
+- [x] 6.4 Replace each inlined command with `run: task <name>`.
+- [x] 6.5 Retain `actions/checkout@v4`, `actions/setup-go@v5`, `actions/upload-artifact@v4`, and other setup/upload actions (per the carve-out in the spec).
+- [x] 6.6 Verify workflow runs locally via `act pull_request -j lint` (dry-run compile + one job) — smoke test.
+- [x] 6.7 `task lint` and `task test` still pass after any Taskfile additions.
+- [x] 6.8 Commit: `ci: route all workflow steps through Taskfile tasks via setup-task`.
 
 ## 7. Documentation sync
 
