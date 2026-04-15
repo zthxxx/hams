@@ -193,7 +193,7 @@ Validation applies to both `<store>/hams.config.yaml` (git-tracked) AND `<store>
 
 - **[DI fake must stay faithful to real apt behavior]** → If the fake `CmdRunner` diverges from what `apt-get` actually does (e.g., exit codes, idempotency of re-install), unit tests could pass while E2E fails. Mitigation: debian E2E scenarios E1–E5 are required — they exercise the identical orchestration paths against real `apt-get`. Unit tests are for the orchestration logic (did we call the runner? did we write the hamsfile?), not the runner's fidelity.
 
-- **[`go-task/setup-task@v1` as a new workflow dependency]** → Action could be deprecated or change major versions. Mitigation: pin to `@v2`, not `@latest`. Setup-task is actively maintained (Arduino Fork of the original go-task maintainer's action) with a stable 1.0-style API.
+- **[`go-task/setup-task@v1` as a new workflow dependency]** → Action could be deprecated or change major versions. Mitigation: pin to `@v1`, not `@latest`. go-task/setup-task is maintained by the go-task/task project itself.
 
 - **[`yq` in debian integration Dockerfile]** → Adds a dependency to the container image. Mitigation: `yq` is a tiny Go binary installed via a release download or `apt-get install yq`. Alternative (no dependency): use `grep`+`awk` for structural YAML assertions, but that's fragile. Prefer the explicit tool.
 

@@ -8,6 +8,7 @@ import (
 	"runtime"
 	"testing"
 
+	"github.com/zthxxx/hams/internal/config"
 	"github.com/zthxxx/hams/internal/provider"
 	"github.com/zthxxx/hams/internal/sudo"
 )
@@ -23,14 +24,13 @@ func TestApt_ApplyWithRealBuilder_AsRoot(t *testing.T) {
 		t.Skip("test requires root")
 	}
 
-	p := New(&sudo.Builder{})
+	p := New(&config.Config{}, NewRealCmdRunner(&sudo.Builder{}))
 	action := provider.Action{
 		ID:   "hello",
 		Type: provider.ActionInstall,
 	}
 
 	// As root, Builder skips sudo and runs apt-get directly.
-	// Installing a small package validates the full Apply path.
 	err := p.Apply(context.Background(), action)
 	if err != nil {
 		t.Fatalf("Apply(hello) as root failed: %v", err)
@@ -45,9 +45,7 @@ func TestApt_RemoveWithRealBuilder_AsRoot(t *testing.T) {
 		t.Skip("test requires root")
 	}
 
-	p := New(&sudo.Builder{})
-
-	// Remove the package installed in the previous test.
+	p := New(&config.Config{}, NewRealCmdRunner(&sudo.Builder{}))
 	err := p.Remove(context.Background(), "hello")
 	if err != nil {
 		t.Fatalf("Remove(hello) as root failed: %v", err)

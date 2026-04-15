@@ -55,48 +55,48 @@ Delivers: schema-design Project-Level Config Schema requirement additions.
 
 Delivers: builtin-providers apt Provider "command boundary" requirement.
 
-- [ ] 3.1 Create `internal/provider/builtin/apt/command.go` with `CmdRunner` interface (3 methods per design D2) and a real implementation `type realCmdRunner struct { sudo sudo.CmdBuilder }`.
-- [ ] 3.2 Real `Install(ctx, pkg)` runs `sudo apt-get install -y <pkg>`, sets `cmd.Stdout = os.Stdout`, `cmd.Stderr = os.Stderr`.
-- [ ] 3.3 Real `Remove(ctx, pkg)` runs `sudo apt-get remove -y <pkg>`, streams stdout/stderr.
-- [ ] 3.4 Real `IsInstalled(ctx, pkg)` runs `dpkg -s <pkg>`, returns `(true, version, nil)` when exit 0 and `Status: install ok installed` is present; `(false, "", nil)` when exit non-zero; `(false, "", err)` for other errors.
-- [ ] 3.5 Create `internal/provider/builtin/apt/command_fake.go` (no build tag — test helper exported for tests) with `FakeCmdRunner` maintaining `installed map[string]string` (pkg → version) + `calls []FakeCall`.
-- [ ] 3.6 `FakeCmdRunner.Install(ctx, pkg)` records call + marks installed. `.Remove` records + marks uninstalled. `.IsInstalled` returns from the map. Add `FakeCmdRunner.WithInstallError(pkg, err)` / `.WithRemoveError` for failure simulations.
-- [ ] 3.7 Update `apt.Provider` to accept a `CmdRunner` in its constructor: `New(sb sudo.CmdBuilder, cfg *config.Config, runner CmdRunner) *Provider`.
-- [ ] 3.8 Update Fx wiring (whichever file provides the apt provider constructor) to build `realCmdRunner{sudo: sb}` and pass it in.
-- [ ] 3.9 Refactor `Apply` to call `p.runner.Install(ctx, action.ID)` instead of shelling out directly.
-- [ ] 3.10 Refactor `Remove` to call `p.runner.Remove(ctx, resourceID)`.
-- [ ] 3.11 Refactor `Probe` to call `p.runner.IsInstalled(ctx, id)` instead of `exec.CommandContext(ctx, "dpkg", ...)`.
-- [ ] 3.12 `go build ./...` + `go vet ./...` + existing `go test -race ./internal/provider/builtin/apt/...` pass (no new behavior yet).
-- [ ] 3.13 Commit: `refactor(apt): introduce CmdRunner DI seam + fake for tests`.
+- [x] 3.1 Create `internal/provider/builtin/apt/command.go` with `CmdRunner` interface (3 methods per design D2) and a real implementation `type realCmdRunner struct { sudo sudo.CmdBuilder }`.
+- [x] 3.2 Real `Install(ctx, pkg)` runs `sudo apt-get install -y <pkg>`, sets `cmd.Stdout = os.Stdout`, `cmd.Stderr = os.Stderr`.
+- [x] 3.3 Real `Remove(ctx, pkg)` runs `sudo apt-get remove -y <pkg>`, streams stdout/stderr.
+- [x] 3.4 Real `IsInstalled(ctx, pkg)` runs `dpkg -s <pkg>`, returns `(true, version, nil)` when exit 0 and `Status: install ok installed` is present; `(false, "", nil)` when exit non-zero; `(false, "", err)` for other errors.
+- [x] 3.5 Create `internal/provider/builtin/apt/command_fake.go` (no build tag — test helper exported for tests) with `FakeCmdRunner` maintaining `installed map[string]string` (pkg → version) + `calls []FakeCall`.
+- [x] 3.6 `FakeCmdRunner.Install(ctx, pkg)` records call + marks installed. `.Remove` records + marks uninstalled. `.IsInstalled` returns from the map. Add `FakeCmdRunner.WithInstallError(pkg, err)` / `.WithRemoveError` for failure simulations.
+- [x] 3.7 Update `apt.Provider` to accept a `CmdRunner` in its constructor: `New(sb sudo.CmdBuilder, cfg *config.Config, runner CmdRunner) *Provider`.
+- [x] 3.8 Update Fx wiring (whichever file provides the apt provider constructor) to build `realCmdRunner{sudo: sb}` and pass it in.
+- [x] 3.9 Refactor `Apply` to call `p.runner.Install(ctx, action.ID)` instead of shelling out directly.
+- [x] 3.10 Refactor `Remove` to call `p.runner.Remove(ctx, resourceID)`.
+- [x] 3.11 Refactor `Probe` to call `p.runner.IsInstalled(ctx, id)` instead of `exec.CommandContext(ctx, "dpkg", ...)`.
+- [x] 3.12 `go build ./...` + `go vet ./...` + existing `go test -race ./internal/provider/builtin/apt/...` pass (no new behavior yet).
+- [x] 3.13 Commit: `refactor(apt): introduce CmdRunner DI seam + fake for tests`.
 
 ## 4. Apt CLI install/remove updates hamsfile (mirrors brew)
 
 Delivers: builtin-providers apt Provider CLI wrapping requirements.
 
-- [ ] 4.1 Create `internal/provider/builtin/apt/hamsfile.go` with two functions modeled on `brew/hamsfile.go`:
-  - [ ] 4.1.1 `addApp(cfg *config.Config, pkg string) error` — load effective `apt.hams.yaml` + `.local.yaml`, add `{app: pkg}` to default group if not present, save atomically via hamsfile SDK.
-  - [ ] 4.1.2 `removeApp(cfg *config.Config, pkg string) error` — load, remove `{app: pkg}` if present, save. No-op if absent.
-- [ ] 4.2 Refactor `HandleCommand` in `apt.go`:
-  - [ ] 4.2.1 `handleInstall(ctx, pkgs, flags)` — for each pkg: call `runner.Install`, on success call `addApp`. Dry-run path prints and returns.
-  - [ ] 4.2.2 `handleRemove(ctx, pkgs, flags)` — for each pkg: call `runner.Remove`, on success call `removeApp`. Dry-run path prints and returns.
-  - [ ] 4.2.3 Default case keeps existing `WrapExecPassthrough` behavior.
-- [ ] 4.3 Remove the `cmd.Stdout = nil; cmd.Stderr = nil` lines in `Apply` (moved to real CmdRunner in Group 3).
-- [ ] 4.4 Unit tests in `internal/provider/builtin/apt/apt_test.go` covering U1–U11:
-  - [ ] 4.4.1 Test harness: helper that creates tempdir config + hamsfile, wires `FakeCmdRunner`, returns `*Provider`.
-  - [ ] 4.4.2 U1: first install adds app to hamsfile; runner called with correct pkg.
-  - [ ] 4.4.3 U2: re-install is idempotent on hamsfile (still one entry).
-  - [ ] 4.4.4 U3: install failure leaves hamsfile untouched.
-  - [ ] 4.4.5 U4: remove deletes app from hamsfile.
-  - [ ] 4.4.6 U5: remove failure leaves hamsfile untouched.
-  - [ ] 4.4.7 U6: remove of absent app is no-op on hamsfile, no error.
-  - [ ] 4.4.8 U7: dry-run prints expected command, does NOT call runner, does NOT mutate hamsfile.
-  - [ ] 4.4.9 U8: apply of new resource sets `FirstInstallAt`, `UpdatedAt`, no `RemovedAt`.
-  - [ ] 4.4.10 U9: apply of existing resource preserves `FirstInstallAt`, bumps `UpdatedAt`.
-  - [ ] 4.4.11 U10: remove transition sets `RemovedAt`, bumps `UpdatedAt`, preserves `FirstInstallAt`.
-  - [ ] 4.4.12 U11: re-install after remove clears `RemovedAt`, preserves `FirstInstallAt`, bumps `UpdatedAt`.
-- [ ] 4.5 Verify stdout/stderr streaming: unit test asserting `realCmdRunner.Install` sets `cmd.Stdout == os.Stdout` (or equivalent behavior via interface-level assertion).
-- [ ] 4.6 `go build ./...` + `go vet ./...` + `go test -race ./internal/provider/builtin/apt/...` pass.
-- [ ] 4.7 Commit: `feat(apt): CLI install/remove updates hamsfile (mirrors brew)`.
+- [x] 4.1 Create `internal/provider/builtin/apt/hamsfile.go` with two functions modeled on `brew/hamsfile.go`:
+  - [x] 4.1.1 `addApp(cfg *config.Config, pkg string) error` — load effective `apt.hams.yaml` + `.local.yaml`, add `{app: pkg}` to default group if not present, save atomically via hamsfile SDK.
+  - [x] 4.1.2 `removeApp(cfg *config.Config, pkg string) error` — load, remove `{app: pkg}` if present, save. No-op if absent.
+- [x] 4.2 Refactor `HandleCommand` in `apt.go`:
+  - [x] 4.2.1 `handleInstall(ctx, pkgs, flags)` — for each pkg: call `runner.Install`, on success call `addApp`. Dry-run path prints and returns.
+  - [x] 4.2.2 `handleRemove(ctx, pkgs, flags)` — for each pkg: call `runner.Remove`, on success call `removeApp`. Dry-run path prints and returns.
+  - [x] 4.2.3 Default case keeps existing `WrapExecPassthrough` behavior.
+- [x] 4.3 Remove the `cmd.Stdout = nil; cmd.Stderr = nil` lines in `Apply` (moved to real CmdRunner in Group 3).
+- [x] 4.4 Unit tests in `internal/provider/builtin/apt/apt_test.go` covering U1–U11:
+  - [x] 4.4.1 Test harness: helper that creates tempdir config + hamsfile, wires `FakeCmdRunner`, returns `*Provider`.
+  - [x] 4.4.2 U1: first install adds app to hamsfile; runner called with correct pkg.
+  - [x] 4.4.3 U2: re-install is idempotent on hamsfile (still one entry).
+  - [x] 4.4.4 U3: install failure leaves hamsfile untouched.
+  - [x] 4.4.5 U4: remove deletes app from hamsfile.
+  - [x] 4.4.6 U5: remove failure leaves hamsfile untouched.
+  - [x] 4.4.7 U6: remove of absent app is no-op on hamsfile, no error.
+  - [x] 4.4.8 U7: dry-run prints expected command, does NOT call runner, does NOT mutate hamsfile.
+  - [x] 4.4.9 U8: apply of new resource sets `FirstInstallAt`, `UpdatedAt`, no `RemovedAt`.
+  - [x] 4.4.10 U9: apply of existing resource preserves `FirstInstallAt`, bumps `UpdatedAt`.
+  - [x] 4.4.11 U10: remove transition sets `RemovedAt`, bumps `UpdatedAt`, preserves `FirstInstallAt`.
+  - [x] 4.4.12 U11: re-install after remove clears `RemovedAt`, preserves `FirstInstallAt`, bumps `UpdatedAt`.
+- [x] 4.5 Verify stdout/stderr streaming: unit test asserting `realCmdRunner.Install` sets `cmd.Stdout == os.Stdout` (or equivalent behavior via interface-level assertion).
+- [x] 4.6 `go build ./...` + `go vet ./...` + `go test -race ./internal/provider/builtin/apt/...` pass.
+- [x] 4.7 Commit: `feat(apt): CLI install/remove updates hamsfile (mirrors brew)`.
 
 ## 5. E2E integration scenarios + yaml_assert helper
 
