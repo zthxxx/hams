@@ -12,6 +12,29 @@ import (
 // surface an actionable error.
 var ErrBootstrapRequired = errors.New("bootstrap required")
 
+// BootstrapRequiredError is returned by a Provider's Bootstrap method when
+// its prerequisite binary is missing. It carries the exact script text
+// declared in the manifest so the CLI orchestrator can show it to the user
+// before executing (or surface it in an actionable error when consent was
+// not given). The error wraps ErrBootstrapRequired for errors.Is checks.
+type BootstrapRequiredError struct {
+	// Provider is the provider whose prerequisite is missing (e.g. "brew").
+	Provider string
+	// Binary is the executable the provider expected on $PATH (e.g. "brew").
+	Binary string
+	// Script is the exact script text from the manifest's DependsOn[].Script.
+	// Shown to the user verbatim for auditability before any execution.
+	Script string
+}
+
+// Error satisfies the error interface.
+func (e *BootstrapRequiredError) Error() string {
+	return fmt.Sprintf("%s is required but not installed; re-run with --bootstrap or execute the bootstrap script manually", e.Binary)
+}
+
+// Unwrap returns the sentinel so errors.Is(err, ErrBootstrapRequired) works.
+func (e *BootstrapRequiredError) Unwrap() error { return ErrBootstrapRequired }
+
 // BashScriptRunner is the minimal boundary the bootstrap machinery needs
 // from whichever provider is named as the host of a DependOn.Script.
 // The Bash builtin provider is the canonical implementation.

@@ -56,13 +56,32 @@ func (p *Provider) Manifest() provider.Manifest {
 	}
 }
 
-// Bootstrap checks if brew is available and installs it if not.
+// brewBinaryLookup is the PATH-check seam Bootstrap uses. Swapped in
+// tests to simulate "brew missing" / "brew present" without mutating the
+// host's real PATH. Production value is exec.LookPath.
+var brewBinaryLookup = exec.LookPath
+
+// Bootstrap reports whether brew is installed. A missing binary is
+// signaled via provider.BootstrapRequiredError (which wraps
+// provider.ErrBootstrapRequired); the CLI orchestrator decides whether to
+// run the manifest-declared install script based on --bootstrap / TTY
+// prompt. Bootstrap itself NEVER executes a network install.
 func (p *Provider) Bootstrap(_ context.Context) error {
-	if _, err := exec.LookPath("brew"); err == nil {
+	if _, err := brewBinaryLookup("brew"); err == nil {
 		return nil
 	}
-	slog.Info("Homebrew not found, bootstrapping via bash provider")
-	return fmt.Errorf("homebrew not installed; run the bootstrap script first")
+	manifest := p.Manifest()
+	script := ""
+	if len(manifest.DependsOn) > 0 {
+		script = manifest.DependsOn[0].Script
+	}
+	slog.Info("Homebrew not found on PATH; bootstrap consent required",
+		"provider", manifest.Name, "binary", "brew")
+	return &provider.BootstrapRequiredError{
+		Provider: manifest.Name,
+		Binary:   "brew",
+		Script:   script,
+	}
 }
 
 // Probe queries brew for installed formulae, casks, and taps.
