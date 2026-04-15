@@ -1,9 +1,9 @@
-schema_version: 1
+schema_version: 2
 provider: apt
 machine_id: sandbox
 last_apply_config_hash: ef8d2be62f95fb486ab086ef4dce774ee72d675dba2db8fc92497b614fe3652f
 resources:
     bat:
         state: ok
-        install_at: 20260414T171014
+        first_install_at: 20260414T171014
         updated_at: 20260415T013047

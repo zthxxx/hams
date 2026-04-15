@@ -149,13 +149,13 @@ Delivers: project-structure GitHub Actions CI Pipeline requirement additions.
 
 Delivers: i18n-consistent docs updates.
 
-- [ ] 7.1 Search docs for `install_at` string → rename to `first_install_at`. `rg 'install_at' docs/ README.md` and fix each hit.
-- [ ] 7.2 Search docs for store-level examples showing `profile_tag` / `machine_id` → correct them.
-- [ ] 7.3 Add a "Breaking changes" section to `CHANGELOG.md` (create if absent) covering state schema v1→v2 auto-migration + store-level config rejection.
-- [ ] 7.4 Sync the same changes to `*.zh-CN.*` variants (e.g., `README.zh-CN.md`, any `docs/**/*.zh-CN.*`).
-- [ ] 7.5 Run `task lint` to catch any markdown or spelling regressions.
-- [ ] 7.6 If docs site has live dev server, run the `docs-verification.md` process (sections 1–3) to confirm pages render.
-- [ ] 7.7 Commit: `docs: sync install_at rename + store-level config guidance (en + zh-CN)`.
+- [x] 7.1 Search docs for `install_at` string → rename to `first_install_at`. `rg 'install_at' docs/ README.md` and fix each hit.
+- [x] 7.2 Search docs for store-level examples showing `profile_tag` / `machine_id` → correct them.
+- [x] 7.3 Add a "Breaking changes" section to `CHANGELOG.md` (create if absent) covering state schema v1→v2 auto-migration + store-level config rejection.
+- [x] 7.4 Sync the same changes to `*.zh-CN.*` variants (e.g., `README.zh-CN.md`, any `docs/**/*.zh-CN.*`).
+- [x] 7.5 Run `task lint` to catch any markdown or spelling regressions.
+- [x] 7.6 If docs site has live dev server, run the `docs-verification.md` process (sections 1–3) to confirm pages render.
+- [x] 7.7 Commit: `docs: sync install_at rename + store-level config guidance (en + zh-CN)`.
 
 ## 8. Full-suite verification gate
 

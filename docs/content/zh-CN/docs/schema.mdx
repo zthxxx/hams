@@ -87,7 +87,7 @@ check 返回 0 就跳过，非 0 就跑 run。
 位置：`<store>/.state/<machine-id>/<Provider>.state.yaml`
 
 ```yaml
-schema_version: 1
+schema_version: 2
 provider: homebrew
 machine_id: MacbookProM5X
 last_apply_session: "20260413T100000"
@@ -95,8 +95,13 @@ resources:
   htop:
     state: ok
     version: "3.3.0"
-    install_at: "20260413T100000"
+    first_install_at: "20260413T100000"
+    updated_at: "20260413T100000"
 ```
+
+`first_install_at` 在资源第一次安装时写入，之后再次安装、升级、移除、再安装也**永不变更**；
+`updated_at` 在每次状态迁移时更新；资源被移除时会写入 `removed_at`，下次重新安装时清除。
+旧的 `schema_version: 1` 状态文件在下次读取时会自动迁移到 v2，`install_at` 字段被重命名为 `first_install_at`。
 
 状态文件记的是**这台机器的客观现实**：每个资源是装着还是缺着、什么版本、上次 apply 什么时候。
 `.state/` 目录默认 gitignore —— 它是本机事实，不同机器之间不应该共享。
