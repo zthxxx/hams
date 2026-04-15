@@ -223,6 +223,62 @@ else
     hams --store="$HAMS_STORE" apply --only=apt
   assert_yaml_field_eq "jq.state still ok after no-op apply" \
     "$APT_STATE" '.resources.jq.state' 'ok'
+
+  # ---------------------------------------------------------------------
+  # Sub-section: fresh-machine restore replays the hamsfile pin.
+  # Simulates `hams apply --from-repo=...` on a brand-new machine — the
+  # cycle-3 implementation silently dropped the pin here because Plan
+  # only saw `desired.ListApps()` (names, no structured fields). The
+  # cycle-4 fix uses `AppFields` + `action.Resource`.
+  # ---------------------------------------------------------------------
+  echo ""
+  echo "  E7.b: fresh-machine restore replays the hamsfile pin"
+
+  # Save the pinned hamsfile content (this is what would be in the store
+  # repo on a real fresh-machine restore).
+  PINNED_HAMS_CONTENT=$(cat "$APT_HAMS")
+
+  # Wipe state + hamsfile + un-pin the host so apply has real work.
+  rm -f "$APT_STATE" "$APT_HAMS"
+  apt-get remove -y jq >/dev/null
+  if command -v jq >/dev/null 2>&1; then
+    echo "  FAIL: precondition — apt-get remove jq did not actually uninstall"
+    exit 1
+  fi
+
+  # Restore the pinned hamsfile (simulate the post-clone state).
+  printf '%s\n' "$PINNED_HAMS_CONTENT" > "$APT_HAMS"
+
+  # Apply: the executor must read the pin out of the hamsfile and
+  # invoke apt-get with `jq=<pin>`.
+  assert_success "hams apply --only=apt restores the pinned version" \
+    hams --store="$HAMS_STORE" apply --only=apt
+  assert_success "jq is on PATH after restore" command -v jq
+
+  INSTALLED_VER=$(dpkg-query -W -f='${Version}' jq)
+  if [ "$INSTALLED_VER" != "$JQ_VER" ]; then
+    echo "  FAIL: restored version $INSTALLED_VER, want pinned $JQ_VER"
+    exit 1
+  fi
+  echo "  ok: dpkg reports the pinned version after restore: $INSTALLED_VER"
+
+  assert_yaml_field_eq "state records the pin after restore" \
+    "$APT_STATE" '.resources.jq.requested_version' "$JQ_VER"
+
+  # State must have a SINGLE row keyed on the bare name — no orphan
+  # `jq=<ver>` row from the cycle-3 ID-mutation bug.
+  ROW_COUNT=$(yq '.resources | keys | length' "$APT_STATE")
+  if [ "$ROW_COUNT" != "1" ]; then
+    echo "  FAIL: state has $ROW_COUNT resource rows for jq, want exactly 1"
+    yq '.resources | keys' "$APT_STATE"
+    exit 1
+  fi
+  ROW_KEY=$(yq -r '.resources | keys | .[0]' "$APT_STATE")
+  if [ "$ROW_KEY" != "jq" ]; then
+    echo "  FAIL: state row key = $ROW_KEY, want bare 'jq' (pin must NOT be in state key)"
+    exit 1
+  fi
+  echo "  ok: state has exactly one row keyed on the bare 'jq' name"
 fi
 
 echo ""

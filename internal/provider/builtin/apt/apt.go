@@ -76,40 +76,93 @@ func (p *Provider) Probe(ctx context.Context, sf *state.File) ([]provider.ProbeR
 	return results, nil
 }
 
-// Plan computes actions for apt packages, then overlays drift detection
-// for version-pinned resources: if state has a `requested_version` that
-// doesn't match the observed dpkg version, promote the action to Update
-// and rewrite its ID to the pinned form (`pkg=version`) so the executor
-// re-invokes apt-get with the pin. Source-pinned resources promote
-// similarly using `pkg/source`.
+// Plan computes actions for apt packages and overlays version/source
+// pinning. The hamsfile is the source of truth for the requested pin
+// (state may not have it yet on a fresh machine or restore path), so
+// for each declared app we read its structured fields via
+// `desired.AppFields`. Pinned Install/Update actions keep their `ID`
+// as the bare package name (so state stays keyed canonically) and
+// carry the install-token form (`pkg=version` / `pkg/source`) in
+// `Resource`. `Apply` reads `Resource` first and falls back to `ID`.
 func (p *Provider) Plan(_ context.Context, desired *hamsfile.File, observed *state.File) ([]provider.Action, error) {
 	apps := desired.ListApps()
 	actions := provider.ComputePlan(apps, observed, observed.ConfigHash)
 
-	for i, a := range actions {
-		if a.Type != provider.ActionSkip {
-			continue
-		}
-		r, ok := observed.Resources[a.ID]
-		if !ok {
-			continue
-		}
+	pins := make(map[string]string, len(apps))
+	for _, app := range apps {
+		fields := desired.AppFields(app)
 		switch {
-		case r.RequestedVersion != "" && r.Version != r.RequestedVersion:
-			actions[i].Type = provider.ActionUpdate
-			actions[i].ID = a.ID + "=" + r.RequestedVersion
-		case r.RequestedSource != "" && r.Version == "":
-			actions[i].Type = provider.ActionUpdate
-			actions[i].ID = a.ID + "/" + r.RequestedSource
+		case fields["version"] != "":
+			pins[app] = app + "=" + fields["version"]
+		case fields["source"] != "":
+			pins[app] = app + "/" + fields["source"]
+		}
+	}
+
+	for i, a := range actions {
+		switch a.Type {
+		case provider.ActionInstall:
+			if token, ok := pins[a.ID]; ok {
+				actions[i].Resource = token
+				actions[i].StateOpts = append(actions[i].StateOpts, pinStateOpts(a.ID, token)...)
+			}
+		case provider.ActionSkip:
+			token, hasPin := pins[a.ID]
+			if !hasPin {
+				continue
+			}
+			r, observedExists := observed.Resources[a.ID]
+			// Drift cases: observed version doesn't match the
+			// hamsfile-declared pin (state may carry a stale
+			// requested_version, or none at all on a fresh machine
+			// — the hamsfile is canonical). For source pins, drift
+			// detection is best-effort because dpkg doesn't surface
+			// the install-source; we re-pin if observed is missing.
+			versionPin := strings.HasPrefix(token, a.ID+"=")
+			sourcePin := strings.HasPrefix(token, a.ID+"/")
+			declaredVer := strings.TrimPrefix(token, a.ID+"=")
+			switch {
+			case versionPin && (!observedExists || r.Version != declaredVer):
+				actions[i].Type = provider.ActionUpdate
+				actions[i].Resource = token
+				actions[i].StateOpts = append(actions[i].StateOpts, pinStateOpts(a.ID, token)...)
+			case sourcePin && (!observedExists || r.Version == ""):
+				actions[i].Type = provider.ActionUpdate
+				actions[i].Resource = token
+				actions[i].StateOpts = append(actions[i].StateOpts, pinStateOpts(a.ID, token)...)
+			}
 		}
 	}
 	return actions, nil
 }
 
-// Apply installs an apt package.
+// pinStateOpts returns the state options needed to record an apt pin
+// after a successful Install/Update. The executor applies these via
+// `sf.SetResource(action.ID, state.StateOK, action.StateOpts...)` so
+// that the resulting state row carries the user's requested pin
+// alongside the observed dpkg version (which is populated separately
+// by Refresh/Probe).
+func pinStateOpts(pkg, token string) []state.ResourceOption {
+	if v := strings.TrimPrefix(token, pkg+"="); v != token {
+		return []state.ResourceOption{state.WithRequestedVersion(v)}
+	}
+	if s := strings.TrimPrefix(token, pkg+"/"); s != token {
+		return []state.ResourceOption{state.WithRequestedSource(s)}
+	}
+	return nil
+}
+
+// Apply installs an apt package. When `action.Resource` is a non-empty
+// string, it carries the install-token form (`pkg=version` or
+// `pkg/source`) — the executor uses that so apt-get gets the user's
+// pin even though state stays keyed on the bare `action.ID`.
 func (p *Provider) Apply(ctx context.Context, action provider.Action) error {
-	slog.Info("apt install", "package", action.ID)
-	return p.runner.Install(ctx, []string{action.ID})
+	target := action.ID
+	if s, ok := action.Resource.(string); ok && s != "" {
+		target = s
+	}
+	slog.Info("apt install", "package", target)
+	return p.runner.Install(ctx, []string{target})
 }
 
 // Remove uninstalls an apt package.
@@ -192,15 +245,18 @@ func (p *Provider) handleInstall(ctx context.Context, args []string, hamsFlags m
 		if pkg == "" {
 			continue
 		}
-		// AddAppWithFields is a no-op on duplicate append at the YAML
-		// level, so guard with FindApp to keep the hamsfile idempotent.
-		if existingTag, _ := hf.FindApp(pkg); existingTag == "" {
-			extra := map[string]string{
-				"version": requestedVersion,
-				"source":  requestedSource,
-			}
-			hf.AddAppWithFields(tagCLI, pkg, "", extra)
+		// AddAppWithFields is now idempotent + merging: an existing
+		// bare entry is upgraded in place when extras are non-empty;
+		// a missing entry is appended; a fully matching entry is a
+		// no-op. The previous FindApp guard would have skipped the
+		// in-place upgrade case (existing bare entry + new pin), so
+		// it is intentionally absent here.
+		extra := map[string]string{
+			"version": requestedVersion,
+			"source":  requestedSource,
 		}
+		hf.AddAppWithFields(tagCLI, pkg, "", extra)
+
 		_, observed, probeErr := p.runner.IsInstalled(ctx, pkg)
 		if probeErr != nil {
 			slog.Warn("post-install version probe failed", "package", pkg, "error", probeErr)

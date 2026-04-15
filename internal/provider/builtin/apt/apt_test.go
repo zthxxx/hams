@@ -889,13 +889,16 @@ func TestPlan_VersionDriftEmitsUpdate(t *testing.T) {
 
 	var found bool
 	for _, a := range actions {
-		if a.Type == provider.ActionUpdate && a.ID == "nginx=1.24.0" {
-			found = true
-			break
+		if a.Type == provider.ActionUpdate && a.ID == "nginx" {
+			res, _ := a.Resource.(string)
+			if res == "nginx=1.24.0" {
+				found = true
+				break
+			}
 		}
 	}
 	if !found {
-		t.Errorf("Plan actions = %#v, want one with Type=Update and ID=nginx=1.24.0", actions)
+		t.Errorf("Plan actions = %#v, want one with Type=Update, ID=nginx, Resource=nginx=1.24.0", actions)
 	}
 }
 
@@ -942,4 +945,129 @@ func TestPlan_VersionMatchEmitsSkip(t *testing.T) {
 		}
 	}
 	t.Errorf("Plan actions = %#v, want one for nginx", actions)
+}
+
+// U29: hams apt install <pkg>=<ver> against an existing bare entry
+// upgrades the hamsfile entry IN PLACE — no duplicate, no skip.
+// Locks in the round-4 finding III fix.
+func TestHandleCommand_U29_BareToPinnedUpgrade(t *testing.T) {
+	h := newHarness(t)
+	// Pre-write hamsfile with {app: nginx} bare (simulate prior install
+	// without a pin).
+	if err := os.MkdirAll(h.profileDir, 0o750); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(h.hamsfilePath, []byte("cli:\n  - app: nginx\n"), 0o600); err != nil {
+		t.Fatalf("seed hamsfile: %v", err)
+	}
+
+	// Re-run install with a pin.
+	if err := h.provider.HandleCommand(context.Background(),
+		[]string{"install", "nginx=1.24.0"}, nil, h.flags); err != nil {
+		t.Fatalf("install: %v", err)
+	}
+
+	// Hamsfile should now have a SINGLE nginx entry with version pin.
+	apps := h.hamsfileApps()
+	if len(apps) != 1 || apps[0] != "nginx" {
+		t.Fatalf("hamsfile apps = %v, want exactly [nginx]", apps)
+	}
+	data, err := os.ReadFile(h.hamsfilePath)
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	body := string(data)
+	if !strings.Contains(body, "1.24.0") {
+		t.Errorf("upgrade did not write version pin: %q", body)
+	}
+
+	// State should record the pin.
+	sf, err := state.Load(h.statePath)
+	if err != nil {
+		t.Fatalf("state.Load: %v", err)
+	}
+	r := sf.Resources["nginx"]
+	if r.RequestedVersion != "1.24.0" {
+		t.Errorf("nginx.RequestedVersion = %q, want 1.24.0", r.RequestedVersion)
+	}
+}
+
+// U30: Plan on a fresh machine (state has no nginx entry) replays
+// the hamsfile-declared pin via action.Resource. Locks in finding I.
+func TestPlan_HamsfilePinReplaysOnFreshMachine(t *testing.T) {
+	h := newHarness(t)
+	hf, err := h.provider.loadOrCreateHamsfile(nil, h.flags)
+	if err != nil {
+		t.Fatalf("loadOrCreateHamsfile: %v", err)
+	}
+	hf.AddAppWithFields("cli", "nginx", "", map[string]string{"version": "1.24.0"})
+	if writeErr := hf.Write(); writeErr != nil {
+		t.Fatalf("hf.Write: %v", writeErr)
+	}
+
+	// Empty state: simulate fresh machine.
+	sf := state.New("apt", "test-machine")
+	if saveErr := sf.Save(h.statePath); saveErr != nil {
+		t.Fatalf("sf.Save: %v", saveErr)
+	}
+
+	hf2, _ := hamsfile.Read(h.hamsfilePath)
+	sf2, _ := state.Load(h.statePath)
+	actions, err := h.provider.Plan(context.Background(), hf2, sf2)
+	if err != nil {
+		t.Fatalf("Plan: %v", err)
+	}
+
+	var found bool
+	for _, a := range actions {
+		if a.ID != "nginx" {
+			continue
+		}
+		if a.Type != provider.ActionInstall {
+			t.Errorf("nginx action.Type = %v, want Install", a.Type)
+		}
+		res, _ := a.Resource.(string)
+		if res != "nginx=1.24.0" {
+			t.Errorf("nginx action.Resource = %q, want nginx=1.24.0", res)
+		}
+		found = true
+	}
+	if !found {
+		t.Errorf("Plan returned no nginx action: %#v", actions)
+	}
+}
+
+// U31: The full Apply path uses action.Resource (the install token)
+// when invoking the runner, so apt-get gets the pin even though state
+// stays keyed on the bare ID.
+func TestApply_UsesResourceOverIDForPinnedActions(t *testing.T) {
+	h := newHarness(t)
+	if err := h.provider.Apply(context.Background(), provider.Action{
+		ID:       "nginx",
+		Type:     provider.ActionInstall,
+		Resource: "nginx=1.24.0",
+	}); err != nil {
+		t.Fatalf("Apply: %v", err)
+	}
+	got := h.runner.LastCallArgs("install")
+	want := []string{"nginx=1.24.0"}
+	if !slicesEqual(got, want) {
+		t.Errorf("runner.Install args = %v, want %v (must use Resource over ID)", got, want)
+	}
+}
+
+// U32: Apply falls back to action.ID when Resource is empty/nil.
+func TestApply_FallsBackToIDWhenResourceEmpty(t *testing.T) {
+	h := newHarness(t)
+	if err := h.provider.Apply(context.Background(), provider.Action{
+		ID:   "htop",
+		Type: provider.ActionInstall,
+	}); err != nil {
+		t.Fatalf("Apply: %v", err)
+	}
+	got := h.runner.LastCallArgs("install")
+	want := []string{"htop"}
+	if !slicesEqual(got, want) {
+		t.Errorf("runner.Install args = %v, want %v (no Resource → use ID)", got, want)
+	}
 }
