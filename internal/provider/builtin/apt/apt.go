@@ -143,10 +143,10 @@ func (p *Provider) Plan(_ context.Context, desired *hamsfile.File, observed *sta
 // alongside the observed dpkg version (which is populated separately
 // by Refresh/Probe).
 func pinStateOpts(pkg, token string) []state.ResourceOption {
-	if v := strings.TrimPrefix(token, pkg+"="); v != token {
+	if v, ok := strings.CutPrefix(token, pkg+"="); ok {
 		return []state.ResourceOption{state.WithRequestedVersion(v)}
 	}
-	if s := strings.TrimPrefix(token, pkg+"/"); s != token {
+	if s, ok := strings.CutPrefix(token, pkg+"/"); ok {
 		return []state.ResourceOption{state.WithRequestedSource(s)}
 	}
 	return nil

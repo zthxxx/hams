@@ -890,8 +890,8 @@ func TestPlan_VersionDriftEmitsUpdate(t *testing.T) {
 	var found bool
 	for _, a := range actions {
 		if a.Type == provider.ActionUpdate && a.ID == "nginx" {
-			res, _ := a.Resource.(string)
-			if res == "nginx=1.24.0" {
+			res, ok := a.Resource.(string)
+			if ok && res == "nginx=1.24.0" {
 				found = true
 				break
 			}
@@ -1011,8 +1011,14 @@ func TestPlan_HamsfilePinReplaysOnFreshMachine(t *testing.T) {
 		t.Fatalf("sf.Save: %v", saveErr)
 	}
 
-	hf2, _ := hamsfile.Read(h.hamsfilePath)
-	sf2, _ := state.Load(h.statePath)
+	hf2, readErr := hamsfile.Read(h.hamsfilePath)
+	if readErr != nil {
+		t.Fatalf("re-read hamsfile: %v", readErr)
+	}
+	sf2, loadErr := state.Load(h.statePath)
+	if loadErr != nil {
+		t.Fatalf("re-load state: %v", loadErr)
+	}
 	actions, err := h.provider.Plan(context.Background(), hf2, sf2)
 	if err != nil {
 		t.Fatalf("Plan: %v", err)
@@ -1026,9 +1032,9 @@ func TestPlan_HamsfilePinReplaysOnFreshMachine(t *testing.T) {
 		if a.Type != provider.ActionInstall {
 			t.Errorf("nginx action.Type = %v, want Install", a.Type)
 		}
-		res, _ := a.Resource.(string)
-		if res != "nginx=1.24.0" {
-			t.Errorf("nginx action.Resource = %q, want nginx=1.24.0", res)
+		res, ok := a.Resource.(string)
+		if !ok || res != "nginx=1.24.0" {
+			t.Errorf("nginx action.Resource = %q (ok=%v), want nginx=1.24.0", res, ok)
 		}
 		found = true
 	}

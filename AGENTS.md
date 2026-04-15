@@ -134,13 +134,14 @@ This project uses [OpenSpec](https://openspec.dev) for spec-driven development.
 
 ## Current Task
 
-No active change. Three cycles archived this session:
+No active change. Four cycles archived this session:
 
 1. `fix-apt-cli-state-write-and-htop-rename` (2026-04-15) — apt CLI state-write + bat→htop rename + two-stage scope gate + per-provider docker integration matrix.
-2. `clarify-apply-state-only-semantics` (2026-04-15) — `hams apply --prune-orphans` opt-in destructive reconciliation for state-only providers (when the user has deleted the hamsfile). Default behavior preserved (skip).
-3. `apt-cli-complex-invocations` (2026-04-15) — apt CLI now auto-records `nginx=1.24.0` and `nginx/bookworm-backports` as structured `{app, version, source}` hamsfile entries with symmetric `requested_version` / `requested_source` state fields. Plan re-installs on host drift. Dry-run flags continue to short-circuit (correctly unrecordable).
+2. `clarify-apply-state-only-semantics` (2026-04-15) — `hams apply --prune-orphans` opt-in destructive reconciliation for state-only providers. Default skip preserved.
+3. `apt-cli-complex-invocations` (2026-04-15) — apt CLI now auto-records `nginx=1.24.0` and `nginx/bookworm-backports` as structured `{app, version, source}` hamsfile entries on the imperative install path; state carries symmetric `requested_version` / `requested_source` fields.
+4. `fix-apt-pin-apply-path` (2026-04-15) — closes cycle-3's three correctness gaps so pinning works on the **declarative + restore** paths too: Plan reads pins from the hamsfile via the new `(*File).AppFields(name)` helper; pinned actions carry the install token in `Action.Resource` (state stays keyed on the bare name); `AddAppWithFields` upgrades existing bare entries in place; executor populates `Action.StateOpts` so state records the pin after a successful install.
 
-Codex review fed each cycle's design: cycle-1 findings drove the apt CLI passthrough fix + the cycle-2 spec; cycle-2 findings drove the apt validation + state-only-skip pre-filter + the cycle-3 spec; cycle-3 findings drove the regex-guarded parser. Pattern: each round narrowed-then-extended the apt auto-record contract until grammar-aware recording was a deliberate spec extension instead of an iterative patch.
+Codex review fed each cycle's design (4 rounds total). Each round surfaced P2 findings → architect+user agent debate → in-session fix or new openspec proposal. Pattern: rounds 1-3 narrowed-then-extended the apt auto-record contract until grammar-aware recording was a deliberate spec extension; round 4 closed the apply-path gap that the cycle-3 spec scenarios promised but the implementation didn't deliver. Net: the canonical hams workflow (hand-edit YAML + apply, fresh-machine restore) now actually honors apt pins.
 
 Summary of the most recent (clarify-apply-state-only-semantics) cycle:
 
