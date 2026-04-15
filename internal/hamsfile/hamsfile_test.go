@@ -406,3 +406,113 @@ func TestAddAppWithFields_BareNameDoesNotEmitEmptyFields(t *testing.T) {
 		t.Errorf("empty extras leaked into YAML: %q", body)
 	}
 }
+
+func TestAppFields_ReturnsStructuredFields(t *testing.T) {
+	tmp := t.TempDir() + "/test.hams.yaml"
+	if err := os.WriteFile(tmp, []byte("cli:\n  - app: nginx\n    version: \"1.24.0\"\n    source: bp\n"), 0o600); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	f, err := Read(tmp)
+	if err != nil {
+		t.Fatalf("Read: %v", err)
+	}
+	got := f.AppFields("nginx")
+	wantVer, wantSrc := "1.24.0", "bp"
+	if got["version"] != wantVer || got["source"] != wantSrc {
+		t.Errorf("AppFields(nginx) = %v, want version=%q source=%q", got, wantVer, wantSrc)
+	}
+	if _, ok := got["app"]; ok {
+		t.Errorf("AppFields leaked the app key: %v", got)
+	}
+}
+
+func TestAppFields_ReturnsNilForUnknown(t *testing.T) {
+	tmp := t.TempDir() + "/test.hams.yaml"
+	if err := os.WriteFile(tmp, []byte("cli: []\n"), 0o600); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	f, err := Read(tmp)
+	if err != nil {
+		t.Fatalf("Read: %v", err)
+	}
+	if got := f.AppFields("nginx"); got != nil {
+		t.Errorf("AppFields(nginx) = %v, want nil for unknown entry", got)
+	}
+}
+
+func TestAppFields_ReturnsNilForBareEntry(t *testing.T) {
+	tmp := t.TempDir() + "/test.hams.yaml"
+	if err := os.WriteFile(tmp, []byte("cli:\n  - app: htop\n"), 0o600); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	f, err := Read(tmp)
+	if err != nil {
+		t.Fatalf("Read: %v", err)
+	}
+	got := f.AppFields("htop")
+	if len(got) != 0 {
+		t.Errorf("AppFields(htop) = %v, want nil/empty for bare entry", got)
+	}
+}
+
+// Locks in the in-place upgrade: a bare entry gains a pin without
+// duplicating the entry or moving it across tags.
+func TestAddAppWithFields_UpgradesBareEntryToPinned(t *testing.T) {
+	tmp := t.TempDir() + "/test.hams.yaml"
+	if err := os.WriteFile(tmp, []byte("cli:\n  - app: nginx\n"), 0o600); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	f, err := Read(tmp)
+	if err != nil {
+		t.Fatalf("Read: %v", err)
+	}
+	f.AddAppWithFields("cli", "nginx", "", map[string]string{"version": "1.24.0"})
+	if writeErr := f.Write(); writeErr != nil {
+		t.Fatalf("Write: %v", writeErr)
+	}
+
+	data, err := os.ReadFile(tmp)
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	body := string(data)
+	if !strings.Contains(body, "version: 1.24.0") {
+		t.Errorf("upgrade did not write version: %q", body)
+	}
+	if strings.Count(body, "app: nginx") != 1 {
+		t.Errorf("entry was duplicated, want exactly one app: nginx — got %q", body)
+	}
+}
+
+// Empty extras on an existing entry must be a no-op (round-trip
+// invariant; never re-emit empty strings as fields).
+func TestAddAppWithFields_EmptyExtrasOnExistingIsNoop(t *testing.T) {
+	tmp := t.TempDir() + "/test.hams.yaml"
+	original := "cli:\n  - app: nginx\n    version: \"1.24.0\"\n"
+	if err := os.WriteFile(tmp, []byte(original), 0o600); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	f, err := Read(tmp)
+	if err != nil {
+		t.Fatalf("Read: %v", err)
+	}
+	f.AddAppWithFields("cli", "nginx", "", map[string]string{"version": "", "source": ""})
+	if writeErr := f.Write(); writeErr != nil {
+		t.Fatalf("Write: %v", writeErr)
+	}
+	data, err := os.ReadFile(tmp)
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	body := string(data)
+	if !strings.Contains(body, "app: nginx") {
+		t.Errorf("noop call lost the app entry: %q", body)
+	}
+	// Tolerate either quoted or unquoted YAML scalar form for the version.
+	if !strings.Contains(body, "1.24.0") {
+		t.Errorf("noop call lost the version pin: %q", body)
+	}
+	if strings.Contains(body, "source:") {
+		t.Errorf("empty source extra leaked into YAML: %q", body)
+	}
+}
