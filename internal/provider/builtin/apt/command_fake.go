@@ -18,13 +18,6 @@ type FakeCmdRunner struct {
 	calls         []fakeCall
 	installErrors map[string]error
 	removeErrors  map[string]error
-	// silentSkip models real apt-get behaviors that succeed without
-	// actually installing a package: `--download-only`, `--simulate`,
-	// or a token that was really a flag-value mis-parsed as a package
-	// name. Names in this set pass through Install without error AND
-	// without entering the installed set, so subsequent IsInstalled
-	// returns false.
-	silentSkip map[string]bool
 }
 
 type fakeCall struct {
@@ -45,20 +38,7 @@ func NewFakeCmdRunner() *FakeCmdRunner {
 		installed:     make(map[string]string),
 		installErrors: make(map[string]error),
 		removeErrors:  make(map[string]error),
-		silentSkip:    make(map[string]bool),
 	}
-}
-
-// WithSilentSkip marks pkg as one that Install should pass through without
-// error AND without adding to the installed set. Models apt's
-// `--download-only`/`--simulate` semantics, plus the case where a flag-value
-// (e.g., `Debug::NoLocking=true` from `-o Debug::NoLocking=true`) sneaks past
-// the naive `packageArgs` flag stripper.
-func (f *FakeCmdRunner) WithSilentSkip(pkg string) *FakeCmdRunner {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.silentSkip[pkg] = true
-	return f
 }
 
 // Seed marks pkg as installed at the given version before the test starts.
@@ -101,9 +81,6 @@ func (f *FakeCmdRunner) Install(_ context.Context, args []string) error {
 		}
 	}
 	for _, pkg := range pkgs {
-		if f.silentSkip[pkg] {
-			continue
-		}
 		f.installed[pkg] = "fake-1.0.0"
 	}
 	return nil

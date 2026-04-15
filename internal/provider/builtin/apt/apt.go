@@ -147,6 +147,18 @@ func (p *Provider) handleInstall(ctx context.Context, args []string, hamsFlags m
 		return err
 	}
 
+	// Complex invocation? hams owns the bare-name install/remove path
+	// (`hams apt install jq htop`). Anything beyond that — version pinning
+	// (`foo=1.2`), release pinning (`foo/bookworm-backports`), or any
+	// dry-run flag — is executed (passthrough preserved) but NOT auto-
+	// recorded: the user opted into apt-grammar-aware behavior, so they
+	// also own the hamsfile + state declaration. Tracked in the deferred
+	// proposal `apt-cli-complex-invocations`.
+	if isComplexAptInvocation(args) {
+		slog.Warn("hams apt install completed but did not auto-record (complex invocation: version pin, release pin, or dry-run flag). To declare these resources, edit the apt hamsfile and run `hams apply`.", "args", args)
+		return nil
+	}
+
 	hf, err := p.loadOrCreateHamsfile(hamsFlags, flags)
 	if err != nil {
 		return err
@@ -155,26 +167,14 @@ func (p *Provider) handleInstall(ctx context.Context, args []string, hamsFlags m
 	sf := p.loadOrCreateStateFile(flags)
 
 	for _, pkg := range packages {
-		// Validate via dpkg before recording. `packageArgs` strips dash-prefixed
-		// flags but cannot distinguish flag-VALUES (e.g., the `Debug::NoLocking=true`
-		// in `-o Debug::NoLocking=true`) from real package names; a real apt grammar
-		// parser would be a deep dependency. Instead, use IsInstalled as the source
-		// of truth — a token apt didn't actually install (because it was a flag
-		// value, or because `--download-only`/`--simulate` was passed) returns
-		// false here and we skip recording it.
-		installed, version, probeErr := p.runner.IsInstalled(ctx, pkg)
-		if probeErr != nil {
-			slog.Warn("post-install probe failed; not recording", "package", pkg, "error", probeErr)
-			continue
-		}
-		if !installed {
-			slog.Warn("apt did not install package; not recording (dry-run, --download-only, or arg was a flag value)", "package", pkg)
-			continue
-		}
 		// AddApp is a no-op on duplicate append at the YAML level, so guard
 		// with FindApp to keep the hamsfile idempotent.
 		if existingTag, _ := hf.FindApp(pkg); existingTag == "" {
 			hf.AddApp(tagCLI, pkg, "")
+		}
+		_, version, probeErr := p.runner.IsInstalled(ctx, pkg)
+		if probeErr != nil {
+			slog.Warn("post-install version probe failed", "package", pkg, "error", probeErr)
 		}
 		sf.SetResource(pkg, state.StateOK, state.WithVersion(version))
 	}
@@ -210,6 +210,13 @@ func (p *Provider) handleRemove(ctx context.Context, args []string, hamsFlags ma
 	// runs the multi-package remove as one transaction.
 	if err := p.runner.Remove(ctx, args); err != nil {
 		return err
+	}
+
+	// Same complex-invocation guard as install: dry-run flags + grammar
+	// extensions are passed through but not auto-recorded.
+	if isComplexAptInvocation(args) {
+		slog.Warn("hams apt remove completed but did not auto-record (complex invocation: dry-run flag or grammar extension). To declare these resources, edit the apt hamsfile and run `hams apply`.", "args", args)
+		return nil
 	}
 
 	hf, err := p.loadOrCreateHamsfile(hamsFlags, flags)
@@ -260,6 +267,50 @@ func packageArgs(args []string) []string {
 		out = append(out, a)
 	}
 	return out
+}
+
+// aptDryRunFlags lists apt-get flags that mean "don't actually install" —
+// commands that succeed without changing the package set on disk. The
+// auto-record path refuses to bookkeep these because dpkg-state cannot
+// distinguish "this invocation installed it" from "it was already there".
+var aptDryRunFlags = map[string]bool{
+	"--download-only": true,
+	"--simulate":      true,
+	"-s":              true,
+	"--just-print":    true,
+	"--no-act":        true,
+	"--recon":         true,
+}
+
+// isComplexAptInvocation returns true if any arg uses apt-get grammar
+// extensions beyond the bare-name install/remove path that hams's CLI
+// auto-record contract supports. The three trip-wires:
+//
+//   - `=` anywhere in a token: version pinning (`foo=1.2`) or an apt
+//     `-o KEY=VALUE` option value.
+//   - `/` anywhere in a token: release pinning (`foo/bookworm-backports`).
+//   - any token in `aptDryRunFlags`: apt invoked without changing host
+//     state, so post-hoc dpkg probing cannot distinguish what THIS
+//     invocation did from prior installs.
+//
+// A true result short-circuits the auto-record bookkeeping; apt-get is
+// still executed (passthrough preserved). Future grammar-aware recording
+// is tracked in the deferred openspec proposal `apt-cli-complex-invocations`.
+func isComplexAptInvocation(args []string) bool {
+	for _, a := range args {
+		if aptDryRunFlags[a] {
+			return true
+		}
+		if strings.HasPrefix(a, "-") {
+			// -o KEY=VAL passes the value as a separate arg; the value
+			// will trip the `=` check on the next iteration.
+			continue
+		}
+		if strings.ContainsAny(a, "=/") {
+			return true
+		}
+	}
+	return false
 }
 
 func parseDpkgVersion(output string) string {

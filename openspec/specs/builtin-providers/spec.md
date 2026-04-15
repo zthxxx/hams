@@ -894,6 +894,18 @@ All commands invoked through the `CmdRunner` interface's real implementation (bo
 
 The apt provider's CLI handlers (`hams apt install`, `hams apt remove`) SHALL load and atomically persist `<store>/.state/<machine-id>/apt.state.yaml` after each successful `runner.Install` / `runner.Remove` invocation. State writes from the CLI handlers SHALL go through `state.SetResource(...)` (with `state.WithVersion(...)` for installs) so timestamps (`first_install_at`, `updated_at`, `removed_at`) follow the same lifecycle rules the executor uses. The executor (`provider.Executor`) retains state-write authority for the declarative `hams apply` path. Both writers reuse the same atomic-write helper to avoid partial-state on crash.
 
+**Complex invocation scope (auto-record contract):**
+
+The auto-record path (CLI mutation of hamsfile + state) covers ONLY the bare-name install/remove syntax: `hams apt install <pkg1> <pkg2> ...` and `hams apt remove <pkg1> <pkg2> ...`. Apt-get grammar extensions and dry-run flags fall outside this contract:
+
+- **Version pinning** — any token containing `=` (e.g., `nginx=1.24.0`).
+- **Release pinning** — any token containing `/` (e.g., `nginx/bookworm-backports`).
+- **Dry-run flags** — `--download-only`, `--simulate`, `-s`, `--just-print`, `--no-act`, `--recon`.
+
+A "complex invocation" SHALL still execute apt-get (passthrough is preserved — flags reach the real package manager) but SHALL NOT mutate the hamsfile or state. The CLI handler SHALL emit a warning log naming the invocation and pointing the user at the declarative path: edit the hamsfile and run `hams apply`. This boundary keeps hams from silently recording phantom packages from `-o KEY=VAL` flag values, from misclassifying version-pinned tokens as raw package names, or from recording packages that were already installed when a dry-run flag short-circuited the actual install.
+
+Future grammar-aware recording (e.g., serialising version pins as a structured `{app: nginx, version: '1.24.0'}` hamsfile entry) requires hamsfile schema extensions and is tracked in the deferred openspec proposal `apt-cli-complex-invocations`.
+
 **LLM enrichment:**
 
 - Source: `apt show <package>` provides `Description`, `Homepage`.
@@ -989,6 +1001,37 @@ The apt provider's CLI handlers (`hams apt install`, `hams apt remove`) SHALL lo
 - **AND** SHALL assert that `apt.hams.yaml` on the test tempdir now contains `{app: htop}`
 - **AND** SHALL assert that `apt.state.yaml` on the test tempdir now contains `resources.htop.state = ok` with `first_install_at` and `updated_at` populated
 - **AND** SHALL fail if any assertion fails — the fake does not shell out to real `apt-get`, making this assertion runnable on any developer's machine regardless of OS or privilege level.
+
+#### Scenario: Version-pinned install is executed but not auto-recorded
+
+- **WHEN** the user runs `hams apt install nginx=1.24.0`
+- **THEN** the apt provider SHALL invoke `runner.Install(ctx, ["nginx=1.24.0"])` so apt-get installs nginx pinned at version 1.24.0
+- **AND** SHALL emit a warning log naming the invocation as a complex (version-pinned) call
+- **AND** SHALL NOT modify `apt.hams.yaml`
+- **AND** SHALL NOT modify `apt.state.yaml`.
+
+#### Scenario: Release-pinned install is executed but not auto-recorded
+
+- **WHEN** the user runs `hams apt install nginx/bookworm-backports`
+- **THEN** the apt provider SHALL invoke `runner.Install(ctx, ["nginx/bookworm-backports"])` so apt-get installs nginx from the bookworm-backports release
+- **AND** SHALL emit a warning log naming the invocation as a complex (release-pinned) call
+- **AND** SHALL NOT modify `apt.hams.yaml`
+- **AND** SHALL NOT modify `apt.state.yaml`.
+
+#### Scenario: Dry-run flag is executed but not auto-recorded
+
+- **WHEN** the user runs `hams apt install --download-only htop` (or any of `--simulate`, `-s`, `--just-print`, `--no-act`, `--recon`)
+- **THEN** the apt provider SHALL invoke `runner.Install(ctx, ["--download-only", "htop"])` so apt-get downloads htop without installing it
+- **AND** SHALL emit a warning log naming the invocation as a complex (dry-run) call
+- **AND** SHALL NOT modify `apt.hams.yaml`
+- **AND** SHALL NOT modify `apt.state.yaml`.
+
+#### Scenario: Benign passthrough flag still auto-records
+
+- **WHEN** the user runs `hams apt install --no-install-recommends htop`
+- **THEN** the apt provider SHALL invoke `runner.Install(ctx, ["--no-install-recommends", "htop"])` and continue into the auto-record path
+- **AND** SHALL append `{app: htop}` to `apt.hams.yaml`
+- **AND** SHALL write `apt.state.yaml.resources.htop.state = ok`. Benign flags (those that do not pin versions, pin releases, or short-circuit installation) preserve the auto-record contract.
 
 ---
 

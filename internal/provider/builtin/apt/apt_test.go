@@ -661,61 +661,105 @@ func TestHandleCommand_U19_InstallMultiPackageIsAtomic(t *testing.T) {
 	}
 }
 
-// U20: --download-only / --simulate must NOT record state. Locks in the
-// codex P2 fix — `runner.Install(ctx, args)` faithfully forwards the user's
-// flags so apt does NOT actually install the package, but the bookkeeping
-// loop must NOT then record `htop` as state=ok. The new IsInstalled gate
-// catches this.
+// U20: dry-run flags (--download-only / --simulate / -s / ...) execute
+// the apt-get call (passthrough) but skip auto-record entirely. The
+// hamsfile + state remain unchanged so `hams apply` does not later try
+// to reconcile against a state row that was never genuinely installed.
+// Codex round-3 finding: dpkg-based gate could not distinguish dry-run
+// on a pre-existing install from a real install; the upstream
+// `isComplexAptInvocation` guard sidesteps the question entirely.
 func TestHandleCommand_U20_DownloadOnlyDoesNotRecordState(t *testing.T) {
 	h := newHarness(t)
-	h.runner.WithSilentSkip("htop")
 
 	if err := h.provider.HandleCommand(context.Background(),
 		[]string{"install", "--download-only", "htop"}, nil, h.flags); err != nil {
 		t.Fatalf("install: %v", err)
 	}
 
-	// runner.Install was forwarded the full args (including --download-only).
+	// runner.Install was still forwarded (passthrough preserved).
 	got := h.runner.LastCallArgs("install")
 	want := []string{"--download-only", "htop"}
 	if !slicesEqual(got, want) {
 		t.Errorf("runner.Install args = %v, want %v", got, want)
 	}
 
-	// htop was NOT recorded — IsInstalled returned false (silentSkip).
+	// Auto-record was refused — no hamsfile, no state file.
 	if apps := h.hamsfileApps(); len(apps) != 0 {
-		t.Errorf("hamsfile apps = %v, want [] (download-only must not record)", apps)
+		t.Errorf("hamsfile apps = %v, want [] (dry-run flag must not auto-record)", apps)
 	}
 	if _, statErr := os.Stat(h.statePath); statErr == nil {
-		sf, loadErr := state.Load(h.statePath)
-		if loadErr != nil {
-			t.Fatalf("state.Load: %v", loadErr)
-		}
-		if _, present := sf.Resources["htop"]; present {
-			t.Error("state should NOT contain htop after --download-only")
-		}
+		t.Error("state file should not exist after --download-only auto-record refusal")
 	}
 }
 
 // U21: a flag-VALUE that sneaks past packageArgs (e.g., `Debug::NoLocking=true`
-// from `-o Debug::NoLocking=true`) must NOT be recorded as a package. The
-// IsInstalled gate catches it because dpkg has no such package.
-func TestHandleCommand_U21_FlagValueNotRecordedAsPackage(t *testing.T) {
+// from `-o Debug::NoLocking=true`) trips the `=`/`/` complex-invocation
+// detector. The whole invocation is passthrough but no auto-record runs —
+// not for the flag value (correct), and also not for the legitimate `htop`
+// (the user took explicit control of the apt invocation; they own the
+// hamsfile declaration too). Documented in the spec's "Complex invocation
+// scope" paragraph.
+func TestHandleCommand_U21_ComplexInvocationDoesNotAutoRecord(t *testing.T) {
 	h := newHarness(t)
-	// The fake will treat both `Debug::NoLocking=true` and `htop` as install
-	// candidates (packageArgs strips `-o` but the value passes through).
-	// Mark the flag value as silent-skip so IsInstalled returns false for it
-	// — modeling real apt-get treating it as a config option, not a package.
-	h.runner.WithSilentSkip("Debug::NoLocking=true")
 
 	if err := h.provider.HandleCommand(context.Background(),
 		[]string{"install", "-o", "Debug::NoLocking=true", "htop"}, nil, h.flags); err != nil {
 		t.Fatalf("install: %v", err)
 	}
 
-	// Only htop should be recorded; the flag-value must be filtered out.
+	if apps := h.hamsfileApps(); len(apps) != 0 {
+		t.Errorf("hamsfile apps = %v, want [] (complex invocation must not auto-record)", apps)
+	}
+	if _, statErr := os.Stat(h.statePath); statErr == nil {
+		t.Error("state file should not exist after complex invocation auto-record refusal")
+	}
+}
+
+// U22: version-pinning syntax (`foo=1.2`) — apt installs `foo` with the
+// pinned version, but the auto-record path refuses because hams's bare-name
+// recording can't carry the version pin (would need a hamsfile schema
+// extension; tracked in apt-cli-complex-invocations proposal).
+func TestHandleCommand_U22_VersionPinDoesNotAutoRecord(t *testing.T) {
+	h := newHarness(t)
+
+	if err := h.provider.HandleCommand(context.Background(),
+		[]string{"install", "nginx=1.24.0"}, nil, h.flags); err != nil {
+		t.Fatalf("install: %v", err)
+	}
+
+	if apps := h.hamsfileApps(); len(apps) != 0 {
+		t.Errorf("hamsfile apps = %v, want [] (version pin must not auto-record)", apps)
+	}
+}
+
+// U23: release-pinning syntax (`foo/release`) — same contract as U22.
+func TestHandleCommand_U23_ReleasePinDoesNotAutoRecord(t *testing.T) {
+	h := newHarness(t)
+
+	if err := h.provider.HandleCommand(context.Background(),
+		[]string{"install", "nginx/bookworm-backports"}, nil, h.flags); err != nil {
+		t.Fatalf("install: %v", err)
+	}
+
+	if apps := h.hamsfileApps(); len(apps) != 0 {
+		t.Errorf("hamsfile apps = %v, want [] (release pin must not auto-record)", apps)
+	}
+}
+
+// U24: passthrough flags that don't change install semantics
+// (--no-install-recommends) DO auto-record — they're not "complex". This
+// is the original round-1 case that motivated `--prune-orphans`-adjacent
+// fixes; lock it in to prevent the U20-U23 narrowing from over-correcting.
+func TestHandleCommand_U24_BenignPassthroughFlagStillRecords(t *testing.T) {
+	h := newHarness(t)
+
+	if err := h.provider.HandleCommand(context.Background(),
+		[]string{"install", "--no-install-recommends", "htop"}, nil, h.flags); err != nil {
+		t.Fatalf("install: %v", err)
+	}
+
 	apps := h.hamsfileApps()
 	if len(apps) != 1 || apps[0] != "htop" {
-		t.Errorf("hamsfile apps = %v, want [htop] (flag-value must not be recorded)", apps)
+		t.Errorf("hamsfile apps = %v, want [htop] (--no-install-recommends is benign)", apps)
 	}
 }
