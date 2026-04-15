@@ -65,3 +65,5 @@ __debug_bin*
 .next
 out
 dist
+
+.claude/*.lock
