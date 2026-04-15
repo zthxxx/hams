@@ -134,7 +134,56 @@ This project uses [OpenSpec](https://openspec.dev) for spec-driven development.
 
 ## Current Task
 
-No active change. Four cycles archived this session:
+Active: `homebrew-bootstrap-opt-in` (2026-04-16). Critical-architect
+review of the 4 archived cycles surfaced a real spec/code divergence
+in the Homebrew provider: `builtin-providers/spec.md:375-378` said
+hams SHALL auto-bootstrap `brew` via `depend-on: bash`, but
+`homebrew.go:60-66` just returned an error and `DependOn.Script`
+had no caller anywhere in the tree (dead data since v1).
+
+Autonomous architect-role + user-role Agent debate (position papers
+preserved verbatim in `openspec/changes/homebrew-bootstrap-opt-in/design.md`)
+converged on Option C — **explicit opt-in**. Core arguments:
+
+- Option A (silent auto-bootstrap) violates least astonishment +
+  trust; `curl | bash` is blocked by corporate proxies; macOS
+  Xcode-CLT dialog blocks stdin; integration tests already pre-install
+  brew because the team itself didn't trust the auto-path.
+- Option B (error-only) drops fresh-Mac users off a cliff on day one,
+  killing the "one-command restore" promise on the flagship platform.
+- Option C gives receipts AND convenience: default = actionable
+  error with the exact script text; `--bootstrap` flag = non-interactive
+  consent; TTY prompt = `[y/N/s]` with Xcode-CLT gotcha warning.
+
+Implementation (4 commits + docs):
+1. `feat(provider)`: `RunBootstrap(ctx, p, registry)` + `BashScriptRunner`
+   interface + `WithBootstrapAllowed`/`BootstrapAllowed` ctx helpers +
+   `ErrBootstrapRequired` sentinel + `BootstrapRequiredError` typed
+   error. Bash provider implements `RunScript` via `/bin/bash -c <script>`
+   with stdin/stdout/stderr passthrough + a DI seam.
+2. `feat(homebrew)`: Bootstrap returns `*provider.BootstrapRequiredError`
+   when `brew` is missing. Provider stays pure (no registry dependency).
+   `brewBinaryLookup` var as PATH-check seam for tests.
+3. `feat(cli)`: `--bootstrap` / `--no-bootstrap` flags; `resolveBootstrapConsent`
+   decision matrix (deny-flag / allow-flag / non-TTY-deny / TTY-prompt);
+   interactive prompt shows script + sudo/Xcode/proxy warnings + `[y/N/s]`;
+   `s` = skip-provider-for-this-run; mutual-exclusion = exit 2.
+4. `chore`: lint fixes (errcheck/gocritic/nolintlint/revive) across the
+   new code; scope decision §4 to skip the full end-to-end integration
+   variant (would duplicate build-time `install.sh` coverage + add
+   ~5min per CI run against a network dependency; 16 unit tests already
+   cover every branch of the consent matrix + delegation path).
+5. `docs`: apply page + homebrew provider page + README (en + zh-CN)
+   all describe the default/--bootstrap/TTY behavior + Xcode-CLT gotcha.
+
+Verification: `task check` green (fmt/lint/test); `task ci:itest:run
+PROVIDER=apt` green (regression check against modified bootstrap loop);
+`task ci:itest:run PROVIDER=homebrew` in progress at archive time.
+13 spec scenarios all mapped to named unit tests in `tasks.md §6.8`.
+
+---
+
+Four cycles archived this session (2026-04-15):
 
 1. `fix-apt-cli-state-write-and-htop-rename` (2026-04-15) — apt CLI state-write + bat→htop rename + two-stage scope gate + per-provider docker integration matrix.
 2. `clarify-apply-state-only-semantics` (2026-04-15) — `hams apply --prune-orphans` opt-in destructive reconciliation for state-only providers. Default skip preserved.
