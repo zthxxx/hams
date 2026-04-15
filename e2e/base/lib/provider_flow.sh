@@ -191,14 +191,17 @@ standard_cli_flow() {
   fi
 
   # -------------------------------------------------------------------
-  # Step 5: remove the new package. State transitions to removed and
-  # records removed_at; the check hook must fail again. Update the
-  # hamsfile BEFORE the reconcile so apply's Plan sees the deletion.
+  # Step 5: remove the new package via hamsfile-delete + apply so the
+  # flow works uniformly across providers. Calling `hams <p> remove`
+  # imperatively and THEN `apply` would double-execute for non-apt
+  # providers (apply's executor still wants to remove it because state
+  # hadn't transitioned yet), and many upstream tools (e.g. pnpm) error
+  # on "can't remove — not found". hamsfile-delete + apply is the
+  # universal path — state transitions to removed and removed_at is set
+  # as part of the executor's Remove step.
   # -------------------------------------------------------------------
-  assert_success "remove: hams $provider remove $new_pkg" \
-    hams --store="$HAMS_STORE" "$provider" remove "$new_pkg"
   _write_hamsfile_pkgs "$existing_pkg"
-  assert_success "reconcile after remove" _reconcile
+  assert_success "reconcile after hamsfile-delete of $new_pkg" _reconcile
   if "$check_fn" "$new_pkg"; then
     echo "FAIL: $new_pkg should be absent after hams $provider remove"
     exit 1

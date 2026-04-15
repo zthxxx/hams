@@ -18,3 +18,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
  && corepack enable \
  && corepack prepare pnpm@latest --activate \
  && pnpm --version
+
+# pnpm's `add -g` needs PNPM_HOME + PATH set, otherwise it refuses to
+# install global binaries. Pre-configure so integration.sh doesn't need
+# to `pnpm setup`.
+ENV PNPM_HOME=/root/.local/share/pnpm
+ENV PATH="${PNPM_HOME}:${PATH}"
+RUN mkdir -p "${PNPM_HOME}"
