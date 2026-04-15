@@ -4,7 +4,7 @@
 
 ### Requirement: apt Provider
 
-The `apt` Provider has the same shape as `homebrew`, with Debian/Ubuntu-specific commands:
+The apt provider SHALL wrap `apt-get install`, `apt-get remove`, and `dpkg -s` for Debian/Ubuntu-based Linux systems. The CLI handlers SHALL also write `<store>/.state/<machine-id>/apt.state.yaml` directly after each successful install / remove (in addition to mutating the hamsfile), so imperative actions produce a state-file audit trail without requiring a follow-up `hams apply`. The `apt` Provider has the same shape as `homebrew`, with Debian/Ubuntu-specific commands:
 
 - **Detect:** `command -v apt-get` and `[ -f /etc/debian_version ]`.
 - **Capabilities:** `install`, `remove`, `update`, `upgrade`, `list`, `search`, `show`, `apply`.
