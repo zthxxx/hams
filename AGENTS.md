@@ -134,12 +134,13 @@ This project uses [OpenSpec](https://openspec.dev) for spec-driven development.
 
 ## Current Task
 
-Active: `homebrew-bootstrap-opt-in` (2026-04-16). Critical-architect
-review of the 4 archived cycles surfaced a real spec/code divergence
-in the Homebrew provider: `builtin-providers/spec.md:375-378` said
-hams SHALL auto-bootstrap `brew` via `depend-on: bash`, but
-`homebrew.go:60-66` just returned an error and `DependOn.Script`
-had no caller anywhere in the tree (dead data since v1).
+No active change. Archived 2026-04-16:
+`homebrew-bootstrap-opt-in` — critical-architect review of the 4
+archived cycles surfaced a real spec/code divergence in the Homebrew
+provider: `builtin-providers/spec.md:375-378` said hams SHALL
+auto-bootstrap `brew` via `depend-on: bash`, but `homebrew.go:60-66`
+just returned an error and `DependOn.Script` had no caller anywhere
+in the tree (dead data since v1).
 
 Autonomous architect-role + user-role Agent debate (position papers
 preserved verbatim in `openspec/changes/homebrew-bootstrap-opt-in/design.md`)
@@ -178,12 +179,16 @@ Implementation (4 commits + docs):
 
 Verification: `task check` green (fmt/lint/test); `task ci:itest:run
 PROVIDER=apt` green (regression check against modified bootstrap loop);
-`task ci:itest:run PROVIDER=homebrew` in progress at archive time.
-13 spec scenarios all mapped to named unit tests in `tasks.md §6.8`.
+`task ci:itest:run PROVIDER=homebrew` green (main pre-installed path
+still end-to-end: seed install → re-install → install-new → refresh →
+remove-via-hamsfile-delete). 13 spec scenarios all mapped to named
+unit tests in the archived `tasks.md §6.8`. Archived with spec
+deltas hand-applied (same workaround as the prior 4 cycles for the
+openspec auto-sync header-matching bug on MODIFIED blocks).
 
 ---
 
-Four cycles archived this session (2026-04-15):
+Five cycles archived this session (2026-04-15 + 2026-04-16):
 
 1. `fix-apt-cli-state-write-and-htop-rename` (2026-04-15) — apt CLI state-write + bat→htop rename + two-stage scope gate + per-provider docker integration matrix.
 2. `clarify-apply-state-only-semantics` (2026-04-15) — `hams apply --prune-orphans` opt-in destructive reconciliation for state-only providers. Default skip preserved.
