@@ -41,9 +41,27 @@ default_post_install_check() {
 #
 # Requires these env vars:
 #   HAMS_STORE       — store directory (value for --store and state root).
-#   HAMS_MACHINE_ID  — machine id; state file lives at $HAMS_STORE/.state/$HAMS_MACHINE_ID/<provider>.state.yaml.
-# Optional:
+#   HAMS_MACHINE_ID  — machine id; state file lives at $HAMS_STORE/.state/$HAMS_MACHINE_ID/<state-prefix>.state.yaml.
+# Optional env vars:
+#   STATE_FILE_PREFIX  — overrides the state-file basename. Required when
+#                        the provider's `Manifest().FilePrefix` differs
+#                        from `Manifest().Name` (e.g., vscodeext: Name
+#                        `code-ext`, FilePrefix `vscodeext`; homebrew:
+#                        Name `brew`, FilePrefix `Homebrew`). Defaults
+#                        to the provider name passed as $1.
 #   POST_INSTALL_CHECK — bash function name used in place of `command -v`.
+#                        Set + `export -f <fn>` it for providers that
+#                        don't install a PATH binary (bash, git-config,
+#                        git-clone, code-ext).
+#
+# State-write semantics: today only the apt provider writes state directly
+# from its CLI install/remove handlers (per the spec delta in
+# `fix-apt-cli-state-write-and-htop-rename`). Every other provider still
+# follows the original "CLI mutates hamsfile; apply reconciles state"
+# pattern. To keep the helper portable across both, every install / remove
+# is followed by `hams apply --only=<provider>` — a no-op for apt (state
+# already up-to-date) and the load-bearing reconciliation step for the
+# other ten providers.
 standard_cli_flow() {
   local provider="$1"
   local install_verb="$2"
@@ -60,18 +78,28 @@ standard_cli_flow() {
   fi
 
   local check_fn="${POST_INSTALL_CHECK:-default_post_install_check}"
-  local state_file="$HAMS_STORE/.state/$HAMS_MACHINE_ID/$provider.state.yaml"
+  local state_prefix="${STATE_FILE_PREFIX:-$provider}"
+  local state_file="$HAMS_STORE/.state/$HAMS_MACHINE_ID/${state_prefix}.state.yaml"
 
   echo ""
   echo "--- standard_cli_flow ($provider: seed=$existing_pkg, new=$new_pkg) ---"
 
+  # _reconcile runs `hams apply --only=<provider>` so providers that don't
+  # write state from their CLI handler (everyone except apt today) still
+  # converge their state file. For apt this call is a no-op against state
+  # — the install handler already wrote it.
+  _reconcile() {
+    hams --store="$HAMS_STORE" apply --only="$provider"
+  }
+
   # -------------------------------------------------------------------
   # Step 1: seed install of the "existing" package establishes the
   # baseline state row. Capture first_install_at for step 3's immutability
-  # assertion. apt-get is idempotent so this is safe on pre-installed hosts.
+  # assertion. Idempotent re-installs are safe on already-installed hosts.
   # -------------------------------------------------------------------
-  assert_success "seed: hams $provider $install_verb $existing_pkg" \
+  assert_success "seed install: hams $provider $install_verb $existing_pkg" \
     hams --store="$HAMS_STORE" "$provider" "$install_verb" "$existing_pkg"
+  assert_success "reconcile after seed install" _reconcile
   assert_yaml_field_eq "$existing_pkg.state=ok after seed install" \
     "$state_file" ".resources.$existing_pkg.state" 'ok'
 
@@ -90,6 +118,7 @@ standard_cli_flow() {
   # -------------------------------------------------------------------
   assert_success "re-install: hams $provider $install_verb $existing_pkg" \
     hams --store="$HAMS_STORE" "$provider" "$install_verb" "$existing_pkg"
+  assert_success "reconcile after re-install" _reconcile
   assert_yaml_field_eq "$existing_pkg.first_install_at unchanged after re-install" \
     "$state_file" ".resources.$existing_pkg.first_install_at" "$first_install_at"
   assert_yaml_field_lex_gt "$existing_pkg.updated_at > first_install_at after re-install" \
@@ -105,6 +134,7 @@ standard_cli_flow() {
   fi
   assert_success "install new package: hams $provider $install_verb $new_pkg" \
     hams --store="$HAMS_STORE" "$provider" "$install_verb" "$new_pkg"
+  assert_success "reconcile after new-package install" _reconcile
   if ! "$check_fn" "$new_pkg"; then
     echo "FAIL: $new_pkg should be installed after hams $provider $install_verb"
     exit 1
@@ -142,6 +172,7 @@ standard_cli_flow() {
   # -------------------------------------------------------------------
   assert_success "remove: hams $provider remove $new_pkg" \
     hams --store="$HAMS_STORE" "$provider" remove "$new_pkg"
+  assert_success "reconcile after remove" _reconcile
   if "$check_fn" "$new_pkg"; then
     echo "FAIL: $new_pkg should be absent after hams $provider remove"
     exit 1

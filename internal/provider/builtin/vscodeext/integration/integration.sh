@@ -26,11 +26,17 @@ assert_success "code CLI is on PATH" command -v code
 
 # Post-install check: `code --list-extensions | grep <pkg>`.
 # Extensions install into the VS Code CLI's user data dir; there's no PATH
-# binary to probe with `command -v`.
+# binary to probe with `command -v`. Export the function so it survives any
+# subshell that standard_cli_flow might use.
 ext_installed_check() {
-  code --list-extensions 2>/dev/null | grep -qiE "^$1$"
+  code --list-extensions 2>/dev/null | grep -qiE "^$1\$"
 }
-POST_INSTALL_CHECK=ext_installed_check
+export -f ext_installed_check
+export POST_INSTALL_CHECK=ext_installed_check
 
-# Two small extensions. vscode-icons is ubiquitous; bungcip.better-toml is tiny.
-standard_cli_flow code-ext install vscode-icons-team.vscode-icons bungcip.better-toml
+# vscodeext provider has Name=code-ext but FilePrefix=vscodeext, so override
+# the state-file name explicitly. Two small well-maintained extensions:
+# `vscode-icons-team.vscode-icons` is ubiquitous; `tamasfe.even-better-toml`
+# succeeded the deprecated bungcip.better-toml.
+export STATE_FILE_PREFIX=vscodeext
+standard_cli_flow code-ext install vscode-icons-team.vscode-icons tamasfe.even-better-toml

@@ -62,16 +62,18 @@ YAML
 assert_success "hams apply --only=ansible runs the playbook" \
   hams --store="$HAMS_STORE" apply --only=ansible
 assert_success "apply created the marker" test -f "$MARKER"
+# Use bracket-notation for the resource key — the playbook path contains
+# `.` which yq would otherwise interpret as a child-lookup separator.
 assert_yaml_field_eq "ansible.state records the playbook" \
-  "$ANSIBLE_STATE" ".resources.\"${PLAYBOOK}\".state" 'ok'
+  "$ANSIBLE_STATE" ".resources[\"${PLAYBOOK}\"].state" 'ok'
 
-FIRST_INSTALL=$(yq -r ".resources.\"${PLAYBOOK}\".first_install_at" "$ANSIBLE_STATE")
+FIRST_INSTALL=$(yq -r ".resources[\"${PLAYBOOK}\"].first_install_at" "$ANSIBLE_STATE")
 
 # --- Step 3: refresh re-probes (no-op for ansible since probe returns state unchanged) ---
 sleep 1
 assert_success "hams refresh --only=ansible" \
   hams --store="$HAMS_STORE" refresh --only=ansible
-AFTER_REFRESH=$(yq -r ".resources.\"${PLAYBOOK}\".updated_at" "$ANSIBLE_STATE")
+AFTER_REFRESH=$(yq -r ".resources[\"${PLAYBOOK}\"].updated_at" "$ANSIBLE_STATE")
 if [ "$AFTER_REFRESH" \> "$FIRST_INSTALL" ]; then
   echo "  ok: refresh bumped ansible updated_at"
 else

@@ -26,4 +26,4 @@ YAML
 assert_output_contains "hams --version" "hams version" hams --version
 assert_success "pnpm is on PATH" command -v pnpm
 
-standard_cli_flow pnpm add serve sort-package-json
+standard_cli_flow pnpm add serve nodemon

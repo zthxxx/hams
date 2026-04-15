@@ -291,8 +291,13 @@ tasks:
       BASE_HASH:
         sh: sha256sum e2e/base/Dockerfile | head -c 12
       PROV_DIR: 'internal/provider/builtin/{{.PROVIDER}}/integration'
+      # IMPORTANT: PROV_HASH must compose the BASE Dockerfile + the
+      # provider Dockerfile so a base-image bump invalidates downstream
+      # provider images. Hashing only the provider Dockerfile would let
+      # cached `hams-itest-<provider>:<old>` images keep using stale
+      # base layers after `hams-itest-base` was rebuilt.
       PROV_HASH:
-        sh: 'sha256sum internal/provider/builtin/{{.PROVIDER}}/integration/Dockerfile | head -c 12'
+        sh: 'cat e2e/base/Dockerfile internal/provider/builtin/{{.PROVIDER}}/integration/Dockerfile | sha256sum | head -c 12'
     cmds:
       - |
         BASE="hams-itest-base:{{.BASE_HASH}}"

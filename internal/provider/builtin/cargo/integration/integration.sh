@@ -27,6 +27,8 @@ YAML
 assert_output_contains "hams --version" "hams version" hams --version
 assert_success "cargo is on PATH" command -v cargo
 
-# xsv and xcp are small Rust tools that install in <1 min on a warm cache.
-# If either starts timing out on CI, swap them for anything lighter.
-standard_cli_flow cargo install xsv xcp
+# tokei (line counter) and just (command runner) are small, well-maintained
+# Rust binaries that install in <1 min on a warm cache. Replace if either
+# becomes flaky on CI; AVOID `xsv` (yanked from crates.io 2023) and any
+# tool whose latest crate version was deleted by the author.
+standard_cli_flow cargo install tokei just

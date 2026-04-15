@@ -25,5 +25,8 @@ YAML
 assert_output_contains "hams --version" "hams version" hams --version
 assert_success "uv is on PATH" command -v uv
 
-# ruff (linter) and tomli-lint are tiny uv-installable CLIs.
-standard_cli_flow uv install ruff tomli-lint
+# ruff (linter) and httpie (modern curl) are widely-distributed PyPI
+# packages and install via `uv tool install` quickly. AVOID guessing
+# package names — `uv tool install` errors hard on missing names; verify
+# on PyPI before swapping.
+standard_cli_flow uv install ruff httpie

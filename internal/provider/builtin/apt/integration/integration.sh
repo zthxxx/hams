@@ -113,7 +113,10 @@ assert_yaml_field_eq "apt.state.yaml htop.first_install_at still immutable" \
 assert_yaml_field_absent "apt.state.yaml htop.removed_at cleared" \
   "$APT_STATE" '.resources.htop.removed_at'
 
-# Cleanup so subsequent test runs start clean.
+# Cleanup so subsequent test runs start clean. We tolerate failure here
+# because the test is essentially done; an apt-get remove glitch on the
+# very last cleanup step shouldn't mask the success of the actual
+# scenarios above. If this becomes a problem, switch to `|| log_warning`.
 hams --store="$HAMS_STORE" apt remove htop || true
 
 # -----------------------------------------------------------------------

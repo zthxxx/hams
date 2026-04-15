@@ -87,6 +87,8 @@ assert_yaml_field_absent() {
 
 # assert_yaml_field_lex_gt fails if <field-a> <= <field-b> (lex compare).
 # Useful for timestamps in the 20060102T150405 format (lex-sortable).
+# Refuses to compare when either side is empty / "null" so a missing key
+# can't false-positive against, say, a string starting with "0".
 assert_yaml_field_lex_gt() {
   local desc="$1"
   local file="$2"
@@ -96,6 +98,16 @@ assert_yaml_field_lex_gt() {
   local a b
   a=$(yq -r "$path_a" "$file")
   b=$(yq -r "$path_b" "$file")
+  if [ -z "$a" ] || [ "$a" = "null" ]; then
+    echo "FAIL: $desc — value at $path_a is missing/null"
+    echo "  file: $file"
+    exit 1
+  fi
+  if [ -z "$b" ] || [ "$b" = "null" ]; then
+    echo "FAIL: $desc — value at $path_b is missing/null"
+    echo "  file: $file"
+    exit 1
+  fi
   if [ "$a" \> "$b" ]; then
     echo "  ok: $desc ($path_a=$a > $path_b=$b)"
     return 0

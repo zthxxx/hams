@@ -25,5 +25,6 @@ YAML
 assert_output_contains "hams --version" "hams version" hams --version
 assert_success "npm is on PATH" command -v npm
 
-# `serve` and `sort-package-json` are tiny global CLIs — fast to install.
-standard_cli_flow npm install serve sort-package-json
+# `serve` and `nodemon` are tiny global CLIs — fast to install and stable
+# across npm versions.
+standard_cli_flow npm install serve nodemon
