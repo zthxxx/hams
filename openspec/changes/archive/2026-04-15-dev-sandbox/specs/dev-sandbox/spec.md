@@ -90,6 +90,38 @@ The orchestrator SHALL NOT check for or coordinate with containers belonging to 
 - **AND** because `--rm` was set, the container is removed
 - **AND** `docker ps -a --filter name=hams-<example>` returns no rows
 
+### Requirement: Runtime host-uid registration inside sandbox
+
+After `docker run`, the orchestrator SHALL ensure the host's uid and gid are registered in the container's `/etc/passwd`, `/etc/group`, and (when present) `/etc/shadow` files. This registration is required so `sudo` — invoked by providers such as `apt` — succeeds when the container is running as the host uid via `docker run --user`.
+
+The registration SHALL be idempotent: uids that already have a passwd entry (e.g., the baked `dev` user at uid 1000) SHALL NOT be re-registered, and the script SHALL NOT fail when the check short-circuits.
+
+The sudoers policy baked into the template Dockerfile SHALL grant passwordless sudo to any resolvable user (`ALL ALL=(ALL) NOPASSWD: ALL`). This is scoped to dev-sandbox images only; it is not a general hams security posture.
+
+#### Scenario: Host uid unknown to container gets passwd and shadow entries
+
+- **WHEN** the orchestrator starts a container on a host where `id -u` returns a value not present in the image's `/etc/passwd`
+- **THEN** `docker exec hams-<example> getent passwd $(id -u)` returns a non-empty line naming user `hostuser`
+- **AND** `docker exec hams-<example> getent group $(id -g)` returns a non-empty line naming group `hostgroup` (or the baked group if gid collides)
+- **AND** `/etc/shadow` contains `hostuser:*:1::::::` so PAM's sudo account check passes
+- **AND** `docker exec hams-<example> sudo -n true` exits 0
+
+#### Scenario: Host uid equal to 1000 is not re-registered
+
+- **WHEN** the host uid is `1000` (same as the baked `dev` user)
+- **THEN** `start-container.sh` detects the existing passwd entry via `getent`
+- **AND** does not append a duplicate `hostuser` line
+- **AND** the container starts without error
+
+#### Scenario: Hams apply succeeds end-to-end via sudo
+
+- **WHEN** an example's hamsfile declares an `apt` package (e.g., `bat`)
+- **AND** the developer runs `docker exec hams-<example> hams apply`
+- **THEN** hams invokes `sudo apt-get install -y bat` inside the container
+- **AND** the command succeeds
+- **AND** resulting `.state/<machine_id>/apt.state.yaml` is written with state `ok`
+- **AND** the state file on the host is owned by the host uid (not root, not uid 1000)
+
 ### Requirement: Per-example Dockerfile with shared baseline
 
 The system SHALL provide a baseline `Dockerfile` at `examples/.template/Dockerfile` that includes:
@@ -130,7 +162,7 @@ Every build invocation SHALL run as: `GOOS=linux GOARCH=<arch> CGO_ENABLED=0 go 
 
 The watcher SHALL rely on the default `$GOCACHE` for incremental compilation and SHALL NOT pass `-a` or otherwise invalidate the cache.
 
-On build success, the watcher SHALL print `[watch] built <short-commit-sha> in <duration>`. On build failure, it SHALL print the compiler stderr and continue watching.
+On build success, the watcher SHALL emit a structured `log/slog` record with message `build ok` and fields `commit=<short-commit-sha>` and `duration=<formatted>` (matching the project's `log/slog`-first logging convention in `.claude/rules/code-conventions.md`). On build failure, it SHALL emit a `build failed` record with the compiler stderr and keep watching.
 
 #### Scenario: `.go` save triggers a debounced, incremental rebuild
 

@@ -8,4 +8,5 @@ export default {
   cli: 'CLI Reference',
   providers: 'Providers',
   schema: 'Schema Reference',
+  contributing: 'Contributing',
 }

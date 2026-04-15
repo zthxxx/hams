@@ -83,6 +83,28 @@ tasks:
     cmds:
       - go run -ldflags "{{.LDFLAGS}}" ./cmd/hams
 
+  # ---------------------------------------------------------------------------
+  # Dev sandbox — throwaway Linux container with Go hot-reload.
+  # Per-example container name is hams-<EXAMPLE>; parallel examples coexist.
+  # See scripts/commands/dev/ for orchestration details.
+  # ---------------------------------------------------------------------------
+
+  dev:
+    desc: 'Start dev sandbox with hot reload (usage: task dev EXAMPLE=basic-debian)'
+    cmds:
+      - bash scripts/commands/dev/main.sh --example {{.EXAMPLE}}
+    requires:
+      vars: [EXAMPLE]
+    interactive: true
+
+  dev:shell:
+    desc: 'Attach interactive shell to the sandbox (usage: task dev:shell EXAMPLE=basic-debian)'
+    cmds:
+      - docker exec -it hams-{{.EXAMPLE}} bash
+    requires:
+      vars: [EXAMPLE]
+    interactive: true
+
   test:
     desc: Run tests with race detection
     cmds:

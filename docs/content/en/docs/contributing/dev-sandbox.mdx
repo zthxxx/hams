@@ -1,0 +1,193 @@
+import { Callout, Steps, Tabs } from 'nextra/components'
+
+# Dev Sandbox
+
+A one-command Docker sandbox with hot-reload Go builds, so you can iterate on
+hams against a real Linux environment without touching your host.
+
+<Callout type="info">
+This workflow exists because hams mutates host state — installs packages, writes
+config, runs provider binaries. Running it on your laptop while developing means
+debugging state drift on your own machine. The dev sandbox is the containerized
+version of that inner loop.
+</Callout>
+
+## What you get
+
+When you run `task dev EXAMPLE=<name>`:
+
+1. A throwaway Docker container named `hams-<name>` starts with your example's
+   config/store/state mounted in, running as your host `uid:gid`.
+2. A host-side Go watcher recompiles `bin/hams-linux-<arch>` on every `.go`
+   save (500 ms debounce, one pending build at a time, `$GOCACHE`-backed).
+3. The container sees the new binary on the next `hams` invocation via a
+   directory bind-mount — no restart, no `docker cp`, no lost shell session.
+
+Press `Ctrl+C` in the `task dev` terminal to stop everything. The container was
+started with `--rm`, so there's nothing to clean up.
+
+## Prerequisites
+
+- Docker (Docker Desktop on macOS, docker-ce or Rancher Desktop on Linux).
+  Podman with a `docker` alias also works.
+- Go 1.24+ and `go-task`. Run `task setup` once if you need the dev tools.
+
+<Callout type="warning">
+The watcher cross-compiles for Linux, so the sandbox only runs Linux
+containers. Native (non-Docker) sandboxes are out of scope.
+</Callout>
+
+## Run the first example
+
+```bash
+task dev EXAMPLE=basic-debian
+```
+
+<Steps>
+
+### What the orchestrator does
+
+The script at `scripts/commands/dev/main.sh` runs this pipeline:
+
+1. **Ensure** — if `examples/basic-debian/` is missing, copy
+   `examples/.template/` into place (it's tracked on first use).
+2. **Detect arch** — `uname -m` → `amd64` or `arm64`.
+3. **Initial build** — `GOOS=linux GOARCH=<arch> CGO_ENABLED=0 go build
+   -ldflags "-X …/version.commit=<short-sha>" -o bin/hams-linux-<arch>
+   ./cmd/hams`. The ldflags injection makes `hams --version` show the
+   current HEAD's short SHA from the very first invocation inside the
+   container.
+4. **Build image** — `docker build -t hams-dev-basic-debian`.
+5. **Start container** — `docker run -d --name hams-basic-debian --rm` with
+   four bind mounts and `/usr/local/bin/hams` symlinked to the arch-specific
+   binary inside `/hams-bin/`.
+6. **Print attach hint** — tells you how to get a shell in.
+7. **Hand off to the watcher** — `go run ./internal/devtools/watch --arch
+   <arch>`. Stays in the foreground until you `Ctrl+C`.
+
+### Attach a shell
+
+In another terminal:
+
+```bash
+task dev:shell EXAMPLE=basic-debian
+```
+
+or equivalently:
+
+```bash
+docker exec -it hams-basic-debian bash
+```
+
+Inside the container:
+
+```bash
+hams --version    # e.g. "dev (a6f4218)" — the short SHA of your current HEAD
+hams apply        # runs the example's hamsfiles
+hams apt list     # shows the diff between the store and installed state
+```
+
+### Iterate
+
+Edit any `.go` file under `./cmd`, `./internal`, or `./pkg`. The watcher logs:
+
+```text
+time=... level=INFO msg="build started"
+time=... level=INFO msg="build ok" commit=a6f4218 duration=312ms
+```
+
+On the next `hams` call inside the container, you're running the new binary.
+The commit SHA reported by `hams --version` advances with each rebuild.
+
+</Steps>
+
+## Writing a new scenario
+
+```bash
+task dev EXAMPLE=my-experiment
+```
+
+If `examples/my-experiment/` doesn't exist, the orchestrator copies
+`examples/.template/` into it. Edit the files to define your scenario:
+
+```text
+examples/my-experiment/
+  Dockerfile              # optional override; baseline is debian-slim + sudo
+  config/
+    hams.config.yaml      # global config (store_path, etc.)
+  store/
+    hams.config.yaml      # store config (profile_tag, machine_id)
+    dev/                  # profile directory — put hamsfiles here
+      apt.hams.yaml
+      bash.hams.yaml
+  state/                  # hams writes .state artifacts here (git-tracked)
+```
+
+Re-running `task dev EXAMPLE=my-experiment` never overwrites an existing
+directory; you can commit your edits safely.
+
+## Why `state/` is git-tracked
+
+Every directory under `examples/<name>/` — including `state/` — is tracked on
+purpose. A scenario's point is the end-to-end story: *given this config +
+this store, running `hams apply` produces this state.* If `.state/` were
+gitignored, reading the repo wouldn't tell you what the scenario produces;
+you'd have to run it.
+
+Two ways to reset or update state after a session:
+
+- **Freeze a new result**: `git add examples/<name>/state/ && git commit` —
+  the scenario now documents the new outcome.
+- **Discard drift**: `git checkout examples/<name>/state/` — back to the
+  last committed state.
+
+## Parallel scenarios
+
+Containers are named `hams-<example>`, not `hams-dev`. Running two scenarios
+side-by-side in different terminals just works:
+
+```bash
+# terminal 1
+task dev EXAMPLE=basic-debian
+
+# terminal 2
+task dev EXAMPLE=my-experiment
+```
+
+Each container has its own bind mounts and its own state directory. They
+don't know about each other.
+
+<Callout type="warning">
+Running two copies of the *same* example concurrently is undefined — the
+second run will stop-and-replace the first container. Single-instance-per-
+example is the developer's invariant, not the orchestrator's.
+</Callout>
+
+## Troubleshooting
+
+**`docker: Cannot connect to the Docker daemon`** — start Docker Desktop (or
+your equivalent). The orchestrator surfaces the upstream CLI error verbatim
+and exits before touching anything else.
+
+**`Error: container name "hams-<x>" already in use`** — shouldn't happen
+because `start-container.sh` runs `docker rm --force hams-<x>` first, but if
+it does, run that command manually and try again.
+
+**`hams --version` inside the container still shows the old SHA** — the
+watcher logs every build. If the log line says `build ok commit=<new-sha>`
+but the container sees the old one, check that `bin/hams-linux-<arch>` has a
+modification time newer than the last container start. The directory mount
+sees files by name at each call; there's no caching layer between host and
+container.
+
+**`hams apply` errors with `permission denied` on state files** — the
+container runs as `--user $(id -u):$(id -g)`. If you ran a previous session
+as a different user (e.g., via `sudo`), those state files need
+`sudo chown` once; after that, the default user's ownership sticks.
+
+## Where to look in the code
+
+- Watcher: `internal/devtools/watch/{main,engine,fswatch,builder,reporter}.go`
+- Orchestration: `scripts/commands/dev/*.sh`
+- Template: `examples/.template/`
+- Taskfile: `dev` / `dev:shell` targets

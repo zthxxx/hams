@@ -1,0 +1,5 @@
+setup:
+  - urn: "urn:hams:bash:git-rerere-autoupdate"
+    step: "Enable git rerere autoUpdate"
+    run: "git config --global rerere.autoUpdate true"
+    check: "test \"$(git config --global rerere.autoUpdate)\" = true"

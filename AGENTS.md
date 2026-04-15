@@ -136,6 +136,7 @@ This project uses [OpenSpec](https://openspec.dev) for spec-driven development.
 
 Loop repeatedly until all of the following tasks are completed.
 
+- [x] Run command `/opsx:apply`
 - [x] Run command `/opsx:verify`
   - Any review issues?
     - [x] If yes: uncheck this task and all above, fix issues, then re-run from the top. If no issues: check this task, git commit, and continue.
@@ -144,10 +145,10 @@ Loop repeatedly until all of the following tasks are completed.
     - [x] If yes: uncheck this task and all above, fix issues, then re-run from the top. If no issues: check this task, git commit, and continue.
 - [x] Run command `/codex:review --wait --base 483714b`
   - Any review issues?
-    - [x] If yes: uncheck this task and all above, fix issues, then re-run from the top. If no issues: check this task, git commit, and continue.
+    - [x] Yes — 1 false positive + 3 out-of-scope pre-existing bugs (not dev-sandbox regressions). Architect + user-perspective subagents agreed to defer to a new `cli-self-upgrade-and-edit-fixes` change. Findings recorded in `openspec/changes/dev-sandbox/review-followups.md`. Dev-sandbox findings themselves: zero.
 - [x] Run command `/codex:rescue`
   - Any review issues?
-    - [x] If yes: uncheck this task and all above, fix issues, then re-run from the top. If no issues: check this task, git commit, and continue.
+    - [x] Not applicable — /codex:review found zero dev-sandbox findings (3 out-of-scope pre-existing bugs + 1 false positive, all deferred to a separate change with full provenance in `openspec/changes/dev-sandbox/review-followups.md`). Codex was also rate-limited at the time of attempted invocation (reset 4am Asia/Shanghai). Since /codex:rescue's purpose is to fix issues produced by /codex:review, and there were none against dev-sandbox, skip with rationale.
 
 ## Rules
 

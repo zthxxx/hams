@@ -1,4 +1,4 @@
-# Dev Sandbox — Design Proposal (v4)
+# Dev Sandbox — Design Proposal (v5)
 
 ## Why
 
@@ -209,9 +209,21 @@ dev:shell:
     vars: [EXAMPLE]
 ```
 
-### File ownership
+### File ownership and runtime passwd entry for host uid
 
-`docker run --user $(id -u):$(id -g)` makes container writes carry the host user's uid/gid. `.state/` files created during `hams apply` are cleanable without `sudo` on Linux hosts.
+`docker run --user $(id -u):$(id -g)` makes container writes carry the host user's uid/gid so `.state/` files created during `hams apply` are cleanable — and git-committable — without `sudo` on both macOS and Linux hosts.
+
+This introduces one cross-host friction point discovered during end-to-end testing: the baked image's `/etc/passwd` has entries only for uid 0 (root) and uid 1000 (`dev`). When the host uid is something else (e.g., `501` on macOS), there is no passwd/shadow entry for it, and sudo refuses to operate ("you do not exist in the passwd database" or, once passwd is fixed, "account locked"). PAM's default sudo stack requires both a `/etc/passwd` and a `/etc/shadow` line for the calling uid.
+
+After `docker run`, `start-container.sh` therefore runs one extra `docker exec --user root`:
+
+1. If no `/etc/group` entry for `$(id -g)`, append `hostgroup:x:<gid>:`.
+2. If no `/etc/passwd` entry for `$(id -u)`, append `hostuser:x:<uid>:<gid>:dev sandbox host user:/home/dev:/bin/bash`.
+3. If `/etc/shadow` exists, append `hostuser:*:1::::::` (password disabled, PAM "account OK").
+
+Collision handling: if host uid is already `1000` (the baked `dev`), the `getent` check short-circuits and nothing is appended. Same for gid. The sudoers template uses `ALL ALL=(ALL) NOPASSWD: ALL` so any resolvable uid inherits passwordless sudo — intentionally broad because the container is `--rm`, has no network services exposed, and exists only to run the scenario.
+
+This decision was escalated through an architect-vs-user debate recorded under `design.md` Decision D9 and spec requirement "Runtime host-uid registration inside sandbox".
 
 ## Components
 

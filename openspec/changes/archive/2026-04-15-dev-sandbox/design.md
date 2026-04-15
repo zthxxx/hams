@@ -125,6 +125,41 @@ Alternatives:
 
 User retains the "single instance of the *same* example" invariant. Scripts perform `docker stop hams-<example> || true` at start (to recover from SIGKILL crashes) but do not warn about clobbering. This matches the user's explicit direction.
 
+### D9 — Runtime host-uid passwd/shadow entry (not drop `--user`, not run as baked dev)
+
+Discovered during end-to-end test of `examples/basic-debian/`: running with `docker run --user $(id -u):$(id -g)` on macOS (host uid 501) left the container with no `/etc/passwd` entry for 501, so `sudo` refused to run ("you do not exist in the passwd database" → then, after fixing passwd, "account validation failure: account locked" because `/etc/shadow` was also missing).
+
+Three candidates, each with fatal downsides:
+
+| Option | Cross-host file ownership | Cross-host sudo | Fail mode |
+|--------|---------------------------|-----------------|-----------|
+| A. Drop `--user`, run as root | Broken on Linux (root-owned files) | Works trivially | Relies on Docker Desktop/OrbStack uid magic that doesn't exist on Linux; `git` reports "dubious ownership" on inconsistent mounts |
+| B. Run as baked `dev` (uid 1000) without `--user` | Accidentally correct on Debian where host uid is often 1000; wrong everywhere else (including macOS uid 501) | Works trivially | Silent uid drift across teammates: macOS writes files that CI running uid 1000 can't unstash, vice versa |
+| C. Keep `--user` + runtime passwd/shadow append | Correct on macOS and Linux | Works after tiny runtime fix | Extra `docker exec` at startup; must handle uid==1000 collision |
+
+Both an architect-perspective and user-perspective subagent ran independent analyses and ranked C > B > A without seeing each other's output. See the proposal for the debate summary.
+
+**Chose C.** Implementation in `start-container.sh`:
+
+```sh
+docker exec --user root "${container_name}" bash -eu -c "
+  if ! getent group '${host_gid}' >/dev/null 2>&1; then
+    printf 'hostgroup:x:%s:\n' '${host_gid}' >> /etc/group
+  fi
+  if ! getent passwd '${host_uid}' >/dev/null 2>&1; then
+    printf 'hostuser:x:%s:%s:dev sandbox host user:/home/dev:/bin/bash\n' \
+      '${host_uid}' '${host_gid}' >> /etc/passwd
+    if [[ -f /etc/shadow ]]; then
+      printf 'hostuser:*:1::::::\n' >> /etc/shadow
+    fi
+  fi
+"
+```
+
+`getent` is in `libc-bin` (always present on Debian/Ubuntu/Alpine) and returns non-zero when the uid/gid is unknown. Direct `/etc/passwd` append (rather than `useradd`) is portable across base images; BusyBox-based Alpine does not ship `useradd` by default. The broad sudoers rule (`ALL ALL=(ALL) NOPASSWD: ALL`) in the template Dockerfile means any resolvable uid inherits passwordless sudo.
+
+**Trade-off accepted**: dev sandbox images intentionally grant broader sudo access than any production image would. Justified because the image is `--rm`, has no network services exposed, and exists only to run hams scenarios.
+
 ### D8 — `hams --version` format fix bundled
 
 `cmd/hams/main.go` currently outputs a version string not matching the project's convention. Fixing it is a pre-existing defect, not dev-sandbox scope creep. Two reasons to bundle:
