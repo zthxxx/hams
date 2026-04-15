@@ -86,12 +86,12 @@ func (f *FakeCmdRunner) Remove(_ context.Context, pkg string) error {
 }
 
 // IsInstalled implements CmdRunner.
-func (f *FakeCmdRunner) IsInstalled(_ context.Context, pkg string) (bool, string, error) {
+func (f *FakeCmdRunner) IsInstalled(_ context.Context, pkg string) (installed bool, version string, err error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.Calls = append(f.Calls, FakeCall{Op: "is_installed", Pkg: pkg})
-	version, ok := f.Installed[pkg]
-	return ok, version, nil
+	v, ok := f.Installed[pkg]
+	return ok, v, nil
 }
 
 // CallCount returns how many times op was invoked for pkg (pkg == "" to count

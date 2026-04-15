@@ -61,17 +61,17 @@ func (r *realCmdRunner) Remove(ctx context.Context, pkg string) error {
 	return nil
 }
 
-func (r *realCmdRunner) IsInstalled(ctx context.Context, pkg string) (bool, string, error) {
+func (r *realCmdRunner) IsInstalled(ctx context.Context, pkg string) (installed bool, version string, err error) {
 	// dpkg -s does not require sudo.
 	cmd := exec.CommandContext(ctx, "dpkg", "-s", pkg) //nolint:gosec // pkg sourced from state/config entries
-	output, err := cmd.Output()
-	if err != nil {
+	output, runErr := cmd.Output()
+	if runErr != nil {
 		var exitErr *exec.ExitError
-		if errors.As(err, &exitErr) {
+		if errors.As(runErr, &exitErr) {
 			// Non-zero exit = not installed (or not known to dpkg).
 			return false, "", nil
 		}
-		return false, "", fmt.Errorf("dpkg -s %s: %w", pkg, err)
+		return false, "", fmt.Errorf("dpkg -s %s: %w", pkg, runErr)
 	}
 	text := string(output)
 	if !strings.Contains(text, "Status: install ok installed") {

@@ -75,8 +75,8 @@ func Load(path string) (*File, error) {
 	}
 
 	var legacy legacyFile
-	if err := yaml.Unmarshal(data, &legacy); err != nil {
-		return nil, fmt.Errorf("parsing state file %s: %w", path, err)
+	if unmarshalErr := yaml.Unmarshal(data, &legacy); unmarshalErr != nil {
+		return nil, fmt.Errorf("parsing state file %s: %w", path, unmarshalErr)
 	}
 
 	f, err := migrate(&legacy, path)

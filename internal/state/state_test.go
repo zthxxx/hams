@@ -284,10 +284,10 @@ resources:
 		t.Errorf("FirstInstallAt after migration = %q, want %q", r.FirstInstallAt, "20260410T091500")
 	}
 
-	if err := loaded.Save(path); err != nil {
-		t.Fatalf("Save: %v", err)
+	if saveErr := loaded.Save(path); saveErr != nil {
+		t.Fatalf("Save: %v", saveErr)
 	}
-	data, err := os.ReadFile(path) //nolint:gosec // path comes from t.TempDir()
+	data, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -302,7 +302,7 @@ resources:
 		t.Errorf("rewritten file still contains legacy install_at\n%s", out)
 	}
 	// Stronger check: no bare "install_at:" line (only first_install_at should appear).
-	for _, line := range strings.Split(out, "\n") {
+	for line := range strings.SplitSeq(out, "\n") {
 		trimmed := strings.TrimSpace(line)
 		if strings.HasPrefix(trimmed, "install_at:") {
 			t.Errorf("rewritten file contains legacy install_at line: %q\n%s", trimmed, out)

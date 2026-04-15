@@ -161,16 +161,16 @@ Delivers: i18n-consistent docs updates.
 
 Final pre-archive validation. ALL must pass before archiving.
 
-- [ ] 8.1 `go build ./...` — zero errors.
-- [ ] 8.2 `go vet ./...` — zero warnings.
-- [ ] 8.3 `go test -race ./...` — all packages pass.
-- [ ] 8.4 `task lint` — golangci-lint v2 + markdownlint + cspell all pass.
+- [x] 8.1 `go build ./...` — zero errors.
+- [x] 8.2 `go vet ./...` — zero warnings.
+- [x] 8.3 `go test -race ./...` — all packages pass.
+- [x] 8.4 `task lint` — golangci-lint v2 + markdownlint + cspell all pass.
 - [ ] 8.5 `task ci:integration` — via `act`, full integration suite green.
 - [ ] 8.6 `task ci:e2e` — all E2E targets (debian + alpine + openwrt where applicable) green.
-- [ ] 8.7 `rg -w 'InstallAt' -g '!openspec/**' -g '!*.md'` — zero production-code hits (all renamed).
-- [ ] 8.8 `rg '^profile_tag|^machine_id' examples/ e2e/fixtures/` — zero hits at store level (all scrubbed).
-- [ ] 8.9 `openspec validate fix-apt-provider-and-store-config-scope --strict` — passes.
-- [ ] 8.10 Manual smoke test: build `bin/hams`, launch dev sandbox (`task dev EXAMPLE=basic-debian`), reproduce the original bug scenario from the user's message (`hams apt install bat` → `command -v bat` succeeds), verify state file fields.
+- [x] 8.7 `rg -w 'InstallAt' -g '!openspec/**' -g '!*.md'` — zero production-code hits (all renamed).
+- [x] 8.8 `rg '^profile_tag|^machine_id' examples/ e2e/fixtures/` — zero hits at store level (all scrubbed).
+- [x] 8.9 `openspec validate fix-apt-provider-and-store-config-scope --strict` — passes.
+- [x] 8.10 Manual smoke test: build `bin/hams`, launch dev sandbox (`task dev EXAMPLE=basic-debian`), reproduce the original bug scenario from the user's message (`hams apt install bat` → `command -v bat` succeeds), verify state file fields.
 
 ## 9. OpenSpec archive
 

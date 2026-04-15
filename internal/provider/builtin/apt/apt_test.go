@@ -154,7 +154,9 @@ func TestHandleCommand_U1_InstallAddsToHamsfile(t *testing.T) {
 // U2: repeat install keeps exactly one entry in the hamsfile.
 func TestHandleCommand_U2_InstallIsIdempotent(t *testing.T) {
 	h := newHarness(t)
-	_ = h.provider.HandleCommand(context.Background(), []string{"install", "bat"}, nil, h.flags)
+	if err := h.provider.HandleCommand(context.Background(), []string{"install", "bat"}, nil, h.flags); err != nil {
+		t.Fatalf("setup install: %v", err)
+	}
 	if err := h.provider.HandleCommand(context.Background(), []string{"install", "bat"}, nil, h.flags); err != nil {
 		t.Fatalf("install second time: %v", err)
 	}
@@ -184,7 +186,9 @@ func TestHandleCommand_U3_InstallFailureLeavesHamsfileUntouched(t *testing.T) {
 // U4: remove drops the entry from the hamsfile.
 func TestHandleCommand_U4_RemoveDeletesFromHamsfile(t *testing.T) {
 	h := newHarness(t)
-	_ = h.provider.HandleCommand(context.Background(), []string{"install", "bat"}, nil, h.flags)
+	if err := h.provider.HandleCommand(context.Background(), []string{"install", "bat"}, nil, h.flags); err != nil {
+		t.Fatalf("setup install: %v", err)
+	}
 
 	if err := h.provider.HandleCommand(context.Background(), []string{"remove", "bat"}, nil, h.flags); err != nil {
 		t.Fatalf("remove: %v", err)
@@ -200,7 +204,9 @@ func TestHandleCommand_U4_RemoveDeletesFromHamsfile(t *testing.T) {
 // U5: remove failure leaves hamsfile untouched.
 func TestHandleCommand_U5_RemoveFailureLeavesHamsfileUntouched(t *testing.T) {
 	h := newHarness(t)
-	_ = h.provider.HandleCommand(context.Background(), []string{"install", "bat"}, nil, h.flags)
+	if err := h.provider.HandleCommand(context.Background(), []string{"install", "bat"}, nil, h.flags); err != nil {
+		t.Fatalf("setup install: %v", err)
+	}
 
 	h.runner.WithRemoveError("bat", errors.New("apt-get remove failed"))
 	err := h.provider.HandleCommand(context.Background(), []string{"remove", "bat"}, nil, h.flags)
