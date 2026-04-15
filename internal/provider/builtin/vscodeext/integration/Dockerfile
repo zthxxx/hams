@@ -1,14 +1,11 @@
-# vscodeext provider integration image. Installs the VS Code CLI (the
-# standalone `code` binary, not the full IDE) from Microsoft's official
-# download.
+# vscodeext provider integration image. Installs the full VS Code IDE
+# from Microsoft's official apt repo. The standalone `code` tunnel CLI
+# (cli-alpine-<arch>) only supports `code tunnel` / `code serve-web`
+# and can't drive `--install-extension` — extension management requires
+# a real IDE installation that owns ~/.vscode/extensions.
 
 ARG BASE=hams-itest-base:latest
 FROM ${BASE}
-
-# Full VS Code install (not just the tunnel CLI) — the standalone `code`
-# tunnel binary can't manage extensions; it requires a real Visual Studio
-# Code installation to find its extension dir. Install from Microsoft's
-# apt repo.
 RUN apt-get update && apt-get install -y --no-install-recommends \
       gnupg wget \
  && wget -qO- https://packages.microsoft.com/keys/microsoft.asc \

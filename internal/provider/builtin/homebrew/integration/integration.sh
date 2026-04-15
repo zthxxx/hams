@@ -31,12 +31,10 @@ chown brew:brew "$HAMS_STORE/hams.config.yaml"
 
 assert_output_contains "hams --version" "hams version" hams --version
 
-# Run the canonical flow as the brew user. We bypass shell init files
-# entirely: `env -i` starts from an empty environment and sets exactly
-# what hams needs (PATH with linuxbrew bin, HOME/USER/LOGNAME for brew's
-# Ruby subprocess hygiene, and the three HAMS_* vars). This avoids the
-# non-interactive-login shell gotcha where Debian's stock .bashrc returns
-# early before sourcing `brew shellenv`.
+# `env -i` bypasses Debian's non-interactive-login `.bashrc` early-return
+# guard that would otherwise skip the linuxbrew shellenv. PATH is set
+# explicitly so hams can exec `brew`; HOME/USER/LOGNAME satisfy brew's
+# Ruby subprocess hygiene checks.
 STATE_FILE="$HAMS_STORE/.state/$HAMS_MACHINE_ID/Homebrew.state.yaml"
 
 BREW_RUN() {
@@ -50,13 +48,16 @@ BREW_RUN() {
     hams --store="$HAMS_STORE" "$@"
 }
 
-# State-write semantics: `hams brew install/remove` mutates only the
-# Homebrew.hams.yaml; state reconciliation happens on `hams apply`. This
-# matches every non-apt provider (see e2e/base/lib/provider_flow.sh), so
-# each mutating step is followed by `apply --only=brew` before state-file
-# assertions. Apt is the only provider whose CLI writes state directly.
+# Brew CLI writes only the hamsfile; state is reconciled by `apply` (see
+# e2e/base/lib/provider_flow.sh — apt is the only provider whose CLI
+# writes state directly). Each `apply --only=brew` here re-probes every
+# installed formula via `brew info --json=v2 --installed`, so we batch:
+# step-1 reconcile is required to capture jq's first_install_at; step-2
+# adds NO new state — its assertions are folded into step-3's reconcile,
+# which probes both jq (re-installed) and htop (new) in one pass.
 
-# Step 1: seed install of `jq` (brew formula, tiny).
+# Step 1: seed install of `jq` (brew formula, tiny). Reconcile to capture
+# first_install_at for the immutability assertion in step 3.
 assert_success "hams brew install jq (seed)" \
   BREW_RUN brew install jq
 assert_success "apply reconciles state after seed" \
@@ -67,21 +68,21 @@ FIRST_INSTALL=$(yq -r '.resources.jq.first_install_at' "$STATE_FILE")
 
 sleep 1
 
-# Step 2: re-install bumps updated_at, leaves first_install_at immutable.
+# Step 2: re-install jq (no state assertion yet — folded into step 3).
 assert_success "hams brew install jq (re-install)" \
   BREW_RUN brew install jq
-assert_success "apply reconciles state after re-install" \
-  BREW_RUN apply --only=brew
-assert_yaml_field_eq "jq.first_install_at unchanged" \
-  "$STATE_FILE" '.resources.jq.first_install_at' "$FIRST_INSTALL"
-assert_yaml_field_lex_gt "jq.updated_at > first_install_at" \
-  "$STATE_FILE" '.resources.jq.updated_at' '.resources.jq.first_install_at'
 
-# Step 3: install a new pkg (htop), assert state row created.
+# Step 3: install a new pkg (htop). One `apply --only=brew` reconciles
+# both jq's re-install (updated_at bump, first_install_at immutable) and
+# htop's new install in a single probe pass.
 assert_success "hams brew install htop (new)" \
   BREW_RUN brew install htop
-assert_success "apply reconciles state after new install" \
+assert_success "apply reconciles state after re-install + new install" \
   BREW_RUN apply --only=brew
+assert_yaml_field_eq "jq.first_install_at unchanged after re-install" \
+  "$STATE_FILE" '.resources.jq.first_install_at' "$FIRST_INSTALL"
+assert_yaml_field_lex_gt "jq.updated_at > first_install_at after re-install" \
+  "$STATE_FILE" '.resources.jq.updated_at' '.resources.jq.first_install_at'
 assert_yaml_field_eq "htop.state=ok after install" \
   "$STATE_FILE" '.resources.htop.state' 'ok'
 
@@ -98,16 +99,8 @@ else
   exit 1
 fi
 
-# Step 5: delete htop from the hamsfile + apply → state=removed.
-#
-# Using `hams brew remove htop` imperatively AND then `apply` would
-# double-execute: the CLI uninstalls htop, but state still shows it as
-# ok; the subsequent `apply` re-plans a remove action and brew errors
-# out with "No such keg: htop". hamsfile-delete + apply is the
-# canonical single-execute path for removal (see
-# e2e/base/lib/provider_flow.sh step 5 note). `hams brew remove` is
-# exercised in handleRemove unit tests; here we validate the apply-
-# driven declarative remove path end-to-end.
+# Step 5: hamsfile-delete + apply → state=removed (see provider_flow.sh
+# step 5 — imperative remove + apply double-executes brew uninstall).
 HAMSFILE="$HAMS_STORE/test/Homebrew.hams.yaml"
 chown brew:brew "$HAMSFILE"
 sudo -u brew yq -i 'del(.cli[] | select(.app == "htop"))' "$HAMSFILE"

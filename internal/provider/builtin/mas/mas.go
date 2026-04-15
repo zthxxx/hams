@@ -14,11 +14,10 @@ import (
 	"github.com/zthxxx/hams/internal/state"
 )
 
-// cliName is the mas CLI binary and provider name.
-const cliName = "mas"
-
-// displayName is the human-readable name of this provider.
-const displayName = "Mac App Store"
+const (
+	cliName     = "mas"
+	displayName = "Mac App Store"
+)
 
 // Provider implements the Mac App Store provider.
 type Provider struct{}
@@ -40,7 +39,7 @@ func (p *Provider) Manifest() provider.Manifest {
 // Bootstrap checks if mas is available.
 func (p *Provider) Bootstrap(_ context.Context) error {
 	if _, err := exec.LookPath(cliName); err != nil {
-		return fmt.Errorf("mas not found in PATH (macOS only; install via: brew install mas)")
+		return fmt.Errorf("%s not found in PATH (macOS only; install via: brew install %s)", cliName, cliName)
 	}
 	return nil
 }
