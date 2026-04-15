@@ -46,5 +46,5 @@
 
 ## 7. Archive
 
-- [ ] 7.1 `/opsx:verify clarify-apply-state-only-semantics` — assert spec scenarios map to code, no critical/warning findings.
-- [ ] 7.2 `/opsx:archive clarify-apply-state-only-semantics` — sync spec deltas (will likely require `--skip-specs` + manual application due to the auto-sync header bug noted in the prior cycle).
+- [x] 7.1 `/opsx:verify clarify-apply-state-only-semantics` — 0 critical / 0 warning. All 7 scenarios mapped to code or tests.
+- [x] 7.2 `/opsx:archive clarify-apply-state-only-semantics` — archived with `--skip-specs` (auto-sync hit the same internal header-matching bug as prior cycles); cli-architecture delta then applied to main spec manually.
