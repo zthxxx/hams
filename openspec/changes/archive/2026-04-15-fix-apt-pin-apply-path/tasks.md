@@ -56,5 +56,5 @@
 
 ## 8. Archive
 
-- [ ] 8.1 `/opsx:verify fix-apt-pin-apply-path` — assert spec scenarios map to code, no critical/warning findings.
-- [ ] 8.2 `/opsx:archive fix-apt-pin-apply-path` — sync spec deltas (will likely require `--skip-specs` + manual application).
+- [x] 8.1 `/opsx:verify fix-apt-pin-apply-path` — 0 critical / 0 warning. All 10 scenarios mapped to code or tests.
+- [x] 8.2 `/opsx:archive fix-apt-pin-apply-path` — archived with `--skip-specs` (auto-sync header bug); builtin-providers delta applied to main spec manually (1 MODIFIED apt Provider with 7 scenarios + 1 ADDED Hamsfile structured-fields read API with 3 scenarios; requirement count 25 → 26).
