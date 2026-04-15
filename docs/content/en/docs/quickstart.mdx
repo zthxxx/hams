@@ -56,8 +56,8 @@ hams --version
 Usage is plain: take whatever command you'd normally type, stick `hams` in front of it.
 
 ```bash
-# Install bat (a nicer cat) via Homebrew, and write it to the Hamsfile
-hams brew install bat
+# Install htop (a nicer top) via Homebrew, and write it to the Hamsfile
+hams brew install htop
 
 # Globally install serve through pnpm, also recorded
 hams pnpm add serve
@@ -69,7 +69,7 @@ hams git-config user.email "you@example.com"
 
 Behind each command, hams quietly does two things:
 
-1. Runs the actual tool (`brew install bat`, `pnpm add -g serve`)
+1. Runs the actual tool (`brew install htop`, `pnpm add -g serve`)
 2. Writes the installation into the matching Hamsfile (`macOS/Homebrew.hams.yaml`, `macOS/pnpm.hams.yaml`)
 
 ## Restore everything on a fresh machine
@@ -131,7 +131,7 @@ hams apply  •  profile: macOS  •  machine: MacbookProM3
 [Homebrew]  Refreshing state...                      ✓
 [Homebrew]  git                  already installed   ✓
 [Homebrew]  ripgrep              installing...        ✓
-[Homebrew]  bat                  installing...        ✓
+[Homebrew]  htop                 installing...        ✓
 [Homebrew]  fd                   installing...        ✓
 [pnpm]      Refreshing state...                      ✓
 [pnpm]      serve                installing...        ✓

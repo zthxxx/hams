@@ -54,8 +54,8 @@ hams --version
 用法很朴素 —— 把原来的命令前面加一个 `hams` 就行：
 
 ```bash
-# 走 Homebrew 装 bat（比 cat 好用的那个），顺手记到 Hamsfile
-hams brew install bat
+# 走 Homebrew 装 htop（比 top 好用的那个），顺手记到 Hamsfile
+hams brew install htop
 
 # 走 pnpm 全局装 serve，顺手记
 hams pnpm add serve
@@ -67,7 +67,7 @@ hams git-config user.email "you@example.com"
 
 每条命令背后，hams 默默做两件事：
 
-1. 真调底下的工具（`brew install bat`、`pnpm add -g serve`）
+1. 真调底下的工具（`brew install htop`、`pnpm add -g serve`）
 2. 把这次安装写进对应的 Hamsfile（`macOS/Homebrew.hams.yaml`、`macOS/pnpm.hams.yaml`）
 
 ## 在新机器上把一切恢复
@@ -128,7 +128,7 @@ hams apply  •  profile: macOS  •  machine: MacbookProM3
 [Homebrew]  Refreshing state...                      ✓
 [Homebrew]  git                  already installed   ✓
 [Homebrew]  ripgrep              installing...        ✓
-[Homebrew]  bat                  installing...        ✓
+[Homebrew]  htop                 installing...        ✓
 [Homebrew]  fd                   installing...        ✓
 [pnpm]      Refreshing state...                      ✓
 [pnpm]      serve                installing...        ✓

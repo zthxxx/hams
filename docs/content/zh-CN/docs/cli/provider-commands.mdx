@@ -21,10 +21,10 @@ hams <provider> <verb> [args] [--hams-flags] [-- <透传参数>]
 
 | 动词 | 作用 | 例子 |
 |------|------|------|
-| `install` / `add` | 装一个包，并写进 Hamsfile | `hams brew install bat` |
+| `install` / `add` | 装一个包，并写进 Hamsfile | `hams brew install htop` |
 | `remove` / `uninstall` | 卸掉一个包，并从 Hamsfile 里删掉 | `hams brew remove htop` |
 | `list` | 列出这个 provider 管的所有包 | `hams brew list` |
-| `enrich` | 给已经记录的包补上 tag 和 intro 元信息 | `hams brew enrich bat` |
+| `enrich` | 给已经记录的包补上 tag 和 intro 元信息 | `hams brew enrich htop` |
 
 不是所有 provider 都支持所有动词 —— 比如 `git-clone` 没有 `install`，它用 `add`；
 `bash` 没有 `install`，它用 `run`。具体见每个 provider 自己的文档。
@@ -33,7 +33,7 @@ hams <provider> <verb> [args] [--hams-flags] [-- <透传参数>]
 
 ```bash
 # Homebrew：装 formula
-hams brew install bat
+hams brew install htop
 
 # pnpm：全局装包
 hams pnpm add serve
@@ -47,8 +47,8 @@ hams brew remove htop
 # Homebrew：查看被管的包
 hams brew list
 
-# 补一下元信息：给 bat 加标签和说明
-hams brew enrich bat --hams-tag=cli --hams-intro="A cat clone with syntax highlighting"
+# 补一下元信息：给 htop 加标签和说明
+hams brew enrich htop --hams-tag=cli --hams-intro="An interactive process viewer"
 ```
 
 ## `--hams-` 前缀的 flag
@@ -76,7 +76,7 @@ hams brew install zoom --hams-local
 
 ```bash
 # brew 的 --verbose 给 brew，不是给 hams
-hams brew install bat -- --verbose
+hams brew install htop -- --verbose
 
 # pnpm 的 --save-dev 给 pnpm
 hams pnpm add typescript -- --save-dev

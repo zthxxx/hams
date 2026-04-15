@@ -23,7 +23,7 @@ hams brew remove htop
 hams brew list
 
 # 给已经记录在案的包补上标签和一句话说明
-hams brew enrich bat --hams-tag=cli --hams-intro="A cat clone with syntax highlighting"
+hams brew enrich htop --hams-tag=cli --hams-intro="An interactive process viewer"
 ```
 
 每跑一次 `install`，hams 都会先真调 `brew install`，成功之后把这条记录写进
@@ -41,9 +41,9 @@ groups:
     items:
       - app: ripgrep
         intro: Fast recursive grep alternative.
-      - app: bat
+      - app: htop
         tags: [cli]
-        intro: A cat clone with syntax highlighting.
+        intro: An interactive process viewer.
       - app: ffmpeg
         intro: Multimedia framework for audio/video processing.
 

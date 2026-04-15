@@ -2,7 +2,7 @@
 # YAML field assertions for E2E tests. Requires yq (Mike Farah's Go impl).
 #
 # Usage:
-#   source /e2e/lib/yaml_assert.sh
+#   source /e2e/base/lib/yaml_assert.sh
 #   assert_yaml_field_eq <file> <yq-path> <expected>
 #   assert_yaml_field_absent <file> <yq-path>
 #   assert_yaml_field_present <file> <yq-path>

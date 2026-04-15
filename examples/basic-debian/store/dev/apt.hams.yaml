@@ -1,2 +1,5 @@
-packages:
-  - app: bat
+packages: []
+cli:
+    - app: jq
+    - app: btop
+    - app: htop

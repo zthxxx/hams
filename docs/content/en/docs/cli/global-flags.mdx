@@ -46,7 +46,7 @@ hams --profile=work-linux apply
 
 ## Why split global and command flags?
 
-To dodge ambiguity. Take `hams brew install bat --debug` — is that debug for hams, or debug for
+To dodge ambiguity. Take `hams brew install htop --debug` — is that debug for hams, or debug for
 `brew`? hams's rule: global flags come before the command name; anything after belongs to the
 command (or gets passed through). That way, hams can parse cleanly, `brew` gets what `brew`
 expects, and nothing collides.

@@ -1,8 +1,13 @@
 #!/usr/bin/env bash
+# Debian OS-level E2E: cross-provider bootstrap smoke + config-scope rejection.
+# Per-provider imperative scenarios live next to each provider at
+# `internal/provider/builtin/<provider>/integration/integration.sh` and run
+# via `task ci:itest:run PROVIDER=<name>`.
+
 set -euo pipefail
-source /e2e/lib/assertions.sh
-source /e2e/lib/yaml_assert.sh
-source /e2e/debian/assert-apt-imperative.sh
+source /e2e/base/lib/assertions.sh
+source /e2e/base/lib/yaml_assert.sh
+source /e2e/debian/assert-config-scope.sh
 
 echo "=== hams E2E Test (Debian) ==="
 echo ""
@@ -41,7 +46,7 @@ verify_config_roundtrip
 assert_success "hams list --only=apt,bash,git-config" \
   hams --store="$STORE_DIR" list --only=apt,bash,git-config
 
-# --- Imperative apt install/remove + state schema v2 + config scope rejection ---
-run_apt_imperative_tests "$STORE_DIR"
+# --- Cross-provider store-config scope rejection ---
+run_config_scope_tests "$STORE_DIR"
 
 echo "=== All Debian E2E tests passed ==="

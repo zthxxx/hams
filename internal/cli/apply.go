@@ -127,10 +127,27 @@ func runApply(ctx context.Context, flags *provider.GlobalFlags, registry *provid
 
 	defer sudoAcq.Stop()
 
+	// Two-stage provider filter:
+	//   Stage 1 — artifact presence: skip providers that have no hamsfile AND
+	//   no state file for the active profile/machine. Prevents Bootstrap /
+	//   Probe from running for providers whose upstream tool (brew, cargo,
+	//   …) may not even be installed on this machine.
+	//   Stage 2 — user-supplied --only / --except narrows within stage 1.
+	profileDir := cfg.ProfileDir()
 	allProviders := registry.Ordered(cfg.ProviderPriority)
-	providers, filterErr := filterProviders(allProviders, only, except, registry.Names())
+	stageOneProviders := provider.FilterByArtifacts(allProviders, profileDir, stateDir)
+	for _, p := range allProviders {
+		if !provider.HasArtifacts(p, profileDir, stateDir) {
+			slog.Debug("provider skipped (no hamsfile or state file)", "provider", p.Manifest().Name)
+		}
+	}
+	providers, filterErr := filterProviders(stageOneProviders, only, except, registry.Names())
 	if filterErr != nil {
 		return filterErr
+	}
+	if len(providers) == 0 {
+		fmt.Println("No providers match: no hamsfile or state file present for any registered provider (after --only/--except filtering).")
+		return nil
 	}
 
 	sorted, dagErr := provider.ResolveDAG(providers)
@@ -138,10 +155,11 @@ func runApply(ctx context.Context, flags *provider.GlobalFlags, registry *provid
 		return fmt.Errorf("resolving provider dependencies: %w", dagErr)
 	}
 
-	// Bootstrap providers. If a provider has a hamsfile in the profile dir,
-	// bootstrap failure is fatal — the user explicitly declared resources for it.
-	// Providers without hamsfiles are silently skipped on failure.
-	profileDir := cfg.ProfileDir()
+	// Bootstrap providers. Stage 1 guarantees each `sorted` provider has at
+	// least a hamsfile OR a state file. Bootstrap failure policy:
+	//   - hamsfile present → fatal (user actively declared resources).
+	//   - only state present (hamsfile since deleted) → debug log, continue;
+	//     subsequent Probe/Plan will simply observe no desired state.
 	var bootstrapFailed []string
 	for _, p := range sorted {
 		bootstrapErr := p.Bootstrap(ctx)

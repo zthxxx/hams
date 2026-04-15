@@ -28,15 +28,37 @@ globs: ["**/*"]
 - **TDD with real-environment safety**: always write unit tests and E2E tests alongside implementation, not after.
   - Providers that interact with real package managers (brew, pnpm, apt, etc.) MUST be tested inside Docker containers to avoid corrupting the host machine.
   - When Docker infrastructure is not yet ready, use these **safe local test packages** for manual verification:
-    - `brew`: `bat`
+    - `brew`: `htop`
     - `pnpm`: `serve`
     - `bash`: `git config --global rerere.autoUpdate true`
   - Prioritize implementing the smallest verifiable slice first.
 
-- **Verification is the most important process** in hams development. It has three tiers:
+- **Verification is the most important process** in hams development. It has three tiers — these are the only test dimensions hams recognizes; pick the one that matches scope and DI surface:
   1. **Code standards** (lint): `golangci-lint`, `eslint`, `markdownlint`, `cspell` — enforced by lefthook pre-commit and CI.
-  2. **Unit tests**: DI-isolated, no real filesystem or host environment impact. Pure parsing + mock tests. Commands that need real external execution (`hams config set`, `hams apply --from-repo`, `self-upgrade`) MUST design unit tests that run in isolated Docker containers.
-  3. **Integration E2E tests**: isomorphic with `.github/workflows/` CI. Use Dockerfiles to test across CPU platforms (amd64/arm64) and systems (Debian/Alpine/macOS). Dev machines have Docker installed; target runtime environments do NOT.
+  2. **Unit tests** (`go test`):
+     - **Scope:** the hams CLI dispatcher itself + each Provider in isolation.
+     - **Definition:** runs directly in Go on the host. MUST NOT mutate any real file outside `t.TempDir()` and MUST NOT exec any real package-manager command. Every file-IO and exec boundary MUST be reachable via a constructor-injected interface so the test can substitute a fake.
+     - **Consequence:** the hams CLI and every provider MUST be domain-layered with DI. A provider that wraps `apt-get`/`brew`/`pnpm`/`git`/etc. exposes its outbound calls as a Go interface; the unit test wires a fake that records calls and writes virtual files. The fake is swapped only in the test — it does not affect production execution and does not affect E2E tests. That is the entire point of dependency injection here.
+  3. **Integration tests** (`task ci:itest` / per-provider Docker scenarios):
+     - **Scope:** the hams CLI + a single Provider, against real filesystem/network/package-manager state.
+     - **Definition:** each test case runs inside a dedicated Docker container per provider, isolated from every other provider. Each provider owns its integration test under `internal/provider/builtin/<provider>/integration/` with its own `Dockerfile` and `integration.sh`. The shared base image `hams-itest-base` (at `e2e/base/Dockerfile`) carries only debian-slim + ca-certs, curl, bash, git, sudo, yq — NO language toolchains. Each provider overlay installs its own runtime (node, python, go, rust, brew, …) because that is precisely what hams itself must do for real users. The real `hams` binary is bind-mounted read-only; integration.sh exercises real config read/write, real package install/remove, and real state-file writes. Both the base image and each provider overlay are content-addressed by SHA of their Dockerfile so rebuilds only happen when the underlying file changes. Tests assert observable outcomes (binary on PATH, YAML field values, exit codes) — never DI seams.
+  4. **E2E tests** (`task ci:e2e` / `task ci:e2e:one TARGET=<distro>`):
+     - **Scope:** the hams CLI + every Provider relevant to the target OS, end-to-end across init → install → uninstall → restore-from-store flows.
+     - **Definition:** runs the CI workflow (`.github/workflows/ci.yml`) via [`act`](https://github.com/nektos/act) against a matrix of OS images (Debian/Alpine/OpenWrt) × CPU architectures (amd64/arm64). Tests live in `e2e/<target>/run-tests.sh` and consume the shared assertion helpers in `e2e/base/lib/`.
+
+- **Standardized provider integration test process** — every linux-containerizable Provider MUST ship `internal/provider/builtin/<provider>/integration/{Dockerfile, integration.sh}`:
+  1. **Dockerfile** — `ARG BASE=hams-itest-base:latest` + `FROM ${BASE}` + whatever runtime install the provider needs (node/python/go/rust/brew/…). Runtime install lives here, not in integration.sh, so docker layer caching makes repeated test runs cheap.
+  2. **integration.sh** — sourced helpers at `/e2e/base/lib/{assertions,yaml_assert,provider_flow}.sh`. Required steps for package-like providers (apt, brew, cargo, goinstall, npm, pnpm, uv, vscodeext):
+     - Set `HAMS_STORE`, `HAMS_MACHINE_ID`, `HAMS_CONFIG_HOME` per the integration-test sandbox.
+     - Smoke: `assert_output_contains "hams --version" "hams version" hams --version`.
+     - Invoke `standard_cli_flow <provider> <install_verb> <existing_pkg> <new_pkg>` — the helper walks the canonical lifecycle (seed install → re-install → install-new → refresh → remove) and fails fast on the first bad assertion. For providers without a PATH binary (bash, git-config, git-clone), define a shell function and export `POST_INSTALL_CHECK=<fn-name>` before calling the helper.
+  3. **CI**: GitHub Actions `itest` matrix (`.github/workflows/ci.yml`) runs one container per provider via `task ci:itest:run PROVIDER=<name>`. `fail-fast: false` so one flaky provider doesn't mask the others.
+  4. **Local**: `task ci:itest:run PROVIDER=<name>` (direct docker, fast iteration) or `task test:itest:one PROVIDER=<name>` (through `act`, full CI simulation). `task ci:itest` runs all in-scope providers sequentially.
+  5. **Cache**: both the base image and the provider overlay are tagged with the sha256 of their Dockerfile (first 12 chars). `docker image inspect` gates the rebuild — tests don't recompile images unless the Dockerfile itself changed.
+  Reference implementations:
+  - `internal/provider/builtin/apt/integration/integration.sh` — package-like flow via `standard_cli_flow`.
+  - `internal/provider/builtin/bash/integration/integration.sh` — declarative flow with `POST_INSTALL_CHECK` hook (custom check).
+  - `internal/provider/builtin/git/integration/integration.sh` — two providers in one container (git-config + git-clone) with custom assertions.
 
 - **DI boundary isolation principle**: code architecture MUST use dependency injection to isolate uncontrollable external boundaries (filesystem, network, package managers, OS APIs). Unit tests inject mock boundary-layer services and run without side effects on the host.
 
@@ -44,7 +66,7 @@ globs: ["**/*"]
 
 - **GitHub Actions invoke Taskfile tasks, never raw commands**: every `.github/workflows/*.yml` step that performs build, test, lint, or any other project action MUST go through [`go-task/setup-task`](https://github.com/go-task/setup-task) + a `task <name>` invocation. Never inline raw `go build`, `go test`, `golangci-lint run`, `docker build`, or equivalent shell commands in workflow steps. Reason: Taskfile is the single source of truth for how work is done; inlining commands in workflows creates silent drift between local `task <name>` and CI, breaking the Local/CI isomorphism guarantee. If a workflow needs a new capability, add a Taskfile task first, then call it from the workflow.
 
-- **Integration & E2E tests run exclusively through `act`**: all integration and E2E tests MUST execute via `act` against `.github/workflows/ci.yml` — never by invoking `docker build`/`docker run` directly in Taskfile or scripts. This ensures the local execution path is byte-for-byte identical to the CI pipeline. Individual provider unit tests (non-Docker, DI-isolated) are the exception and run via `go test` directly. Taskfile entry points: `task ci:e2e` (all targets), `task ci:e2e:one TARGET=<target>` (single target), `task ci:integration`.
+- **Integration & E2E tests — Taskfile `ci:*` tasks are the contract**: the Taskfile tasks `ci:itest:base`, `ci:itest:run PROVIDER=<name>`, `ci:itest`, `ci:e2e:run TARGET=<target>`, and `ci:integration:run` are the single source of truth for how integration/E2E tests execute. CI workflows (`.github/workflows/ci.yml`) invoke these tasks verbatim via `task <name>`; local developers call the same tasks for byte-for-byte parity. `act` (`task test:itest:one PROVIDER=<name>`, `task test:e2e:one TARGET=<target>`) simulates the full GitHub Actions runner locally when that parity guarantee needs extra scrutiny. Individual provider unit tests (non-Docker, DI-isolated) are the exception and run via `go test` directly.
 
 - **Review findings are tasks**: when a Codex Review (`/codex:review`) or OpenSpec Verify (`/opsx:verify`) produces findings, record each finding as a checklist item under `openspec/changes/<id>/tasks/<capability>.task.md`, link from `tasks.md`, then for each finding use `/codex:rescue` to discuss context and fix strategy with Codex before implementing. Each fix gets its own atomic commit.
 

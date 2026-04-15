@@ -32,12 +32,12 @@ hams [全局 flag] <命令> [参数] [--hams-标志] [-- <透传参数>]
 Provider 命令都是 `hams <provider> <verb> [args]` 的形式，动词映射到底下包管理器的操作：
 
 ```bash
-hams brew install bat
+hams brew install htop
 hams pnpm add serve
 hams npm install --global prettier
-hams brew remove htop
+hams brew remove ripgrep
 hams brew list
-hams brew enrich bat
+hams brew enrich htop
 ```
 
 完整的动词规则见 [Provider 命令](./provider-commands)；每个 provider 自己特有的用法见 [Providers](../providers) 章节。
@@ -99,7 +99,7 @@ ERROR LOCK_CONFLICT: Another hams session is running.
 
 <Callout type="info">
   `--hams-` 前缀让你能在同一条命令里同时传 hams 自己的 flag 和给底层工具的 flag，互不干扰。
-  比如 `hams brew install bat --hams-tag=cli`：`bat` 被 brew 装上，`--hams-tag=cli` 被 hams 拦下来记到 Hamsfile 里，`brew` 对这个 flag 一无所知。
+  比如 `hams brew install htop --hams-tag=cli`：`htop` 被 brew 装上，`--hams-tag=cli` 被 hams 拦下来记到 Hamsfile 里，`brew` 对这个 flag 一无所知。
 </Callout>
 
 ## `--hams-` 前缀一览
