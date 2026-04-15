@@ -4,7 +4,9 @@ package homebrew
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io/fs"
 	"log/slog"
 	"maps"
 	"os"
@@ -440,11 +442,14 @@ func (p *Provider) loadOrCreateHamsfile(hamsFlags map[string]string, flags *prov
 	}
 
 	// Read directly; create empty file on ErrNotExist (avoids TOCTOU with Stat).
+	// Use errors.Is (not os.IsNotExist) because hamsfile.Read wraps the
+	// underlying PathError with fmt.Errorf, and os.IsNotExist does not
+	// traverse %w-wrapped chains.
 	f, readErr := hamsfile.Read(path)
 	if readErr == nil {
 		return f, nil
 	}
-	if !os.IsNotExist(readErr) {
+	if !errors.Is(readErr, fs.ErrNotExist) {
 		return nil, fmt.Errorf("reading hamsfile %s: %w", path, readErr)
 	}
 
