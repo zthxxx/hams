@@ -46,8 +46,8 @@ var (
 	_ Provider         = (*bashFake)(nil)
 	_ BashScriptRunner = (*bashFake)(nil)
 	_ Provider         = (*bashlessFake)(nil)
-	_ = hamsfile.File{} // keep hamsfile import referenced for stubProvider's signature
-	_ = state.File{}    // keep state import referenced for stubProvider's signature
+	_                  = hamsfile.File{} // keep hamsfile import referenced for stubProvider's signature
+	_                  = state.File{}    // keep state import referenced for stubProvider's signature
 )
 
 func TestRunBootstrap_DelegatesRegisteredScript(t *testing.T) {

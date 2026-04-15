@@ -54,7 +54,10 @@ func WithBootstrapAllowed(ctx context.Context, allowed bool) context.Context {
 // BootstrapAllowed reports whether the caller has consented to running
 // bootstrap scripts. Absent a prior WithBootstrapAllowed, returns false.
 func BootstrapAllowed(ctx context.Context) bool {
-	v, _ := ctx.Value(bootstrapAllowedKey{}).(bool)
+	v, ok := ctx.Value(bootstrapAllowedKey{}).(bool)
+	if !ok {
+		return false
+	}
 	return v
 }
 

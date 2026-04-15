@@ -37,7 +37,7 @@ var (
 	// to a terminal. In production, checks os.Stdin's fd. In tests, can
 	// be overridden to simulate TTY / non-TTY scenarios.
 	bootstrapPromptIsTTY = func() bool {
-		return term.IsTerminal(int(os.Stdin.Fd())) //nolint:gosec // Fd() returns uintptr which safely fits in int on all supported platforms
+		return term.IsTerminal(int(os.Stdin.Fd()))
 	}
 )
 
@@ -65,20 +65,26 @@ func resolveBootstrapConsent(boot bootstrapMode, brerr *provider.BootstrapRequir
 // then accepts [y/N/s] from the user. Separated so tests can override
 // input/output.
 func interactiveBootstrapPrompt(brerr *provider.BootstrapRequiredError) bootDecision {
-	fmt.Fprintln(bootstrapPromptOut)
-	fmt.Fprintf(bootstrapPromptOut, "hams: %s is required by provider %q but not installed.\n",
+	// Prompt output is best-effort: a broken stderr while prompting for
+	// consent is a non-recoverable UX bug, not a flow error to surface.
+	pl := func(args ...any) { fmt.Fprintln(bootstrapPromptOut, args...) }                       //nolint:errcheck // prompt output is best-effort
+	pf := func(format string, args ...any) { fmt.Fprintf(bootstrapPromptOut, format, args...) } //nolint:errcheck // prompt output is best-effort
+	pp := func(s string) { fmt.Fprint(bootstrapPromptOut, s) }                                  //nolint:errcheck // prompt output is best-effort
+
+	pl()
+	pf("hams: %s is required by provider %q but not installed.\n",
 		brerr.Binary, brerr.Provider)
-	fmt.Fprintln(bootstrapPromptOut)
-	fmt.Fprintln(bootstrapPromptOut, "The following bootstrap script will run:")
-	fmt.Fprintln(bootstrapPromptOut, "  "+brerr.Script)
-	fmt.Fprintln(bootstrapPromptOut)
-	fmt.Fprintln(bootstrapPromptOut, "Expected side effects:")
-	fmt.Fprintln(bootstrapPromptOut, "  - prompts for sudo password (Homebrew / installer requirement)")
-	fmt.Fprintln(bootstrapPromptOut, "  - may trigger macOS Xcode Command Line Tools install (~1GB, can hang on a GUI dialog)")
-	fmt.Fprintln(bootstrapPromptOut, "  - downloads from raw.githubusercontent.com (blocked by some corporate proxies)")
-	fmt.Fprintln(bootstrapPromptOut)
-	fmt.Fprintln(bootstrapPromptOut, "Proceed?  [y]es  [N]o (default, exits)  [s]kip-this-provider")
-	fmt.Fprint(bootstrapPromptOut, "> ")
+	pl()
+	pl("The following bootstrap script will run:")
+	pl("  " + brerr.Script)
+	pl()
+	pl("Expected side effects:")
+	pl("  - prompts for sudo password (Homebrew / installer requirement)")
+	pl("  - may trigger macOS Xcode Command Line Tools install (~1GB, can hang on a GUI dialog)")
+	pl("  - downloads from raw.githubusercontent.com (blocked by some corporate proxies)")
+	pl()
+	pl("Proceed?  [y]es  [N]o (default, exits)  [s]kip-this-provider")
+	pp("> ")
 
 	reader := bufio.NewReader(bootstrapPromptIn)
 	line, err := reader.ReadString('\n')
@@ -101,8 +107,8 @@ func interactiveBootstrapPrompt(brerr *provider.BootstrapRequiredError) bootDeci
 // (either shared or local) for the active profile. Used to distinguish
 // "user declared brew resources" (bootstrap failure = fatal) from
 // "only state file lingers" (bootstrap failure = silent skip).
-func hamsfilePresent(profileDir string, manifest provider.Manifest) bool {
-	prefix := provider.ManifestFilePrefix(manifest)
+func hamsfilePresent(profileDir string, manifest *provider.Manifest) bool {
+	prefix := provider.ManifestFilePrefix(*manifest)
 	_, errMain := os.Stat(filepath.Join(profileDir, prefix+".hams.yaml"))
 	_, errLocal := os.Stat(filepath.Join(profileDir, prefix+".hams.local.yaml"))
 	return errMain == nil || errLocal == nil

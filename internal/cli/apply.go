@@ -214,7 +214,7 @@ func runApply(ctx context.Context, flags *provider.GlobalFlags, registry *provid
 			continue
 		}
 		manifest := p.Manifest()
-		hasHamsfile := hamsfilePresent(profileDir, manifest)
+		hasHamsfile := hamsfilePresent(profileDir, &manifest)
 
 		var brerr *provider.BootstrapRequiredError
 		if errors.As(bootstrapErr, &brerr) && hasHamsfile {

@@ -27,7 +27,7 @@ func TestBootstrap(t *testing.T) {
 	}
 }
 
-func TestProviderImplementsBashScriptRunner(t *testing.T) {
+func TestProviderImplementsBashScriptRunner(_ *testing.T) {
 	var _ provider.BashScriptRunner = New()
 }
 
