@@ -64,6 +64,41 @@ hams calls `dpkg-query -W -f='${Status} ${Package} ${Version}\n'` to get the ful
 packages and matches the Hamsfile entries against it. It's faster than `apt list --installed` and
 doesn't depend on parsing the human-readable output.
 
+## Version and release pinning
+
+`hams apt install` accepts apt's standard pinning syntax and records the pin
+in the hamsfile so it survives across machines:
+
+```bash
+# Pin to a specific version
+hams apt install nginx=1.24.0
+
+# Pin to a specific release/suite
+hams apt install nginx/bookworm-backports
+```
+
+Recorded as:
+
+```yaml
+cli:
+  - app: nginx
+    version: "1.24.0"
+  # or
+  - app: nginx
+    source: bookworm-backports
+```
+
+On the next `hams apply`, the executor compares the observed dpkg version
+against the recorded pin. If a host upgrade has drifted away from the pin
+(observed `1.22.1`, requested `1.24.0`), apply re-installs with the pin
+to restore the declared state.
+
+**Dry-run flags** (`--download-only`, `--simulate`, `-s`, `--just-print`,
+`--no-act`, `--recon`) execute apt-get but skip the auto-record path —
+no host change happened, so recording would be a lie. The CLI prints a
+warning telling you to declare the package in the hamsfile manually if
+you want hams to track it.
+
 ## PPAs and third-party repos
 
 The `apt` provider doesn't manage `add-apt-repository` or `apt-key add`. Those are one-time "configure
