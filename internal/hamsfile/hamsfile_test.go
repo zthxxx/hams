@@ -356,8 +356,8 @@ func TestAddAppWithFields_RoundTripsExtraFields(t *testing.T) {
 		"version": "1.24.0",
 		"source":  "bookworm-backports",
 	})
-	if err := f.Write(); err != nil {
-		t.Fatalf("Write: %v", err)
+	if writeErr := f.Write(); writeErr != nil {
+		t.Fatalf("Write: %v", writeErr)
 	}
 
 	data, err := os.ReadFile(path)
@@ -393,8 +393,8 @@ func TestAddAppWithFields_BareNameDoesNotEmitEmptyFields(t *testing.T) {
 		"version": "",
 		"source":  "",
 	})
-	if err := f.Write(); err != nil {
-		t.Fatalf("Write: %v", err)
+	if writeErr := f.Write(); writeErr != nil {
+		t.Fatalf("Write: %v", writeErr)
 	}
 
 	data, err := os.ReadFile(path)
