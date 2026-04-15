@@ -25,11 +25,20 @@ func TestIntegration_BootstrapFromRepo_LocalGitRepo(t *testing.T) {
 	runGit(t, repoDir, "config", "user.email", "test@example.com")
 	runGit(t, repoDir, "config", "user.name", "Test")
 
-	// Create a hams.config.yaml inside the repo.
-	configContent := "profile_tag: macOS\nmachine_id: integration-test\n"
+	// Create a minimal store-level hams.config.yaml (no machine-scoped fields).
 	configPath := filepath.Join(repoDir, "hams.config.yaml")
-	if err := os.WriteFile(configPath, []byte(configContent), 0o640); err != nil {
+	if err := os.WriteFile(configPath, []byte("# store config\n"), 0o640); err != nil {
 		t.Fatalf("WriteFile config: %v", err)
+	}
+
+	// Machine-scoped fields live in the global config.
+	configHome := filepath.Join(root, "config")
+	if err := os.MkdirAll(configHome, 0o750); err != nil {
+		t.Fatalf("MkdirAll config home: %v", err)
+	}
+	globalContent := "profile_tag: macOS\nmachine_id: integration-test\n"
+	if err := os.WriteFile(filepath.Join(configHome, "hams.config.yaml"), []byte(globalContent), 0o640); err != nil {
+		t.Fatalf("WriteFile global config: %v", err)
 	}
 
 	// Create a profile directory with a dummy hamsfile.
@@ -48,7 +57,7 @@ func TestIntegration_BootstrapFromRepo_LocalGitRepo(t *testing.T) {
 
 	// Call bootstrapFromRepo with the local path.
 	paths := config.Paths{
-		ConfigHome: filepath.Join(root, "config"),
+		ConfigHome: configHome,
 		DataHome:   filepath.Join(root, "data"),
 	}
 
@@ -106,8 +115,7 @@ func TestIntegration_BootstrapFromRepo_CloneLocal(t *testing.T) {
 	runGit(t, srcDir, "config", "user.email", "test@example.com")
 	runGit(t, srcDir, "config", "user.name", "Test")
 
-	configContent := "profile_tag: linux\nmachine_id: clone-test\n"
-	if err := os.WriteFile(filepath.Join(srcDir, "hams.config.yaml"), []byte(configContent), 0o640); err != nil {
+	if err := os.WriteFile(filepath.Join(srcDir, "hams.config.yaml"), []byte("# store config\n"), 0o640); err != nil {
 		t.Fatalf("WriteFile config: %v", err)
 	}
 	runGit(t, srcDir, "add", "-A")
@@ -117,11 +125,20 @@ func TestIntegration_BootstrapFromRepo_CloneLocal(t *testing.T) {
 	bareDir := filepath.Join(root, "bare-store.git")
 	runGit(t, root, "clone", "--bare", srcDir, bareDir)
 
+	// Machine-scoped fields live in the global config, not in the cloned store.
+	configHome := filepath.Join(root, "config")
+	if err := os.MkdirAll(configHome, 0o750); err != nil {
+		t.Fatalf("MkdirAll config home: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(configHome, "hams.config.yaml"), []byte("profile_tag: linux\nmachine_id: clone-test\n"), 0o640); err != nil {
+		t.Fatalf("WriteFile global config: %v", err)
+	}
+
 	// Now use bootstrapFromRepo with the bare repo path as a "remote" URL.
 	// Since the bare repo path won't have a .git directory as a subdirectory
 	// (it IS the git directory), bootstrapFromRepo will treat it as remote and clone.
 	paths := config.Paths{
-		ConfigHome: filepath.Join(root, "config"),
+		ConfigHome: configHome,
 		DataHome:   filepath.Join(root, "data"),
 	}
 

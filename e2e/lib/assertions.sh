@@ -37,31 +37,56 @@ run_smoke_tests() {
   assert_output_contains "hams --help renders" "Declarative IaC environment management" hams --help
   assert_output_contains "hams brew --help routes to provider" "Manage Homebrew packages" hams brew --help
 
-  # Config loading from the basic fixture store.
-  assert_output_contains "config list reads fixture store" "Profile tag:       test" \
+  # Seed a machine-scoped global config so `config list` has something to
+  # report. Store-level configs cannot contain profile_tag / machine_id —
+  # hams rejects them at load time.
+  local config_home="${HAMS_CONFIG_HOME:-$HOME/.config/hams}"
+  mkdir -p "$config_home"
+  cat > "$config_home/hams.config.yaml" << 'YAML'
+profile_tag: test
+machine_id: smoke-test
+YAML
+
+  # Config loading from the fixture store merges with the seeded global.
+  assert_output_contains "config list reads merged config" "Profile tag:       test" \
     hams --store=/fixtures/test-store config list
   assert_output_contains "config get profile_tag" "test" \
     hams --store=/fixtures/test-store config get profile_tag
   echo ""
 }
 
-# create_store_repo creates a local git repo from fixture files.
+# create_store_repo creates a local git repo from fixture files, and writes
+# the global hams config with machine-scoped fields (profile_tag, machine_id).
+#
 # Usage: create_store_repo <store_dir> <fixture_src_dir> <machine_id>
+#
+# Machine-scoped fields (profile_tag, machine_id) MUST live in the global
+# config at $HAMS_CONFIG_HOME (or ~/.config/hams/). Store-level configs that
+# contain them are rejected by hams at load time.
+#
 # Runs in a subshell to avoid changing the caller's working directory.
 create_store_repo() {
   local store_dir="$1"
   local fixture_src="$2"
   local machine_id="$3"
 
+  # Write machine-scoped fields to the global config.
+  local config_home="${HAMS_CONFIG_HOME:-$HOME/.config/hams}"
+  mkdir -p "$config_home"
+  cat > "$config_home/hams.config.yaml" << YAML
+profile_tag: test
+machine_id: ${machine_id}
+YAML
+
+  # Store-level config omits machine-scoped fields — they belong to the
+  # machine, not the shared store.
   mkdir -p "$store_dir/test"
   (
     cd "$store_dir" || exit 1
     git init --quiet
 
-    # Unquoted heredoc is intentional: ${machine_id} must be interpolated.
-    cat > hams.config.yaml << YAML
-profile_tag: test
-machine_id: ${machine_id}
+    cat > hams.config.yaml << 'YAML'
+# Store-level config. Machine-scoped fields live in $HAMS_CONFIG_HOME.
 YAML
 
     cp "$fixture_src"/test/*.hams.yaml test/

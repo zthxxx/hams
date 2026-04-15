@@ -1,7 +1,10 @@
-# Store-level hams config for the dev-sandbox scenario.
+# Store-level hams config.
 #
-# Lives inside the store root (/workspace/store/hams.config.yaml inside
-# the container). Merged on top of the global config at load time.
-
-profile_tag: dev
-machine_id: sandbox
+# Lives inside the store root (`<store>/hams.config.yaml`) and is merged
+# into the effective config at load time. Only store-scoped settings
+# belong here.
+#
+# DO NOT add machine-scoped fields (`profile_tag`, `machine_id`) to this
+# file. Those live in the global config at `~/.config/hams/hams.config.yaml`
+# (or `hams.config.local.yaml` for per-machine overrides). hams will reject
+# any store-level config that contains them.

@@ -33,23 +33,23 @@ Delivers: state/schema-design requirements for `first_install_at`, `removed_at`,
 
 Delivers: schema-design Project-Level Config Schema requirement additions.
 
-- [ ] 2.1 Add `validateStoreScope(cfg *Config, path string) error` in `internal/config/config.go`. Error message template from design D6.
-- [ ] 2.2 Wire `validateStoreScope` call into the loader at the point where `<store>/hams.config.yaml` and `<store>/hams.config.local.yaml` are parsed (before merge). Exact insertion point: `internal/config/config.go:Load` (or the equivalent loader entry), immediately after `yaml.Unmarshal` of each store-level file.
-- [ ] 2.3 Ensure the error is returned (not panicked, not warned) so callers propagate to exit-non-zero.
-- [ ] 2.4 Unit tests in `internal/config/config_test.go` covering C1–C5:
-  - [ ] 2.4.1 C1: store `hams.config.yaml` with `profile_tag: dev` → `Load` returns error containing file path + `profile_tag` + global path pointer.
-  - [ ] 2.4.2 C2: store `hams.config.yaml` with `machine_id: x` → same.
-  - [ ] 2.4.3 C3: store `hams.config.local.yaml` with `profile_tag: dev` → error (symmetric strictness).
-  - [ ] 2.4.4 C4: global `hams.config.yaml` with `profile_tag: dev` → load succeeds.
-  - [ ] 2.4.5 C5: store config without machine-scope fields → load succeeds, merge works normally.
-- [ ] 2.5 Scrub `profile_tag` and `machine_id` from:
-  - [ ] 2.5.1 `examples/.template/store/hams.config.yaml`
-  - [ ] 2.5.2 `examples/basic-debian/store/hams.config.yaml`
-  - [ ] 2.5.3 Any additional `examples/*/store/hams.config.yaml` found via `rg -l '^(profile_tag|machine_id):' examples/`.
-  - [ ] 2.5.4 `e2e/fixtures/debian-store/hams.config.yaml`, `e2e/fixtures/alpine-store/hams.config.yaml`, `e2e/fixtures/openwrt-store/hams.config.yaml`, `e2e/fixtures/test-store/hams.config.yaml`.
-- [ ] 2.6 Add or update `examples/.template/hams.config.yaml.example` (global-level example) to show where `profile_tag` and `machine_id` belong, with inline comments.
-- [ ] 2.7 `go build ./...` + `go vet ./...` + `go test -race ./internal/config/...` pass.
-- [ ] 2.8 Commit: `feat(config): hard-fail when store-level config sets profile_tag or machine_id`.
+- [x] 2.1 Add `validateStoreScope(cfg *Config, path string) error` in `internal/config/config.go`. Error message template from design D6.
+- [x] 2.2 Wire `validateStoreScope` call into the loader at the point where `<store>/hams.config.yaml` and `<store>/hams.config.local.yaml` are parsed (before merge). Exact insertion point: `internal/config/config.go:Load` (or the equivalent loader entry), immediately after `yaml.Unmarshal` of each store-level file.
+- [x] 2.3 Ensure the error is returned (not panicked, not warned) so callers propagate to exit-non-zero.
+- [x] 2.4 Unit tests in `internal/config/config_test.go` covering C1–C5:
+  - [x] 2.4.1 C1: store `hams.config.yaml` with `profile_tag: dev` → `Load` returns error containing file path + `profile_tag` + global path pointer.
+  - [x] 2.4.2 C2: store `hams.config.yaml` with `machine_id: x` → same.
+  - [x] 2.4.3 C3: store `hams.config.local.yaml` with `profile_tag: dev` → error (symmetric strictness).
+  - [x] 2.4.4 C4: global `hams.config.yaml` with `profile_tag: dev` → load succeeds.
+  - [x] 2.4.5 C5: store config without machine-scope fields → load succeeds, merge works normally.
+- [x] 2.5 Scrub `profile_tag` and `machine_id` from:
+  - [x] 2.5.1 `examples/.template/store/hams.config.yaml`
+  - [x] 2.5.2 `examples/basic-debian/store/hams.config.yaml`
+  - [x] 2.5.3 Any additional `examples/*/store/hams.config.yaml` found via `rg -l '^(profile_tag|machine_id):' examples/`.
+  - [x] 2.5.4 `e2e/fixtures/debian-store/hams.config.yaml`, `e2e/fixtures/alpine-store/hams.config.yaml`, `e2e/fixtures/openwrt-store/hams.config.yaml`, `e2e/fixtures/test-store/hams.config.yaml`.
+- [x] 2.6 Add or update `examples/.template/hams.config.yaml.example` (global-level example) to show where `profile_tag` and `machine_id` belong, with inline comments.
+- [x] 2.7 `go build ./...` + `go vet ./...` + `go test -race ./internal/config/...` pass.
+- [x] 2.8 Commit: `feat(config): hard-fail when store-level config sets profile_tag or machine_id`.
 
 ## 3. Apt CmdRunner DI seam (no behavior change yet)
 
