@@ -1,8 +1,10 @@
 package homebrew
 
 import (
+	"path/filepath"
 	"testing"
 
+	"github.com/zthxxx/hams/internal/config"
 	"github.com/zthxxx/hams/internal/provider"
 )
 
@@ -33,5 +35,31 @@ func TestName(t *testing.T) {
 	}
 	if p.DisplayName() != "Homebrew" {
 		t.Errorf("DisplayName() = %q, want 'Homebrew'", p.DisplayName())
+	}
+}
+
+// TestLoadOrCreateHamsfile_MissingFileReturnsEmpty locks in the regression
+// fix for `os.IsNotExist` not traversing `%w`-wrapped errors. Before the
+// fix, a fresh store with no Homebrew.hams.yaml caused
+// `loadOrCreateHamsfile` to return a wrapped read error instead of an
+// empty in-memory hamsfile, breaking every CLI install/remove on first
+// use against a brand-new store.
+func TestLoadOrCreateHamsfile_MissingFileReturnsEmpty(t *testing.T) {
+	storeDir := t.TempDir()
+	p := New(&config.Config{StorePath: storeDir, ProfileTag: "test"})
+
+	hf, err := p.loadOrCreateHamsfile(nil, &provider.GlobalFlags{})
+	if err != nil {
+		t.Fatalf("loadOrCreateHamsfile on missing file = %v, want nil", err)
+	}
+	if hf == nil {
+		t.Fatal("loadOrCreateHamsfile returned nil hamsfile")
+	}
+	wantPath := filepath.Join(storeDir, "test", "Homebrew.hams.yaml")
+	if hf.Path != wantPath {
+		t.Errorf("hf.Path = %q, want %q", hf.Path, wantPath)
+	}
+	if hf.Root == nil {
+		t.Fatal("hf.Root is nil; expected an empty mapping document node")
 	}
 }
