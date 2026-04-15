@@ -1,0 +1,150 @@
+1:"$Sreact.fragment"
+2:I[20868,["/_next/static/chunks/12papiu2uecdn.js","/_next/static/chunks/17w-qi2xl_cs_.js","/_next/static/chunks/0t-.yzyb4a17p.js","/_next/static/chunks/092eu57~.7ox..js","/_next/static/chunks/0jzkg5~l3f10f.js"],"TOCProvider"]
+3:I[24456,["/_next/static/chunks/12papiu2uecdn.js","/_next/static/chunks/17w-qi2xl_cs_.js","/_next/static/chunks/0t-.yzyb4a17p.js","/_next/static/chunks/092eu57~.7ox..js","/_next/static/chunks/0jzkg5~l3f10f.js"],"Sidebar"]
+4:I[53490,["/_next/static/chunks/12papiu2uecdn.js","/_next/static/chunks/17w-qi2xl_cs_.js","/_next/static/chunks/0t-.yzyb4a17p.js","/_next/static/chunks/092eu57~.7ox..js","/_next/static/chunks/0jzkg5~l3f10f.js"],"ClientWrapper"]
+1e:I[3911,["/_next/static/chunks/12papiu2uecdn.js","/_next/static/chunks/17w-qi2xl_cs_.js","/_next/static/chunks/0t-.yzyb4a17p.js","/_next/static/chunks/092eu57~.7ox..js","/_next/static/chunks/0jzkg5~l3f10f.js"],"HeadingAnchor"]
+1f:I[47245,["/_next/static/chunks/12papiu2uecdn.js","/_next/static/chunks/17w-qi2xl_cs_.js","/_next/static/chunks/0t-.yzyb4a17p.js","/_next/static/chunks/092eu57~.7ox..js","/_next/static/chunks/0jzkg5~l3f10f.js"],"ToggleWordWrapButton"]
+2c:I[13257,["/_next/static/chunks/12papiu2uecdn.js","/_next/static/chunks/17w-qi2xl_cs_.js","/_next/static/chunks/0t-.yzyb4a17p.js","/_next/static/chunks/092eu57~.7ox..js","/_next/static/chunks/0jzkg5~l3f10f.js"],"OutletBoundary"]
+2d:"$Sreact.suspense"
+5:Ted9,import { Callout } from 'nextra/components'
+
+# bash Provider
+
+最灵活的 provider —— 让你跑任意 shell 脚本。如果某个东西 hams 其他 provider 管不了（比如装 Homebrew 本身、
+跑一个第三方的安装脚本、配置一个特殊的环境变量文件），bash 都能兜底。
+
+但灵活是有代价的：bash 自己不知道怎么判断"这事儿已经做过了"，所以你必须显式提供一个
+`check:` 命令。有这个 check，hams 才能幂等地跑 apply。
+
+**支持平台：** macOS、Linux
+
+## 怎么用
+
+```bash
+# 跑一个 urn 对应的脚本
+hams bash run "urn:hams:bash:install-homebrew"
+
+# 列出被管的 bash 步骤
+hams bash list
+```
+
+bash provider 没有 `install` / `remove` 的概念 —— 每一条都是一次声明式的"要做的一件事"。
+
+## Hamsfile 长什么样
+
+```yaml
+# macOS/bash.hams.yaml
+schema_version: 1
+provider: bash
+
+groups:
+  - tag: bootstrap
+    items:
+      - urn: "urn:hams:bash:install-homebrew"
+        step: Install Homebrew
+        run: /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+        check: command -v brew
+
+      - urn: "urn:hams:bash:install-pnpm"
+        step: Install pnpm
+        run: curl -fsSL https://get.pnpm.io/install.sh | sh -
+        check: command -v pnpm
+
+  - tag: config
+    items:
+      - urn: "urn:hams:bash:git-rerere"
+        step: Enable git rerere globally
+        run: git config --global rerere.autoUpdate true
+        check: git config --global --get rerere.autoUpdate
+```
+
+字段：
+
+- `run` — 要执行的脚本。可以是一行，也可以是 YAML 多行字符串（`run: |`）
+- `check` — 幂等性检查。退出码 `0` 表示"已完成不用跑"，非 `0` 表示"还得跑一次"
+
+## check 命令怎么写才靠谱
+
+`check` 是整个 bash provider 的灵魂。写得好，hams apply 能幂等反复跑；写得差，要么每次重复装，要么漏装了也不知道。
+
+几条实战经验：
+
+- **查命令是否存在**：`command -v foo`，而不是 `which foo`（`which` 在某些系统上行为不一致）
+- **查文件存在**：`test -f /path/to/file`
+- **查配置值**：`git config --global --get some.key | grep -q "expected"`
+- **查环境变量**：`test -n "$FOO"`
+- **不要在 check 里产生副作用** —— check 会被反复跑，想象它被跑 100 次也没事
+
+**反模式**：
+
+```yaml
+# ❌ 每次都会返回 0，apply 永远觉得"已完成"
+check: "true"
+
+# ❌ 每次都会返回非 0，apply 永远重跑
+check: "false"
+
+# ❌ 依赖当前目录 —— hams 的 cwd 可能不是你期望的
+check: test -f ./some-file
+```
+
+## 执行环境
+
+hams 跑 `run` 命令时：
+
+- **shell** — 默认 `/bin/bash`，可以在 `hams.config.yaml` 里全局换成 `/bin/sh` 或 `/bin/zsh`
+- **cwd** — `$HOME`（想要别的路径就在脚本里 `cd`）
+- **env** — 继承 hams 自己的环境变量。敏感值用 `env_from_keychain` 字段注入
+- **stdin** — 关闭。脚本需要交互输入就用别的 provider，或者改成非交互模式（带 `-y`）
+
+## 什么时候不该用 bash
+
+bash 很强大，但它缺少其他 provider 的结构化信息。优先考虑专门的 provider：
+
+- 装 Homebrew formula？用 Homebrew provider，别自己写 `brew install` 脚本
+- 配 git 全局设置？用 git-config provider，比 bash 写 `git config --global` 可读得多
+- 克隆仓库？用 git-clone provider
+
+bash 最适合那些**无处可放**的一次性操作：安装 Homebrew 自己、跑第三方 installer、触发系统级初始化。
+
+<Callout type="warning">
+  bash provider 没有"卸载"对应物 —— Hamsfile 里删掉一条 bash 记录，hams 不会自动反向执行脚本。
+  要撤销请在 apply 之外手动处理，或者写一条反向的 bash 记录。
+</Callout>0:{"rsc":["$","$1","c",{"children":[["$","div",null,{"className":"x:mx-auto x:flex x:max-w-(--nextra-content-width)","children":["$","$L2",null,{"value":[{"value":"怎么用","id":"怎么用","depth":2},{"value":"Hamsfile 长什么样","id":"hamsfile-长什么样","depth":2},{"value":"check 命令怎么写才靠谱","id":"check-命令怎么写才靠谱","depth":2},{"value":"执行环境","id":"执行环境","depth":2},{"value":"什么时候不该用 bash","id":"什么时候不该用-bash","depth":2}],"children":[["$","$L3",null,{}],["$","$L4",null,{"metadata":{"title":"bash Provider","filePath":"content/zh-CN/docs/providers/bash.mdx","timestamp":1776277188000},"sourceCode":"$5","children":[["$","div",null,{"id":"nextra-skip-nav"}],["$","main",null,{"data-pagefind-body":true,"children":[["$","h1",null,{"className":"x:tracking-tight x:text-slate-900 x:dark:text-slate-100 x:font-bold x:mt-2 x:text-4xl","children":["bash Provider","$undefined"]}],"\n",["$","p",null,{"className":"x:not-first:mt-[1.25em] x:leading-7","children":"最灵活的 provider —— 让你跑任意 shell 脚本。如果某个东西 hams 其他 provider 管不了（比如装 Homebrew 本身、\n跑一个第三方的安装脚本、配置一个特殊的环境变量文件），bash 都能兜底。"}],"\n","$L6","\n","$L7","\n","$L8","\n","$L9","\n","$La","\n","$Lb","\n","$Lc","\n","$Ld","\n","$Le","\n","$Lf","\n","$L10","\n","$L11","\n","$L12","\n","$L13","\n","$L14","\n","$L15","\n","$L16","\n","$L17","\n","$L18","\n","$L19","\n","$L1a","\n","$L1b","\n","$L1c"]}]]}]]}]}],null,"$L1d"]}],"isPartial":false,"staleTime":300,"varyParams":null,"buildId":"TeHNWxIawAcibho1l2N00"}
+6:["$","p",null,{"className":"x:not-first:mt-[1.25em] x:leading-7","children":["但灵活是有代价的：bash 自己不知道怎么判断”这事儿已经做过了”，所以你必须显式提供一个\n",["$","code",null,{"className":"nextra-code","dir":"ltr","children":"check:"}]," 命令。有这个 check，hams 才能幂等地跑 apply。"]}]
+7:["$","p",null,{"className":"x:not-first:mt-[1.25em] x:leading-7","children":[["$","strong",null,{"children":"支持平台："}]," macOS、Linux"]}]
+8:["$","h2",null,{"id":"怎么用","className":"x:tracking-tight x:text-slate-900 x:dark:text-slate-100 x:font-semibold x:target:animate-[fade-in_1.5s] x:mt-10 x:border-b x:pb-1 x:text-3xl nextra-border","children":["怎么用",["$","$L1e",null,{"id":"怎么用"}]]}]
+9:["$","div",null,{"data-pagefind-ignore":"all","className":"nextra-code x:relative x:not-first:mt-[1.25em]","children":["$undefined",["$","pre",null,{"className":"x:group x:focus-visible:nextra-focus x:overflow-x-auto x:subpixel-antialiased x:text-[.9em] x:bg-white x:dark:bg-black x:py-4 x:ring-1 x:ring-inset x:ring-gray-300 x:dark:ring-neutral-700 x:contrast-more:ring-gray-900 x:contrast-more:dark:ring-gray-50 x:contrast-more:contrast-150 x:rounded-md not-prose","tabIndex":"0","children":[["$","div",null,{"className":"x:group-hover:opacity-100 x:group-focus:opacity-100 x:opacity-0 x:transition x:focus-within:opacity-100 x:flex x:gap-1 x:absolute x:right-4 x:top-2","children":[["$","$L1f",null,{"children":["$","svg",null,{"viewBox":"0 0 24 24","fill":"currentColor","height":"1em","children":["$","path",null,{"d":"M4 19h6v-2H4v2zM20 5H4v2h16V5zm-3 6H4v2h13.25c1.1 0 2 .9 2 2s-.9 2-2 2H15v-2l-3 3l3 3v-2h2c2.21 0 4-1.79 4-4s-1.79-4-4-4z"}]}]}],false]}],["$","code",null,{"className":"nextra-code","dir":"ltr","children":[["$","span",null,{"children":["$","span",null,{"style":{"--shiki-light":"#6A737D","--shiki-dark":"#6A737D"},"children":"# 跑一个 urn 对应的脚本"}]}],"\n",["$","span",null,{"children":[["$","span",null,{"style":{"--shiki-light":"#6F42C1","--shiki-dark":"#B392F0"},"children":"hams"}],["$","span",null,{"style":{"--shiki-light":"#032F62","--shiki-dark":"#9ECBFF"},"children":" bash"}],["$","span",null,{"style":{"--shiki-light":"#032F62","--shiki-dark":"#9ECBFF"},"children":" run"}],["$","span",null,{"style":{"--shiki-light":"#032F62","--shiki-dark":"#9ECBFF"},"children":" \"urn:hams:bash:install-homebrew\""}]]}],"\n",["$","span",null,{"children":" "}],"\n",["$","span",null,{"children":["$","span",null,{"style":{"--shiki-light":"#6A737D","--shiki-dark":"#6A737D"},"children":"# 列出被管的 bash 步骤"}]}],"\n",["$","span",null,{"children":[["$","span",null,{"style":{"--shiki-light":"#6F42C1","--shiki-dark":"#B392F0"},"children":"hams"}],["$","span",null,{"style":{"--shiki-light":"#032F62","--shiki-dark":"#9ECBFF"},"children":" bash"}],["$","span",null,{"style":{"--shiki-light":"#032F62","--shiki-dark":"#9ECBFF"},"children":" list"}]]}]]}]]}]]}]
+a:["$","p",null,{"className":"x:not-first:mt-[1.25em] x:leading-7","children":["bash provider 没有 ",["$","code",null,{"className":"nextra-code","dir":"ltr","children":"install"}]," / ",["$","code",null,{"className":"nextra-code","dir":"ltr","children":"remove"}]," 的概念 —— 每一条都是一次声明式的”要做的一件事”。"]}]
+b:["$","h2",null,{"id":"hamsfile-长什么样","className":"x:tracking-tight x:text-slate-900 x:dark:text-slate-100 x:font-semibold x:target:animate-[fade-in_1.5s] x:mt-10 x:border-b x:pb-1 x:text-3xl nextra-border","children":["Hamsfile 长什么样",["$","$L1e",null,{"id":"hamsfile-长什么样"}]]}]
+c:["$","div",null,{"data-pagefind-ignore":"all","className":"nextra-code x:relative x:not-first:mt-[1.25em]","children":["$undefined",["$","pre",null,{"className":"x:group x:focus-visible:nextra-focus x:overflow-x-auto x:subpixel-antialiased x:text-[.9em] x:bg-white x:dark:bg-black x:py-4 x:ring-1 x:ring-inset x:ring-gray-300 x:dark:ring-neutral-700 x:contrast-more:ring-gray-900 x:contrast-more:dark:ring-gray-50 x:contrast-more:contrast-150 x:rounded-md not-prose","tabIndex":"0","children":[["$","div",null,{"className":"x:group-hover:opacity-100 x:group-focus:opacity-100 x:opacity-0 x:transition x:focus-within:opacity-100 x:flex x:gap-1 x:absolute x:right-4 x:top-2","children":[["$","$L1f",null,{"children":["$","svg",null,{"viewBox":"0 0 24 24","fill":"currentColor","height":"1em","children":["$","path",null,{"d":"M4 19h6v-2H4v2zM20 5H4v2h16V5zm-3 6H4v2h13.25c1.1 0 2 .9 2 2s-.9 2-2 2H15v-2l-3 3l3 3v-2h2c2.21 0 4-1.79 4-4s-1.79-4-4-4z"}]}]}],false]}],["$","code",null,{"className":"nextra-code","dir":"ltr","children":[["$","span",null,{"children":["$","span",null,{"style":{"--shiki-light":"#6A737D","--shiki-dark":"#6A737D"},"children":"# macOS/bash.hams.yaml"}]}],"\n",["$","span",null,{"children":[["$","span",null,{"style":{"--shiki-light":"#22863A","--shiki-dark":"#85E89D"},"children":"schema_version"}],["$","span",null,{"style":{"--shiki-light":"#24292E","--shiki-dark":"#E1E4E8"},"children":": "}],["$","span",null,{"style":{"--shiki-light":"#005CC5","--shiki-dark":"#79B8FF"},"children":"1"}]]}],"\n",["$","span",null,{"children":[["$","span",null,{"style":{"--shiki-light":"#22863A","--shiki-dark":"#85E89D"},"children":"provider"}],["$","span",null,{"style":{"--shiki-light":"#24292E","--shiki-dark":"#E1E4E8"},"children":": "}],["$","span",null,{"style":{"--shiki-light":"#032F62","--shiki-dark":"#9ECBFF"},"children":"bash"}]]}],"\n",["$","span",null,{"children":" "}],"\n",["$","span",null,{"children":[["$","span",null,{"style":{"--shiki-light":"#22863A","--shiki-dark":"#85E89D"},"children":"groups"}],["$","span",null,{"style":{"--shiki-light":"#24292E","--shiki-dark":"#E1E4E8"},"children":":"}]]}],"\n",["$","span",null,{"children":[["$","span",null,{"style":{"--shiki-light":"#24292E","--shiki-dark":"#E1E4E8"},"children":"  - "}],["$","span",null,{"style":{"--shiki-light":"#22863A","--shiki-dark":"#85E89D"},"children":"tag"}],["$","span",null,{"style":{"--shiki-light":"#24292E","--shiki-dark":"#E1E4E8"},"children":": "}],["$","span",null,{"style":{"--shiki-light":"#032F62","--shiki-dark":"#9ECBFF"},"children":"bootstrap"}]]}],"\n",["$","span",null,{"children":[["$","span",null,{"style":{"--shiki-light":"#22863A","--shiki-dark":"#85E89D"},"children":"    items"}],["$","span",null,{"style":{"--shiki-light":"#24292E","--shiki-dark":"#E1E4E8"},"children":":"}]]}],"\n",["$","span",null,{"children":[["$","span",null,{"style":{"--shiki-light":"#24292E","--shiki-dark":"#E1E4E8"},"children":"      - "}],["$","span",null,{"style":{"--shiki-light":"#22863A","--shiki-dark":"#85E89D"},"children":"urn"}],["$","span",null,{"style":{"--shiki-light":"#24292E","--shiki-dark":"#E1E4E8"},"children":": "}],["$","span",null,{"style":{"--shiki-light":"#032F62","--shiki-dark":"#9ECBFF"},"children":"\"urn:hams:bash:install-homebrew\""}]]}],"\n",["$","span",null,{"children":[["$","span",null,{"style":{"--shiki-light":"#22863A","--shiki-dark":"#85E89D"},"children":"        step"}],["$","span",null,{"style":{"--shiki-light":"#24292E","--shiki-dark":"#E1E4E8"},"children":": "}],["$","span",null,{"style":{"--shiki-light":"#032F62","--shiki-dark":"#9ECBFF"},"children":"Install Homebrew"}]]}],"\n",["$","span",null,{"children":[["$","span",null,{"style":{"--shiki-light":"#22863A","--shiki-dark":"#85E89D"},"children":"        run"}],["$","span",null,{"style":{"--shiki-light":"#24292E","--shiki-dark":"#E1E4E8"},"children":": "}],["$","span",null,{"style":{"--shiki-light":"#032F62","--shiki-dark":"#9ECBFF"},"children":"/bin/bash -c \"$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\""}]]}],"\n",["$","span",null,{"children":[["$","span",null,{"style":{"--shiki-light":"#22863A","--shiki-dark":"#85E89D"},"children":"        check"}],["$","span",null,{"style":{"--shiki-light":"#24292E","--shiki-dark":"#E1E4E8"},"children":": "}],["$","span",null,{"style":{"--shiki-light":"#032F62","--shiki-dark":"#9ECBFF"},"children":"command -v brew"}]]}],"\n",["$","span",null,{"children":" "}],"\n",["$","span",null,{"children":[["$","span",null,{"style":{"--shiki-light":"#24292E","--shiki-dark":"#E1E4E8"},"children":"      - "}],["$","span",null,{"style":{"--shiki-light":"#22863A","--shiki-dark":"#85E89D"},"children":"urn"}],"$L20","$L21"]}],"\n","$L22","\n","$L23","\n","$L24","\n","$L25","\n","$L26","\n","$L27","\n","$L28","\n","$L29","\n","$L2a","\n","$L2b"]}]]}]]}]
+d:["$","p",null,{"className":"x:not-first:mt-[1.25em] x:leading-7","children":"字段："}]
+e:["$","ul",null,{"className":"x:[:is(ol,ul)_&]:my-[.75em] x:not-first:mt-[1.25em] x:list-disc x:ms-[1.5em]","children":["\n",["$","li",null,{"className":"x:my-[.5em]","children":[["$","code",null,{"className":"nextra-code","dir":"ltr","children":"run"}]," — 要执行的脚本。可以是一行，也可以是 YAML 多行字符串（",["$","code",null,{"className":"nextra-code","dir":"ltr","children":"run: |"}],"）"]}],"\n",["$","li",null,{"className":"x:my-[.5em]","children":[["$","code",null,{"className":"nextra-code","dir":"ltr","children":"check"}]," — 幂等性检查。退出码 ",["$","code",null,{"className":"nextra-code","dir":"ltr","children":"0"}]," 表示”已完成不用跑”，非 ",["$","code",null,{"className":"nextra-code","dir":"ltr","children":"0"}]," 表示”还得跑一次”"]}],"\n"]}]
+f:["$","h2",null,{"id":"check-命令怎么写才靠谱","className":"x:tracking-tight x:text-slate-900 x:dark:text-slate-100 x:font-semibold x:target:animate-[fade-in_1.5s] x:mt-10 x:border-b x:pb-1 x:text-3xl nextra-border","children":["check 命令怎么写才靠谱",["$","$L1e",null,{"id":"check-命令怎么写才靠谱"}]]}]
+10:["$","p",null,{"className":"x:not-first:mt-[1.25em] x:leading-7","children":[["$","code",null,{"className":"nextra-code","dir":"ltr","children":"check"}]," 是整个 bash provider 的灵魂。写得好，hams apply 能幂等反复跑；写得差，要么每次重复装，要么漏装了也不知道。"]}]
+11:["$","p",null,{"className":"x:not-first:mt-[1.25em] x:leading-7","children":"几条实战经验："}]
+12:["$","ul",null,{"className":"x:[:is(ol,ul)_&]:my-[.75em] x:not-first:mt-[1.25em] x:list-disc x:ms-[1.5em]","children":["\n",["$","li",null,{"className":"x:my-[.5em]","children":[["$","strong",null,{"children":"查命令是否存在"}],"：",["$","code",null,{"className":"nextra-code","dir":"ltr","children":"command -v foo"}],"，而不是 ",["$","code",null,{"className":"nextra-code","dir":"ltr","children":"which foo"}],"（",["$","code",null,{"className":"nextra-code","dir":"ltr","children":"which"}]," 在某些系统上行为不一致）"]}],"\n",["$","li",null,{"className":"x:my-[.5em]","children":[["$","strong",null,{"children":"查文件存在"}],"：",["$","code",null,{"className":"nextra-code","dir":"ltr","children":"test -f /path/to/file"}]]}],"\n",["$","li",null,{"className":"x:my-[.5em]","children":[["$","strong",null,{"children":"查配置值"}],"：",["$","code",null,{"className":"nextra-code","dir":"ltr","children":"git config --global --get some.key | grep -q \"expected\""}]]}],"\n",["$","li",null,{"className":"x:my-[.5em]","children":[["$","strong",null,{"children":"查环境变量"}],"：",["$","code",null,{"className":"nextra-code","dir":"ltr","children":"test -n \"$FOO\""}]]}],"\n",["$","li",null,{"className":"x:my-[.5em]","children":[["$","strong",null,{"children":"不要在 check 里产生副作用"}]," —— check 会被反复跑，想象它被跑 100 次也没事"]}],"\n"]}]
+13:["$","p",null,{"className":"x:not-first:mt-[1.25em] x:leading-7","children":[["$","strong",null,{"children":"反模式"}],"："]}]
+14:["$","div",null,{"data-pagefind-ignore":"all","className":"nextra-code x:relative x:not-first:mt-[1.25em]","children":["$undefined",["$","pre",null,{"className":"x:group x:focus-visible:nextra-focus x:overflow-x-auto x:subpixel-antialiased x:text-[.9em] x:bg-white x:dark:bg-black x:py-4 x:ring-1 x:ring-inset x:ring-gray-300 x:dark:ring-neutral-700 x:contrast-more:ring-gray-900 x:contrast-more:dark:ring-gray-50 x:contrast-more:contrast-150 x:rounded-md not-prose","tabIndex":"0","children":[["$","div",null,{"className":"x:group-hover:opacity-100 x:group-focus:opacity-100 x:opacity-0 x:transition x:focus-within:opacity-100 x:flex x:gap-1 x:absolute x:right-4 x:top-2","children":[["$","$L1f",null,{"children":["$","svg",null,{"viewBox":"0 0 24 24","fill":"currentColor","height":"1em","children":["$","path",null,{"d":"M4 19h6v-2H4v2zM20 5H4v2h16V5zm-3 6H4v2h13.25c1.1 0 2 .9 2 2s-.9 2-2 2H15v-2l-3 3l3 3v-2h2c2.21 0 4-1.79 4-4s-1.79-4-4-4z"}]}]}],false]}],["$","code",null,{"className":"nextra-code","dir":"ltr","children":[["$","span",null,{"children":["$","span",null,{"style":{"--shiki-light":"#6A737D","--shiki-dark":"#6A737D"},"children":"# ❌ 每次都会返回 0，apply 永远觉得\"已完成\""}]}],"\n",["$","span",null,{"children":[["$","span",null,{"style":{"--shiki-light":"#22863A","--shiki-dark":"#85E89D"},"children":"check"}],["$","span",null,{"style":{"--shiki-light":"#24292E","--shiki-dark":"#E1E4E8"},"children":": "}],["$","span",null,{"style":{"--shiki-light":"#032F62","--shiki-dark":"#9ECBFF"},"children":"\"true\""}]]}],"\n",["$","span",null,{"children":" "}],"\n",["$","span",null,{"children":["$","span",null,{"style":{"--shiki-light":"#6A737D","--shiki-dark":"#6A737D"},"children":"# ❌ 每次都会返回非 0，apply 永远重跑"}]}],"\n",["$","span",null,{"children":[["$","span",null,{"style":{"--shiki-light":"#22863A","--shiki-dark":"#85E89D"},"children":"check"}],["$","span",null,{"style":{"--shiki-light":"#24292E","--shiki-dark":"#E1E4E8"},"children":": "}],["$","span",null,{"style":{"--shiki-light":"#032F62","--shiki-dark":"#9ECBFF"},"children":"\"false\""}]]}],"\n",["$","span",null,{"children":" "}],"\n",["$","span",null,{"children":["$","span",null,{"style":{"--shiki-light":"#6A737D","--shiki-dark":"#6A737D"},"children":"# ❌ 依赖当前目录 —— hams 的 cwd 可能不是你期望的"}]}],"\n",["$","span",null,{"children":[["$","span",null,{"style":{"--shiki-light":"#22863A","--shiki-dark":"#85E89D"},"children":"check"}],["$","span",null,{"style":{"--shiki-light":"#24292E","--shiki-dark":"#E1E4E8"},"children":": "}],["$","span",null,{"style":{"--shiki-light":"#032F62","--shiki-dark":"#9ECBFF"},"children":"test -f ./some-file"}]]}]]}]]}]]}]
+15:["$","h2",null,{"id":"执行环境","className":"x:tracking-tight x:text-slate-900 x:dark:text-slate-100 x:font-semibold x:target:animate-[fade-in_1.5s] x:mt-10 x:border-b x:pb-1 x:text-3xl nextra-border","children":["执行环境",["$","$L1e",null,{"id":"执行环境"}]]}]
+16:["$","p",null,{"className":"x:not-first:mt-[1.25em] x:leading-7","children":["hams 跑 ",["$","code",null,{"className":"nextra-code","dir":"ltr","children":"run"}]," 命令时："]}]
+17:["$","ul",null,{"className":"x:[:is(ol,ul)_&]:my-[.75em] x:not-first:mt-[1.25em] x:list-disc x:ms-[1.5em]","children":["\n",["$","li",null,{"className":"x:my-[.5em]","children":[["$","strong",null,{"children":"shell"}]," — 默认 ",["$","code",null,{"className":"nextra-code","dir":"ltr","children":"/bin/bash"}],"，可以在 ",["$","code",null,{"className":"nextra-code","dir":"ltr","children":"hams.config.yaml"}]," 里全局换成 ",["$","code",null,{"className":"nextra-code","dir":"ltr","children":"/bin/sh"}]," 或 ",["$","code",null,{"className":"nextra-code","dir":"ltr","children":"/bin/zsh"}]]}],"\n",["$","li",null,{"className":"x:my-[.5em]","children":[["$","strong",null,{"children":"cwd"}]," — ",["$","code",null,{"className":"nextra-code","dir":"ltr","children":"$$HOME"}],"（想要别的路径就在脚本里 ",["$","code",null,{"className":"nextra-code","dir":"ltr","children":"cd"}],"）"]}],"\n",["$","li",null,{"className":"x:my-[.5em]","children":[["$","strong",null,{"children":"env"}]," — 继承 hams 自己的环境变量。敏感值用 ",["$","code",null,{"className":"nextra-code","dir":"ltr","children":"env_from_keychain"}]," 字段注入"]}],"\n",["$","li",null,{"className":"x:my-[.5em]","children":[["$","strong",null,{"children":"stdin"}]," — 关闭。脚本需要交互输入就用别的 provider，或者改成非交互模式（带 ",["$","code",null,{"className":"nextra-code","dir":"ltr","children":"-y"}],"）"]}],"\n"]}]
+18:["$","h2",null,{"id":"什么时候不该用-bash","className":"x:tracking-tight x:text-slate-900 x:dark:text-slate-100 x:font-semibold x:target:animate-[fade-in_1.5s] x:mt-10 x:border-b x:pb-1 x:text-3xl nextra-border","children":["什么时候不该用 bash",["$","$L1e",null,{"id":"什么时候不该用-bash"}]]}]
+19:["$","p",null,{"className":"x:not-first:mt-[1.25em] x:leading-7","children":"bash 很强大，但它缺少其他 provider 的结构化信息。优先考虑专门的 provider："}]
+1a:["$","ul",null,{"className":"x:[:is(ol,ul)_&]:my-[.75em] x:not-first:mt-[1.25em] x:list-disc x:ms-[1.5em]","children":["\n",["$","li",null,{"className":"x:my-[.5em]","children":["装 Homebrew formula？用 Homebrew provider，别自己写 ",["$","code",null,{"className":"nextra-code","dir":"ltr","children":"brew install"}]," 脚本"]}],"\n",["$","li",null,{"className":"x:my-[.5em]","children":["配 git 全局设置？用 git-config provider，比 bash 写 ",["$","code",null,{"className":"nextra-code","dir":"ltr","children":"git config --global"}]," 可读得多"]}],"\n",["$","li",null,{"className":"x:my-[.5em]","children":"克隆仓库？用 git-clone provider"}],"\n"]}]
+1b:["$","p",null,{"className":"x:not-first:mt-[1.25em] x:leading-7","children":["bash 最适合那些",["$","strong",null,{"children":"无处可放"}],"的一次性操作：安装 Homebrew 自己、跑第三方 installer、触发系统级初始化。"]}]
+1c:["$","div",null,{"className":"nextra-callout x:overflow-x-auto x:not-first:mt-[1.25em] x:flex x:rounded-lg x:border x:py-[.5em] x:pe-[1em] x:contrast-more:border-current! x:bg-yellow-50 x:dark:bg-yellow-700/30 x:text-yellow-700 x:dark:text-yellow-500 x:border-yellow-700","children":[["$","div",null,{"className":"x:select-none x:text-[1.25em] x:ps-[.6em] x:pe-[.4em]","style":{"fontFamily":"\"Apple Color Emoji\", \"Segoe UI Emoji\", \"Segoe UI Symbol\""},"data-pagefind-ignore":"all","children":["$","svg",null,{"viewBox":"0 0 16 16","fill":"currentColor","height":".8em","className":"x:mt-[.3em]","children":["$","path",null,{"d":"M6.457 1.047c.659-1.234 2.427-1.234 3.086 0l6.082 11.378A1.75 1.75 0 0 1 14.082 15H1.918a1.75 1.75 0 0 1-1.543-2.575Zm1.763.707a.25.25 0 0 0-.44 0L1.698 13.132a.25.25 0 0 0 .22.368h12.164a.25.25 0 0 0 .22-.368Zm.53 3.996v2.5a.75.75 0 0 1-1.5 0v-2.5a.75.75 0 0 1 1.5 0ZM9 11a1 1 0 1 1-2 0 1 1 0 0 1 2 0Z"}]}]}],["$","div",null,{"className":"x:w-full x:min-w-0","children":["$","p",null,{"className":"x:not-first:mt-[1.25em] x:leading-7","children":"bash provider 没有”卸载”对应物 —— Hamsfile 里删掉一条 bash 记录，hams 不会自动反向执行脚本。\n要撤销请在 apply 之外手动处理，或者写一条反向的 bash 记录。"}]}]]}]
+1d:["$","$L2c",null,{"children":["$","$2d",null,{"name":"Next.MetadataOutlet","children":"$@2e"}]}]
+20:["$","span",null,{"style":{"--shiki-light":"#24292E","--shiki-dark":"#E1E4E8"},"children":": "}]
+21:["$","span",null,{"style":{"--shiki-light":"#032F62","--shiki-dark":"#9ECBFF"},"children":"\"urn:hams:bash:install-pnpm\""}]
+22:["$","span",null,{"children":[["$","span",null,{"style":{"--shiki-light":"#22863A","--shiki-dark":"#85E89D"},"children":"        step"}],["$","span",null,{"style":{"--shiki-light":"#24292E","--shiki-dark":"#E1E4E8"},"children":": "}],["$","span",null,{"style":{"--shiki-light":"#032F62","--shiki-dark":"#9ECBFF"},"children":"Install pnpm"}]]}]
+23:["$","span",null,{"children":[["$","span",null,{"style":{"--shiki-light":"#22863A","--shiki-dark":"#85E89D"},"children":"        run"}],["$","span",null,{"style":{"--shiki-light":"#24292E","--shiki-dark":"#E1E4E8"},"children":": "}],["$","span",null,{"style":{"--shiki-light":"#032F62","--shiki-dark":"#9ECBFF"},"children":"curl -fsSL https://get.pnpm.io/install.sh | sh -"}]]}]
+24:["$","span",null,{"children":[["$","span",null,{"style":{"--shiki-light":"#22863A","--shiki-dark":"#85E89D"},"children":"        check"}],["$","span",null,{"style":{"--shiki-light":"#24292E","--shiki-dark":"#E1E4E8"},"children":": "}],["$","span",null,{"style":{"--shiki-light":"#032F62","--shiki-dark":"#9ECBFF"},"children":"command -v pnpm"}]]}]
+25:["$","span",null,{"children":" "}]
+26:["$","span",null,{"children":[["$","span",null,{"style":{"--shiki-light":"#24292E","--shiki-dark":"#E1E4E8"},"children":"  - "}],["$","span",null,{"style":{"--shiki-light":"#22863A","--shiki-dark":"#85E89D"},"children":"tag"}],["$","span",null,{"style":{"--shiki-light":"#24292E","--shiki-dark":"#E1E4E8"},"children":": "}],["$","span",null,{"style":{"--shiki-light":"#032F62","--shiki-dark":"#9ECBFF"},"children":"config"}]]}]
+27:["$","span",null,{"children":[["$","span",null,{"style":{"--shiki-light":"#22863A","--shiki-dark":"#85E89D"},"children":"    items"}],["$","span",null,{"style":{"--shiki-light":"#24292E","--shiki-dark":"#E1E4E8"},"children":":"}]]}]
+28:["$","span",null,{"children":[["$","span",null,{"style":{"--shiki-light":"#24292E","--shiki-dark":"#E1E4E8"},"children":"      - "}],["$","span",null,{"style":{"--shiki-light":"#22863A","--shiki-dark":"#85E89D"},"children":"urn"}],["$","span",null,{"style":{"--shiki-light":"#24292E","--shiki-dark":"#E1E4E8"},"children":": "}],["$","span",null,{"style":{"--shiki-light":"#032F62","--shiki-dark":"#9ECBFF"},"children":"\"urn:hams:bash:git-rerere\""}]]}]
+29:["$","span",null,{"children":[["$","span",null,{"style":{"--shiki-light":"#22863A","--shiki-dark":"#85E89D"},"children":"        step"}],["$","span",null,{"style":{"--shiki-light":"#24292E","--shiki-dark":"#E1E4E8"},"children":": "}],["$","span",null,{"style":{"--shiki-light":"#032F62","--shiki-dark":"#9ECBFF"},"children":"Enable git rerere globally"}]]}]
+2a:["$","span",null,{"children":[["$","span",null,{"style":{"--shiki-light":"#22863A","--shiki-dark":"#85E89D"},"children":"        run"}],["$","span",null,{"style":{"--shiki-light":"#24292E","--shiki-dark":"#E1E4E8"},"children":": "}],["$","span",null,{"style":{"--shiki-light":"#032F62","--shiki-dark":"#9ECBFF"},"children":"git config --global rerere.autoUpdate true"}]]}]
+2b:["$","span",null,{"children":[["$","span",null,{"style":{"--shiki-light":"#22863A","--shiki-dark":"#85E89D"},"children":"        check"}],["$","span",null,{"style":{"--shiki-light":"#24292E","--shiki-dark":"#E1E4E8"},"children":": "}],["$","span",null,{"style":{"--shiki-light":"#032F62","--shiki-dark":"#9ECBFF"},"children":"git config --global --get rerere.autoUpdate"}]]}]
+2e:null

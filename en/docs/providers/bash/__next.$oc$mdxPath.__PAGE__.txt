@@ -1,0 +1,153 @@
+1:"$Sreact.fragment"
+2:I[20868,["/_next/static/chunks/12papiu2uecdn.js","/_next/static/chunks/17w-qi2xl_cs_.js","/_next/static/chunks/0t-.yzyb4a17p.js","/_next/static/chunks/092eu57~.7ox..js","/_next/static/chunks/0jzkg5~l3f10f.js"],"TOCProvider"]
+3:I[24456,["/_next/static/chunks/12papiu2uecdn.js","/_next/static/chunks/17w-qi2xl_cs_.js","/_next/static/chunks/0t-.yzyb4a17p.js","/_next/static/chunks/092eu57~.7ox..js","/_next/static/chunks/0jzkg5~l3f10f.js"],"Sidebar"]
+4:I[53490,["/_next/static/chunks/12papiu2uecdn.js","/_next/static/chunks/17w-qi2xl_cs_.js","/_next/static/chunks/0t-.yzyb4a17p.js","/_next/static/chunks/092eu57~.7ox..js","/_next/static/chunks/0jzkg5~l3f10f.js"],"ClientWrapper"]
+9:I[3911,["/_next/static/chunks/12papiu2uecdn.js","/_next/static/chunks/17w-qi2xl_cs_.js","/_next/static/chunks/0t-.yzyb4a17p.js","/_next/static/chunks/092eu57~.7ox..js","/_next/static/chunks/0jzkg5~l3f10f.js"],"HeadingAnchor"]
+a:I[47245,["/_next/static/chunks/12papiu2uecdn.js","/_next/static/chunks/17w-qi2xl_cs_.js","/_next/static/chunks/0t-.yzyb4a17p.js","/_next/static/chunks/092eu57~.7ox..js","/_next/static/chunks/0jzkg5~l3f10f.js"],"ToggleWordWrapButton"]
+1d:I[13257,["/_next/static/chunks/12papiu2uecdn.js","/_next/static/chunks/17w-qi2xl_cs_.js","/_next/static/chunks/0t-.yzyb4a17p.js","/_next/static/chunks/092eu57~.7ox..js","/_next/static/chunks/0jzkg5~l3f10f.js"],"OutletBoundary"]
+1e:"$Sreact.suspense"
+5:Tf6c,import { Callout } from 'nextra/components'
+
+# bash Provider
+
+The most flexible provider — let it run any shell script you want. When something doesn't fit any
+other provider (installing Homebrew itself, running a third-party installer script, writing an odd
+environment file), `bash` is the escape hatch.
+
+Flexibility comes with one responsibility: bash can't figure out on its own whether "this thing
+has already been done." So you have to write a `check:` command. With a good check, `apply` stays
+idempotent no matter how many times you run it.
+
+**Platforms:** macOS, Linux
+
+## Usage
+
+```bash
+# Run the step associated with a URN
+hams bash run "urn:hams:bash:install-homebrew"
+
+# See what's managed
+hams bash list
+```
+
+There's no `install` or `remove` here — every entry is a declarative "this thing needs to be done."
+
+## Hamsfile example
+
+```yaml
+# macOS/bash.hams.yaml
+schema_version: 1
+provider: bash
+
+groups:
+  - tag: bootstrap
+    items:
+      - urn: "urn:hams:bash:install-homebrew"
+        step: Install Homebrew
+        run: /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+        check: command -v brew
+
+      - urn: "urn:hams:bash:install-pnpm"
+        step: Install pnpm
+        run: curl -fsSL https://get.pnpm.io/install.sh | sh -
+        check: command -v pnpm
+
+  - tag: config
+    items:
+      - urn: "urn:hams:bash:git-rerere"
+        step: Enable git rerere globally
+        run: git config --global rerere.autoUpdate true
+        check: git config --global --get rerere.autoUpdate
+```
+
+Fields:
+
+- `run` — the script. One line, or a YAML multi-line string (`run: |`)
+- `check` — the idempotency check. Exit 0 means "skip." Non-zero means "run it again"
+
+## Writing a check that won't let you down
+
+`check` is the soul of this provider. Get it right, and apply is a joy. Get it wrong, and you
+either reinstall things every time or miss installs that never happened.
+
+A few habits worth picking up:
+
+- **For command existence:** `command -v foo`. Not `which foo` — `which` behaves inconsistently across systems
+- **For file existence:** `test -f /path/to/file`
+- **For config values:** `git config --global --get some.key | grep -q "expected"`
+- **For environment variables:** `test -n "$FOO"`
+- **Don't let check have side effects.** It runs a lot. Imagine it running 100 times — still fine?
+
+**Anti-patterns:**
+
+```yaml
+# ❌ Always returns 0 — apply thinks it's done and never runs it
+check: "true"
+
+# ❌ Always returns non-zero — apply reruns it forever
+check: "false"
+
+# ❌ Depends on cwd, but hams's cwd might not be where you think
+check: test -f ./some-file
+```
+
+## The execution environment
+
+When hams runs `run`:
+
+- **shell** — `/bin/bash` by default. Change this globally in `hams.config.yaml` to `/bin/sh` or `/bin/zsh`
+- **cwd** — `$HOME`. Need a different directory? `cd` inside the script
+- **env** — inherits hams's own environment. For secrets, use the `env_from_keychain` field
+- **stdin** — closed. If your script needs input, use another provider or switch to a non-interactive mode (`-y` and friends)
+
+## When bash isn't the right tool
+
+bash is powerful, but it lacks the structured metadata the specialised providers bring. Default to
+something more specific when you can:
+
+- Installing a Homebrew formula? Use the Homebrew provider, don't write `brew install` in a bash step
+- Setting a git config key? Use git-config — it reads better than `git config --global`
+- Cloning a repo? That's git-clone
+
+Save bash for the things that truly have no better home: installing Homebrew itself, running a
+third-party installer, triggering one-off system initialisation.
+
+<Callout type="warning">
+  There's no "uninstall" for a bash resource — deleting a bash entry from the Hamsfile doesn't
+  reverse the script. If you need to undo something, do it manually, or add a separate bash entry
+  that performs the inverse operation.
+</Callout>0:{"rsc":["$","$1","c",{"children":[["$","div",null,{"className":"x:mx-auto x:flex x:max-w-(--nextra-content-width)","children":["$","$L2",null,{"value":[{"value":"Usage","id":"usage","depth":2},{"value":"Hamsfile example","id":"hamsfile-example","depth":2},{"value":"Writing a check that won’t let you down","id":"writing-a-check-that-wont-let-you-down","depth":2},{"value":"The execution environment","id":"the-execution-environment","depth":2},{"value":"When bash isn’t the right tool","id":"when-bash-isnt-the-right-tool","depth":2}],"children":[["$","$L3",null,{}],["$","$L4",null,{"metadata":{"title":"bash Provider","filePath":"content/en/docs/providers/bash.mdx","timestamp":1776277188000},"sourceCode":"$5","children":["$L6","$L7"]}]]}]}],null,"$L8"]}],"isPartial":false,"staleTime":300,"varyParams":null,"buildId":"TeHNWxIawAcibho1l2N00"}
+6:["$","div",null,{"id":"nextra-skip-nav"}]
+7:["$","main",null,{"data-pagefind-body":true,"children":[["$","h1",null,{"className":"x:tracking-tight x:text-slate-900 x:dark:text-slate-100 x:font-bold x:mt-2 x:text-4xl","children":["bash Provider","$undefined"]}],"\n",["$","p",null,{"className":"x:not-first:mt-[1.25em] x:leading-7","children":["The most flexible provider — let it run any shell script you want. When something doesn’t fit any\nother provider (installing Homebrew itself, running a third-party installer script, writing an odd\nenvironment file), ",["$","code",null,{"className":"nextra-code","dir":"ltr","children":"bash"}]," is the escape hatch."]}],"\n",["$","p",null,{"className":"x:not-first:mt-[1.25em] x:leading-7","children":["Flexibility comes with one responsibility: bash can’t figure out on its own whether “this thing\nhas already been done.” So you have to write a ",["$","code",null,{"className":"nextra-code","dir":"ltr","children":"check:"}]," command. With a good check, ",["$","code",null,{"className":"nextra-code","dir":"ltr","children":"apply"}]," stays\nidempotent no matter how many times you run it."]}],"\n",["$","p",null,{"className":"x:not-first:mt-[1.25em] x:leading-7","children":[["$","strong",null,{"children":"Platforms:"}]," macOS, Linux"]}],"\n",["$","h2",null,{"id":"usage","className":"x:tracking-tight x:text-slate-900 x:dark:text-slate-100 x:font-semibold x:target:animate-[fade-in_1.5s] x:mt-10 x:border-b x:pb-1 x:text-3xl nextra-border","children":["Usage",["$","$L9",null,{"id":"usage"}]]}],"\n",["$","div",null,{"data-pagefind-ignore":"all","className":"nextra-code x:relative x:not-first:mt-[1.25em]","children":["$undefined",["$","pre",null,{"className":"x:group x:focus-visible:nextra-focus x:overflow-x-auto x:subpixel-antialiased x:text-[.9em] x:bg-white x:dark:bg-black x:py-4 x:ring-1 x:ring-inset x:ring-gray-300 x:dark:ring-neutral-700 x:contrast-more:ring-gray-900 x:contrast-more:dark:ring-gray-50 x:contrast-more:contrast-150 x:rounded-md not-prose","tabIndex":"0","children":[["$","div",null,{"className":"x:group-hover:opacity-100 x:group-focus:opacity-100 x:opacity-0 x:transition x:focus-within:opacity-100 x:flex x:gap-1 x:absolute x:right-4 x:top-2","children":[["$","$La",null,{"children":["$","svg",null,{"viewBox":"0 0 24 24","fill":"currentColor","height":"1em","children":["$","path",null,{"d":"M4 19h6v-2H4v2zM20 5H4v2h16V5zm-3 6H4v2h13.25c1.1 0 2 .9 2 2s-.9 2-2 2H15v-2l-3 3l3 3v-2h2c2.21 0 4-1.79 4-4s-1.79-4-4-4z"}]}]}],false]}],["$","code",null,{"className":"nextra-code","dir":"ltr","children":[["$","span",null,{"children":["$","span",null,{"style":{"--shiki-light":"#6A737D","--shiki-dark":"#6A737D"},"children":"# Run the step associated with a URN"}]}],"\n",["$","span",null,{"children":[["$","span",null,{"style":{"--shiki-light":"#6F42C1","--shiki-dark":"#B392F0"},"children":"hams"}],["$","span",null,{"style":{"--shiki-light":"#032F62","--shiki-dark":"#9ECBFF"},"children":" bash"}],["$","span",null,{"style":{"--shiki-light":"#032F62","--shiki-dark":"#9ECBFF"},"children":" run"}],["$","span",null,{"style":{"--shiki-light":"#032F62","--shiki-dark":"#9ECBFF"},"children":" \"urn:hams:bash:install-homebrew\""}]]}],"\n",["$","span",null,{"children":" "}],"\n",["$","span",null,{"children":["$","span",null,{"style":{"--shiki-light":"#6A737D","--shiki-dark":"#6A737D"},"children":"# See what's managed"}]}],"\n",["$","span",null,{"children":[["$","span",null,{"style":{"--shiki-light":"#6F42C1","--shiki-dark":"#B392F0"},"children":"hams"}],["$","span",null,{"style":{"--shiki-light":"#032F62","--shiki-dark":"#9ECBFF"},"children":" bash"}],["$","span",null,{"style":{"--shiki-light":"#032F62","--shiki-dark":"#9ECBFF"},"children":" list"}]]}]]}]]}]]}],"\n",["$","p",null,{"className":"x:not-first:mt-[1.25em] x:leading-7","children":["There’s no ",["$","code",null,{"className":"nextra-code","dir":"ltr","children":"install"}]," or ",["$","code",null,{"className":"nextra-code","dir":"ltr","children":"remove"}]," here — every entry is a declarative “this thing needs to be done.”"]}],"\n",["$","h2",null,{"id":"hamsfile-example","className":"x:tracking-tight x:text-slate-900 x:dark:text-slate-100 x:font-semibold x:target:animate-[fade-in_1.5s] x:mt-10 x:border-b x:pb-1 x:text-3xl nextra-border","children":["Hamsfile example","$Lb"]}],"\n","$Lc","\n","$Ld","\n","$Le","\n","$Lf","\n","$L10","\n","$L11","\n","$L12","\n","$L13","\n","$L14","\n","$L15","\n","$L16","\n","$L17","\n","$L18","\n","$L19","\n","$L1a","\n","$L1b","\n","$L1c"]}]
+8:["$","$L1d",null,{"children":["$","$1e",null,{"name":"Next.MetadataOutlet","children":"$@1f"}]}]
+b:["$","$L9",null,{"id":"hamsfile-example"}]
+c:["$","div",null,{"data-pagefind-ignore":"all","className":"nextra-code x:relative x:not-first:mt-[1.25em]","children":["$undefined",["$","pre",null,{"className":"x:group x:focus-visible:nextra-focus x:overflow-x-auto x:subpixel-antialiased x:text-[.9em] x:bg-white x:dark:bg-black x:py-4 x:ring-1 x:ring-inset x:ring-gray-300 x:dark:ring-neutral-700 x:contrast-more:ring-gray-900 x:contrast-more:dark:ring-gray-50 x:contrast-more:contrast-150 x:rounded-md not-prose","tabIndex":"0","children":[["$","div",null,{"className":"x:group-hover:opacity-100 x:group-focus:opacity-100 x:opacity-0 x:transition x:focus-within:opacity-100 x:flex x:gap-1 x:absolute x:right-4 x:top-2","children":[["$","$La",null,{"children":["$","svg",null,{"viewBox":"0 0 24 24","fill":"currentColor","height":"1em","children":["$","path",null,{"d":"M4 19h6v-2H4v2zM20 5H4v2h16V5zm-3 6H4v2h13.25c1.1 0 2 .9 2 2s-.9 2-2 2H15v-2l-3 3l3 3v-2h2c2.21 0 4-1.79 4-4s-1.79-4-4-4z"}]}]}],false]}],["$","code",null,{"className":"nextra-code","dir":"ltr","children":[["$","span",null,{"children":["$","span",null,{"style":{"--shiki-light":"#6A737D","--shiki-dark":"#6A737D"},"children":"# macOS/bash.hams.yaml"}]}],"\n",["$","span",null,{"children":[["$","span",null,{"style":{"--shiki-light":"#22863A","--shiki-dark":"#85E89D"},"children":"schema_version"}],["$","span",null,{"style":{"--shiki-light":"#24292E","--shiki-dark":"#E1E4E8"},"children":": "}],["$","span",null,{"style":{"--shiki-light":"#005CC5","--shiki-dark":"#79B8FF"},"children":"1"}]]}],"\n",["$","span",null,{"children":[["$","span",null,{"style":{"--shiki-light":"#22863A","--shiki-dark":"#85E89D"},"children":"provider"}],["$","span",null,{"style":{"--shiki-light":"#24292E","--shiki-dark":"#E1E4E8"},"children":": "}],["$","span",null,{"style":{"--shiki-light":"#032F62","--shiki-dark":"#9ECBFF"},"children":"bash"}]]}],"\n",["$","span",null,{"children":" "}],"\n",["$","span",null,{"children":[["$","span",null,{"style":{"--shiki-light":"#22863A","--shiki-dark":"#85E89D"},"children":"groups"}],["$","span",null,{"style":{"--shiki-light":"#24292E","--shiki-dark":"#E1E4E8"},"children":":"}]]}],"\n",["$","span",null,{"children":[["$","span",null,{"style":{"--shiki-light":"#24292E","--shiki-dark":"#E1E4E8"},"children":"  - "}],["$","span",null,{"style":{"--shiki-light":"#22863A","--shiki-dark":"#85E89D"},"children":"tag"}],["$","span",null,{"style":{"--shiki-light":"#24292E","--shiki-dark":"#E1E4E8"},"children":": "}],["$","span",null,{"style":{"--shiki-light":"#032F62","--shiki-dark":"#9ECBFF"},"children":"bootstrap"}]]}],"\n",["$","span",null,{"children":[["$","span",null,{"style":{"--shiki-light":"#22863A","--shiki-dark":"#85E89D"},"children":"    items"}],["$","span",null,{"style":{"--shiki-light":"#24292E","--shiki-dark":"#E1E4E8"},"children":":"}]]}],"\n",["$","span",null,{"children":[["$","span",null,{"style":{"--shiki-light":"#24292E","--shiki-dark":"#E1E4E8"},"children":"      - "}],["$","span",null,{"style":{"--shiki-light":"#22863A","--shiki-dark":"#85E89D"},"children":"urn"}],["$","span",null,{"style":{"--shiki-light":"#24292E","--shiki-dark":"#E1E4E8"},"children":": "}],["$","span",null,{"style":{"--shiki-light":"#032F62","--shiki-dark":"#9ECBFF"},"children":"\"urn:hams:bash:install-homebrew\""}]]}],"\n",["$","span",null,{"children":[["$","span",null,{"style":{"--shiki-light":"#22863A","--shiki-dark":"#85E89D"},"children":"        step"}],["$","span",null,{"style":{"--shiki-light":"#24292E","--shiki-dark":"#E1E4E8"},"children":": "}],["$","span",null,{"style":{"--shiki-light":"#032F62","--shiki-dark":"#9ECBFF"},"children":"Install Homebrew"}]]}],"\n",["$","span",null,{"children":[["$","span",null,{"style":{"--shiki-light":"#22863A","--shiki-dark":"#85E89D"},"children":"        run"}],["$","span",null,{"style":{"--shiki-light":"#24292E","--shiki-dark":"#E1E4E8"},"children":": "}],["$","span",null,{"style":{"--shiki-light":"#032F62","--shiki-dark":"#9ECBFF"},"children":"/bin/bash -c \"$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\""}]]}],"\n",["$","span",null,{"children":[["$","span",null,{"style":{"--shiki-light":"#22863A","--shiki-dark":"#85E89D"},"children":"        check"}],["$","span",null,{"style":{"--shiki-light":"#24292E","--shiki-dark":"#E1E4E8"},"children":": "}],["$","span",null,{"style":{"--shiki-light":"#032F62","--shiki-dark":"#9ECBFF"},"children":"command -v brew"}]]}],"\n",["$","span",null,{"children":" "}],"\n",["$","span",null,{"children":[["$","span",null,{"style":{"--shiki-light":"#24292E","--shiki-dark":"#E1E4E8"},"children":"      - "}],["$","span",null,{"style":{"--shiki-light":"#22863A","--shiki-dark":"#85E89D"},"children":"urn"}],"$L20","$L21"]}],"\n","$L22","\n","$L23","\n","$L24","\n","$L25","\n","$L26","\n","$L27","\n","$L28","\n","$L29","\n","$L2a","\n","$L2b"]}]]}]]}]
+d:["$","p",null,{"className":"x:not-first:mt-[1.25em] x:leading-7","children":"Fields:"}]
+e:["$","ul",null,{"className":"x:[:is(ol,ul)_&]:my-[.75em] x:not-first:mt-[1.25em] x:list-disc x:ms-[1.5em]","children":["\n",["$","li",null,{"className":"x:my-[.5em]","children":[["$","code",null,{"className":"nextra-code","dir":"ltr","children":"run"}]," — the script. One line, or a YAML multi-line string (",["$","code",null,{"className":"nextra-code","dir":"ltr","children":"run: |"}],")"]}],"\n",["$","li",null,{"className":"x:my-[.5em]","children":[["$","code",null,{"className":"nextra-code","dir":"ltr","children":"check"}]," — the idempotency check. Exit 0 means “skip.” Non-zero means “run it again”"]}],"\n"]}]
+f:["$","h2",null,{"id":"writing-a-check-that-wont-let-you-down","className":"x:tracking-tight x:text-slate-900 x:dark:text-slate-100 x:font-semibold x:target:animate-[fade-in_1.5s] x:mt-10 x:border-b x:pb-1 x:text-3xl nextra-border","children":["Writing a check that won’t let you down",["$","$L9",null,{"id":"writing-a-check-that-wont-let-you-down"}]]}]
+10:["$","p",null,{"className":"x:not-first:mt-[1.25em] x:leading-7","children":[["$","code",null,{"className":"nextra-code","dir":"ltr","children":"check"}]," is the soul of this provider. Get it right, and apply is a joy. Get it wrong, and you\neither reinstall things every time or miss installs that never happened."]}]
+11:["$","p",null,{"className":"x:not-first:mt-[1.25em] x:leading-7","children":"A few habits worth picking up:"}]
+12:["$","ul",null,{"className":"x:[:is(ol,ul)_&]:my-[.75em] x:not-first:mt-[1.25em] x:list-disc x:ms-[1.5em]","children":["\n",["$","li",null,{"className":"x:my-[.5em]","children":[["$","strong",null,{"children":"For command existence:"}]," ",["$","code",null,{"className":"nextra-code","dir":"ltr","children":"command -v foo"}],". Not ",["$","code",null,{"className":"nextra-code","dir":"ltr","children":"which foo"}]," — ",["$","code",null,{"className":"nextra-code","dir":"ltr","children":"which"}]," behaves inconsistently across systems"]}],"\n",["$","li",null,{"className":"x:my-[.5em]","children":[["$","strong",null,{"children":"For file existence:"}]," ",["$","code",null,{"className":"nextra-code","dir":"ltr","children":"test -f /path/to/file"}]]}],"\n",["$","li",null,{"className":"x:my-[.5em]","children":[["$","strong",null,{"children":"For config values:"}]," ",["$","code",null,{"className":"nextra-code","dir":"ltr","children":"git config --global --get some.key | grep -q \"expected\""}]]}],"\n",["$","li",null,{"className":"x:my-[.5em]","children":[["$","strong",null,{"children":"For environment variables:"}]," ",["$","code",null,{"className":"nextra-code","dir":"ltr","children":"test -n \"$FOO\""}]]}],"\n",["$","li",null,{"className":"x:my-[.5em]","children":[["$","strong",null,{"children":"Don’t let check have side effects."}]," It runs a lot. Imagine it running 100 times — still fine?"]}],"\n"]}]
+13:["$","p",null,{"className":"x:not-first:mt-[1.25em] x:leading-7","children":["$","strong",null,{"children":"Anti-patterns:"}]}]
+14:["$","div",null,{"data-pagefind-ignore":"all","className":"nextra-code x:relative x:not-first:mt-[1.25em]","children":["$undefined",["$","pre",null,{"className":"x:group x:focus-visible:nextra-focus x:overflow-x-auto x:subpixel-antialiased x:text-[.9em] x:bg-white x:dark:bg-black x:py-4 x:ring-1 x:ring-inset x:ring-gray-300 x:dark:ring-neutral-700 x:contrast-more:ring-gray-900 x:contrast-more:dark:ring-gray-50 x:contrast-more:contrast-150 x:rounded-md not-prose","tabIndex":"0","children":[["$","div",null,{"className":"x:group-hover:opacity-100 x:group-focus:opacity-100 x:opacity-0 x:transition x:focus-within:opacity-100 x:flex x:gap-1 x:absolute x:right-4 x:top-2","children":[["$","$La",null,{"children":["$","svg",null,{"viewBox":"0 0 24 24","fill":"currentColor","height":"1em","children":["$","path",null,{"d":"M4 19h6v-2H4v2zM20 5H4v2h16V5zm-3 6H4v2h13.25c1.1 0 2 .9 2 2s-.9 2-2 2H15v-2l-3 3l3 3v-2h2c2.21 0 4-1.79 4-4s-1.79-4-4-4z"}]}]}],false]}],["$","code",null,{"className":"nextra-code","dir":"ltr","children":[["$","span",null,{"children":["$","span",null,{"style":{"--shiki-light":"#6A737D","--shiki-dark":"#6A737D"},"children":"# ❌ Always returns 0 — apply thinks it's done and never runs it"}]}],"\n",["$","span",null,{"children":[["$","span",null,{"style":{"--shiki-light":"#22863A","--shiki-dark":"#85E89D"},"children":"check"}],["$","span",null,{"style":{"--shiki-light":"#24292E","--shiki-dark":"#E1E4E8"},"children":": "}],["$","span",null,{"style":{"--shiki-light":"#032F62","--shiki-dark":"#9ECBFF"},"children":"\"true\""}]]}],"\n",["$","span",null,{"children":" "}],"\n",["$","span",null,{"children":["$","span",null,{"style":{"--shiki-light":"#6A737D","--shiki-dark":"#6A737D"},"children":"# ❌ Always returns non-zero — apply reruns it forever"}]}],"\n",["$","span",null,{"children":[["$","span",null,{"style":{"--shiki-light":"#22863A","--shiki-dark":"#85E89D"},"children":"check"}],["$","span",null,{"style":{"--shiki-light":"#24292E","--shiki-dark":"#E1E4E8"},"children":": "}],["$","span",null,{"style":{"--shiki-light":"#032F62","--shiki-dark":"#9ECBFF"},"children":"\"false\""}]]}],"\n",["$","span",null,{"children":" "}],"\n",["$","span",null,{"children":["$","span",null,{"style":{"--shiki-light":"#6A737D","--shiki-dark":"#6A737D"},"children":"# ❌ Depends on cwd, but hams's cwd might not be where you think"}]}],"\n",["$","span",null,{"children":[["$","span",null,{"style":{"--shiki-light":"#22863A","--shiki-dark":"#85E89D"},"children":"check"}],["$","span",null,{"style":{"--shiki-light":"#24292E","--shiki-dark":"#E1E4E8"},"children":": "}],["$","span",null,{"style":{"--shiki-light":"#032F62","--shiki-dark":"#9ECBFF"},"children":"test -f ./some-file"}]]}]]}]]}]]}]
+15:["$","h2",null,{"id":"the-execution-environment","className":"x:tracking-tight x:text-slate-900 x:dark:text-slate-100 x:font-semibold x:target:animate-[fade-in_1.5s] x:mt-10 x:border-b x:pb-1 x:text-3xl nextra-border","children":["The execution environment",["$","$L9",null,{"id":"the-execution-environment"}]]}]
+16:["$","p",null,{"className":"x:not-first:mt-[1.25em] x:leading-7","children":["When hams runs ",["$","code",null,{"className":"nextra-code","dir":"ltr","children":"run"}],":"]}]
+17:["$","ul",null,{"className":"x:[:is(ol,ul)_&]:my-[.75em] x:not-first:mt-[1.25em] x:list-disc x:ms-[1.5em]","children":["\n",["$","li",null,{"className":"x:my-[.5em]","children":[["$","strong",null,{"children":"shell"}]," — ",["$","code",null,{"className":"nextra-code","dir":"ltr","children":"/bin/bash"}]," by default. Change this globally in ",["$","code",null,{"className":"nextra-code","dir":"ltr","children":"hams.config.yaml"}]," to ",["$","code",null,{"className":"nextra-code","dir":"ltr","children":"/bin/sh"}]," or ",["$","code",null,{"className":"nextra-code","dir":"ltr","children":"/bin/zsh"}]]}],"\n",["$","li",null,{"className":"x:my-[.5em]","children":[["$","strong",null,{"children":"cwd"}]," — ",["$","code",null,{"className":"nextra-code","dir":"ltr","children":"$$HOME"}],". Need a different directory? ",["$","code",null,{"className":"nextra-code","dir":"ltr","children":"cd"}]," inside the script"]}],"\n",["$","li",null,{"className":"x:my-[.5em]","children":[["$","strong",null,{"children":"env"}]," — inherits hams’s own environment. For secrets, use the ",["$","code",null,{"className":"nextra-code","dir":"ltr","children":"env_from_keychain"}]," field"]}],"\n",["$","li",null,{"className":"x:my-[.5em]","children":[["$","strong",null,{"children":"stdin"}]," — closed. If your script needs input, use another provider or switch to a non-interactive mode (",["$","code",null,{"className":"nextra-code","dir":"ltr","children":"-y"}]," and friends)"]}],"\n"]}]
+18:["$","h2",null,{"id":"when-bash-isnt-the-right-tool","className":"x:tracking-tight x:text-slate-900 x:dark:text-slate-100 x:font-semibold x:target:animate-[fade-in_1.5s] x:mt-10 x:border-b x:pb-1 x:text-3xl nextra-border","children":["When bash isn’t the right tool",["$","$L9",null,{"id":"when-bash-isnt-the-right-tool"}]]}]
+19:["$","p",null,{"className":"x:not-first:mt-[1.25em] x:leading-7","children":"bash is powerful, but it lacks the structured metadata the specialised providers bring. Default to\nsomething more specific when you can:"}]
+1a:["$","ul",null,{"className":"x:[:is(ol,ul)_&]:my-[.75em] x:not-first:mt-[1.25em] x:list-disc x:ms-[1.5em]","children":["\n",["$","li",null,{"className":"x:my-[.5em]","children":["Installing a Homebrew formula? Use the Homebrew provider, don’t write ",["$","code",null,{"className":"nextra-code","dir":"ltr","children":"brew install"}]," in a bash step"]}],"\n",["$","li",null,{"className":"x:my-[.5em]","children":["Setting a git config key? Use git-config — it reads better than ",["$","code",null,{"className":"nextra-code","dir":"ltr","children":"git config --global"}]]}],"\n",["$","li",null,{"className":"x:my-[.5em]","children":"Cloning a repo? That’s git-clone"}],"\n"]}]
+1b:["$","p",null,{"className":"x:not-first:mt-[1.25em] x:leading-7","children":"Save bash for the things that truly have no better home: installing Homebrew itself, running a\nthird-party installer, triggering one-off system initialisation."}]
+1c:["$","div",null,{"className":"nextra-callout x:overflow-x-auto x:not-first:mt-[1.25em] x:flex x:rounded-lg x:border x:py-[.5em] x:pe-[1em] x:contrast-more:border-current! x:bg-yellow-50 x:dark:bg-yellow-700/30 x:text-yellow-700 x:dark:text-yellow-500 x:border-yellow-700","children":[["$","div",null,{"className":"x:select-none x:text-[1.25em] x:ps-[.6em] x:pe-[.4em]","style":{"fontFamily":"\"Apple Color Emoji\", \"Segoe UI Emoji\", \"Segoe UI Symbol\""},"data-pagefind-ignore":"all","children":["$","svg",null,{"viewBox":"0 0 16 16","fill":"currentColor","height":".8em","className":"x:mt-[.3em]","children":["$","path",null,{"d":"M6.457 1.047c.659-1.234 2.427-1.234 3.086 0l6.082 11.378A1.75 1.75 0 0 1 14.082 15H1.918a1.75 1.75 0 0 1-1.543-2.575Zm1.763.707a.25.25 0 0 0-.44 0L1.698 13.132a.25.25 0 0 0 .22.368h12.164a.25.25 0 0 0 .22-.368Zm.53 3.996v2.5a.75.75 0 0 1-1.5 0v-2.5a.75.75 0 0 1 1.5 0ZM9 11a1 1 0 1 1-2 0 1 1 0 0 1 2 0Z"}]}]}],["$","div",null,{"className":"x:w-full x:min-w-0","children":["$","p",null,{"className":"x:not-first:mt-[1.25em] x:leading-7","children":"There’s no “uninstall” for a bash resource — deleting a bash entry from the Hamsfile doesn’t\nreverse the script. If you need to undo something, do it manually, or add a separate bash entry\nthat performs the inverse operation."}]}]]}]
+1f:null
+20:["$","span",null,{"style":{"--shiki-light":"#24292E","--shiki-dark":"#E1E4E8"},"children":": "}]
+21:["$","span",null,{"style":{"--shiki-light":"#032F62","--shiki-dark":"#9ECBFF"},"children":"\"urn:hams:bash:install-pnpm\""}]
+22:["$","span",null,{"children":[["$","span",null,{"style":{"--shiki-light":"#22863A","--shiki-dark":"#85E89D"},"children":"        step"}],["$","span",null,{"style":{"--shiki-light":"#24292E","--shiki-dark":"#E1E4E8"},"children":": "}],["$","span",null,{"style":{"--shiki-light":"#032F62","--shiki-dark":"#9ECBFF"},"children":"Install pnpm"}]]}]
+23:["$","span",null,{"children":[["$","span",null,{"style":{"--shiki-light":"#22863A","--shiki-dark":"#85E89D"},"children":"        run"}],["$","span",null,{"style":{"--shiki-light":"#24292E","--shiki-dark":"#E1E4E8"},"children":": "}],["$","span",null,{"style":{"--shiki-light":"#032F62","--shiki-dark":"#9ECBFF"},"children":"curl -fsSL https://get.pnpm.io/install.sh | sh -"}]]}]
+24:["$","span",null,{"children":[["$","span",null,{"style":{"--shiki-light":"#22863A","--shiki-dark":"#85E89D"},"children":"        check"}],["$","span",null,{"style":{"--shiki-light":"#24292E","--shiki-dark":"#E1E4E8"},"children":": "}],["$","span",null,{"style":{"--shiki-light":"#032F62","--shiki-dark":"#9ECBFF"},"children":"command -v pnpm"}]]}]
+25:["$","span",null,{"children":" "}]
+26:["$","span",null,{"children":[["$","span",null,{"style":{"--shiki-light":"#24292E","--shiki-dark":"#E1E4E8"},"children":"  - "}],["$","span",null,{"style":{"--shiki-light":"#22863A","--shiki-dark":"#85E89D"},"children":"tag"}],["$","span",null,{"style":{"--shiki-light":"#24292E","--shiki-dark":"#E1E4E8"},"children":": "}],["$","span",null,{"style":{"--shiki-light":"#032F62","--shiki-dark":"#9ECBFF"},"children":"config"}]]}]
+27:["$","span",null,{"children":[["$","span",null,{"style":{"--shiki-light":"#22863A","--shiki-dark":"#85E89D"},"children":"    items"}],["$","span",null,{"style":{"--shiki-light":"#24292E","--shiki-dark":"#E1E4E8"},"children":":"}]]}]
+28:["$","span",null,{"children":[["$","span",null,{"style":{"--shiki-light":"#24292E","--shiki-dark":"#E1E4E8"},"children":"      - "}],["$","span",null,{"style":{"--shiki-light":"#22863A","--shiki-dark":"#85E89D"},"children":"urn"}],["$","span",null,{"style":{"--shiki-light":"#24292E","--shiki-dark":"#E1E4E8"},"children":": "}],["$","span",null,{"style":{"--shiki-light":"#032F62","--shiki-dark":"#9ECBFF"},"children":"\"urn:hams:bash:git-rerere\""}]]}]
+29:["$","span",null,{"children":[["$","span",null,{"style":{"--shiki-light":"#22863A","--shiki-dark":"#85E89D"},"children":"        step"}],["$","span",null,{"style":{"--shiki-light":"#24292E","--shiki-dark":"#E1E4E8"},"children":": "}],["$","span",null,{"style":{"--shiki-light":"#032F62","--shiki-dark":"#9ECBFF"},"children":"Enable git rerere globally"}]]}]
+2a:["$","span",null,{"children":[["$","span",null,{"style":{"--shiki-light":"#22863A","--shiki-dark":"#85E89D"},"children":"        run"}],["$","span",null,{"style":{"--shiki-light":"#24292E","--shiki-dark":"#E1E4E8"},"children":": "}],["$","span",null,{"style":{"--shiki-light":"#032F62","--shiki-dark":"#9ECBFF"},"children":"git config --global rerere.autoUpdate true"}]]}]
+2b:["$","span",null,{"children":[["$","span",null,{"style":{"--shiki-light":"#22863A","--shiki-dark":"#85E89D"},"children":"        check"}],["$","span",null,{"style":{"--shiki-light":"#24292E","--shiki-dark":"#E1E4E8"},"children":": "}],["$","span",null,{"style":{"--shiki-light":"#032F62","--shiki-dark":"#9ECBFF"},"children":"git config --global --get rerere.autoUpdate"}]]}]

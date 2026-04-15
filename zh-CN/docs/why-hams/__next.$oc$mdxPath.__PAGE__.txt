@@ -1,0 +1,144 @@
+1:"$Sreact.fragment"
+2:I[20868,["/_next/static/chunks/12papiu2uecdn.js","/_next/static/chunks/17w-qi2xl_cs_.js","/_next/static/chunks/0t-.yzyb4a17p.js","/_next/static/chunks/092eu57~.7ox..js","/_next/static/chunks/0jzkg5~l3f10f.js"],"TOCProvider"]
+3:I[24456,["/_next/static/chunks/12papiu2uecdn.js","/_next/static/chunks/17w-qi2xl_cs_.js","/_next/static/chunks/0t-.yzyb4a17p.js","/_next/static/chunks/092eu57~.7ox..js","/_next/static/chunks/0jzkg5~l3f10f.js"],"Sidebar"]
+4:I[53490,["/_next/static/chunks/12papiu2uecdn.js","/_next/static/chunks/17w-qi2xl_cs_.js","/_next/static/chunks/0t-.yzyb4a17p.js","/_next/static/chunks/092eu57~.7ox..js","/_next/static/chunks/0jzkg5~l3f10f.js"],"ClientWrapper"]
+9:I[3911,["/_next/static/chunks/12papiu2uecdn.js","/_next/static/chunks/17w-qi2xl_cs_.js","/_next/static/chunks/0t-.yzyb4a17p.js","/_next/static/chunks/092eu57~.7ox..js","/_next/static/chunks/0jzkg5~l3f10f.js"],"HeadingAnchor"]
+1e:I[13257,["/_next/static/chunks/12papiu2uecdn.js","/_next/static/chunks/17w-qi2xl_cs_.js","/_next/static/chunks/0t-.yzyb4a17p.js","/_next/static/chunks/092eu57~.7ox..js","/_next/static/chunks/0jzkg5~l3f10f.js"],"OutletBoundary"]
+1f:"$Sreact.suspense"
+21:I[47245,["/_next/static/chunks/12papiu2uecdn.js","/_next/static/chunks/17w-qi2xl_cs_.js","/_next/static/chunks/0t-.yzyb4a17p.js","/_next/static/chunks/092eu57~.7ox..js","/_next/static/chunks/0jzkg5~l3f10f.js"],"ToggleWordWrapButton"]
+2b:I[38815,["/_next/static/chunks/12papiu2uecdn.js","/_next/static/chunks/17w-qi2xl_cs_.js","/_next/static/chunks/0t-.yzyb4a17p.js","/_next/static/chunks/092eu57~.7ox..js","/_next/static/chunks/0jzkg5~l3f10f.js"],""]
+5:T1404,# 为什么要有 hams
+
+**hams**（名字来自 *hamster*，仓鼠）是一个面向 macOS 和 Linux 工作站的声明式环境管理工具。
+打个比方：仓鼠会把过冬要吃的食物塞进颊囊里囤着，hams 帮你把软件包、系统设置、dotfiles、git 仓库这些
+环境配置也塞进 YAML 文件里囤着 —— 换新机器那天，一条命令全都回来。
+
+## 这事儿的痛点在哪
+
+一台干活用的开发机，是几个月甚至几年里成百上千个小决定攒出来的：
+
+- 看了篇博客，顺手 `brew install ripgrep htop fd delta`
+- 同事给你演示了某个工具，`npm install -g @anthropic-ai/claude-code`
+- Finder 默认藏 `.md` 扩展名忍了一周，`defaults write NSGlobalDomain AppleShowAllExtensions -bool true`
+- 每台新机器都得再配一次 `git config --global user.email "me@example.com"`
+- VS Code 扩展、App Store 买过的应用、shell 配置、各种符号链接……
+
+大多数人处理这些的方式是一个 `setup.sh`，从几十行慢慢长到两百行，没幂等、没状态追踪、
+跑一半失败了不知道从哪续、新机器上跑完也不知道到底成功装了啥。
+
+**hams 就是来替掉那个脚本的。**
+
+## 跟同类工具比一下
+
+| 工具 | 它能做什么 | 为什么还差点意思 |
+|------|-----------|----------------|
+| **NixOS / nix-darwin** | 用 Nix 表达式管整台机器，彻底声明式 | 太严格，必须全盘 Nix 化，不让你 `brew install`，学习曲线陡，sealed build 对很多 macOS 工具不友好 |
+| **Terraform / Pulumi** | 基础设施即代码 | 面向云资源，不是本机工具；得先写 HCL 或代码才能装东西；没有"记下我刚做了什么"这个动作 |
+| **Ansible** | Playbook 式的配置管理 | 先写 playbook 再跑，工作流反过来了；不能自动记录；每次都得重新探测所有任务，没有状态文件跳过没变化的资源 |
+| **chezmoi** | dotfile 管理，带模板 | 只管文件 —— 软件包、`defaults write`、git config、App Store 应用一概管不了 |
+| **brew bundle（Brewfile）** | 声明式跑 Homebrew | 只管 Homebrew；没状态追踪；YAML 注释不保留；没钩子；跨不了 provider |
+| **hams** | 包装你已经在用的包管理器，边装边记，新机器重放 | — |
+
+## 跟 Ansible 到底差在哪
+
+hams 和 Ansible 表面看都能"幂等执行任务"，但有三处关键不一样：
+
+1. **CLI 优先、自动记录** —— `hams brew install git` 同时完成了"装"和"记"。用 Ansible 你得先写个 playbook 再跑；
+用 hams，你先装，声明自动落地。
+
+2. **显式状态文件** —— hams 给每台机器维护一个 `.state/<machine-id>/` 目录，清楚记着装了啥、什么时候装的。
+下次 `apply` 就拿期望状态（Hamsfile）和实际状态（`.state/`）对比，只动有差异的部分。Ansible 每次都得把所有任务重探一遍。
+
+3. **幂等性明确** —— 对于 bash、defaults、duti 这类脚本类资源，hams 要求你明写一条 `check:` 命令来证明"这事儿已经做完了"。
+Ansible 的幂等性藏在每个模块里，质量参差不齐。
+
+## hams 不是什么
+
+- **不是 Docker 或 CI 的替代品。** hams 管的是你的**主机**开发环境，不是临时容器。
+- **不是 NixOS 那种严格隔离。** hams 直接调真实的 `brew`、`apt`、`pnpm`，在你真实的环境里动手，没有沙盒、没有 sealed build、没有万无一失的回滚。
+- **不是项目级工具。** hams 管的是**你的机器**，不是项目的依赖。项目依赖用 `package.json` / `go.mod` / `Cargo.toml`。
+- **不是 dotfile 管理器。** hams 可以通过 `file` provider 管 dotfiles，但不是它的主场。如果只想管 dotfiles，chezmoi 或 GNU Stow 更合适。
+
+## 名字是怎么来的
+
+**hams** 就是 **hamster**（仓鼠）的缩写。仓鼠的颊囊能塞很多食物，藏着过冬慢慢吃 ——
+这工具做的事情一模一样：把环境配置塞进 YAML 文件（叫它们 "Hamsfile"），新机器上一条命令全掏出来。
+
+`🐹` 是官方吉祥物。
+
+## 日常用起来是什么样
+
+```bash
+# 发现了个好用的 CLI，装上，顺手记下来
+hams brew install htop
+
+# 三个月后，新笔记本开箱：
+hams apply --from-repo=zthxxx/hams-store
+# hams 克隆 store、问你 profile tag、挨个装回来
+
+# 好奇自己管了些啥
+hams list
+
+# 手动在 hams 外面装过别的，想让状态跟现实对齐
+hams refresh
+```
+
+Hamsfile 就是这样的 YAML —— 可以手动编辑，注释也不会被吃掉：
+
+```yaml
+# macOS/Homebrew.hams.yaml
+schema_version: 1
+provider: Homebrew
+
+groups:
+  - tag: dev-tools  # 开发基础工具
+    items:
+      - app: git
+        intro: Distributed version control system.
+      - app: ripgrep
+        intro: Fast recursive grep alternative.
+        tags:
+          - search
+      - app: ast-grep
+        intro: Fast code search and rewrite tool.
+
+  - tag: media
+    items:
+      - app: ffmpeg
+        intro: Multimedia framework for audio/video processing.
+```
+
+心动了？看看[快速开始](./quickstart)就能跑起来。0:{"rsc":["$","$1","c",{"children":[["$","div",null,{"className":"x:mx-auto x:flex x:max-w-(--nextra-content-width)","children":["$","$L2",null,{"value":[{"value":"这事儿的痛点在哪","id":"这事儿的痛点在哪","depth":2},{"value":"跟同类工具比一下","id":"跟同类工具比一下","depth":2},{"value":"跟 Ansible 到底差在哪","id":"跟-ansible-到底差在哪","depth":2},{"value":"hams 不是什么","id":"hams-不是什么","depth":2},{"value":"名字是怎么来的","id":"名字是怎么来的","depth":2},{"value":"日常用起来是什么样","id":"日常用起来是什么样","depth":2}],"children":[["$","$L3",null,{}],["$","$L4",null,{"metadata":{"title":"为什么要有 hams","filePath":"content/zh-CN/docs/why-hams.mdx","timestamp":1776277188000},"sourceCode":"$5","children":["$L6","$L7"]}]]}]}],null,"$L8"]}],"isPartial":false,"staleTime":300,"varyParams":null,"buildId":"TeHNWxIawAcibho1l2N00"}
+6:["$","div",null,{"id":"nextra-skip-nav"}]
+7:["$","main",null,{"data-pagefind-body":true,"children":[["$","h1",null,{"className":"x:tracking-tight x:text-slate-900 x:dark:text-slate-100 x:font-bold x:mt-2 x:text-4xl","children":["为什么要有 hams","$undefined"]}],"\n",["$","p",null,{"className":"x:not-first:mt-[1.25em] x:leading-7","children":[["$","strong",null,{"children":"hams"}],"（名字来自 ",["$","em",null,{"children":"hamster"}],"，仓鼠）是一个面向 macOS 和 Linux 工作站的声明式环境管理工具。\n打个比方：仓鼠会把过冬要吃的食物塞进颊囊里囤着，hams 帮你把软件包、系统设置、dotfiles、git 仓库这些\n环境配置也塞进 YAML 文件里囤着 —— 换新机器那天，一条命令全都回来。"]}],"\n",["$","h2",null,{"id":"这事儿的痛点在哪","className":"x:tracking-tight x:text-slate-900 x:dark:text-slate-100 x:font-semibold x:target:animate-[fade-in_1.5s] x:mt-10 x:border-b x:pb-1 x:text-3xl nextra-border","children":["这事儿的痛点在哪",["$","$L9",null,{"id":"这事儿的痛点在哪"}]]}],"\n",["$","p",null,{"className":"x:not-first:mt-[1.25em] x:leading-7","children":"一台干活用的开发机，是几个月甚至几年里成百上千个小决定攒出来的："}],"\n",["$","ul",null,{"className":"x:[:is(ol,ul)_&]:my-[.75em] x:not-first:mt-[1.25em] x:list-disc x:ms-[1.5em]","children":["\n",["$","li",null,{"className":"x:my-[.5em]","children":["看了篇博客，顺手 ",["$","code",null,{"className":"nextra-code","dir":"ltr","children":"brew install ripgrep htop fd delta"}]]}],"\n",["$","li",null,{"className":"x:my-[.5em]","children":["同事给你演示了某个工具，",["$","code",null,{"className":"nextra-code","dir":"ltr","children":"npm install -g @anthropic-ai/claude-code"}]]}],"\n",["$","li",null,{"className":"x:my-[.5em]","children":["Finder 默认藏 ",["$","code",null,{"className":"nextra-code","dir":"ltr","children":".md"}]," 扩展名忍了一周，",["$","code",null,{"className":"nextra-code","dir":"ltr","children":"defaults write NSGlobalDomain AppleShowAllExtensions -bool true"}]]}],"\n",["$","li",null,{"className":"x:my-[.5em]","children":["每台新机器都得再配一次 ",["$","code",null,{"className":"nextra-code","dir":"ltr","children":"git config --global user.email \"me@example.com\""}]]}],"\n",["$","li",null,{"className":"x:my-[.5em]","children":"VS Code 扩展、App Store 买过的应用、shell 配置、各种符号链接……"}],"\n"]}],"\n",["$","p",null,{"className":"x:not-first:mt-[1.25em] x:leading-7","children":["大多数人处理这些的方式是一个 ",["$","code",null,{"className":"nextra-code","dir":"ltr","children":"setup.sh"}],"，从几十行慢慢长到两百行，没幂等、没状态追踪、\n跑一半失败了不知道从哪续、新机器上跑完也不知道到底成功装了啥。"]}],"\n",["$","p",null,{"className":"x:not-first:mt-[1.25em] x:leading-7","children":["$","strong",null,{"children":"hams 就是来替掉那个脚本的。"}]}],"\n",["$","h2",null,{"id":"跟同类工具比一下","className":"x:tracking-tight x:text-slate-900 x:dark:text-slate-100 x:font-semibold x:target:animate-[fade-in_1.5s] x:mt-10 x:border-b x:pb-1 x:text-3xl nextra-border","children":["跟同类工具比一下",["$","$L9",null,{"id":"跟同类工具比一下"}]]}],"\n",["$","table",null,{"className":"x:block x:overflow-x-auto nextra-scrollbar x:not-first:mt-[1.25em] x:p-0","children":[["$","thead",null,{"children":["$","tr",null,{"children":[["$","th",null,{"children":"工具","className":"x:m-0 x:border x:border-gray-300 x:px-4 x:py-2 x:font-semibold x:dark:border-gray-600"}],["$","th",null,{"children":"它能做什么","className":"x:m-0 x:border x:border-gray-300 x:px-4 x:py-2 x:font-semibold x:dark:border-gray-600"}],["$","th",null,{"children":"为什么还差点意思","className":"x:m-0 x:border x:border-gray-300 x:px-4 x:py-2 x:font-semibold x:dark:border-gray-600"}]],"className":"x:m-0 x:border-t x:border-gray-300 x:p-0 x:dark:border-gray-600 x:even:bg-gray-100 x:even:dark:bg-gray-600/20"}]}],["$","tbody",null,{"children":[["$","tr",null,{"children":[["$","td",null,{"children":["$","strong",null,{"children":"NixOS / nix-darwin"}],"className":"x:m-0 x:border x:border-gray-300 x:px-4 x:py-2 x:dark:border-gray-600"}],["$","td",null,{"children":"用 Nix 表达式管整台机器，彻底声明式","className":"x:m-0 x:border x:border-gray-300 x:px-4 x:py-2 x:dark:border-gray-600"}],["$","td",null,{"children":["太严格，必须全盘 Nix 化，不让你 ",["$","code",null,{"className":"nextra-code","dir":"ltr","children":"brew install"}],"，学习曲线陡，sealed build 对很多 macOS 工具不友好"],"className":"x:m-0 x:border x:border-gray-300 x:px-4 x:py-2 x:dark:border-gray-600"}]],"className":"x:m-0 x:border-t x:border-gray-300 x:p-0 x:dark:border-gray-600 x:even:bg-gray-100 x:even:dark:bg-gray-600/20"}],["$","tr",null,{"children":["$La","$Lb","$Lc"],"className":"x:m-0 x:border-t x:border-gray-300 x:p-0 x:dark:border-gray-600 x:even:bg-gray-100 x:even:dark:bg-gray-600/20"}],"$Ld","$Le","$Lf","$L10"]}]]}],"\n","$L11","\n","$L12","\n","$L13","\n","$L14","\n","$L15","\n","$L16","\n","$L17","\n","$L18","\n","$L19","\n","$L1a","\n","$L1b","\n","$L1c","\n","$L1d"]}]
+8:["$","$L1e",null,{"children":["$","$1f",null,{"name":"Next.MetadataOutlet","children":"$@20"}]}]
+a:["$","td",null,{"children":["$","strong",null,{"children":"Terraform / Pulumi"}],"className":"x:m-0 x:border x:border-gray-300 x:px-4 x:py-2 x:dark:border-gray-600"}]
+b:["$","td",null,{"children":"基础设施即代码","className":"x:m-0 x:border x:border-gray-300 x:px-4 x:py-2 x:dark:border-gray-600"}]
+c:["$","td",null,{"children":"面向云资源，不是本机工具；得先写 HCL 或代码才能装东西；没有”记下我刚做了什么”这个动作","className":"x:m-0 x:border x:border-gray-300 x:px-4 x:py-2 x:dark:border-gray-600"}]
+d:["$","tr",null,{"children":[["$","td",null,{"children":["$","strong",null,{"children":"Ansible"}],"className":"x:m-0 x:border x:border-gray-300 x:px-4 x:py-2 x:dark:border-gray-600"}],["$","td",null,{"children":"Playbook 式的配置管理","className":"x:m-0 x:border x:border-gray-300 x:px-4 x:py-2 x:dark:border-gray-600"}],["$","td",null,{"children":"先写 playbook 再跑，工作流反过来了；不能自动记录；每次都得重新探测所有任务，没有状态文件跳过没变化的资源","className":"x:m-0 x:border x:border-gray-300 x:px-4 x:py-2 x:dark:border-gray-600"}]],"className":"x:m-0 x:border-t x:border-gray-300 x:p-0 x:dark:border-gray-600 x:even:bg-gray-100 x:even:dark:bg-gray-600/20"}]
+e:["$","tr",null,{"children":[["$","td",null,{"children":["$","strong",null,{"children":"chezmoi"}],"className":"x:m-0 x:border x:border-gray-300 x:px-4 x:py-2 x:dark:border-gray-600"}],["$","td",null,{"children":"dotfile 管理，带模板","className":"x:m-0 x:border x:border-gray-300 x:px-4 x:py-2 x:dark:border-gray-600"}],["$","td",null,{"children":["只管文件 —— 软件包、",["$","code",null,{"className":"nextra-code","dir":"ltr","children":"defaults write"}],"、git config、App Store 应用一概管不了"],"className":"x:m-0 x:border x:border-gray-300 x:px-4 x:py-2 x:dark:border-gray-600"}]],"className":"x:m-0 x:border-t x:border-gray-300 x:p-0 x:dark:border-gray-600 x:even:bg-gray-100 x:even:dark:bg-gray-600/20"}]
+f:["$","tr",null,{"children":[["$","td",null,{"children":["$","strong",null,{"children":"brew bundle（Brewfile）"}],"className":"x:m-0 x:border x:border-gray-300 x:px-4 x:py-2 x:dark:border-gray-600"}],["$","td",null,{"children":"声明式跑 Homebrew","className":"x:m-0 x:border x:border-gray-300 x:px-4 x:py-2 x:dark:border-gray-600"}],["$","td",null,{"children":"只管 Homebrew；没状态追踪；YAML 注释不保留；没钩子；跨不了 provider","className":"x:m-0 x:border x:border-gray-300 x:px-4 x:py-2 x:dark:border-gray-600"}]],"className":"x:m-0 x:border-t x:border-gray-300 x:p-0 x:dark:border-gray-600 x:even:bg-gray-100 x:even:dark:bg-gray-600/20"}]
+10:["$","tr",null,{"children":[["$","td",null,{"children":["$","strong",null,{"children":"hams"}],"className":"x:m-0 x:border x:border-gray-300 x:px-4 x:py-2 x:dark:border-gray-600"}],["$","td",null,{"children":"包装你已经在用的包管理器，边装边记，新机器重放","className":"x:m-0 x:border x:border-gray-300 x:px-4 x:py-2 x:dark:border-gray-600"}],["$","td",null,{"children":"—","className":"x:m-0 x:border x:border-gray-300 x:px-4 x:py-2 x:dark:border-gray-600"}]],"className":"x:m-0 x:border-t x:border-gray-300 x:p-0 x:dark:border-gray-600 x:even:bg-gray-100 x:even:dark:bg-gray-600/20"}]
+11:["$","h2",null,{"id":"跟-ansible-到底差在哪","className":"x:tracking-tight x:text-slate-900 x:dark:text-slate-100 x:font-semibold x:target:animate-[fade-in_1.5s] x:mt-10 x:border-b x:pb-1 x:text-3xl nextra-border","children":["跟 Ansible 到底差在哪",["$","$L9",null,{"id":"跟-ansible-到底差在哪"}]]}]
+12:["$","p",null,{"className":"x:not-first:mt-[1.25em] x:leading-7","children":"hams 和 Ansible 表面看都能”幂等执行任务”，但有三处关键不一样："}]
+13:["$","ol",null,{"className":"x:[:is(ol,ul)_&]:my-[.75em] x:not-first:mt-[1.25em] x:list-decimal x:ms-6","children":["\n",["$","li",null,{"className":"x:my-[.5em]","children":["\n",["$","p",null,{"className":"x:not-first:mt-[1.25em] x:leading-7","children":[["$","strong",null,{"children":"CLI 优先、自动记录"}]," —— ",["$","code",null,{"className":"nextra-code","dir":"ltr","children":"hams brew install git"}]," 同时完成了”装”和”记”。用 Ansible 你得先写个 playbook 再跑；\n用 hams，你先装，声明自动落地。"]}],"\n"]}],"\n",["$","li",null,{"className":"x:my-[.5em]","children":["\n",["$","p",null,{"className":"x:not-first:mt-[1.25em] x:leading-7","children":[["$","strong",null,{"children":"显式状态文件"}]," —— hams 给每台机器维护一个 ",["$","code",null,{"className":"nextra-code","dir":"ltr","children":".state/<machine-id>/"}]," 目录，清楚记着装了啥、什么时候装的。\n下次 ",["$","code",null,{"className":"nextra-code","dir":"ltr","children":"apply"}]," 就拿期望状态（Hamsfile）和实际状态（",["$","code",null,{"className":"nextra-code","dir":"ltr","children":".state/"}],"）对比，只动有差异的部分。Ansible 每次都得把所有任务重探一遍。"]}],"\n"]}],"\n",["$","li",null,{"className":"x:my-[.5em]","children":["\n",["$","p",null,{"className":"x:not-first:mt-[1.25em] x:leading-7","children":[["$","strong",null,{"children":"幂等性明确"}]," —— 对于 bash、defaults、duti 这类脚本类资源，hams 要求你明写一条 ",["$","code",null,{"className":"nextra-code","dir":"ltr","children":"check:"}]," 命令来证明”这事儿已经做完了”。\nAnsible 的幂等性藏在每个模块里，质量参差不齐。"]}],"\n"]}],"\n"]}]
+14:["$","h2",null,{"id":"hams-不是什么","className":"x:tracking-tight x:text-slate-900 x:dark:text-slate-100 x:font-semibold x:target:animate-[fade-in_1.5s] x:mt-10 x:border-b x:pb-1 x:text-3xl nextra-border","children":["hams 不是什么",["$","$L9",null,{"id":"hams-不是什么"}]]}]
+15:["$","ul",null,{"className":"x:[:is(ol,ul)_&]:my-[.75em] x:not-first:mt-[1.25em] x:list-disc x:ms-[1.5em]","children":["\n",["$","li",null,{"className":"x:my-[.5em]","children":[["$","strong",null,{"children":"不是 Docker 或 CI 的替代品。"}]," hams 管的是你的",["$","strong",null,{"children":"主机"}],"开发环境，不是临时容器。"]}],"\n",["$","li",null,{"className":"x:my-[.5em]","children":[["$","strong",null,{"children":"不是 NixOS 那种严格隔离。"}]," hams 直接调真实的 ",["$","code",null,{"className":"nextra-code","dir":"ltr","children":"brew"}],"、",["$","code",null,{"className":"nextra-code","dir":"ltr","children":"apt"}],"、",["$","code",null,{"className":"nextra-code","dir":"ltr","children":"pnpm"}],"，在你真实的环境里动手，没有沙盒、没有 sealed build、没有万无一失的回滚。"]}],"\n",["$","li",null,{"className":"x:my-[.5em]","children":[["$","strong",null,{"children":"不是项目级工具。"}]," hams 管的是",["$","strong",null,{"children":"你的机器"}],"，不是项目的依赖。项目依赖用 ",["$","code",null,{"className":"nextra-code","dir":"ltr","children":"package.json"}]," / ",["$","code",null,{"className":"nextra-code","dir":"ltr","children":"go.mod"}]," / ",["$","code",null,{"className":"nextra-code","dir":"ltr","children":"Cargo.toml"}],"。"]}],"\n",["$","li",null,{"className":"x:my-[.5em]","children":[["$","strong",null,{"children":"不是 dotfile 管理器。"}]," hams 可以通过 ",["$","code",null,{"className":"nextra-code","dir":"ltr","children":"file"}]," provider 管 dotfiles，但不是它的主场。如果只想管 dotfiles，chezmoi 或 GNU Stow 更合适。"]}],"\n"]}]
+16:["$","h2",null,{"id":"名字是怎么来的","className":"x:tracking-tight x:text-slate-900 x:dark:text-slate-100 x:font-semibold x:target:animate-[fade-in_1.5s] x:mt-10 x:border-b x:pb-1 x:text-3xl nextra-border","children":["名字是怎么来的",["$","$L9",null,{"id":"名字是怎么来的"}]]}]
+17:["$","p",null,{"className":"x:not-first:mt-[1.25em] x:leading-7","children":[["$","strong",null,{"children":"hams"}]," 就是 ",["$","strong",null,{"children":"hamster"}],"（仓鼠）的缩写。仓鼠的颊囊能塞很多食物，藏着过冬慢慢吃 ——\n这工具做的事情一模一样：把环境配置塞进 YAML 文件（叫它们 “Hamsfile”），新机器上一条命令全掏出来。"]}]
+18:["$","p",null,{"className":"x:not-first:mt-[1.25em] x:leading-7","children":[["$","code",null,{"className":"nextra-code","dir":"ltr","children":"🐹"}]," 是官方吉祥物。"]}]
+19:["$","h2",null,{"id":"日常用起来是什么样","className":"x:tracking-tight x:text-slate-900 x:dark:text-slate-100 x:font-semibold x:target:animate-[fade-in_1.5s] x:mt-10 x:border-b x:pb-1 x:text-3xl nextra-border","children":["日常用起来是什么样",["$","$L9",null,{"id":"日常用起来是什么样"}]]}]
+1a:["$","div",null,{"data-pagefind-ignore":"all","className":"nextra-code x:relative x:not-first:mt-[1.25em]","children":["$undefined",["$","pre",null,{"className":"x:group x:focus-visible:nextra-focus x:overflow-x-auto x:subpixel-antialiased x:text-[.9em] x:bg-white x:dark:bg-black x:py-4 x:ring-1 x:ring-inset x:ring-gray-300 x:dark:ring-neutral-700 x:contrast-more:ring-gray-900 x:contrast-more:dark:ring-gray-50 x:contrast-more:contrast-150 x:rounded-md not-prose","tabIndex":"0","children":[["$","div",null,{"className":"x:group-hover:opacity-100 x:group-focus:opacity-100 x:opacity-0 x:transition x:focus-within:opacity-100 x:flex x:gap-1 x:absolute x:right-4 x:top-2","children":[["$","$L21",null,{"children":["$","svg",null,{"viewBox":"0 0 24 24","fill":"currentColor","height":"1em","children":["$","path",null,{"d":"M4 19h6v-2H4v2zM20 5H4v2h16V5zm-3 6H4v2h13.25c1.1 0 2 .9 2 2s-.9 2-2 2H15v-2l-3 3l3 3v-2h2c2.21 0 4-1.79 4-4s-1.79-4-4-4z"}]}]}],false]}],["$","code",null,{"className":"nextra-code","dir":"ltr","children":[["$","span",null,{"children":["$","span",null,{"style":{"--shiki-light":"#6A737D","--shiki-dark":"#6A737D"},"children":"# 发现了个好用的 CLI，装上，顺手记下来"}]}],"\n",["$","span",null,{"children":[["$","span",null,{"style":{"--shiki-light":"#6F42C1","--shiki-dark":"#B392F0"},"children":"hams"}],["$","span",null,{"style":{"--shiki-light":"#032F62","--shiki-dark":"#9ECBFF"},"children":" brew"}],["$","span",null,{"style":{"--shiki-light":"#032F62","--shiki-dark":"#9ECBFF"},"children":" install"}],["$","span",null,{"style":{"--shiki-light":"#032F62","--shiki-dark":"#9ECBFF"},"children":" htop"}]]}],"\n",["$","span",null,{"children":" "}],"\n",["$","span",null,{"children":["$","span",null,{"style":{"--shiki-light":"#6A737D","--shiki-dark":"#6A737D"},"children":"# 三个月后，新笔记本开箱："}]}],"\n",["$","span",null,{"children":[["$","span",null,{"style":{"--shiki-light":"#6F42C1","--shiki-dark":"#B392F0"},"children":"hams"}],["$","span",null,{"style":{"--shiki-light":"#032F62","--shiki-dark":"#9ECBFF"},"children":" apply"}],["$","span",null,{"style":{"--shiki-light":"#005CC5","--shiki-dark":"#79B8FF"},"children":" --from-repo=zthxxx/hams-store"}]]}],"\n",["$","span",null,{"children":["$","span",null,{"style":{"--shiki-light":"#6A737D","--shiki-dark":"#6A737D"},"children":"# hams 克隆 store、问你 profile tag、挨个装回来"}]}],"\n",["$","span",null,{"children":" "}],"\n",["$","span",null,{"children":["$","span",null,{"style":{"--shiki-light":"#6A737D","--shiki-dark":"#6A737D"},"children":"# 好奇自己管了些啥"}]}],"\n",["$","span",null,{"children":[["$","span",null,{"style":{"--shiki-light":"#6F42C1","--shiki-dark":"#B392F0"},"children":"hams"}],["$","span",null,{"style":{"--shiki-light":"#032F62","--shiki-dark":"#9ECBFF"},"children":" list"}]]}],"\n",["$","span",null,{"children":" "}],"\n",["$","span",null,{"children":["$","span",null,{"style":{"--shiki-light":"#6A737D","--shiki-dark":"#6A737D"},"children":"# 手动在 hams 外面装过别的，想让状态跟现实对齐"}]}],"\n",["$","span",null,{"children":[["$","span",null,{"style":{"--shiki-light":"#6F42C1","--shiki-dark":"#B392F0"},"children":"hams"}],["$","span",null,{"style":{"--shiki-light":"#032F62","--shiki-dark":"#9ECBFF"},"children":" refresh"}]]}]]}]]}]]}]
+1b:["$","p",null,{"className":"x:not-first:mt-[1.25em] x:leading-7","children":"Hamsfile 就是这样的 YAML —— 可以手动编辑，注释也不会被吃掉："}]
+1c:["$","div",null,{"data-pagefind-ignore":"all","className":"nextra-code x:relative x:not-first:mt-[1.25em]","children":["$undefined",["$","pre",null,{"className":"x:group x:focus-visible:nextra-focus x:overflow-x-auto x:subpixel-antialiased x:text-[.9em] x:bg-white x:dark:bg-black x:py-4 x:ring-1 x:ring-inset x:ring-gray-300 x:dark:ring-neutral-700 x:contrast-more:ring-gray-900 x:contrast-more:dark:ring-gray-50 x:contrast-more:contrast-150 x:rounded-md not-prose","tabIndex":"0","children":[["$","div",null,{"className":"x:group-hover:opacity-100 x:group-focus:opacity-100 x:opacity-0 x:transition x:focus-within:opacity-100 x:flex x:gap-1 x:absolute x:right-4 x:top-2","children":[["$","$L21",null,{"children":["$","svg",null,{"viewBox":"0 0 24 24","fill":"currentColor","height":"1em","children":["$","path",null,{"d":"M4 19h6v-2H4v2zM20 5H4v2h16V5zm-3 6H4v2h13.25c1.1 0 2 .9 2 2s-.9 2-2 2H15v-2l-3 3l3 3v-2h2c2.21 0 4-1.79 4-4s-1.79-4-4-4z"}]}]}],false]}],["$","code",null,{"className":"nextra-code","dir":"ltr","children":[["$","span",null,{"children":["$","span",null,{"style":{"--shiki-light":"#6A737D","--shiki-dark":"#6A737D"},"children":"# macOS/Homebrew.hams.yaml"}]}],"\n",["$","span",null,{"children":[["$","span",null,{"style":{"--shiki-light":"#22863A","--shiki-dark":"#85E89D"},"children":"schema_version"}],["$","span",null,{"style":{"--shiki-light":"#24292E","--shiki-dark":"#E1E4E8"},"children":": "}],["$","span",null,{"style":{"--shiki-light":"#005CC5","--shiki-dark":"#79B8FF"},"children":"1"}]]}],"\n",["$","span",null,{"children":[["$","span",null,{"style":{"--shiki-light":"#22863A","--shiki-dark":"#85E89D"},"children":"provider"}],["$","span",null,{"style":{"--shiki-light":"#24292E","--shiki-dark":"#E1E4E8"},"children":": "}],["$","span",null,{"style":{"--shiki-light":"#032F62","--shiki-dark":"#9ECBFF"},"children":"Homebrew"}]]}],"\n",["$","span",null,{"children":" "}],"\n",["$","span",null,{"children":[["$","span",null,{"style":{"--shiki-light":"#22863A","--shiki-dark":"#85E89D"},"children":"groups"}],["$","span",null,{"style":{"--shiki-light":"#24292E","--shiki-dark":"#E1E4E8"},"children":":"}]]}],"\n",["$","span",null,{"children":[["$","span",null,{"style":{"--shiki-light":"#24292E","--shiki-dark":"#E1E4E8"},"children":"  - "}],["$","span",null,{"style":{"--shiki-light":"#22863A","--shiki-dark":"#85E89D"},"children":"tag"}],["$","span",null,{"style":{"--shiki-light":"#24292E","--shiki-dark":"#E1E4E8"},"children":": "}],["$","span",null,{"style":{"--shiki-light":"#032F62","--shiki-dark":"#9ECBFF"},"children":"dev-tools"}],["$","span",null,{"style":{"--shiki-light":"#6A737D","--shiki-dark":"#6A737D"},"children":"  # 开发基础工具"}]]}],"\n",["$","span",null,{"children":[["$","span",null,{"style":{"--shiki-light":"#22863A","--shiki-dark":"#85E89D"},"children":"    items"}],["$","span",null,{"style":{"--shiki-light":"#24292E","--shiki-dark":"#E1E4E8"},"children":":"}]]}],"\n",["$","span",null,{"children":[["$","span",null,{"style":{"--shiki-light":"#24292E","--shiki-dark":"#E1E4E8"},"children":"      - "}],["$","span",null,{"style":{"--shiki-light":"#22863A","--shiki-dark":"#85E89D"},"children":"app"}],["$","span",null,{"style":{"--shiki-light":"#24292E","--shiki-dark":"#E1E4E8"},"children":": "}],["$","span",null,{"style":{"--shiki-light":"#032F62","--shiki-dark":"#9ECBFF"},"children":"git"}]]}],"\n",["$","span",null,{"children":[["$","span",null,{"style":{"--shiki-light":"#22863A","--shiki-dark":"#85E89D"},"children":"        intro"}],["$","span",null,{"style":{"--shiki-light":"#24292E","--shiki-dark":"#E1E4E8"},"children":": "}],["$","span",null,{"style":{"--shiki-light":"#032F62","--shiki-dark":"#9ECBFF"},"children":"Distributed version control system."}]]}],"\n",["$","span",null,{"children":[["$","span",null,{"style":{"--shiki-light":"#24292E","--shiki-dark":"#E1E4E8"},"children":"      - "}],["$","span",null,{"style":{"--shiki-light":"#22863A","--shiki-dark":"#85E89D"},"children":"app"}],["$","span",null,{"style":{"--shiki-light":"#24292E","--shiki-dark":"#E1E4E8"},"children":": "}],["$","span",null,{"style":{"--shiki-light":"#032F62","--shiki-dark":"#9ECBFF"},"children":"ripgrep"}]]}],"\n",["$","span",null,{"children":[["$","span",null,{"style":{"--shiki-light":"#22863A","--shiki-dark":"#85E89D"},"children":"        intro"}],["$","span",null,{"style":{"--shiki-light":"#24292E","--shiki-dark":"#E1E4E8"},"children":": "}],["$","span",null,{"style":{"--shiki-light":"#032F62","--shiki-dark":"#9ECBFF"},"children":"Fast recursive grep alternative."}]]}],"\n",["$","span",null,{"children":[["$","span",null,{"style":{"--shiki-light":"#22863A","--shiki-dark":"#85E89D"},"children":"        tags"}],"$L22"]}],"\n","$L23","\n","$L24","\n","$L25","\n","$L26","\n","$L27","\n","$L28","\n","$L29","\n","$L2a"]}]]}]]}]
+1d:["$","p",null,{"className":"x:not-first:mt-[1.25em] x:leading-7","children":["心动了？看看",["$","$L2b",null,{"href":"./quickstart","className":"x:focus-visible:nextra-focus x:text-primary-600 x:underline x:hover:no-underline x:decoration-from-font x:[text-underline-position:from-font]","children":"快速开始"}],"就能跑起来。"]}]
+20:null
+22:["$","span",null,{"style":{"--shiki-light":"#24292E","--shiki-dark":"#E1E4E8"},"children":":"}]
+23:["$","span",null,{"children":[["$","span",null,{"style":{"--shiki-light":"#24292E","--shiki-dark":"#E1E4E8"},"children":"          - "}],["$","span",null,{"style":{"--shiki-light":"#032F62","--shiki-dark":"#9ECBFF"},"children":"search"}]]}]
+24:["$","span",null,{"children":[["$","span",null,{"style":{"--shiki-light":"#24292E","--shiki-dark":"#E1E4E8"},"children":"      - "}],["$","span",null,{"style":{"--shiki-light":"#22863A","--shiki-dark":"#85E89D"},"children":"app"}],["$","span",null,{"style":{"--shiki-light":"#24292E","--shiki-dark":"#E1E4E8"},"children":": "}],["$","span",null,{"style":{"--shiki-light":"#032F62","--shiki-dark":"#9ECBFF"},"children":"ast-grep"}]]}]
+25:["$","span",null,{"children":[["$","span",null,{"style":{"--shiki-light":"#22863A","--shiki-dark":"#85E89D"},"children":"        intro"}],["$","span",null,{"style":{"--shiki-light":"#24292E","--shiki-dark":"#E1E4E8"},"children":": "}],["$","span",null,{"style":{"--shiki-light":"#032F62","--shiki-dark":"#9ECBFF"},"children":"Fast code search and rewrite tool."}]]}]
+26:["$","span",null,{"children":" "}]
+27:["$","span",null,{"children":[["$","span",null,{"style":{"--shiki-light":"#24292E","--shiki-dark":"#E1E4E8"},"children":"  - "}],["$","span",null,{"style":{"--shiki-light":"#22863A","--shiki-dark":"#85E89D"},"children":"tag"}],["$","span",null,{"style":{"--shiki-light":"#24292E","--shiki-dark":"#E1E4E8"},"children":": "}],["$","span",null,{"style":{"--shiki-light":"#032F62","--shiki-dark":"#9ECBFF"},"children":"media"}]]}]
+28:["$","span",null,{"children":[["$","span",null,{"style":{"--shiki-light":"#22863A","--shiki-dark":"#85E89D"},"children":"    items"}],["$","span",null,{"style":{"--shiki-light":"#24292E","--shiki-dark":"#E1E4E8"},"children":":"}]]}]
+29:["$","span",null,{"children":[["$","span",null,{"style":{"--shiki-light":"#24292E","--shiki-dark":"#E1E4E8"},"children":"      - "}],["$","span",null,{"style":{"--shiki-light":"#22863A","--shiki-dark":"#85E89D"},"children":"app"}],["$","span",null,{"style":{"--shiki-light":"#24292E","--shiki-dark":"#E1E4E8"},"children":": "}],["$","span",null,{"style":{"--shiki-light":"#032F62","--shiki-dark":"#9ECBFF"},"children":"ffmpeg"}]]}]
+2a:["$","span",null,{"children":[["$","span",null,{"style":{"--shiki-light":"#22863A","--shiki-dark":"#85E89D"},"children":"        intro"}],["$","span",null,{"style":{"--shiki-light":"#24292E","--shiki-dark":"#E1E4E8"},"children":": "}],["$","span",null,{"style":{"--shiki-light":"#032F62","--shiki-dark":"#9ECBFF"},"children":"Multimedia framework for audio/video processing."}]]}]

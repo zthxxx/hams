@@ -1,0 +1,83 @@
+1:"$Sreact.fragment"
+2:I[20868,["/_next/static/chunks/12papiu2uecdn.js","/_next/static/chunks/17w-qi2xl_cs_.js","/_next/static/chunks/0t-.yzyb4a17p.js","/_next/static/chunks/092eu57~.7ox..js","/_next/static/chunks/0jzkg5~l3f10f.js"],"TOCProvider"]
+3:I[24456,["/_next/static/chunks/12papiu2uecdn.js","/_next/static/chunks/17w-qi2xl_cs_.js","/_next/static/chunks/0t-.yzyb4a17p.js","/_next/static/chunks/092eu57~.7ox..js","/_next/static/chunks/0jzkg5~l3f10f.js"],"Sidebar"]
+4:I[53490,["/_next/static/chunks/12papiu2uecdn.js","/_next/static/chunks/17w-qi2xl_cs_.js","/_next/static/chunks/0t-.yzyb4a17p.js","/_next/static/chunks/092eu57~.7ox..js","/_next/static/chunks/0jzkg5~l3f10f.js"],"ClientWrapper"]
+6:I[3911,["/_next/static/chunks/12papiu2uecdn.js","/_next/static/chunks/17w-qi2xl_cs_.js","/_next/static/chunks/0t-.yzyb4a17p.js","/_next/static/chunks/092eu57~.7ox..js","/_next/static/chunks/0jzkg5~l3f10f.js"],"HeadingAnchor"]
+14:I[47245,["/_next/static/chunks/12papiu2uecdn.js","/_next/static/chunks/17w-qi2xl_cs_.js","/_next/static/chunks/0t-.yzyb4a17p.js","/_next/static/chunks/092eu57~.7ox..js","/_next/static/chunks/0jzkg5~l3f10f.js"],"ToggleWordWrapButton"]
+15:I[13257,["/_next/static/chunks/12papiu2uecdn.js","/_next/static/chunks/17w-qi2xl_cs_.js","/_next/static/chunks/0t-.yzyb4a17p.js","/_next/static/chunks/092eu57~.7ox..js","/_next/static/chunks/0jzkg5~l3f10f.js"],"OutletBoundary"]
+16:"$Sreact.suspense"
+5:T85e,import { Callout } from 'nextra/components'
+
+# hams self-upgrade
+
+Upgrade hams to the latest release. The command figures out how you originally installed hams and
+uses the right upgrade path automatically.
+
+## Usage
+
+```bash
+hams self-upgrade [flags]
+```
+
+## Examples
+
+```bash
+# Straight upgrade
+hams self-upgrade
+
+# Peek at the current version first
+hams --version
+# hams v0.1.0 (commit: abc1234, built: 2026-04-12)
+
+# Check if an upgrade is available, without actually upgrading
+hams self-upgrade --check
+
+# Force a reinstall of the current version (handy if the binary got corrupted)
+hams self-upgrade --force
+```
+
+## How hams knows what to do
+
+At install time, hams writes a channel marker to `~/.local/share/hams/install-channel` that records
+how you got here. `self-upgrade` reads that marker and chooses accordingly:
+
+| Install method | What self-upgrade does |
+|----------------|------------------------|
+| `curl | bash` script | Download the latest binary from GitHub Releases, replace `/usr/local/bin/hams` |
+| Homebrew tap | Shell out to `brew upgrade hams` |
+| Manual download from Releases | Print instructions — hams doesn't overwrite a binary it didn't manage |
+
+## What happens during an upgrade
+
+1. Check the latest tag from GitHub Releases, compare to the current version
+2. Already on the latest? Stop here
+3. Download the matching binary to a temp location, verify the checksum
+4. Rename the old binary to `hams.old`, move the new one into place
+5. Run `hams --version` as a sanity check. If anything goes wrong, roll back automatically
+
+The process is deliberately atomic — a mid-flight failure won't leave you with a half-installed hams.
+
+## No auto-updates
+
+There's no built-in scheduled update. hams is your machine's personal assistant; it won't upgrade
+itself behind your back. If you want automation, drop `hams self-upgrade` into cron or launchd.
+
+<Callout type="warning">
+  Don't run `self-upgrade` while `hams apply` is in progress. The global lock will refuse with
+  `LOCK_CONFLICT`, but if something bypassed the lock you could leave yourself in a bad state.
+  Let the current run finish first.
+</Callout>0:{"rsc":["$","$1","c",{"children":[["$","div",null,{"className":"x:mx-auto x:flex x:max-w-(--nextra-content-width)","children":["$","$L2",null,{"value":[{"value":"Usage","id":"usage","depth":2},{"value":"Examples","id":"examples","depth":2},{"value":"How hams knows what to do","id":"how-hams-knows-what-to-do","depth":2},{"value":"What happens during an upgrade","id":"what-happens-during-an-upgrade","depth":2},{"value":"No auto-updates","id":"no-auto-updates","depth":2}],"children":[["$","$L3",null,{}],["$","$L4",null,{"metadata":{"title":"hams self-upgrade","filePath":"content/en/docs/cli/self-upgrade.mdx","timestamp":1776277188000},"sourceCode":"$5","children":[["$","div",null,{"id":"nextra-skip-nav"}],["$","main",null,{"data-pagefind-body":true,"children":[["$","h1",null,{"className":"x:tracking-tight x:text-slate-900 x:dark:text-slate-100 x:font-bold x:mt-2 x:text-4xl","children":["hams self-upgrade","$undefined"]}],"\n",["$","p",null,{"className":"x:not-first:mt-[1.25em] x:leading-7","children":"Upgrade hams to the latest release. The command figures out how you originally installed hams and\nuses the right upgrade path automatically."}],"\n",["$","h2",null,{"id":"usage","className":"x:tracking-tight x:text-slate-900 x:dark:text-slate-100 x:font-semibold x:target:animate-[fade-in_1.5s] x:mt-10 x:border-b x:pb-1 x:text-3xl nextra-border","children":["Usage",["$","$L6",null,{"id":"usage"}]]}],"\n",["$","div",null,{"data-pagefind-ignore":"all","className":"nextra-code x:relative x:not-first:mt-[1.25em]","children":["$undefined","$L7"]}],"\n","$L8","\n","$L9","\n","$La","\n","$Lb","\n","$Lc","\n","$Ld","\n","$Le","\n","$Lf","\n","$L10","\n","$L11","\n","$L12"]}]]}]]}]}],null,"$L13"]}],"isPartial":false,"staleTime":300,"varyParams":null,"buildId":"TeHNWxIawAcibho1l2N00"}
+7:["$","pre",null,{"className":"x:group x:focus-visible:nextra-focus x:overflow-x-auto x:subpixel-antialiased x:text-[.9em] x:bg-white x:dark:bg-black x:py-4 x:ring-1 x:ring-inset x:ring-gray-300 x:dark:ring-neutral-700 x:contrast-more:ring-gray-900 x:contrast-more:dark:ring-gray-50 x:contrast-more:contrast-150 x:rounded-md not-prose","tabIndex":"0","children":[["$","div",null,{"className":"x:group-hover:opacity-100 x:group-focus:opacity-100 x:opacity-0 x:transition x:focus-within:opacity-100 x:flex x:gap-1 x:absolute x:right-4 x:top-2","children":[["$","$L14",null,{"children":["$","svg",null,{"viewBox":"0 0 24 24","fill":"currentColor","height":"1em","children":["$","path",null,{"d":"M4 19h6v-2H4v2zM20 5H4v2h16V5zm-3 6H4v2h13.25c1.1 0 2 .9 2 2s-.9 2-2 2H15v-2l-3 3l3 3v-2h2c2.21 0 4-1.79 4-4s-1.79-4-4-4z"}]}]}],false]}],["$","code",null,{"className":"nextra-code","dir":"ltr","children":["$","span",null,{"children":[["$","span",null,{"style":{"--shiki-light":"#6F42C1","--shiki-dark":"#B392F0"},"children":"hams"}],["$","span",null,{"style":{"--shiki-light":"#032F62","--shiki-dark":"#9ECBFF"},"children":" self-upgrade"}],["$","span",null,{"style":{"--shiki-light":"#24292E","--shiki-dark":"#E1E4E8"},"children":" [flags]"}]]}]}]]}]
+8:["$","h2",null,{"id":"examples","className":"x:tracking-tight x:text-slate-900 x:dark:text-slate-100 x:font-semibold x:target:animate-[fade-in_1.5s] x:mt-10 x:border-b x:pb-1 x:text-3xl nextra-border","children":["Examples",["$","$L6",null,{"id":"examples"}]]}]
+9:["$","div",null,{"data-pagefind-ignore":"all","className":"nextra-code x:relative x:not-first:mt-[1.25em]","children":["$undefined",["$","pre",null,{"className":"x:group x:focus-visible:nextra-focus x:overflow-x-auto x:subpixel-antialiased x:text-[.9em] x:bg-white x:dark:bg-black x:py-4 x:ring-1 x:ring-inset x:ring-gray-300 x:dark:ring-neutral-700 x:contrast-more:ring-gray-900 x:contrast-more:dark:ring-gray-50 x:contrast-more:contrast-150 x:rounded-md not-prose","tabIndex":"0","children":[["$","div",null,{"className":"x:group-hover:opacity-100 x:group-focus:opacity-100 x:opacity-0 x:transition x:focus-within:opacity-100 x:flex x:gap-1 x:absolute x:right-4 x:top-2","children":[["$","$L14",null,{"children":["$","svg",null,{"viewBox":"0 0 24 24","fill":"currentColor","height":"1em","children":["$","path",null,{"d":"M4 19h6v-2H4v2zM20 5H4v2h16V5zm-3 6H4v2h13.25c1.1 0 2 .9 2 2s-.9 2-2 2H15v-2l-3 3l3 3v-2h2c2.21 0 4-1.79 4-4s-1.79-4-4-4z"}]}]}],false]}],["$","code",null,{"className":"nextra-code","dir":"ltr","children":[["$","span",null,{"children":["$","span",null,{"style":{"--shiki-light":"#6A737D","--shiki-dark":"#6A737D"},"children":"# Straight upgrade"}]}],"\n",["$","span",null,{"children":[["$","span",null,{"style":{"--shiki-light":"#6F42C1","--shiki-dark":"#B392F0"},"children":"hams"}],["$","span",null,{"style":{"--shiki-light":"#032F62","--shiki-dark":"#9ECBFF"},"children":" self-upgrade"}]]}],"\n",["$","span",null,{"children":" "}],"\n",["$","span",null,{"children":["$","span",null,{"style":{"--shiki-light":"#6A737D","--shiki-dark":"#6A737D"},"children":"# Peek at the current version first"}]}],"\n",["$","span",null,{"children":[["$","span",null,{"style":{"--shiki-light":"#6F42C1","--shiki-dark":"#B392F0"},"children":"hams"}],["$","span",null,{"style":{"--shiki-light":"#005CC5","--shiki-dark":"#79B8FF"},"children":" --version"}]]}],"\n",["$","span",null,{"children":["$","span",null,{"style":{"--shiki-light":"#6A737D","--shiki-dark":"#6A737D"},"children":"# hams v0.1.0 (commit: abc1234, built: 2026-04-12)"}]}],"\n",["$","span",null,{"children":" "}],"\n",["$","span",null,{"children":["$","span",null,{"style":{"--shiki-light":"#6A737D","--shiki-dark":"#6A737D"},"children":"# Check if an upgrade is available, without actually upgrading"}]}],"\n",["$","span",null,{"children":[["$","span",null,{"style":{"--shiki-light":"#6F42C1","--shiki-dark":"#B392F0"},"children":"hams"}],["$","span",null,{"style":{"--shiki-light":"#032F62","--shiki-dark":"#9ECBFF"},"children":" self-upgrade"}],["$","span",null,{"style":{"--shiki-light":"#005CC5","--shiki-dark":"#79B8FF"},"children":" --check"}]]}],"\n",["$","span",null,{"children":" "}],"\n",["$","span",null,{"children":["$","span",null,{"style":{"--shiki-light":"#6A737D","--shiki-dark":"#6A737D"},"children":"# Force a reinstall of the current version (handy if the binary got corrupted)"}]}],"\n",["$","span",null,{"children":[["$","span",null,{"style":{"--shiki-light":"#6F42C1","--shiki-dark":"#B392F0"},"children":"hams"}],["$","span",null,{"style":{"--shiki-light":"#032F62","--shiki-dark":"#9ECBFF"},"children":" self-upgrade"}],["$","span",null,{"style":{"--shiki-light":"#005CC5","--shiki-dark":"#79B8FF"},"children":" --force"}]]}]]}]]}]]}]
+a:["$","h2",null,{"id":"how-hams-knows-what-to-do","className":"x:tracking-tight x:text-slate-900 x:dark:text-slate-100 x:font-semibold x:target:animate-[fade-in_1.5s] x:mt-10 x:border-b x:pb-1 x:text-3xl nextra-border","children":["How hams knows what to do",["$","$L6",null,{"id":"how-hams-knows-what-to-do"}]]}]
+b:["$","p",null,{"className":"x:not-first:mt-[1.25em] x:leading-7","children":["At install time, hams writes a channel marker to ",["$","code",null,{"className":"nextra-code","dir":"ltr","children":"~/.local/share/hams/install-channel"}]," that records\nhow you got here. ",["$","code",null,{"className":"nextra-code","dir":"ltr","children":"self-upgrade"}]," reads that marker and chooses accordingly:"]}]
+c:["$","table",null,{"className":"x:block x:overflow-x-auto nextra-scrollbar x:not-first:mt-[1.25em] x:p-0","children":[["$","thead",null,{"children":["$","tr",null,{"children":[["$","th",null,{"children":"Install method","className":"x:m-0 x:border x:border-gray-300 x:px-4 x:py-2 x:font-semibold x:dark:border-gray-600"}],["$","th",null,{"children":"What self-upgrade does","className":"x:m-0 x:border x:border-gray-300 x:px-4 x:py-2 x:font-semibold x:dark:border-gray-600"}]],"className":"x:m-0 x:border-t x:border-gray-300 x:p-0 x:dark:border-gray-600 x:even:bg-gray-100 x:even:dark:bg-gray-600/20"}]}],["$","tbody",null,{"children":[["$","tr",null,{"children":[["$","td",null,{"children":"`curl","className":"x:m-0 x:border x:border-gray-300 x:px-4 x:py-2 x:dark:border-gray-600"}],["$","td",null,{"children":"bash` script","className":"x:m-0 x:border x:border-gray-300 x:px-4 x:py-2 x:dark:border-gray-600"}]],"className":"x:m-0 x:border-t x:border-gray-300 x:p-0 x:dark:border-gray-600 x:even:bg-gray-100 x:even:dark:bg-gray-600/20"}],["$","tr",null,{"children":[["$","td",null,{"children":"Homebrew tap","className":"x:m-0 x:border x:border-gray-300 x:px-4 x:py-2 x:dark:border-gray-600"}],["$","td",null,{"children":["Shell out to ",["$","code",null,{"className":"nextra-code","dir":"ltr","children":"brew upgrade hams"}]],"className":"x:m-0 x:border x:border-gray-300 x:px-4 x:py-2 x:dark:border-gray-600"}]],"className":"x:m-0 x:border-t x:border-gray-300 x:p-0 x:dark:border-gray-600 x:even:bg-gray-100 x:even:dark:bg-gray-600/20"}],["$","tr",null,{"children":[["$","td",null,{"children":"Manual download from Releases","className":"x:m-0 x:border x:border-gray-300 x:px-4 x:py-2 x:dark:border-gray-600"}],["$","td",null,{"children":"Print instructions — hams doesn’t overwrite a binary it didn’t manage","className":"x:m-0 x:border x:border-gray-300 x:px-4 x:py-2 x:dark:border-gray-600"}]],"className":"x:m-0 x:border-t x:border-gray-300 x:p-0 x:dark:border-gray-600 x:even:bg-gray-100 x:even:dark:bg-gray-600/20"}]]}]]}]
+d:["$","h2",null,{"id":"what-happens-during-an-upgrade","className":"x:tracking-tight x:text-slate-900 x:dark:text-slate-100 x:font-semibold x:target:animate-[fade-in_1.5s] x:mt-10 x:border-b x:pb-1 x:text-3xl nextra-border","children":["What happens during an upgrade",["$","$L6",null,{"id":"what-happens-during-an-upgrade"}]]}]
+e:["$","ol",null,{"className":"x:[:is(ol,ul)_&]:my-[.75em] x:not-first:mt-[1.25em] x:list-decimal x:ms-6","children":["\n",["$","li",null,{"className":"x:my-[.5em]","children":"Check the latest tag from GitHub Releases, compare to the current version"}],"\n",["$","li",null,{"className":"x:my-[.5em]","children":"Already on the latest? Stop here"}],"\n",["$","li",null,{"className":"x:my-[.5em]","children":"Download the matching binary to a temp location, verify the checksum"}],"\n",["$","li",null,{"className":"x:my-[.5em]","children":["Rename the old binary to ",["$","code",null,{"className":"nextra-code","dir":"ltr","children":"hams.old"}],", move the new one into place"]}],"\n",["$","li",null,{"className":"x:my-[.5em]","children":["Run ",["$","code",null,{"className":"nextra-code","dir":"ltr","children":"hams --version"}]," as a sanity check. If anything goes wrong, roll back automatically"]}],"\n"]}]
+f:["$","p",null,{"className":"x:not-first:mt-[1.25em] x:leading-7","children":"The process is deliberately atomic — a mid-flight failure won’t leave you with a half-installed hams."}]
+10:["$","h2",null,{"id":"no-auto-updates","className":"x:tracking-tight x:text-slate-900 x:dark:text-slate-100 x:font-semibold x:target:animate-[fade-in_1.5s] x:mt-10 x:border-b x:pb-1 x:text-3xl nextra-border","children":["No auto-updates",["$","$L6",null,{"id":"no-auto-updates"}]]}]
+11:["$","p",null,{"className":"x:not-first:mt-[1.25em] x:leading-7","children":["There’s no built-in scheduled update. hams is your machine’s personal assistant; it won’t upgrade\nitself behind your back. If you want automation, drop ",["$","code",null,{"className":"nextra-code","dir":"ltr","children":"hams self-upgrade"}]," into cron or launchd."]}]
+12:["$","div",null,{"className":"nextra-callout x:overflow-x-auto x:not-first:mt-[1.25em] x:flex x:rounded-lg x:border x:py-[.5em] x:pe-[1em] x:contrast-more:border-current! x:bg-yellow-50 x:dark:bg-yellow-700/30 x:text-yellow-700 x:dark:text-yellow-500 x:border-yellow-700","children":[["$","div",null,{"className":"x:select-none x:text-[1.25em] x:ps-[.6em] x:pe-[.4em]","style":{"fontFamily":"\"Apple Color Emoji\", \"Segoe UI Emoji\", \"Segoe UI Symbol\""},"data-pagefind-ignore":"all","children":["$","svg",null,{"viewBox":"0 0 16 16","fill":"currentColor","height":".8em","className":"x:mt-[.3em]","children":["$","path",null,{"d":"M6.457 1.047c.659-1.234 2.427-1.234 3.086 0l6.082 11.378A1.75 1.75 0 0 1 14.082 15H1.918a1.75 1.75 0 0 1-1.543-2.575Zm1.763.707a.25.25 0 0 0-.44 0L1.698 13.132a.25.25 0 0 0 .22.368h12.164a.25.25 0 0 0 .22-.368Zm.53 3.996v2.5a.75.75 0 0 1-1.5 0v-2.5a.75.75 0 0 1 1.5 0ZM9 11a1 1 0 1 1-2 0 1 1 0 0 1 2 0Z"}]}]}],["$","div",null,{"className":"x:w-full x:min-w-0","children":["$","p",null,{"className":"x:not-first:mt-[1.25em] x:leading-7","children":["Don’t run ",["$","code",null,{"className":"nextra-code","dir":"ltr","children":"self-upgrade"}]," while ",["$","code",null,{"className":"nextra-code","dir":"ltr","children":"hams apply"}]," is in progress. The global lock will refuse with\n",["$","code",null,{"className":"nextra-code","dir":"ltr","children":"LOCK_CONFLICT"}],", but if something bypassed the lock you could leave yourself in a bad state.\nLet the current run finish first."]}]}]]}]
+13:["$","$L15",null,{"children":["$","$16",null,{"name":"Next.MetadataOutlet","children":"$@17"}]}]
+17:null

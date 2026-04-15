@@ -1,0 +1,102 @@
+1:"$Sreact.fragment"
+2:I[20868,["/_next/static/chunks/12papiu2uecdn.js","/_next/static/chunks/17w-qi2xl_cs_.js","/_next/static/chunks/0t-.yzyb4a17p.js","/_next/static/chunks/092eu57~.7ox..js","/_next/static/chunks/0jzkg5~l3f10f.js"],"TOCProvider"]
+3:I[24456,["/_next/static/chunks/12papiu2uecdn.js","/_next/static/chunks/17w-qi2xl_cs_.js","/_next/static/chunks/0t-.yzyb4a17p.js","/_next/static/chunks/092eu57~.7ox..js","/_next/static/chunks/0jzkg5~l3f10f.js"],"Sidebar"]
+4:I[53490,["/_next/static/chunks/12papiu2uecdn.js","/_next/static/chunks/17w-qi2xl_cs_.js","/_next/static/chunks/0t-.yzyb4a17p.js","/_next/static/chunks/092eu57~.7ox..js","/_next/static/chunks/0jzkg5~l3f10f.js"],"ClientWrapper"]
+6:I[3911,["/_next/static/chunks/12papiu2uecdn.js","/_next/static/chunks/17w-qi2xl_cs_.js","/_next/static/chunks/0t-.yzyb4a17p.js","/_next/static/chunks/092eu57~.7ox..js","/_next/static/chunks/0jzkg5~l3f10f.js"],"HeadingAnchor"]
+15:I[47245,["/_next/static/chunks/12papiu2uecdn.js","/_next/static/chunks/17w-qi2xl_cs_.js","/_next/static/chunks/0t-.yzyb4a17p.js","/_next/static/chunks/092eu57~.7ox..js","/_next/static/chunks/0jzkg5~l3f10f.js"],"ToggleWordWrapButton"]
+1d:I[13257,["/_next/static/chunks/12papiu2uecdn.js","/_next/static/chunks/17w-qi2xl_cs_.js","/_next/static/chunks/0t-.yzyb4a17p.js","/_next/static/chunks/092eu57~.7ox..js","/_next/static/chunks/0jzkg5~l3f10f.js"],"OutletBoundary"]
+1e:"$Sreact.suspense"
+5:T8ff,import { Callout } from 'nextra/components'
+
+# npm Provider
+
+包装 [npm](https://www.npmjs.com/) 来管全局装的 Node.js 工具。如果你团队/同事更习惯用 npm 而不是 pnpm，
+或者某些工具对 npm 有特殊依赖，用这个 provider 就对了。
+
+**支持平台：** macOS、Linux
+
+## 怎么用
+
+```bash
+# 全局装一个包（--global 不能少，不然 hams 会警告）
+hams npm install --global prettier
+
+# 卸掉
+hams npm uninstall --global prettier
+
+# 看看 hams 管了哪些 npm 全局包
+hams npm list
+```
+
+对，是 `install --global` / `uninstall --global`，跟原生 npm 一致。hams 默认**不**替你补 `--global` —
+防止你手抖把一个本地依赖当成全局装。
+
+## Hamsfile 长什么样
+
+```yaml
+# macOS/npm.hams.yaml
+schema_version: 1
+provider: npm
+
+groups:
+  - tag: lint
+    items:
+      - app: prettier
+        intro: Opinionated code formatter.
+      - app: eslint
+        intro: JavaScript and TypeScript linter.
+
+  - tag: dev-tools
+    items:
+      - app: "@anthropic-ai/claude-code"
+        intro: Claude Code CLI.
+      - app: nodemon
+        intro: Auto-restart Node scripts on file change.
+```
+
+带 scope 的包（比如 `@anthropic-ai/claude-code`）记得用引号包起来，不然 YAML 会把 `@` 当特殊字符。
+
+## 状态探测
+
+探测方式：hams 跑 `npm list -g --depth=0 --json`，从 JSON 里读全局依赖。
+跟 pnpm provider 逻辑一样，只是换了个命令。
+
+## pnpm 还是 npm？
+
+如果你完全没偏好，选 pnpm provider —— 速度快、占磁盘小、生态好。
+但如果有这些情况，选 npm provider 更合适：
+
+- 想用 Node 官方安装包自带的 npm，不想再装 pnpm
+- 某个工具的 README 只说了 `npm install -g`，你懒得折腾兼容
+- 团队统一用 npm，不想引入额外依赖
+
+两个 provider 可以共存，但**同一个包只归一个 provider 管**。不然 apply 的时候两边都会去装/卸，
+会很奇怪。
+
+<Callout type="warning">
+  如果你是用 `nvm` 或 `fnm` 管 Node 版本，npm 的全局安装目录会跟着当前 Node 版本走。
+  换了 Node 版本之后，`hams refresh` 会发现"原来装的包不见了" —— 这是正常的，
+  因为新版本的 global 目录是全新的。重新 `hams apply` 就能在新版本下补齐。
+</Callout>0:{"rsc":["$","$1","c",{"children":[["$","div",null,{"className":"x:mx-auto x:flex x:max-w-(--nextra-content-width)","children":["$","$L2",null,{"value":[{"value":"怎么用","id":"怎么用","depth":2},{"value":"Hamsfile 长什么样","id":"hamsfile-长什么样","depth":2},{"value":"状态探测","id":"状态探测","depth":2},{"value":"pnpm 还是 npm？","id":"pnpm-还是-npm","depth":2}],"children":[["$","$L3",null,{}],["$","$L4",null,{"metadata":{"title":"npm Provider","filePath":"content/zh-CN/docs/providers/npm.mdx","timestamp":1776277188000},"sourceCode":"$5","children":[["$","div",null,{"id":"nextra-skip-nav"}],["$","main",null,{"data-pagefind-body":true,"children":[["$","h1",null,{"className":"x:tracking-tight x:text-slate-900 x:dark:text-slate-100 x:font-bold x:mt-2 x:text-4xl","children":["npm Provider","$undefined"]}],"\n",["$","p",null,{"className":"x:not-first:mt-[1.25em] x:leading-7","children":["包装 ",["$","a",null,{"href":"https://www.npmjs.com/","target":"_blank","rel":"noreferrer","className":"x:focus-visible:nextra-focus x:text-primary-600 x:underline x:hover:no-underline x:decoration-from-font x:[text-underline-position:from-font]","children":["npm",[" ",["$","svg",null,{"fill":"none","stroke":"currentColor","strokeLinecap":"round","strokeLinejoin":"round","strokeWidth":1.7,"viewBox":"0 0 24 24","height":"1em","className":"x:inline x:align-baseline x:shrink-0","children":[["$","path",null,{"d":"M7 17L17 7"}],["$","path",null,{"d":"M7 7h10v10"}]]}]]]}]," 来管全局装的 Node.js 工具。如果你团队/同事更习惯用 npm 而不是 pnpm，\n或者某些工具对 npm 有特殊依赖，用这个 provider 就对了。"]}],"\n",["$","p",null,{"className":"x:not-first:mt-[1.25em] x:leading-7","children":[["$","strong",null,{"children":"支持平台："}]," macOS、Linux"]}],"\n",["$","h2",null,{"id":"怎么用","className":"x:tracking-tight x:text-slate-900 x:dark:text-slate-100 x:font-semibold x:target:animate-[fade-in_1.5s] x:mt-10 x:border-b x:pb-1 x:text-3xl nextra-border","children":["怎么用",["$","$L6",null,{"id":"怎么用"}]]}],"\n",["$","div",null,{"data-pagefind-ignore":"all","className":"nextra-code x:relative x:not-first:mt-[1.25em]","children":["$undefined",["$","pre",null,{"className":"x:group x:focus-visible:nextra-focus x:overflow-x-auto x:subpixel-antialiased x:text-[.9em] x:bg-white x:dark:bg-black x:py-4 x:ring-1 x:ring-inset x:ring-gray-300 x:dark:ring-neutral-700 x:contrast-more:ring-gray-900 x:contrast-more:dark:ring-gray-50 x:contrast-more:contrast-150 x:rounded-md not-prose","tabIndex":"0","children":["$L7","$L8"]}]]}],"\n","$L9","\n","$La","\n","$Lb","\n","$Lc","\n","$Ld","\n","$Le","\n","$Lf","\n","$L10","\n","$L11","\n","$L12","\n","$L13"]}]]}]]}]}],null,"$L14"]}],"isPartial":false,"staleTime":300,"varyParams":null,"buildId":"TeHNWxIawAcibho1l2N00"}
+7:["$","div",null,{"className":"x:group-hover:opacity-100 x:group-focus:opacity-100 x:opacity-0 x:transition x:focus-within:opacity-100 x:flex x:gap-1 x:absolute x:right-4 x:top-2","children":[["$","$L15",null,{"children":["$","svg",null,{"viewBox":"0 0 24 24","fill":"currentColor","height":"1em","children":["$","path",null,{"d":"M4 19h6v-2H4v2zM20 5H4v2h16V5zm-3 6H4v2h13.25c1.1 0 2 .9 2 2s-.9 2-2 2H15v-2l-3 3l3 3v-2h2c2.21 0 4-1.79 4-4s-1.79-4-4-4z"}]}]}],false]}]
+8:["$","code",null,{"className":"nextra-code","dir":"ltr","children":[["$","span",null,{"children":["$","span",null,{"style":{"--shiki-light":"#6A737D","--shiki-dark":"#6A737D"},"children":"# 全局装一个包（--global 不能少，不然 hams 会警告）"}]}],"\n",["$","span",null,{"children":[["$","span",null,{"style":{"--shiki-light":"#6F42C1","--shiki-dark":"#B392F0"},"children":"hams"}],["$","span",null,{"style":{"--shiki-light":"#032F62","--shiki-dark":"#9ECBFF"},"children":" npm"}],["$","span",null,{"style":{"--shiki-light":"#032F62","--shiki-dark":"#9ECBFF"},"children":" install"}],["$","span",null,{"style":{"--shiki-light":"#005CC5","--shiki-dark":"#79B8FF"},"children":" --global"}],["$","span",null,{"style":{"--shiki-light":"#032F62","--shiki-dark":"#9ECBFF"},"children":" prettier"}]]}],"\n",["$","span",null,{"children":" "}],"\n",["$","span",null,{"children":["$","span",null,{"style":{"--shiki-light":"#6A737D","--shiki-dark":"#6A737D"},"children":"# 卸掉"}]}],"\n",["$","span",null,{"children":[["$","span",null,{"style":{"--shiki-light":"#6F42C1","--shiki-dark":"#B392F0"},"children":"hams"}],["$","span",null,{"style":{"--shiki-light":"#032F62","--shiki-dark":"#9ECBFF"},"children":" npm"}],["$","span",null,{"style":{"--shiki-light":"#032F62","--shiki-dark":"#9ECBFF"},"children":" uninstall"}],["$","span",null,{"style":{"--shiki-light":"#005CC5","--shiki-dark":"#79B8FF"},"children":" --global"}],["$","span",null,{"style":{"--shiki-light":"#032F62","--shiki-dark":"#9ECBFF"},"children":" prettier"}]]}],"\n",["$","span",null,{"children":" "}],"\n",["$","span",null,{"children":["$","span",null,{"style":{"--shiki-light":"#6A737D","--shiki-dark":"#6A737D"},"children":"# 看看 hams 管了哪些 npm 全局包"}]}],"\n",["$","span",null,{"children":[["$","span",null,{"style":{"--shiki-light":"#6F42C1","--shiki-dark":"#B392F0"},"children":"hams"}],["$","span",null,{"style":{"--shiki-light":"#032F62","--shiki-dark":"#9ECBFF"},"children":" npm"}],["$","span",null,{"style":{"--shiki-light":"#032F62","--shiki-dark":"#9ECBFF"},"children":" list"}]]}]]}]
+9:["$","p",null,{"className":"x:not-first:mt-[1.25em] x:leading-7","children":["对，是 ",["$","code",null,{"className":"nextra-code","dir":"ltr","children":"install --global"}]," / ",["$","code",null,{"className":"nextra-code","dir":"ltr","children":"uninstall --global"}],"，跟原生 npm 一致。hams 默认",["$","strong",null,{"children":"不"}],"替你补 ",["$","code",null,{"className":"nextra-code","dir":"ltr","children":"--global"}]," —\n防止你手抖把一个本地依赖当成全局装。"]}]
+a:["$","h2",null,{"id":"hamsfile-长什么样","className":"x:tracking-tight x:text-slate-900 x:dark:text-slate-100 x:font-semibold x:target:animate-[fade-in_1.5s] x:mt-10 x:border-b x:pb-1 x:text-3xl nextra-border","children":["Hamsfile 长什么样",["$","$L6",null,{"id":"hamsfile-长什么样"}]]}]
+b:["$","div",null,{"data-pagefind-ignore":"all","className":"nextra-code x:relative x:not-first:mt-[1.25em]","children":["$undefined",["$","pre",null,{"className":"x:group x:focus-visible:nextra-focus x:overflow-x-auto x:subpixel-antialiased x:text-[.9em] x:bg-white x:dark:bg-black x:py-4 x:ring-1 x:ring-inset x:ring-gray-300 x:dark:ring-neutral-700 x:contrast-more:ring-gray-900 x:contrast-more:dark:ring-gray-50 x:contrast-more:contrast-150 x:rounded-md not-prose","tabIndex":"0","children":[["$","div",null,{"className":"x:group-hover:opacity-100 x:group-focus:opacity-100 x:opacity-0 x:transition x:focus-within:opacity-100 x:flex x:gap-1 x:absolute x:right-4 x:top-2","children":[["$","$L15",null,{"children":["$","svg",null,{"viewBox":"0 0 24 24","fill":"currentColor","height":"1em","children":["$","path",null,{"d":"M4 19h6v-2H4v2zM20 5H4v2h16V5zm-3 6H4v2h13.25c1.1 0 2 .9 2 2s-.9 2-2 2H15v-2l-3 3l3 3v-2h2c2.21 0 4-1.79 4-4s-1.79-4-4-4z"}]}]}],false]}],["$","code",null,{"className":"nextra-code","dir":"ltr","children":[["$","span",null,{"children":["$","span",null,{"style":{"--shiki-light":"#6A737D","--shiki-dark":"#6A737D"},"children":"# macOS/npm.hams.yaml"}]}],"\n",["$","span",null,{"children":[["$","span",null,{"style":{"--shiki-light":"#22863A","--shiki-dark":"#85E89D"},"children":"schema_version"}],["$","span",null,{"style":{"--shiki-light":"#24292E","--shiki-dark":"#E1E4E8"},"children":": "}],["$","span",null,{"style":{"--shiki-light":"#005CC5","--shiki-dark":"#79B8FF"},"children":"1"}]]}],"\n",["$","span",null,{"children":[["$","span",null,{"style":{"--shiki-light":"#22863A","--shiki-dark":"#85E89D"},"children":"provider"}],["$","span",null,{"style":{"--shiki-light":"#24292E","--shiki-dark":"#E1E4E8"},"children":": "}],["$","span",null,{"style":{"--shiki-light":"#032F62","--shiki-dark":"#9ECBFF"},"children":"npm"}]]}],"\n",["$","span",null,{"children":" "}],"\n",["$","span",null,{"children":[["$","span",null,{"style":{"--shiki-light":"#22863A","--shiki-dark":"#85E89D"},"children":"groups"}],["$","span",null,{"style":{"--shiki-light":"#24292E","--shiki-dark":"#E1E4E8"},"children":":"}]]}],"\n",["$","span",null,{"children":[["$","span",null,{"style":{"--shiki-light":"#24292E","--shiki-dark":"#E1E4E8"},"children":"  - "}],["$","span",null,{"style":{"--shiki-light":"#22863A","--shiki-dark":"#85E89D"},"children":"tag"}],["$","span",null,{"style":{"--shiki-light":"#24292E","--shiki-dark":"#E1E4E8"},"children":": "}],["$","span",null,{"style":{"--shiki-light":"#032F62","--shiki-dark":"#9ECBFF"},"children":"lint"}]]}],"\n",["$","span",null,{"children":[["$","span",null,{"style":{"--shiki-light":"#22863A","--shiki-dark":"#85E89D"},"children":"    items"}],["$","span",null,{"style":{"--shiki-light":"#24292E","--shiki-dark":"#E1E4E8"},"children":":"}]]}],"\n",["$","span",null,{"children":[["$","span",null,{"style":{"--shiki-light":"#24292E","--shiki-dark":"#E1E4E8"},"children":"      - "}],["$","span",null,{"style":{"--shiki-light":"#22863A","--shiki-dark":"#85E89D"},"children":"app"}],["$","span",null,{"style":{"--shiki-light":"#24292E","--shiki-dark":"#E1E4E8"},"children":": "}],["$","span",null,{"style":{"--shiki-light":"#032F62","--shiki-dark":"#9ECBFF"},"children":"prettier"}]]}],"\n",["$","span",null,{"children":[["$","span",null,{"style":{"--shiki-light":"#22863A","--shiki-dark":"#85E89D"},"children":"        intro"}],["$","span",null,{"style":{"--shiki-light":"#24292E","--shiki-dark":"#E1E4E8"},"children":": "}],["$","span",null,{"style":{"--shiki-light":"#032F62","--shiki-dark":"#9ECBFF"},"children":"Opinionated code formatter."}]]}],"\n",["$","span",null,{"children":[["$","span",null,{"style":{"--shiki-light":"#24292E","--shiki-dark":"#E1E4E8"},"children":"      - "}],["$","span",null,{"style":{"--shiki-light":"#22863A","--shiki-dark":"#85E89D"},"children":"app"}],["$","span",null,{"style":{"--shiki-light":"#24292E","--shiki-dark":"#E1E4E8"},"children":": "}],["$","span",null,{"style":{"--shiki-light":"#032F62","--shiki-dark":"#9ECBFF"},"children":"eslint"}]]}],"\n",["$","span",null,{"children":[["$","span",null,{"style":{"--shiki-light":"#22863A","--shiki-dark":"#85E89D"},"children":"        intro"}],["$","span",null,{"style":{"--shiki-light":"#24292E","--shiki-dark":"#E1E4E8"},"children":": "}],["$","span",null,{"style":{"--shiki-light":"#032F62","--shiki-dark":"#9ECBFF"},"children":"JavaScript and TypeScript linter."}]]}],"\n",["$","span",null,{"children":" "}],"\n",["$","span",null,{"children":[["$","span",null,{"style":{"--shiki-light":"#24292E","--shiki-dark":"#E1E4E8"},"children":"  - "}],["$","span",null,{"style":{"--shiki-light":"#22863A","--shiki-dark":"#85E89D"},"children":"tag"}],"$L16","$L17"]}],"\n","$L18","\n","$L19","\n","$L1a","\n","$L1b","\n","$L1c"]}]]}]]}]
+c:["$","p",null,{"className":"x:not-first:mt-[1.25em] x:leading-7","children":["带 scope 的包（比如 ",["$","code",null,{"className":"nextra-code","dir":"ltr","children":"@anthropic-ai/claude-code"}],"）记得用引号包起来，不然 YAML 会把 ",["$","code",null,{"className":"nextra-code","dir":"ltr","children":"@"}]," 当特殊字符。"]}]
+d:["$","h2",null,{"id":"状态探测","className":"x:tracking-tight x:text-slate-900 x:dark:text-slate-100 x:font-semibold x:target:animate-[fade-in_1.5s] x:mt-10 x:border-b x:pb-1 x:text-3xl nextra-border","children":["状态探测",["$","$L6",null,{"id":"状态探测"}]]}]
+e:["$","p",null,{"className":"x:not-first:mt-[1.25em] x:leading-7","children":["探测方式：hams 跑 ",["$","code",null,{"className":"nextra-code","dir":"ltr","children":"npm list -g --depth=0 --json"}],"，从 JSON 里读全局依赖。\n跟 pnpm provider 逻辑一样，只是换了个命令。"]}]
+f:["$","h2",null,{"id":"pnpm-还是-npm","className":"x:tracking-tight x:text-slate-900 x:dark:text-slate-100 x:font-semibold x:target:animate-[fade-in_1.5s] x:mt-10 x:border-b x:pb-1 x:text-3xl nextra-border","children":["pnpm 还是 npm？",["$","$L6",null,{"id":"pnpm-还是-npm"}]]}]
+10:["$","p",null,{"className":"x:not-first:mt-[1.25em] x:leading-7","children":"如果你完全没偏好，选 pnpm provider —— 速度快、占磁盘小、生态好。\n但如果有这些情况，选 npm provider 更合适："}]
+11:["$","ul",null,{"className":"x:[:is(ol,ul)_&]:my-[.75em] x:not-first:mt-[1.25em] x:list-disc x:ms-[1.5em]","children":["\n",["$","li",null,{"className":"x:my-[.5em]","children":"想用 Node 官方安装包自带的 npm，不想再装 pnpm"}],"\n",["$","li",null,{"className":"x:my-[.5em]","children":["某个工具的 README 只说了 ",["$","code",null,{"className":"nextra-code","dir":"ltr","children":"npm install -g"}],"，你懒得折腾兼容"]}],"\n",["$","li",null,{"className":"x:my-[.5em]","children":"团队统一用 npm，不想引入额外依赖"}],"\n"]}]
+12:["$","p",null,{"className":"x:not-first:mt-[1.25em] x:leading-7","children":["两个 provider 可以共存，但",["$","strong",null,{"children":"同一个包只归一个 provider 管"}],"。不然 apply 的时候两边都会去装/卸，\n会很奇怪。"]}]
+13:["$","div",null,{"className":"nextra-callout x:overflow-x-auto x:not-first:mt-[1.25em] x:flex x:rounded-lg x:border x:py-[.5em] x:pe-[1em] x:contrast-more:border-current! x:bg-yellow-50 x:dark:bg-yellow-700/30 x:text-yellow-700 x:dark:text-yellow-500 x:border-yellow-700","children":[["$","div",null,{"className":"x:select-none x:text-[1.25em] x:ps-[.6em] x:pe-[.4em]","style":{"fontFamily":"\"Apple Color Emoji\", \"Segoe UI Emoji\", \"Segoe UI Symbol\""},"data-pagefind-ignore":"all","children":["$","svg",null,{"viewBox":"0 0 16 16","fill":"currentColor","height":".8em","className":"x:mt-[.3em]","children":["$","path",null,{"d":"M6.457 1.047c.659-1.234 2.427-1.234 3.086 0l6.082 11.378A1.75 1.75 0 0 1 14.082 15H1.918a1.75 1.75 0 0 1-1.543-2.575Zm1.763.707a.25.25 0 0 0-.44 0L1.698 13.132a.25.25 0 0 0 .22.368h12.164a.25.25 0 0 0 .22-.368Zm.53 3.996v2.5a.75.75 0 0 1-1.5 0v-2.5a.75.75 0 0 1 1.5 0ZM9 11a1 1 0 1 1-2 0 1 1 0 0 1 2 0Z"}]}]}],["$","div",null,{"className":"x:w-full x:min-w-0","children":["$","p",null,{"className":"x:not-first:mt-[1.25em] x:leading-7","children":["如果你是用 ",["$","code",null,{"className":"nextra-code","dir":"ltr","children":"nvm"}]," 或 ",["$","code",null,{"className":"nextra-code","dir":"ltr","children":"fnm"}]," 管 Node 版本，npm 的全局安装目录会跟着当前 Node 版本走。\n换了 Node 版本之后，",["$","code",null,{"className":"nextra-code","dir":"ltr","children":"hams refresh"}]," 会发现”原来装的包不见了” —— 这是正常的，\n因为新版本的 global 目录是全新的。重新 ",["$","code",null,{"className":"nextra-code","dir":"ltr","children":"hams apply"}]," 就能在新版本下补齐。"]}]}]]}]
+14:["$","$L1d",null,{"children":["$","$1e",null,{"name":"Next.MetadataOutlet","children":"$@1f"}]}]
+16:["$","span",null,{"style":{"--shiki-light":"#24292E","--shiki-dark":"#E1E4E8"},"children":": "}]
+17:["$","span",null,{"style":{"--shiki-light":"#032F62","--shiki-dark":"#9ECBFF"},"children":"dev-tools"}]
+18:["$","span",null,{"children":[["$","span",null,{"style":{"--shiki-light":"#22863A","--shiki-dark":"#85E89D"},"children":"    items"}],["$","span",null,{"style":{"--shiki-light":"#24292E","--shiki-dark":"#E1E4E8"},"children":":"}]]}]
+19:["$","span",null,{"children":[["$","span",null,{"style":{"--shiki-light":"#24292E","--shiki-dark":"#E1E4E8"},"children":"      - "}],["$","span",null,{"style":{"--shiki-light":"#22863A","--shiki-dark":"#85E89D"},"children":"app"}],["$","span",null,{"style":{"--shiki-light":"#24292E","--shiki-dark":"#E1E4E8"},"children":": "}],["$","span",null,{"style":{"--shiki-light":"#032F62","--shiki-dark":"#9ECBFF"},"children":"\"@anthropic-ai/claude-code\""}]]}]
+1a:["$","span",null,{"children":[["$","span",null,{"style":{"--shiki-light":"#22863A","--shiki-dark":"#85E89D"},"children":"        intro"}],["$","span",null,{"style":{"--shiki-light":"#24292E","--shiki-dark":"#E1E4E8"},"children":": "}],["$","span",null,{"style":{"--shiki-light":"#032F62","--shiki-dark":"#9ECBFF"},"children":"Claude Code CLI."}]]}]
+1b:["$","span",null,{"children":[["$","span",null,{"style":{"--shiki-light":"#24292E","--shiki-dark":"#E1E4E8"},"children":"      - "}],["$","span",null,{"style":{"--shiki-light":"#22863A","--shiki-dark":"#85E89D"},"children":"app"}],["$","span",null,{"style":{"--shiki-light":"#24292E","--shiki-dark":"#E1E4E8"},"children":": "}],["$","span",null,{"style":{"--shiki-light":"#032F62","--shiki-dark":"#9ECBFF"},"children":"nodemon"}]]}]
+1c:["$","span",null,{"children":[["$","span",null,{"style":{"--shiki-light":"#22863A","--shiki-dark":"#85E89D"},"children":"        intro"}],["$","span",null,{"style":{"--shiki-light":"#24292E","--shiki-dark":"#E1E4E8"},"children":": "}],["$","span",null,{"style":{"--shiki-light":"#032F62","--shiki-dark":"#9ECBFF"},"children":"Auto-restart Node scripts on file change."}]]}]
+1f:null

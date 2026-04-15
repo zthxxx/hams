@@ -1,0 +1,98 @@
+1:"$Sreact.fragment"
+2:I[20868,["/_next/static/chunks/12papiu2uecdn.js","/_next/static/chunks/17w-qi2xl_cs_.js","/_next/static/chunks/0t-.yzyb4a17p.js","/_next/static/chunks/092eu57~.7ox..js","/_next/static/chunks/0jzkg5~l3f10f.js"],"TOCProvider"]
+3:I[24456,["/_next/static/chunks/12papiu2uecdn.js","/_next/static/chunks/17w-qi2xl_cs_.js","/_next/static/chunks/0t-.yzyb4a17p.js","/_next/static/chunks/092eu57~.7ox..js","/_next/static/chunks/0jzkg5~l3f10f.js"],"Sidebar"]
+4:I[53490,["/_next/static/chunks/12papiu2uecdn.js","/_next/static/chunks/17w-qi2xl_cs_.js","/_next/static/chunks/0t-.yzyb4a17p.js","/_next/static/chunks/092eu57~.7ox..js","/_next/static/chunks/0jzkg5~l3f10f.js"],"ClientWrapper"]
+6:I[3911,["/_next/static/chunks/12papiu2uecdn.js","/_next/static/chunks/17w-qi2xl_cs_.js","/_next/static/chunks/0t-.yzyb4a17p.js","/_next/static/chunks/092eu57~.7ox..js","/_next/static/chunks/0jzkg5~l3f10f.js"],"HeadingAnchor"]
+18:I[47245,["/_next/static/chunks/12papiu2uecdn.js","/_next/static/chunks/17w-qi2xl_cs_.js","/_next/static/chunks/0t-.yzyb4a17p.js","/_next/static/chunks/092eu57~.7ox..js","/_next/static/chunks/0jzkg5~l3f10f.js"],"ToggleWordWrapButton"]
+19:I[13257,["/_next/static/chunks/12papiu2uecdn.js","/_next/static/chunks/17w-qi2xl_cs_.js","/_next/static/chunks/0t-.yzyb4a17p.js","/_next/static/chunks/092eu57~.7ox..js","/_next/static/chunks/0jzkg5~l3f10f.js"],"OutletBoundary"]
+1a:"$Sreact.suspense"
+5:Tb44,import { Callout } from 'nextra/components'
+
+# hams apply
+
+把你 Hamsfile 里写下的所有资源，在当前这台机器上"兑现"。这是 hams 日常跑得最多的一条命令，
+不管是新机器第一次铺环境，还是后面手动改了 YAML 想同步过去，都走它。
+
+它干的事说穿了就三步：读 Hamsfile → 跟机器当前状态比对 → 差啥补啥、多啥卸啥、旧了就升。
+
+## 用法
+
+```bash
+hams apply [flags]
+```
+
+不带任何 flag，就会把当前 store 里所有 Hamsfile 应用到本机。
+
+## 场景示例
+
+```bash
+# 最常见：把当前 store 里的所有配置跑一遍
+hams apply
+
+# 新机器开箱：从 GitHub 仓库拉 store，直接开跑
+hams apply --from-repo=zthxxx/hams-store
+
+# 不放心？先 dry-run 预览一下会动哪些东西
+hams apply --dry-run
+
+# 只想跑 Homebrew 和 pnpm，别的先放一边
+hams apply --only=homebrew,pnpm
+
+# 除了 Ansible 其他都跑（Ansible 通常最耗时）
+hams apply --except=ansible
+```
+
+## Flag
+
+| Flag | 类型 | 说明 |
+|------|------|------|
+| `--from-repo` | string | 从远端 GitHub 仓库克隆 store 再 apply。适合新机器开荒。 |
+| `--only` | string | 只跑指定的 provider，逗号分隔 |
+| `--except` | string | 排除掉指定的 provider，其他都跑 |
+| `--dry-run` | bool | 只打印计划，不真动手 |
+
+## 执行流程
+
+一次 `apply` 背后 hams 干了这些事：
+
+1. **加锁** — 给当前机器上一把全局锁，防止两个 apply 同时跑互相踩脚
+2. **刷新状态** — 先对每个 provider 跑一遍 `refresh`，把机器现状写进 `.state/`
+3. **算差异** — 拿 Hamsfile（你想要的样子）和 `.state/`（现在的样子）对比，算出要装、要卸、要改的资源清单
+4. **按优先级执行** — 按照 `provider_priority` 的顺序一个个 provider 跑。默认 `bash` 走在最前，
+   这样你能用 bash 步骤先把 Homebrew 这种依赖装上
+5. **写回状态** — 每个资源装完就立刻更新对应的 `.state/<machine-id>/<Provider>.state.yaml`
+
+中途要是 Ctrl+C 打断了也不怕，下次再跑 `apply` 会从断点继续 —— 已经处理完的资源不会重跑。
+
+## 关于 sudo
+
+如果你的 profile 里有 `apt` 这类需要提权的 provider，hams 会在启动时一次性问你密码，
+然后每 4 分钟在后台自己刷 sudo 票据，保证整段 apply 过程不会再弹窗打扰你。
+
+## 失败了怎么办
+
+单个资源失败不会让整次 apply 都挂掉。hams 会接着跑剩下的，结束后在汇总里标出哪些失败了，
+并给出退出码 `4`（部分失败）。日志全量保留在 `~/.local/share/hams/` 下，按月归档。
+排查完再跑一次 `apply`，它只会重试失败的那些。
+
+<Callout type="tip">
+  第一次在陌生 store 上跑 apply，强烈建议先 `--dry-run` 看一眼清单，确认没问题再真跑。
+</Callout>0:{"rsc":["$","$1","c",{"children":[["$","div",null,{"className":"x:mx-auto x:flex x:max-w-(--nextra-content-width)","children":["$","$L2",null,{"value":[{"value":"用法","id":"用法","depth":2},{"value":"场景示例","id":"场景示例","depth":2},{"value":"Flag","id":"flag","depth":2},{"value":"执行流程","id":"执行流程","depth":2},{"value":"关于 sudo","id":"关于-sudo","depth":2},{"value":"失败了怎么办","id":"失败了怎么办","depth":2}],"children":[["$","$L3",null,{}],["$","$L4",null,{"metadata":{"title":"hams apply","filePath":"content/zh-CN/docs/cli/apply.mdx","timestamp":1776277188000},"sourceCode":"$5","children":[["$","div",null,{"id":"nextra-skip-nav"}],["$","main",null,{"data-pagefind-body":true,"children":[["$","h1",null,{"className":"x:tracking-tight x:text-slate-900 x:dark:text-slate-100 x:font-bold x:mt-2 x:text-4xl","children":["hams apply","$undefined"]}],"\n",["$","p",null,{"className":"x:not-first:mt-[1.25em] x:leading-7","children":"把你 Hamsfile 里写下的所有资源，在当前这台机器上”兑现”。这是 hams 日常跑得最多的一条命令，\n不管是新机器第一次铺环境，还是后面手动改了 YAML 想同步过去，都走它。"}],"\n",["$","p",null,{"className":"x:not-first:mt-[1.25em] x:leading-7","children":"它干的事说穿了就三步：读 Hamsfile → 跟机器当前状态比对 → 差啥补啥、多啥卸啥、旧了就升。"}],"\n",["$","h2",null,{"id":"用法","className":"x:tracking-tight x:text-slate-900 x:dark:text-slate-100 x:font-semibold x:target:animate-[fade-in_1.5s] x:mt-10 x:border-b x:pb-1 x:text-3xl nextra-border","children":["用法",["$","$L6",null,{"id":"用法"}]]}],"\n",["$","div",null,{"data-pagefind-ignore":"all","className":"nextra-code x:relative x:not-first:mt-[1.25em]","children":["$undefined",["$","pre",null,{"className":"x:group x:focus-visible:nextra-focus x:overflow-x-auto x:subpixel-antialiased x:text-[.9em] x:bg-white x:dark:bg-black x:py-4 x:ring-1 x:ring-inset x:ring-gray-300 x:dark:ring-neutral-700 x:contrast-more:ring-gray-900 x:contrast-more:dark:ring-gray-50 x:contrast-more:contrast-150 x:rounded-md not-prose","tabIndex":"0","children":[["$","div",null,{"className":"x:group-hover:opacity-100 x:group-focus:opacity-100 x:opacity-0 x:transition x:focus-within:opacity-100 x:flex x:gap-1 x:absolute x:right-4 x:top-2","children":["$L7",false]}],"$L8"]}]]}],"\n","$L9","\n","$La","\n","$Lb","\n","$Lc","\n","$Ld","\n","$Le","\n","$Lf","\n","$L10","\n","$L11","\n","$L12","\n","$L13","\n","$L14","\n","$L15","\n","$L16"]}]]}]]}]}],null,"$L17"]}],"isPartial":false,"staleTime":300,"varyParams":null,"buildId":"TeHNWxIawAcibho1l2N00"}
+7:["$","$L18",null,{"children":["$","svg",null,{"viewBox":"0 0 24 24","fill":"currentColor","height":"1em","children":["$","path",null,{"d":"M4 19h6v-2H4v2zM20 5H4v2h16V5zm-3 6H4v2h13.25c1.1 0 2 .9 2 2s-.9 2-2 2H15v-2l-3 3l3 3v-2h2c2.21 0 4-1.79 4-4s-1.79-4-4-4z"}]}]}]
+8:["$","code",null,{"className":"nextra-code","dir":"ltr","children":["$","span",null,{"children":[["$","span",null,{"style":{"--shiki-light":"#6F42C1","--shiki-dark":"#B392F0"},"children":"hams"}],["$","span",null,{"style":{"--shiki-light":"#032F62","--shiki-dark":"#9ECBFF"},"children":" apply"}],["$","span",null,{"style":{"--shiki-light":"#24292E","--shiki-dark":"#E1E4E8"},"children":" [flags]"}]]}]}]
+9:["$","p",null,{"className":"x:not-first:mt-[1.25em] x:leading-7","children":"不带任何 flag，就会把当前 store 里所有 Hamsfile 应用到本机。"}]
+a:["$","h2",null,{"id":"场景示例","className":"x:tracking-tight x:text-slate-900 x:dark:text-slate-100 x:font-semibold x:target:animate-[fade-in_1.5s] x:mt-10 x:border-b x:pb-1 x:text-3xl nextra-border","children":["场景示例",["$","$L6",null,{"id":"场景示例"}]]}]
+b:["$","div",null,{"data-pagefind-ignore":"all","className":"nextra-code x:relative x:not-first:mt-[1.25em]","children":["$undefined",["$","pre",null,{"className":"x:group x:focus-visible:nextra-focus x:overflow-x-auto x:subpixel-antialiased x:text-[.9em] x:bg-white x:dark:bg-black x:py-4 x:ring-1 x:ring-inset x:ring-gray-300 x:dark:ring-neutral-700 x:contrast-more:ring-gray-900 x:contrast-more:dark:ring-gray-50 x:contrast-more:contrast-150 x:rounded-md not-prose","tabIndex":"0","children":[["$","div",null,{"className":"x:group-hover:opacity-100 x:group-focus:opacity-100 x:opacity-0 x:transition x:focus-within:opacity-100 x:flex x:gap-1 x:absolute x:right-4 x:top-2","children":[["$","$L18",null,{"children":["$","svg",null,{"viewBox":"0 0 24 24","fill":"currentColor","height":"1em","children":["$","path",null,{"d":"M4 19h6v-2H4v2zM20 5H4v2h16V5zm-3 6H4v2h13.25c1.1 0 2 .9 2 2s-.9 2-2 2H15v-2l-3 3l3 3v-2h2c2.21 0 4-1.79 4-4s-1.79-4-4-4z"}]}]}],false]}],["$","code",null,{"className":"nextra-code","dir":"ltr","children":[["$","span",null,{"children":["$","span",null,{"style":{"--shiki-light":"#6A737D","--shiki-dark":"#6A737D"},"children":"# 最常见：把当前 store 里的所有配置跑一遍"}]}],"\n",["$","span",null,{"children":[["$","span",null,{"style":{"--shiki-light":"#6F42C1","--shiki-dark":"#B392F0"},"children":"hams"}],["$","span",null,{"style":{"--shiki-light":"#032F62","--shiki-dark":"#9ECBFF"},"children":" apply"}]]}],"\n",["$","span",null,{"children":" "}],"\n",["$","span",null,{"children":["$","span",null,{"style":{"--shiki-light":"#6A737D","--shiki-dark":"#6A737D"},"children":"# 新机器开箱：从 GitHub 仓库拉 store，直接开跑"}]}],"\n",["$","span",null,{"children":[["$","span",null,{"style":{"--shiki-light":"#6F42C1","--shiki-dark":"#B392F0"},"children":"hams"}],["$","span",null,{"style":{"--shiki-light":"#032F62","--shiki-dark":"#9ECBFF"},"children":" apply"}],["$","span",null,{"style":{"--shiki-light":"#005CC5","--shiki-dark":"#79B8FF"},"children":" --from-repo=zthxxx/hams-store"}]]}],"\n",["$","span",null,{"children":" "}],"\n",["$","span",null,{"children":["$","span",null,{"style":{"--shiki-light":"#6A737D","--shiki-dark":"#6A737D"},"children":"# 不放心？先 dry-run 预览一下会动哪些东西"}]}],"\n",["$","span",null,{"children":[["$","span",null,{"style":{"--shiki-light":"#6F42C1","--shiki-dark":"#B392F0"},"children":"hams"}],["$","span",null,{"style":{"--shiki-light":"#032F62","--shiki-dark":"#9ECBFF"},"children":" apply"}],["$","span",null,{"style":{"--shiki-light":"#005CC5","--shiki-dark":"#79B8FF"},"children":" --dry-run"}]]}],"\n",["$","span",null,{"children":" "}],"\n",["$","span",null,{"children":["$","span",null,{"style":{"--shiki-light":"#6A737D","--shiki-dark":"#6A737D"},"children":"# 只想跑 Homebrew 和 pnpm，别的先放一边"}]}],"\n",["$","span",null,{"children":[["$","span",null,{"style":{"--shiki-light":"#6F42C1","--shiki-dark":"#B392F0"},"children":"hams"}],["$","span",null,{"style":{"--shiki-light":"#032F62","--shiki-dark":"#9ECBFF"},"children":" apply"}],["$","span",null,{"style":{"--shiki-light":"#005CC5","--shiki-dark":"#79B8FF"},"children":" --only=homebrew,pnpm"}]]}],"\n",["$","span",null,{"children":" "}],"\n",["$","span",null,{"children":["$","span",null,{"style":{"--shiki-light":"#6A737D","--shiki-dark":"#6A737D"},"children":"# 除了 Ansible 其他都跑（Ansible 通常最耗时）"}]}],"\n",["$","span",null,{"children":[["$","span",null,{"style":{"--shiki-light":"#6F42C1","--shiki-dark":"#B392F0"},"children":"hams"}],["$","span",null,{"style":{"--shiki-light":"#032F62","--shiki-dark":"#9ECBFF"},"children":" apply"}],["$","span",null,{"style":{"--shiki-light":"#005CC5","--shiki-dark":"#79B8FF"},"children":" --except=ansible"}]]}]]}]]}]]}]
+c:["$","h2",null,{"id":"flag","className":"x:tracking-tight x:text-slate-900 x:dark:text-slate-100 x:font-semibold x:target:animate-[fade-in_1.5s] x:mt-10 x:border-b x:pb-1 x:text-3xl nextra-border","children":["Flag",["$","$L6",null,{"id":"flag"}]]}]
+d:["$","table",null,{"className":"x:block x:overflow-x-auto nextra-scrollbar x:not-first:mt-[1.25em] x:p-0","children":[["$","thead",null,{"children":["$","tr",null,{"children":[["$","th",null,{"children":"Flag","className":"x:m-0 x:border x:border-gray-300 x:px-4 x:py-2 x:font-semibold x:dark:border-gray-600"}],["$","th",null,{"children":"类型","className":"x:m-0 x:border x:border-gray-300 x:px-4 x:py-2 x:font-semibold x:dark:border-gray-600"}],["$","th",null,{"children":"说明","className":"x:m-0 x:border x:border-gray-300 x:px-4 x:py-2 x:font-semibold x:dark:border-gray-600"}]],"className":"x:m-0 x:border-t x:border-gray-300 x:p-0 x:dark:border-gray-600 x:even:bg-gray-100 x:even:dark:bg-gray-600/20"}]}],["$","tbody",null,{"children":[["$","tr",null,{"children":[["$","td",null,{"children":["$","code",null,{"className":"nextra-code","dir":"ltr","children":"--from-repo"}],"className":"x:m-0 x:border x:border-gray-300 x:px-4 x:py-2 x:dark:border-gray-600"}],["$","td",null,{"children":"string","className":"x:m-0 x:border x:border-gray-300 x:px-4 x:py-2 x:dark:border-gray-600"}],["$","td",null,{"children":"从远端 GitHub 仓库克隆 store 再 apply。适合新机器开荒。","className":"x:m-0 x:border x:border-gray-300 x:px-4 x:py-2 x:dark:border-gray-600"}]],"className":"x:m-0 x:border-t x:border-gray-300 x:p-0 x:dark:border-gray-600 x:even:bg-gray-100 x:even:dark:bg-gray-600/20"}],["$","tr",null,{"children":[["$","td",null,{"children":["$","code",null,{"className":"nextra-code","dir":"ltr","children":"--only"}],"className":"x:m-0 x:border x:border-gray-300 x:px-4 x:py-2 x:dark:border-gray-600"}],["$","td",null,{"children":"string","className":"x:m-0 x:border x:border-gray-300 x:px-4 x:py-2 x:dark:border-gray-600"}],["$","td",null,{"children":"只跑指定的 provider，逗号分隔","className":"x:m-0 x:border x:border-gray-300 x:px-4 x:py-2 x:dark:border-gray-600"}]],"className":"x:m-0 x:border-t x:border-gray-300 x:p-0 x:dark:border-gray-600 x:even:bg-gray-100 x:even:dark:bg-gray-600/20"}],["$","tr",null,{"children":[["$","td",null,{"children":["$","code",null,{"className":"nextra-code","dir":"ltr","children":"--except"}],"className":"x:m-0 x:border x:border-gray-300 x:px-4 x:py-2 x:dark:border-gray-600"}],["$","td",null,{"children":"string","className":"x:m-0 x:border x:border-gray-300 x:px-4 x:py-2 x:dark:border-gray-600"}],["$","td",null,{"children":"排除掉指定的 provider，其他都跑","className":"x:m-0 x:border x:border-gray-300 x:px-4 x:py-2 x:dark:border-gray-600"}]],"className":"x:m-0 x:border-t x:border-gray-300 x:p-0 x:dark:border-gray-600 x:even:bg-gray-100 x:even:dark:bg-gray-600/20"}],["$","tr",null,{"children":[["$","td",null,{"children":["$","code",null,{"className":"nextra-code","dir":"ltr","children":"--dry-run"}],"className":"x:m-0 x:border x:border-gray-300 x:px-4 x:py-2 x:dark:border-gray-600"}],["$","td",null,{"children":"bool","className":"x:m-0 x:border x:border-gray-300 x:px-4 x:py-2 x:dark:border-gray-600"}],["$","td",null,{"children":"只打印计划，不真动手","className":"x:m-0 x:border x:border-gray-300 x:px-4 x:py-2 x:dark:border-gray-600"}]],"className":"x:m-0 x:border-t x:border-gray-300 x:p-0 x:dark:border-gray-600 x:even:bg-gray-100 x:even:dark:bg-gray-600/20"}]]}]]}]
+e:["$","h2",null,{"id":"执行流程","className":"x:tracking-tight x:text-slate-900 x:dark:text-slate-100 x:font-semibold x:target:animate-[fade-in_1.5s] x:mt-10 x:border-b x:pb-1 x:text-3xl nextra-border","children":["执行流程",["$","$L6",null,{"id":"执行流程"}]]}]
+f:["$","p",null,{"className":"x:not-first:mt-[1.25em] x:leading-7","children":["一次 ",["$","code",null,{"className":"nextra-code","dir":"ltr","children":"apply"}]," 背后 hams 干了这些事："]}]
+10:["$","ol",null,{"className":"x:[:is(ol,ul)_&]:my-[.75em] x:not-first:mt-[1.25em] x:list-decimal x:ms-6","children":["\n",["$","li",null,{"className":"x:my-[.5em]","children":[["$","strong",null,{"children":"加锁"}]," — 给当前机器上一把全局锁，防止两个 apply 同时跑互相踩脚"]}],"\n",["$","li",null,{"className":"x:my-[.5em]","children":[["$","strong",null,{"children":"刷新状态"}]," — 先对每个 provider 跑一遍 ",["$","code",null,{"className":"nextra-code","dir":"ltr","children":"refresh"}],"，把机器现状写进 ",["$","code",null,{"className":"nextra-code","dir":"ltr","children":".state/"}]]}],"\n",["$","li",null,{"className":"x:my-[.5em]","children":[["$","strong",null,{"children":"算差异"}]," — 拿 Hamsfile（你想要的样子）和 ",["$","code",null,{"className":"nextra-code","dir":"ltr","children":".state/"}],"（现在的样子）对比，算出要装、要卸、要改的资源清单"]}],"\n",["$","li",null,{"className":"x:my-[.5em]","children":[["$","strong",null,{"children":"按优先级执行"}]," — 按照 ",["$","code",null,{"className":"nextra-code","dir":"ltr","children":"provider_priority"}]," 的顺序一个个 provider 跑。默认 ",["$","code",null,{"className":"nextra-code","dir":"ltr","children":"bash"}]," 走在最前，\n这样你能用 bash 步骤先把 Homebrew 这种依赖装上"]}],"\n",["$","li",null,{"className":"x:my-[.5em]","children":[["$","strong",null,{"children":"写回状态"}]," — 每个资源装完就立刻更新对应的 ",["$","code",null,{"className":"nextra-code","dir":"ltr","children":".state/<machine-id>/<Provider>.state.yaml"}]]}],"\n"]}]
+11:["$","p",null,{"className":"x:not-first:mt-[1.25em] x:leading-7","children":["中途要是 Ctrl+C 打断了也不怕，下次再跑 ",["$","code",null,{"className":"nextra-code","dir":"ltr","children":"apply"}]," 会从断点继续 —— 已经处理完的资源不会重跑。"]}]
+12:["$","h2",null,{"id":"关于-sudo","className":"x:tracking-tight x:text-slate-900 x:dark:text-slate-100 x:font-semibold x:target:animate-[fade-in_1.5s] x:mt-10 x:border-b x:pb-1 x:text-3xl nextra-border","children":["关于 sudo",["$","$L6",null,{"id":"关于-sudo"}]]}]
+13:["$","p",null,{"className":"x:not-first:mt-[1.25em] x:leading-7","children":["如果你的 profile 里有 ",["$","code",null,{"className":"nextra-code","dir":"ltr","children":"apt"}]," 这类需要提权的 provider，hams 会在启动时一次性问你密码，\n然后每 4 分钟在后台自己刷 sudo 票据，保证整段 apply 过程不会再弹窗打扰你。"]}]
+14:["$","h2",null,{"id":"失败了怎么办","className":"x:tracking-tight x:text-slate-900 x:dark:text-slate-100 x:font-semibold x:target:animate-[fade-in_1.5s] x:mt-10 x:border-b x:pb-1 x:text-3xl nextra-border","children":["失败了怎么办",["$","$L6",null,{"id":"失败了怎么办"}]]}]
+15:["$","p",null,{"className":"x:not-first:mt-[1.25em] x:leading-7","children":["单个资源失败不会让整次 apply 都挂掉。hams 会接着跑剩下的，结束后在汇总里标出哪些失败了，\n并给出退出码 ",["$","code",null,{"className":"nextra-code","dir":"ltr","children":"4"}],"（部分失败）。日志全量保留在 ",["$","code",null,{"className":"nextra-code","dir":"ltr","children":"~/.local/share/hams/"}]," 下，按月归档。\n排查完再跑一次 ",["$","code",null,{"className":"nextra-code","dir":"ltr","children":"apply"}],"，它只会重试失败的那些。"]}]
+16:["$","div",null,{"className":"nextra-callout x:overflow-x-auto x:not-first:mt-[1.25em] x:flex x:rounded-lg x:border x:py-[.5em] x:pe-[1em] x:contrast-more:border-current!","children":[["$","div",null,{"className":"x:select-none x:text-[1.25em] x:ps-[.6em] x:pe-[.4em]","style":{"fontFamily":"\"Apple Color Emoji\", \"Segoe UI Emoji\", \"Segoe UI Symbol\""},"data-pagefind-ignore":"all"}],["$","div",null,{"className":"x:w-full x:min-w-0","children":["$","p",null,{"className":"x:not-first:mt-[1.25em] x:leading-7","children":["第一次在陌生 store 上跑 apply，强烈建议先 ",["$","code",null,{"className":"nextra-code","dir":"ltr","children":"--dry-run"}]," 看一眼清单，确认没问题再真跑。"]}]}]]}]
+17:["$","$L19",null,{"children":["$","$1a",null,{"name":"Next.MetadataOutlet","children":"$@1b"}]}]
+1b:null
