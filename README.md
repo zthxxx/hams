@@ -32,8 +32,8 @@ hams pnpm add serve
 # Set git config and record it
 hams git-config user.name "Your Name"
 
-# Restore everything on a new machine
-hams apply --from-repo=your-username/hams-store
+# Restore everything on a new machine (add --bootstrap if brew isn't installed yet)
+hams apply --bootstrap --from-repo=your-username/hams-store
 ```
 
 ### How It Works

@@ -51,14 +51,9 @@ argument matching the manifest.
 
 ## 5. Docs
 
-- [ ] 5.1 `docs/content/en/docs/providers/homebrew.mdx` + zh-CN parity:
-  - Document the default (error-out with actionable remedy).
-  - Document `--bootstrap` as the non-interactive consent path.
-  - Document the TTY prompt behavior with the Xcode-CLT gotcha.
-- [ ] 5.2 `docs/content/en/docs/cli/apply.mdx` + zh-CN parity:
-  - Document `--bootstrap` / `--no-bootstrap` in the flag table.
-  - Mention that the flags also apply to `hams refresh`.
-- [ ] 5.3 `README.md` + `README.zh-CN.md` fresh-machine restore example: update to `hams apply --bootstrap --from-repo=...`.
+- [x] 5.1 `docs/content/{en,zh-CN}/docs/providers/homebrew.mdx` — added a "First-time setup on a fresh Mac" section linking to the apply page's bootstrap-prompt section. Covers default (error), --bootstrap (non-interactive consent), and the interactive TTY prompt.
+- [x] 5.2 `docs/content/{en,zh-CN}/docs/cli/apply.mdx` — added `--bootstrap` and `--no-bootstrap` rows to the flag table and a new "About the bootstrap prompt" section (+ zh-CN "关于 bootstrap 提示"). Per the spec scope-down, the flags are apply-only (refresh does not call Bootstrap), so no refresh-page change is needed.
+- [x] 5.3 `README.md` + `README.zh-CN.md` updated fresh-machine restore example: `hams apply --bootstrap --from-repo=...` (with parenthetical note "if brew isn't installed yet / 如果还没装 brew，加上 --bootstrap").
 
 ## 6. Verification
 

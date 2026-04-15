@@ -21,8 +21,10 @@ hams apply [flags]
 # 最常见：把当前 store 里的所有配置跑一遍
 hams apply
 
-# 新机器开箱：从 GitHub 仓库拉 store，直接开跑
-hams apply --from-repo=zthxxx/hams-store
+# 新机器开箱：从 GitHub 仓库拉 store，直接开跑。
+# 如果机器上还没装 Homebrew，加上 --bootstrap 让 hams 代你跑官方的
+# install.sh（交互终端会先弹提示确认）
+hams apply --bootstrap --from-repo=zthxxx/hams-store
 
 # 不放心？先 dry-run 预览一下会动哪些东西
 hams apply --dry-run
@@ -42,6 +44,8 @@ hams apply --except=ansible
 | `--only` | string | 只跑指定的 provider，逗号分隔 |
 | `--except` | string | 排除掉指定的 provider，其他都跑 |
 | `--prune-orphans` | bool | 对那些只有 state 文件、没有对应 hamsfile 的 provider 做清理：把 state 里登记的所有资源都卸掉。**有破坏性，默认关闭。** 适合那种"我已经不用这个工具了，让 hams 帮我清理"的场景。注意：用之前确认 hamsfile 不是因为半截 git pull 缺失的，否则会一次性卸掉一堆 |
+| `--bootstrap` | bool | 当某个 provider 的前置工具没装时（典型如 Homebrew），自动跑该 provider 声明的 bootstrap 脚本。**会从网上跑 bash 脚本**，所以要显式开启。默认关闭；交互终端下会改为 `[y/N/s]` 提示 |
+| `--no-bootstrap` | bool | 关闭交互终端下的 bootstrap 提示。CI 里如果你希望前置工具缺失时立刻失败、而不是挂起等你输入，用它 |
 | `--dry-run` | bool | 只打印计划，不真动手 |
 
 ## 执行流程
@@ -56,6 +60,27 @@ hams apply --except=ansible
 5. **写回状态** — 每个资源装完就立刻更新对应的 `.state/<machine-id>/<Provider>.state.yaml`
 
 中途要是 Ctrl+C 打断了也不怕，下次再跑 `apply` 会从断点继续 —— 已经处理完的资源不会重跑。
+
+## 关于 bootstrap 提示
+
+新机器上可能某个 provider 的前置工具还没装 —— 最常见的就是 Mac 上还没 Homebrew 的情况。当 hams
+跑到一个缺前置工具的 provider 时，它会停下来，然后根据当前情境做三件事之一：
+
+1. 你传了 `--bootstrap`：直接调 provider 声明的 install 脚本（比如
+   `/bin/bash -c "$(curl -fsSL .../install.sh)"`），通过 bash provider 执行，跑完再重试当前 provider。
+2. 交互终端且没传 `--no-bootstrap`：把即将执行的脚本原文打出来，提醒你会要 sudo 密码、可能触发
+   Xcode Command Line Tools 对话框、可能被公司代理挡住，然后问 `[y/N/s]`（yes / no / 跳过这个 provider）。
+3. 其他情况（CI、管道、显式 `--no-bootstrap`）：hams 直接给一条可复制的错误信息后退出 —— 不会
+   发任何网络请求，不会对系统做任何改动。
+
+hams **永远不会**在没有你明确授权的情况下，从网上跑 install 脚本。这和 `--prune-orphans` 一脉相承：
+凡是有破坏性或者会访问外部网络的默认行为，一律要显式 opt-in。
+
+<Callout type="warning">
+  macOS 上 Homebrew 的 `install.sh` 可能会弹出一个 Xcode Command Line Tools 的 GUI 安装对话框，
+  这个对话框**会阻塞 stdin**。如果终端看起来卡了几分钟没反应，切到桌面看看有没有一个被 IDE 压在
+  下面的模态窗口等着你点。
+</Callout>
 
 ## 关于 sudo
 

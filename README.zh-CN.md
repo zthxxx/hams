@@ -32,8 +32,8 @@ hams pnpm add serve
 # 设置 git 配置并记录
 hams git-config user.name "Your Name"
 
-# 在新机器上恢复所有配置
-hams apply --from-repo=your-username/hams-store
+# 在新机器上恢复所有配置（如果还没装 brew，加上 --bootstrap）
+hams apply --bootstrap --from-repo=your-username/hams-store
 ```
 
 ### 工作原理

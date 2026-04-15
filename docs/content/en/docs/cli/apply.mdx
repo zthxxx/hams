@@ -23,8 +23,10 @@ No flags? It applies everything in the current store to this machine.
 # The everyday case: apply everything in the current store
 hams apply
 
-# Fresh machine: clone the store from GitHub and apply in one go
-hams apply --from-repo=zthxxx/hams-store
+# Fresh machine: clone the store from GitHub and apply in one go.
+# Add --bootstrap if the machine doesn't have Homebrew installed yet —
+# hams will run the official install.sh for you (asks first on a TTY).
+hams apply --bootstrap --from-repo=zthxxx/hams-store
 
 # Not sure what's about to happen? Dry-run first
 hams apply --dry-run
@@ -44,6 +46,8 @@ hams apply --except=ansible
 | `--only` | string | Comma-separated providers to run. Everything else is skipped |
 | `--except` | string | Comma-separated providers to skip. Everything else runs |
 | `--prune-orphans` | bool | Process providers that have a state file but no hamsfile by removing every state-tracked resource. **Destructive; default off.** Useful when you've stopped tracking a tool and want hams to clean up. Be sure your hamsfiles are present (not in a half-pulled worktree) before using this — on a partial checkout this would mass-uninstall |
+| `--bootstrap` | bool | Auto-run a missing provider's bootstrap script (e.g. Homebrew's `install.sh`). **Runs remote bash from the internet** — opt in explicitly. Default off; interactive shells get a `[y/N/s]` prompt instead |
+| `--no-bootstrap` | bool | Skip the interactive bootstrap prompt that would otherwise appear on a TTY. Useful in CI when you want fail-fast behavior and don't want hams to ever auto-install anything |
 | `--dry-run` | bool | Print the plan, don't execute it |
 
 ## What actually happens
@@ -61,6 +65,28 @@ Under the hood, an apply goes through these stages:
 
 Ctrl+C in the middle? Fine. The next apply picks up where this one left off — finished resources
 aren't repeated.
+
+## About the bootstrap prompt
+
+On a fresh machine, a provider's prerequisite may be missing — typically Homebrew on a new Mac.
+When hams reaches a provider whose prerequisite is absent, it stops and does one of three things:
+
+1. If you passed `--bootstrap`, it runs the provider's declared install script (e.g.
+   `/bin/bash -c "$(curl -fsSL .../install.sh)"`) through the bash provider and retries.
+2. If stdin is a terminal and you didn't pass `--no-bootstrap`, it shows the exact script
+   about to run, warns about sudo password prompts + potential Xcode Command Line Tools
+   GUI dialog + corporate-proxy issues, and asks `[y/N/s]` (yes / no / skip-this-provider).
+3. Otherwise (CI, pipe, `--no-bootstrap`), hams surfaces an actionable error and exits — no
+   network traffic, no side effects.
+
+hams NEVER auto-executes a remote install script without an explicit opt-in. This is the same
+pattern as `--prune-orphans`: destructive or remote-executing defaults are always behind a flag.
+
+<Callout type="warning">
+  On macOS, Homebrew's `install.sh` may trigger the Xcode Command Line Tools GUI installer
+  which **blocks stdin**. If your terminal appears to hang for minutes, switch to your desktop
+  and look for a modal dialog waiting behind your IDE.
+</Callout>
 
 ## About sudo
 
