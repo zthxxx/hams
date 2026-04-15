@@ -91,9 +91,10 @@
 All 10 remaining in-scope providers (beyond apt) shipped in this change.
 Each provides its own `integration/{Dockerfile, integration.sh}`. Unit
 tests (Go) pass under `task test:unit`; Docker-based integration tests
-are validated by the `itest` matrix in `.github/workflows/ci.yml`.
-Where docker was unreachable during development, CI remains the
-authoritative validator.
+are validated by the `itest` matrix in `.github/workflows/ci.yml` AND
+verified locally via `task ci:itest` (OrbStack docker, 2026-04-16) —
+all 11 providers green end-to-end, including the real linuxbrew install
+path and the full VS Code extension-management path.
 
 - [x] 11.1 ansible — Dockerfile installs ansible + python3 via apt; integration.sh exercises one-shot `hams ansible <playbook>` + declarative `hams apply --only=ansible` with a localhost `ansible.builtin.file` task.
 - [x] 11.2 bash — empty Dockerfile (bash in base); integration.sh declares a bash resource with `run`/`check`/`remove`, verifies `hams apply` / drift detection via `refresh` / recovery / declarative remove.
@@ -117,5 +118,8 @@ entirely to its Dockerfile and wrapper function.
 
 ## 12. Archive
 
-- [x] 12.1 `/opsx:verify` — spec deltas confirmed against code: filter / scope-gate scenarios, apt CLI state-write scenarios, refresh artifact-skip scenarios all map to implementation. Where docker was unreachable during development, the per-provider integration scripts are statically validated (`shellcheck` clean, bash `-n` clean, `task check` green) and CI is the authoritative end-to-end verifier.
-- [ ] 12.2 `/opsx:archive fix-apt-cli-state-write-and-htop-rename` — pending docker-verified CI green.
+- [x] 12.1 `/opsx:verify` — spec deltas confirmed against code: filter / scope-gate scenarios, apt CLI state-write scenarios, refresh artifact-skip scenarios all map to implementation. Docker verification is now complete locally: `task ci:itest` green across all 11 in-scope providers (apt, ansible, bash, cargo, git, goinstall, homebrew, npm, pnpm, uv, vscodeext), including real package install/remove and state-file reconciliation (2026-04-16, OrbStack). Three last-mile fixes surfaced during this pass and landed as atomic commits:
+  - `fix(homebrew)`: `loadOrCreateHamsfile` used `os.IsNotExist` on a `fmt.Errorf("%w", ...)`-wrapped error; that API does not traverse `%w` chains, so genuinely-missing hamsfiles were misreported as read failures. Switched to `errors.Is(err, fs.ErrNotExist)`, matching apt.
+  - `fix(itest/homebrew)`: `bash -lc` is a non-interactive login shell — stock Debian `.bashrc` returns early for non-interactive shells, so the `brew shellenv` line at the end of `.bashrc` never ran. Replaced with `env -i` + explicit PATH; added `apply --only=brew` after each mutating CLI step (brew doesn't write state from CLI like apt does); switched step 5 to hamsfile-delete + apply so the removal path runs exactly once.
+  - `fix(itest/vscodeext)`: the tunnel-CLI `code` binary cannot manage extensions — `code --install-extension` requires a full Visual Studio Code installation. Switched to the official apt repo + a root-safe `/usr/local/bin/code` wrapper (`--no-sandbox --user-data-dir --extensions-dir`).
+- [ ] 12.2 `/opsx:archive fix-apt-cli-state-write-and-htop-rename` — ready (all gates green: `task check` + `task ci:itest` both green 2026-04-16).
