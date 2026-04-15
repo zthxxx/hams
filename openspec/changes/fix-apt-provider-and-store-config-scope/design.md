@@ -34,7 +34,7 @@ Stakeholders: any user of `hams apt`, any user whose store repo is shared with t
 - Store-level config files fail loudly (not silently) when they contain machine-scope fields. Error messages are actionable.
 - Apt's `apt-get`/`dpkg` command boundary is DI-isolated so unit tests catch "command ran but state untouched" class bugs without Docker.
 - Debian E2E has end-to-end scenarios that exercise the full install → remove → re-install → migration cycle against real `apt-get`.
-- `.github/workflows/ci.yml` is the thin glue — every build/test/lint step calls a named Taskfile task via `arduino/setup-task@v2`. Local `task <name>` and CI `task <name>` are byte-for-byte identical.
+- `.github/workflows/ci.yml` is the thin glue — every build/test/lint step calls a named Taskfile task via `go-task/setup-task@v1`. Local `task <name>` and CI `task <name>` are byte-for-byte identical.
 
 **Non-Goals:**
 
@@ -159,7 +159,7 @@ Validation applies to both `<store>/hams.config.yaml` (git-tracked) AND `<store>
 
 ### D7. `.github/workflows/ci.yml` is thin glue; Taskfile is the single source of truth
 
-**Decision:** Every step in `ci.yml` uses `arduino/setup-task@v2` to install `task`, then calls `run: task <name>`. Raw `go`, `go-task`, `golangci-lint`, `docker`, `pnpm`, and shell commands disappear from workflow YAML. Missing `ci:*` task compositions are added to `Taskfile.yml` first.
+**Decision:** Every step in `ci.yml` uses `go-task/setup-task@v1` to install `task`, then calls `run: task <name>`. Raw `go`, `go-task`, `golangci-lint`, `docker`, `pnpm`, and shell commands disappear from workflow YAML. Missing `ci:*` task compositions are added to `Taskfile.yml` first.
 
 **Alternatives considered:**
 
@@ -193,11 +193,11 @@ Validation applies to both `<store>/hams.config.yaml` (git-tracked) AND `<store>
 
 - **[DI fake must stay faithful to real apt behavior]** → If the fake `CmdRunner` diverges from what `apt-get` actually does (e.g., exit codes, idempotency of re-install), unit tests could pass while E2E fails. Mitigation: debian E2E scenarios E1–E5 are required — they exercise the identical orchestration paths against real `apt-get`. Unit tests are for the orchestration logic (did we call the runner? did we write the hamsfile?), not the runner's fidelity.
 
-- **[`arduino/setup-task@v2` as a new workflow dependency]** → Action could be deprecated or change major versions. Mitigation: pin to `@v2`, not `@latest`. Setup-task is actively maintained (Arduino Fork of the original go-task maintainer's action) with a stable 1.0-style API.
+- **[`go-task/setup-task@v1` as a new workflow dependency]** → Action could be deprecated or change major versions. Mitigation: pin to `@v2`, not `@latest`. Setup-task is actively maintained (Arduino Fork of the original go-task maintainer's action) with a stable 1.0-style API.
 
 - **[`yq` in debian integration Dockerfile]** → Adds a dependency to the container image. Mitigation: `yq` is a tiny Go binary installed via a release download or `apt-get install yq`. Alternative (no dependency): use `grep`+`awk` for structural YAML assertions, but that's fragile. Prefer the explicit tool.
 
-- **[`arduino/setup-task@v2` requires network access in CI]** → Setup action downloads `task` binary. In offline CI, this would fail. Mitigation: mainstream CI (GitHub Actions hosted runners) has internet. Air-gapped CI is not a current requirement. If it becomes one, vendor `task` into `bin/` and skip the action.
+- **[`go-task/setup-task@v1` requires network access in CI]** → Setup action downloads `task` binary. In offline CI, this would fail. Mitigation: mainstream CI (GitHub Actions hosted runners) has internet. Air-gapped CI is not a current requirement. If it becomes one, vendor `task` into `bin/` and skip the action.
 
 ## Migration Plan
 

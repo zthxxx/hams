@@ -6,9 +6,9 @@
 
 The GitHub Actions CI pipeline SHALL run on every push to `main` and every pull request targeting `main`. The pipeline SHALL validate code quality, build correctness, and test coverage across all supported platforms.
 
-Every workflow step that performs build, test, lint, formatting, Docker operations, or any other project action SHALL invoke a `task <name>` command via the `arduino/setup-task@v2` action. Raw invocations of `go build`, `go test`, `go vet`, `golangci-lint`, `markdownlint-cli2`, `cspell`, `pnpm`, `docker build`, `docker run`, `docker compose`, or equivalent shell commands SHALL NOT appear directly in any workflow YAML `run:` step, except for:
+Every workflow step that performs build, test, lint, formatting, Docker operations, or any other project action SHALL invoke a `task <name>` command via the `go-task/setup-task@v1` action. Raw invocations of `go build`, `go test`, `go vet`, `golangci-lint`, `markdownlint-cli2`, `cspell`, `pnpm`, `docker build`, `docker run`, `docker compose`, or equivalent shell commands SHALL NOT appear directly in any workflow YAML `run:` step, except for:
 
-- `arduino/setup-task@v2` itself (bootstraps the task runner).
+- `go-task/setup-task@v1` itself (bootstraps the task runner).
 - Actions-provided setup steps (e.g., `actions/checkout@v4`, `actions/setup-go@v5`, `actions/upload-artifact@v4`) when no equivalent Taskfile-wrapped step exists.
 - `echo` / `printenv` / trivial diagnostics (e.g., `run: task --version`) for debugging or provenance logs.
 
@@ -26,12 +26,12 @@ The CI workflow SHALL define the following jobs:
 | `integration` | `ubuntu-latest` | Run integration tests | `task ci:integration` |
 | `e2e` | `ubuntu-latest` | Run Docker-based e2e tests | `task ci:e2e` |
 
-All jobs SHALL install `task` via `arduino/setup-task@v2` before invoking any task command. The action SHALL be pinned to `@v2` (major version), not `@latest`. A workflow-level variable SHALL define the Go version (`1.24`) to match `go.mod`.
+All jobs SHALL install `task` via `go-task/setup-task@v1` before invoking any task command. The action SHALL be pinned to `@v1` (major version), not `@latest`. A workflow-level variable SHALL define the Go version (`1.24`) to match `go.mod`.
 
 #### Scenario: Lint job catches Go code issues via Taskfile
 
 - **WHEN** a PR contains Go code changes
-- **THEN** the `lint` job SHALL install `task` via `arduino/setup-task@v2`
+- **THEN** the `lint` job SHALL install `task` via `go-task/setup-task@v1`
 - **AND** SHALL execute `run: task lint` (or `run: task ci:lint` if a CI-specific composition exists)
 - **AND** the job SHALL fail if any linter reports an error
 - **AND** the workflow YAML SHALL NOT contain a raw `golangci-lint run` command.

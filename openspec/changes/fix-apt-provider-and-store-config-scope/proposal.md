@@ -15,7 +15,7 @@ The apt builtin provider is currently stubbed: `hams apt install <pkg>` and `ham
   - `UpdatedAt` is bumped on every state transition.
   - `schema_version` bumps `1` → `2`. Loader performs forward-only migration for v1 files on read; rewrites as v2 on next save.
 - **Store-level config rejects machine-scoped fields**. `<store>/hams.config.yaml` and `<store>/hams.config.local.yaml` SHALL fail to load if `profile_tag` or `machine_id` is set at the top level. Error message MUST name the offending field, the file path, and point the user to `${HAMS_CONFIG_HOME}/hams.config.yaml`. Example templates (`examples/.template/store/`, `examples/basic-debian/store/`) and E2E fixtures (`e2e/fixtures/*/hams.config.yaml`) are scrubbed of these fields.
-- **GitHub Actions workflow routes all steps through Taskfile via `arduino/setup-task@v2`.** Every build, test, lint, integration, and e2e step in `.github/workflows/ci.yml` SHALL invoke a `task <name>` command. No inline `go build`, `go test`, `golangci-lint run`, or `docker build` commands remain in workflow YAML. Missing Taskfile tasks are added first, then referenced.
+- **GitHub Actions workflow routes all steps through Taskfile via `go-task/setup-task@v1`.** Every build, test, lint, integration, and e2e step in `.github/workflows/ci.yml` SHALL invoke a `task <name>` command. No inline `go build`, `go test`, `golangci-lint run`, or `docker build` commands remain in workflow YAML. Missing Taskfile tasks are added first, then referenced.
 - **Unit + E2E test coverage.** Apt provider gains DI-isolated unit tests (11 scenarios) covering install/remove/re-install-after-remove flows with the fake `CmdRunner`. Debian E2E (`e2e/debian/run-tests.sh`) gains four scenarios covering imperative install/remove end-to-end against real `apt-get`, plus a store-level config hard-fail scenario. New bash helpers `e2e/lib/yaml_assert.sh` enable structural YAML field assertions.
 
 ## Capabilities
@@ -28,7 +28,7 @@ None. All changes map to existing capabilities.
 
 - `schema-design`: State file schema gains `first_install_at` (renamed from `install_at`, with immutability semantics) and `removed_at` (new). `schema_version` bumps to `2` with a forward migration. Store-level config schema adds an explicit rejection rule for `profile_tag` and `machine_id`.
 - `builtin-providers`: Apt provider section is rewritten — CLI install/remove SHALL update the hamsfile after successful command execution (matching the Package Provider Common Pattern already followed by brew), stdout/stderr SHALL stream, and the `apt-get`/`dpkg` command boundary SHALL be exposed through a DI-injectable interface.
-- `project-structure`: GitHub Actions CI pipeline requirement is tightened — workflow steps SHALL invoke Taskfile tasks via `arduino/setup-task@v2`; no raw build/test/lint/docker commands may appear directly in workflow YAML.
+- `project-structure`: GitHub Actions CI pipeline requirement is tightened — workflow steps SHALL invoke Taskfile tasks via `go-task/setup-task@v1`; no raw build/test/lint/docker commands may appear directly in workflow YAML.
 
 ## Impact
 
@@ -59,5 +59,5 @@ None. All changes map to existing capabilities.
 **Dependencies:**
 
 - Adds `yq` to debian integration Dockerfile.
-- Adds `arduino/setup-task@v2` to CI workflow.
+- Adds `go-task/setup-task@v1` to CI workflow.
 - No new Go module dependencies.
