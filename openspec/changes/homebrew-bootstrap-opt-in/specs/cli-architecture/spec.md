@@ -25,9 +25,11 @@ Semantics:
   spec for the exact prompt contents). If stdin is NOT a TTY, apply
   behaves identically to `--no-bootstrap`.
 
-The same `--bootstrap` / `--no-bootstrap` flags SHALL be recognized by
-`hams refresh` for symmetry, though refresh's use case is narrower
-(only relevant for providers that need a prerequisite to run `Probe`).
+The flags are scoped to `hams apply`. `hams refresh` does not invoke
+`Bootstrap` on providers (it only calls `Probe`), so no bootstrap
+flag is wired there. Providers whose `Probe` fails because a
+prerequisite is missing surface that as a regular probe error, which
+`refresh` logs per-provider without aborting the whole run.
 
 #### Scenario: Apply with `--bootstrap` delegates via provider framework
 

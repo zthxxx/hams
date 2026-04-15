@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -38,6 +39,8 @@ Use --no-refresh to skip probing and apply based on state alone.`,
 			&cli.StringFlag{Name: "only", Usage: "Only apply these providers (comma-separated)"},
 			&cli.StringFlag{Name: "except", Usage: "Skip these providers (comma-separated)"},
 			&cli.BoolFlag{Name: "prune-orphans", Usage: "Process providers that have a state file but no hamsfile by removing every state-tracked resource. Destructive; default off."},
+			&cli.BoolFlag{Name: "bootstrap", Usage: "Auto-run provider bootstrap scripts (e.g., Homebrew install.sh) when a prerequisite is missing. Runs remote scripts — opt in explicitly."},
+			&cli.BoolFlag{Name: "no-bootstrap", Usage: "Fail fast when a provider prerequisite is missing. Skip the interactive consent prompt that would otherwise show on a TTY."},
 		},
 		Action: func(ctx context.Context, cmd *cli.Command) error {
 			flags := globalFlags(cmd)
@@ -47,12 +50,26 @@ Use --no-refresh to skip probing and apply based on state alone.`,
 				cmd.String("only"),
 				cmd.String("except"),
 				cmd.Bool("prune-orphans"),
+				bootstrapMode{Allow: cmd.Bool("bootstrap"), Deny: cmd.Bool("no-bootstrap")},
 			)
 		},
 	}
 }
 
-func runApply(ctx context.Context, flags *provider.GlobalFlags, registry *provider.Registry, sudoAcq sudo.Acquirer, fromRepo string, noRefresh bool, only, except string, pruneOrphans bool) error {
+// bootstrapMode carries the user's stated consent for auto-running
+// provider bootstrap scripts. Both false = ask on TTY, error off TTY.
+type bootstrapMode struct {
+	Allow bool // --bootstrap: always run without prompting
+	Deny  bool // --no-bootstrap: never run, even on TTY
+}
+
+func runApply(ctx context.Context, flags *provider.GlobalFlags, registry *provider.Registry, sudoAcq sudo.Acquirer, fromRepo string, noRefresh bool, only, except string, pruneOrphans bool, boot bootstrapMode) error {
+	if boot.Allow && boot.Deny {
+		return hamserr.NewUserError(hamserr.ExitUsageError,
+			"--bootstrap and --no-bootstrap are mutually exclusive",
+			"Pick one: --bootstrap to auto-run, --no-bootstrap to fail fast",
+		)
+	}
 	if flags.DryRun {
 		fmt.Println("[dry-run] Would apply configurations. No changes will be made.")
 	}
@@ -182,28 +199,67 @@ func runApply(ctx context.Context, flags *provider.GlobalFlags, registry *provid
 
 	// Bootstrap providers. Stage 1 guarantees each `sorted` provider has at
 	// least a hamsfile OR a state file. Bootstrap failure policy:
-	//   - hamsfile present → fatal (user actively declared resources).
+	//   - hamsfile present + BootstrapRequiredError → run consent flow (flag
+	//     or TTY prompt). Consent-granted → delegate to RunBootstrap, retry.
+	//   - hamsfile present + other error → fatal.
 	//   - only state present (hamsfile since deleted) → debug log, continue;
 	//     subsequent Probe/Plan will simply observe no desired state.
-	var bootstrapFailed []string
+	var (
+		bootstrapFailed []string
+		skipProviders   = map[string]bool{}
+	)
 	for _, p := range sorted {
 		bootstrapErr := p.Bootstrap(ctx)
 		if bootstrapErr == nil {
 			continue
 		}
 		manifest := p.Manifest()
-		filePrefix := provider.ManifestFilePrefix(manifest)
-		mainPath := filepath.Join(profileDir, filePrefix+".hams.yaml")
-		localPath := filepath.Join(profileDir, filePrefix+".hams.local.yaml")
-		_, mainErr := os.Stat(mainPath)
-		_, localErr := os.Stat(localPath)
-		if mainErr == nil || localErr == nil {
+		hasHamsfile := hamsfilePresent(profileDir, manifest)
+
+		var brerr *provider.BootstrapRequiredError
+		if errors.As(bootstrapErr, &brerr) && hasHamsfile {
+			switch resolveBootstrapConsent(boot, brerr) {
+			case bootDecisionRun:
+				if runErr := provider.RunBootstrap(ctx, p, registry); runErr != nil {
+					slog.Error("provider bootstrap script failed",
+						"provider", manifest.Name, "error", runErr)
+					bootstrapFailed = append(bootstrapFailed, manifest.Name)
+					continue
+				}
+				if retryErr := p.Bootstrap(ctx); retryErr != nil {
+					slog.Error("provider still unavailable after bootstrap",
+						"provider", manifest.Name, "error", retryErr)
+					bootstrapFailed = append(bootstrapFailed, manifest.Name)
+				}
+				continue
+			case bootDecisionSkipProvider:
+				slog.Info("user opted to skip provider for this run",
+					"provider", manifest.Name)
+				skipProviders[manifest.Name] = true
+				continue
+			case bootDecisionDeny:
+				// Fall through to the regular-failure path below.
+			}
+		}
+
+		if hasHamsfile {
 			slog.Error("provider bootstrap failed (hamsfile exists, cannot proceed)",
 				"provider", manifest.Name, "error", bootstrapErr)
 			bootstrapFailed = append(bootstrapFailed, manifest.Name)
 		} else {
-			slog.Debug("provider bootstrap skipped (no hamsfile)", "provider", manifest.Name, "error", bootstrapErr)
+			slog.Debug("provider bootstrap skipped (no hamsfile)",
+				"provider", manifest.Name, "error", bootstrapErr)
 		}
+	}
+	if len(skipProviders) > 0 {
+		filtered := make([]provider.Provider, 0, len(sorted))
+		for _, p := range sorted {
+			if skipProviders[p.Manifest().Name] {
+				continue
+			}
+			filtered = append(filtered, p)
+		}
+		sorted = filtered
 	}
 	if len(bootstrapFailed) > 0 {
 		return hamserr.NewUserError(hamserr.ExitPartialFailure,
