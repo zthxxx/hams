@@ -134,7 +134,9 @@ This project uses [OpenSpec](https://openspec.dev) for spec-driven development.
 
 ## Current Task
 
-No active change. `fix-apt-cli-state-write-and-htop-rename` was archived on 2026-04-15 at `openspec/changes/archive/2026-04-15-fix-apt-cli-state-write-and-htop-rename/`.
+Active proposal: `clarify-apply-state-only-semantics` — proposal + cli-architecture spec delta only, awaiting human review before implementation. Surfaced from a codex review pass on the just-archived `fix-apt-cli-state-write-and-htop-rename` change. The companion P2 from the same review (apt CLI flag passthrough + multi-pkg atomicity) was fixed in-session at commit `fcc3415`.
+
+Most recent archive: `fix-apt-cli-state-write-and-htop-rename` archived on 2026-04-15 at `openspec/changes/archive/2026-04-15-fix-apt-cli-state-write-and-htop-rename/`.
 
 Summary of the last cycle:
 
