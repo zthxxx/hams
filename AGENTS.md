@@ -134,10 +134,14 @@ This project uses [OpenSpec](https://openspec.dev) for spec-driven development.
 
 ## Current Task
 
-No active change. Two cycles archived this session:
+Active proposal: `apt-cli-complex-invocations` — proposal + builtin-providers spec delta only, awaiting human review before implementation. Surfaced from codex-review round 3 on the second archived cycle. Scope: extend apt CLI auto-record with structured version/release pinning fields in the hamsfile + state schema, replacing today's "complex invocation; skip auto-record" short-circuit for those two cases (dry-run flags stay skipped).
+
+Two cycles archived this session:
 
 1. `fix-apt-cli-state-write-and-htop-rename` (2026-04-15, archive at `openspec/changes/archive/2026-04-15-fix-apt-cli-state-write-and-htop-rename/`) — apt CLI state-write + bat→htop rename + two-stage scope gate + per-provider docker integration matrix.
 2. `clarify-apply-state-only-semantics` (2026-04-15, archive at `openspec/changes/archive/2026-04-15-clarify-apply-state-only-semantics/`) — `hams apply --prune-orphans` opt-in destructive reconciliation for state-only providers (when the user has deleted the hamsfile). Default behavior preserved (skip).
+
+Three rounds of codex-review surfaced 6 P2 findings; all 4 in-session-fixable findings landed as atomic commits (`fcc3415`, `5c96462`, `f7a2020`, `e9bef58`). The 2 remaining (state-only apply semantics, apt grammar-aware recording) became deferred openspec proposals (`clarify-apply-state-only-semantics` — implemented + archived; `apt-cli-complex-invocations` — proposed, pending review).
 
 Summary of the most recent (clarify-apply-state-only-semantics) cycle:
 
