@@ -79,10 +79,32 @@ standard_cli_flow() {
 
   local check_fn="${POST_INSTALL_CHECK:-default_post_install_check}"
   local state_prefix="${STATE_FILE_PREFIX:-$provider}"
+  local hamsfile_prefix="${HAMSFILE_PREFIX:-$state_prefix}"
   local state_file="$HAMS_STORE/.state/$HAMS_MACHINE_ID/${state_prefix}.state.yaml"
+  local hamsfile="$HAMS_STORE/test/${hamsfile_prefix}.hams.yaml"
+  mkdir -p "$HAMS_STORE/test"
 
   echo ""
   echo "--- standard_cli_flow ($provider: seed=$existing_pkg, new=$new_pkg) ---"
+
+  # _ensure_hamsfile_pkg writes a single-package hamsfile under `packages:`
+  # so `hams apply --only=<provider>` has a desired-state to reconcile
+  # against. Providers whose CLI install handler also mutates the hamsfile
+  # (apt, brew) tolerate this — their handler is idempotent (FindApp guards
+  # duplicates). Providers that are pure passthrough (npm, pnpm, cargo,
+  # goinstall, uv, vscodeext) require this, because their CLI never
+  # touches the hamsfile and stage-1 artifact-presence filter would
+  # otherwise exclude them.
+  _write_hamsfile_pkgs() {
+    local tmp="${hamsfile}.tmp"
+    {
+      echo "packages:"
+      for pkg in "$@"; do
+        echo "  - app: ${pkg}"
+      done
+    } > "$tmp"
+    mv "$tmp" "$hamsfile"
+  }
 
   # _reconcile runs `hams apply --only=<provider>` so providers that don't
   # write state from their CLI handler (everyone except apt today) still
@@ -97,6 +119,7 @@ standard_cli_flow() {
   # baseline state row. Capture first_install_at for step 3's immutability
   # assertion. Idempotent re-installs are safe on already-installed hosts.
   # -------------------------------------------------------------------
+  _write_hamsfile_pkgs "$existing_pkg"
   assert_success "seed install: hams $provider $install_verb $existing_pkg" \
     hams --store="$HAMS_STORE" "$provider" "$install_verb" "$existing_pkg"
   assert_success "reconcile after seed install" _reconcile
@@ -132,6 +155,7 @@ standard_cli_flow() {
     echo "FAIL: precondition — $new_pkg should not be installed before the install step"
     exit 1
   fi
+  _write_hamsfile_pkgs "$existing_pkg" "$new_pkg"
   assert_success "install new package: hams $provider $install_verb $new_pkg" \
     hams --store="$HAMS_STORE" "$provider" "$install_verb" "$new_pkg"
   assert_success "reconcile after new-package install" _reconcile
@@ -168,10 +192,12 @@ standard_cli_flow() {
 
   # -------------------------------------------------------------------
   # Step 5: remove the new package. State transitions to removed and
-  # records removed_at; the check hook must fail again.
+  # records removed_at; the check hook must fail again. Update the
+  # hamsfile BEFORE the reconcile so apply's Plan sees the deletion.
   # -------------------------------------------------------------------
   assert_success "remove: hams $provider remove $new_pkg" \
     hams --store="$HAMS_STORE" "$provider" remove "$new_pkg"
+  _write_hamsfile_pkgs "$existing_pkg"
   assert_success "reconcile after remove" _reconcile
   if "$check_fn" "$new_pkg"; then
     echo "FAIL: $new_pkg should be absent after hams $provider remove"
