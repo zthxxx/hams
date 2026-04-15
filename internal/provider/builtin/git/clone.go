@@ -267,26 +267,7 @@ func (p *CloneProvider) loadOrCreateHamsfile(hamsFlags map[string]string, flags 
 	if err != nil {
 		return nil, err
 	}
-
-	if _, err := os.Stat(path); err == nil {
-		return hamsfile.Read(path)
-	} else if !os.IsNotExist(err) {
-		return nil, fmt.Errorf("stat hamsfile %s: %w", path, err)
-	}
-
-	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
-		return nil, fmt.Errorf("create profile dir for %s: %w", path, err)
-	}
-
-	return &hamsfile.File{
-		Path: path,
-		Root: &yaml.Node{
-			Kind: yaml.DocumentNode,
-			Content: []*yaml.Node{
-				{Kind: yaml.MappingNode, Tag: "!!map"},
-			},
-		},
-	}, nil
+	return hamsfile.LoadOrCreateEmpty(path)
 }
 
 func (p *CloneProvider) hamsfilePath(hamsFlags map[string]string, flags *provider.GlobalFlags) (string, error) {

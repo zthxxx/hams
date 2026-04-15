@@ -1,13 +1,7 @@
 package apt
 
 import (
-	"errors"
-	"fmt"
-	"io/fs"
-	"os"
 	"path/filepath"
-
-	"gopkg.in/yaml.v3"
 
 	"github.com/zthxxx/hams/internal/config"
 	hamserr "github.com/zthxxx/hams/internal/error"
@@ -26,28 +20,7 @@ func (p *Provider) loadOrCreateHamsfile(hamsFlags map[string]string, flags *prov
 	if err != nil {
 		return nil, err
 	}
-
-	f, readErr := hamsfile.Read(path)
-	if readErr == nil {
-		return f, nil
-	}
-	if !errors.Is(readErr, fs.ErrNotExist) {
-		return nil, fmt.Errorf("reading hamsfile %s: %w", path, readErr)
-	}
-
-	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
-		return nil, fmt.Errorf("create profile dir for %s: %w", path, err)
-	}
-
-	return &hamsfile.File{
-		Path: path,
-		Root: &yaml.Node{
-			Kind: yaml.DocumentNode,
-			Content: []*yaml.Node{
-				{Kind: yaml.MappingNode, Tag: "!!map"},
-			},
-		},
-	}, nil
+	return hamsfile.LoadOrCreateEmpty(path)
 }
 
 // hamsfilePath returns the absolute path to the provider's hamsfile (or its

@@ -38,12 +38,9 @@ func TestName(t *testing.T) {
 	}
 }
 
-// TestLoadOrCreateHamsfile_MissingFileReturnsEmpty locks in the regression
-// fix for `os.IsNotExist` not traversing `%w`-wrapped errors. Before the
-// fix, a fresh store with no Homebrew.hams.yaml caused
-// `loadOrCreateHamsfile` to return a wrapped read error instead of an
-// empty in-memory hamsfile, breaking every CLI install/remove on first
-// use against a brand-new store.
+// Asserts the empty-doc path through hamsfile.LoadOrCreateEmpty: a missing
+// file returns a fresh File rooted at the expected path rather than an error
+// (os.IsNotExist would not match here because Read wraps with %w).
 func TestLoadOrCreateHamsfile_MissingFileReturnsEmpty(t *testing.T) {
 	storeDir := t.TempDir()
 	p := New(&config.Config{StorePath: storeDir, ProfileTag: "test"})

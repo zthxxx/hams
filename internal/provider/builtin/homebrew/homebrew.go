@@ -4,12 +4,9 @@ package homebrew
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
-	"io/fs"
 	"log/slog"
 	"maps"
-	"os"
 	"os/exec"
 	"path/filepath"
 	"slices"
@@ -440,32 +437,7 @@ func (p *Provider) loadOrCreateHamsfile(hamsFlags map[string]string, flags *prov
 	if err != nil {
 		return nil, err
 	}
-
-	// Read directly; create empty file on ErrNotExist (avoids TOCTOU with Stat).
-	// Use errors.Is (not os.IsNotExist) because hamsfile.Read wraps the
-	// underlying PathError with fmt.Errorf, and os.IsNotExist does not
-	// traverse %w-wrapped chains.
-	f, readErr := hamsfile.Read(path)
-	if readErr == nil {
-		return f, nil
-	}
-	if !errors.Is(readErr, fs.ErrNotExist) {
-		return nil, fmt.Errorf("reading hamsfile %s: %w", path, readErr)
-	}
-
-	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
-		return nil, fmt.Errorf("create profile dir for %s: %w", path, err)
-	}
-
-	return &hamsfile.File{
-		Path: path,
-		Root: &yaml.Node{
-			Kind: yaml.DocumentNode,
-			Content: []*yaml.Node{
-				{Kind: yaml.MappingNode, Tag: "!!map"},
-			},
-		},
-	}, nil
+	return hamsfile.LoadOrCreateEmpty(path)
 }
 
 func (p *Provider) hamsfilePath(hamsFlags map[string]string, flags *provider.GlobalFlags) (string, error) {
