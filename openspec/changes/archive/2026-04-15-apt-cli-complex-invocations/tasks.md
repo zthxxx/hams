@@ -81,5 +81,5 @@
 
 ## 10. Archive
 
-- [ ] 10.1 `/opsx:verify apt-cli-complex-invocations` — assert spec scenarios map to code, no critical/warning findings.
-- [ ] 10.2 `/opsx:archive apt-cli-complex-invocations` — sync spec deltas (will likely require `--skip-specs` + manual application due to the auto-sync header bug noted in prior cycles).
+- [x] 10.1 `/opsx:verify apt-cli-complex-invocations` — 0 critical / 0 warning. All 5 scenarios mapped to code or tests.
+- [x] 10.2 `/opsx:archive apt-cli-complex-invocations` — archived with `--skip-specs` (auto-sync header-matching bug); builtin-providers delta applied to main spec manually (1 MODIFIED + 1 ADDED, requirement count 24→25).
