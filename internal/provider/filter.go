@@ -57,12 +57,17 @@ func FilterByArtifacts(providers []Provider, profileDir, stateDir string) []Prov
 	return result
 }
 
-// manifestFilePrefix returns the canonical file prefix for a provider's
-// hamsfile and state file. Kept private to the provider package so we
-// don't duplicate the fallback logic across callers.
-func manifestFilePrefix(m Manifest) string { //nolint:gocritic // simple helper, copy is acceptable
+// ManifestFilePrefix returns the canonical file prefix for a provider's
+// hamsfile and state file: `Manifest.FilePrefix` when set, falling back
+// to `Manifest.Name`. Single source of truth — `internal/cli` consumes
+// this directly so the prefix logic does not drift across packages.
+func ManifestFilePrefix(m Manifest) string { //nolint:gocritic // simple helper, copy is acceptable
 	if m.FilePrefix != "" {
 		return m.FilePrefix
 	}
 	return m.Name
 }
+
+// manifestFilePrefix is a private wrapper for in-package callers that
+// want the short name. ManifestFilePrefix is the canonical exported API.
+func manifestFilePrefix(m Manifest) string { return ManifestFilePrefix(m) } //nolint:gocritic // simple helper, copy is acceptable

@@ -167,7 +167,7 @@ func runApply(ctx context.Context, flags *provider.GlobalFlags, registry *provid
 			continue
 		}
 		manifest := p.Manifest()
-		filePrefix := manifestFilePrefix(manifest)
+		filePrefix := provider.ManifestFilePrefix(manifest)
 		mainPath := filepath.Join(profileDir, filePrefix+".hams.yaml")
 		localPath := filepath.Join(profileDir, filePrefix+".hams.local.yaml")
 		_, mainErr := os.Stat(mainPath)
@@ -213,7 +213,7 @@ func runApply(ctx context.Context, flags *provider.GlobalFlags, registry *provid
 	for _, p := range sorted {
 		manifest := p.Manifest()
 		name := manifest.Name
-		filePrefix := manifestFilePrefix(manifest)
+		filePrefix := provider.ManifestFilePrefix(manifest)
 		hamsfilePath := filepath.Join(profileDir, filePrefix+".hams.yaml")
 		hamsfileLocalPath := filepath.Join(profileDir, filePrefix+".hams.local.yaml")
 
@@ -327,7 +327,7 @@ func runEnrichPhase(ctx context.Context, providers []provider.Provider, cfg *con
 
 		// Enrich all resources that were just installed/updated.
 		name := p.Manifest().Name
-		filePrefix := manifestFilePrefix(p.Manifest())
+		filePrefix := provider.ManifestFilePrefix(p.Manifest())
 		hamsfilePath := filepath.Join(cfg.ProfileDir(), filePrefix+".hams.yaml")
 		hf, readErr := hamsfile.Read(hamsfilePath)
 		if readErr != nil {
@@ -342,13 +342,6 @@ func runEnrichPhase(ctx context.Context, providers []provider.Provider, cfg *con
 		}
 	}
 	return errs
-}
-
-func manifestFilePrefix(m provider.Manifest) string { //nolint:gocritic // simple helper, copy is acceptable
-	if m.FilePrefix != "" {
-		return m.FilePrefix
-	}
-	return m.Name
 }
 
 func configHashForHamsfile(hf *hamsfile.File) string {
