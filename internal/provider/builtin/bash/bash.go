@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"os/exec"
 	"strings"
 
 	"github.com/bitfield/script"
@@ -15,6 +16,11 @@ import (
 	"github.com/zthxxx/hams/internal/provider"
 	"github.com/zthxxx/hams/internal/state"
 )
+
+// bootstrapExecCommand is the exec seam used by RunScript. Replaced in
+// tests that want to assert the command line without forking a real
+// process. Production callers use exec.CommandContext.
+var bootstrapExecCommand = exec.CommandContext
 
 // bashResource holds parsed fields from a bash hamsfile entry.
 type bashResource struct {
@@ -135,6 +141,27 @@ func (p *Provider) Apply(ctx context.Context, action provider.Action) error {
 	cmd := maybeAddSudo(res.Run, res.Sudo)
 	slog.Info("running bash command", "resource", action.ID, "command", cmd)
 	return runBash(ctx, cmd)
+}
+
+// RunScript satisfies provider.BashScriptRunner. It executes an arbitrary
+// shell script — used by the provider framework's RunBootstrap helper to
+// honor a DependOn.Script declaration under explicit user consent. Stdin,
+// stdout, and stderr are passed through to the user's terminal so that
+// interactive prompts from the script (sudo password, installer
+// confirmations) reach the user.
+func (p *Provider) RunScript(ctx context.Context, shellScript string) error {
+	if shellScript == "" {
+		return nil
+	}
+	slog.Info("bash provider: running bootstrap script", "script", shellScript)
+	cmd := bootstrapExecCommand(ctx, "/bin/bash", "-c", shellScript)
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("bash bootstrap script failed: %w", err)
+	}
+	return nil
 }
 
 // Remove executes the remove command for a bash resource, if one was defined

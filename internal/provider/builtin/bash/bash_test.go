@@ -2,6 +2,7 @@ package bash
 
 import (
 	"context"
+	"os/exec"
 	"testing"
 
 	"github.com/zthxxx/hams/internal/provider"
@@ -23,6 +24,58 @@ func TestBootstrap(t *testing.T) {
 	p := New()
 	if err := p.Bootstrap(context.Background()); err != nil {
 		t.Fatalf("Bootstrap error: %v", err)
+	}
+}
+
+func TestProviderImplementsBashScriptRunner(t *testing.T) {
+	var _ provider.BashScriptRunner = New()
+}
+
+func TestRunScript_EmptyScriptIsNoop(t *testing.T) {
+	p := New()
+	if err := p.RunScript(context.Background(), ""); err != nil {
+		t.Fatalf("empty RunScript should be a no-op, got %v", err)
+	}
+}
+
+func TestRunScript_ExecutesViaInjectedBoundary(t *testing.T) {
+	p := New()
+	original := bootstrapExecCommand
+	defer func() { bootstrapExecCommand = original }()
+
+	var gotName string
+	var gotArgs []string
+	bootstrapExecCommand = func(ctx context.Context, name string, args ...string) *exec.Cmd {
+		gotName = name
+		gotArgs = args
+		// Delegate to a harmless no-op; /bin/sh -c : exits 0 on both
+		// macOS and Linux without requiring a specific binary path.
+		return original(ctx, "/bin/sh", "-c", ":")
+	}
+
+	if err := p.RunScript(context.Background(), "echo hello"); err != nil {
+		t.Fatalf("RunScript: %v", err)
+	}
+	if gotName != "/bin/bash" {
+		t.Errorf("expected /bin/bash, got %q", gotName)
+	}
+	if len(gotArgs) != 2 || gotArgs[0] != "-c" || gotArgs[1] != "echo hello" {
+		t.Errorf("expected ['-c', 'echo hello'], got %v", gotArgs)
+	}
+}
+
+func TestRunScript_PropagatesExecFailure(t *testing.T) {
+	p := New()
+	original := bootstrapExecCommand
+	defer func() { bootstrapExecCommand = original }()
+
+	bootstrapExecCommand = func(ctx context.Context, _ string, _ ...string) *exec.Cmd {
+		return original(ctx, "/bin/sh", "-c", "exit 42")
+	}
+
+	err := p.RunScript(context.Background(), "any")
+	if err == nil {
+		t.Fatalf("expected failure, got nil")
 	}
 }
 
