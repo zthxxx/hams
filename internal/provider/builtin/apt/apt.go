@@ -155,16 +155,26 @@ func (p *Provider) handleInstall(ctx context.Context, args []string, hamsFlags m
 	sf := p.loadOrCreateStateFile(flags)
 
 	for _, pkg := range packages {
+		// Validate via dpkg before recording. `packageArgs` strips dash-prefixed
+		// flags but cannot distinguish flag-VALUES (e.g., the `Debug::NoLocking=true`
+		// in `-o Debug::NoLocking=true`) from real package names; a real apt grammar
+		// parser would be a deep dependency. Instead, use IsInstalled as the source
+		// of truth — a token apt didn't actually install (because it was a flag
+		// value, or because `--download-only`/`--simulate` was passed) returns
+		// false here and we skip recording it.
+		installed, version, probeErr := p.runner.IsInstalled(ctx, pkg)
+		if probeErr != nil {
+			slog.Warn("post-install probe failed; not recording", "package", pkg, "error", probeErr)
+			continue
+		}
+		if !installed {
+			slog.Warn("apt did not install package; not recording (dry-run, --download-only, or arg was a flag value)", "package", pkg)
+			continue
+		}
 		// AddApp is a no-op on duplicate append at the YAML level, so guard
 		// with FindApp to keep the hamsfile idempotent.
 		if existingTag, _ := hf.FindApp(pkg); existingTag == "" {
 			hf.AddApp(tagCLI, pkg, "")
-		}
-		// Capture the installed version best-effort; an empty result is fine
-		// (omitted from YAML via omitempty).
-		_, version, probeErr := p.runner.IsInstalled(ctx, pkg)
-		if probeErr != nil {
-			slog.Warn("post-install version probe failed", "package", pkg, "error", probeErr)
 		}
 		sf.SetResource(pkg, state.StateOK, state.WithVersion(version))
 	}

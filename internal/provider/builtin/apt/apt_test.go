@@ -660,3 +660,62 @@ func TestHandleCommand_U19_InstallMultiPackageIsAtomic(t *testing.T) {
 		t.Error("state file should not exist after atomic install failure")
 	}
 }
+
+// U20: --download-only / --simulate must NOT record state. Locks in the
+// codex P2 fix — `runner.Install(ctx, args)` faithfully forwards the user's
+// flags so apt does NOT actually install the package, but the bookkeeping
+// loop must NOT then record `htop` as state=ok. The new IsInstalled gate
+// catches this.
+func TestHandleCommand_U20_DownloadOnlyDoesNotRecordState(t *testing.T) {
+	h := newHarness(t)
+	h.runner.WithSilentSkip("htop")
+
+	if err := h.provider.HandleCommand(context.Background(),
+		[]string{"install", "--download-only", "htop"}, nil, h.flags); err != nil {
+		t.Fatalf("install: %v", err)
+	}
+
+	// runner.Install was forwarded the full args (including --download-only).
+	got := h.runner.LastCallArgs("install")
+	want := []string{"--download-only", "htop"}
+	if !slicesEqual(got, want) {
+		t.Errorf("runner.Install args = %v, want %v", got, want)
+	}
+
+	// htop was NOT recorded — IsInstalled returned false (silentSkip).
+	if apps := h.hamsfileApps(); len(apps) != 0 {
+		t.Errorf("hamsfile apps = %v, want [] (download-only must not record)", apps)
+	}
+	if _, statErr := os.Stat(h.statePath); statErr == nil {
+		sf, loadErr := state.Load(h.statePath)
+		if loadErr != nil {
+			t.Fatalf("state.Load: %v", loadErr)
+		}
+		if _, present := sf.Resources["htop"]; present {
+			t.Error("state should NOT contain htop after --download-only")
+		}
+	}
+}
+
+// U21: a flag-VALUE that sneaks past packageArgs (e.g., `Debug::NoLocking=true`
+// from `-o Debug::NoLocking=true`) must NOT be recorded as a package. The
+// IsInstalled gate catches it because dpkg has no such package.
+func TestHandleCommand_U21_FlagValueNotRecordedAsPackage(t *testing.T) {
+	h := newHarness(t)
+	// The fake will treat both `Debug::NoLocking=true` and `htop` as install
+	// candidates (packageArgs strips `-o` but the value passes through).
+	// Mark the flag value as silent-skip so IsInstalled returns false for it
+	// — modeling real apt-get treating it as a config option, not a package.
+	h.runner.WithSilentSkip("Debug::NoLocking=true")
+
+	if err := h.provider.HandleCommand(context.Background(),
+		[]string{"install", "-o", "Debug::NoLocking=true", "htop"}, nil, h.flags); err != nil {
+		t.Fatalf("install: %v", err)
+	}
+
+	// Only htop should be recorded; the flag-value must be filtered out.
+	apps := h.hamsfileApps()
+	if len(apps) != 1 || apps[0] != "htop" {
+		t.Errorf("hamsfile apps = %v, want [htop] (flag-value must not be recorded)", apps)
+	}
+}
