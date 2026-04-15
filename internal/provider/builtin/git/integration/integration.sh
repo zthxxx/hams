@@ -108,27 +108,31 @@ git push origin HEAD:master --quiet
 cd -
 rm -rf "$seed"
 
+# Use only `urn:` for the ID; both `urn:` and `app:` set the resource ID
+# inside the parser, with app-last-wins order. Keeping one field avoids
+# ambiguity in the state-file key.
 cat > "$GCLONE_HAMS" <<YAML
 repos:
   - urn: "urn:hams:git-clone:integration-fixture"
-    app: integration-fixture
     remote: "${FIXTURE_REMOTE}"
     path: "${CLONE_TARGET}"
 YAML
+
+CLONE_KEY='urn:hams:git-clone:integration-fixture'
 
 assert_success "hams apply --only=git-clone" \
   hams --store="$HAMS_STORE" apply --only=git-clone
 assert_success "clone target is a git repo" test -d "$CLONE_TARGET/.git"
 assert_yaml_field_eq "git-clone state records the clone" \
-  "$GCLONE_STATE" '.resources."urn:hams:git-clone:integration-fixture".state' 'ok'
+  "$GCLONE_STATE" ".resources[\"${CLONE_KEY}\"].state" 'ok'
 
-CLONE_FIRST_INSTALL=$(yq -r '.resources."urn:hams:git-clone:integration-fixture".first_install_at' "$GCLONE_STATE")
+CLONE_FIRST_INSTALL=$(yq -r ".resources[\"${CLONE_KEY}\"].first_install_at" "$GCLONE_STATE")
 
 # Refresh re-probes clone presence.
 sleep 1
 assert_success "hams refresh --only=git-clone" \
   hams --store="$HAMS_STORE" refresh --only=git-clone
-CLONE_AFTER_REFRESH=$(yq -r '.resources."urn:hams:git-clone:integration-fixture".updated_at' "$GCLONE_STATE")
+CLONE_AFTER_REFRESH=$(yq -r ".resources[\"${CLONE_KEY}\"].updated_at" "$GCLONE_STATE")
 if [ "$CLONE_AFTER_REFRESH" \> "$CLONE_FIRST_INSTALL" ]; then
   echo "  ok: refresh bumped git-clone updated_at"
 else
@@ -136,14 +140,14 @@ else
   exit 1
 fi
 
-# Remove hamsfile entry + apply → clone dir removed, state=removed.
+# Remove hamsfile entry + apply → state=removed.
 cat > "$GCLONE_HAMS" <<'YAML'
 repos: []
 YAML
 assert_success "hams apply removes the clone" \
   hams --store="$HAMS_STORE" apply --only=git-clone
 assert_yaml_field_eq "git-clone state=removed after hamsfile delete" \
-  "$GCLONE_STATE" '.resources."urn:hams:git-clone:integration-fixture".state' 'removed'
+  "$GCLONE_STATE" ".resources[\"${CLONE_KEY}\"].state" 'removed'
 
 echo ""
 echo "=== git integration test passed ==="
