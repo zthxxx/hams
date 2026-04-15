@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 source /e2e/lib/assertions.sh
+source /e2e/lib/yaml_assert.sh
+source /e2e/debian/assert-apt-imperative.sh
 
 echo "=== hams E2E Test (Debian) ==="
 echo ""
@@ -38,5 +40,8 @@ verify_config_roundtrip
 # --- List command ---
 assert_success "hams list --only=apt,bash,git-config" \
   hams --store="$STORE_DIR" list --only=apt,bash,git-config
+
+# --- Imperative apt install/remove + state schema v2 + config scope rejection ---
+run_apt_imperative_tests "$STORE_DIR"
 
 echo "=== All Debian E2E tests passed ==="

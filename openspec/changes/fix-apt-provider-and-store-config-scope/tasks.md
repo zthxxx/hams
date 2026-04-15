@@ -102,35 +102,35 @@ Delivers: builtin-providers apt Provider CLI wrapping requirements.
 
 Delivers: debian E2E integration covering real apt-get end-to-end + store-level config rejection.
 
-- [ ] 5.1 Create `e2e/lib/yaml_assert.sh` with functions `assert_yaml_field_eq <file> <yq-path> <expected>`, `assert_yaml_field_absent <file> <yq-path>`, `assert_yaml_field_present <file> <yq-path>`. Uses `yq` (Mike Farah's Go implementation).
-- [ ] 5.2 Verify `yq` is available in `e2e/integration/Dockerfile`; add `apt-get install -y yq` if missing.
-- [ ] 5.3 Create `e2e/debian/assert-apt-imperative.sh` — sourced bash file exporting `run_apt_imperative_tests()`.
-- [ ] 5.4 Scenario E1: `hams apt install bat` + `hams apply` → assert:
-  - [ ] 5.4.1 `command -v bat` succeeds.
-  - [ ] 5.4.2 `apt.hams.yaml` contains `{app: bat}` (via yq).
-  - [ ] 5.4.3 `apt.state.yaml` has `resources.bat.state == ok`.
-  - [ ] 5.4.4 `resources.bat.first_install_at` is a non-empty timestamp.
-  - [ ] 5.4.5 `resources.bat.removed_at` is absent.
-- [ ] 5.5 Scenario E2: record `first_install_at` as `$T_FI`; `hams apt remove bat` + `hams apply` → assert:
-  - [ ] 5.5.1 `command -v bat` fails (non-zero exit).
-  - [ ] 5.5.2 `apt.hams.yaml` no longer has `{app: bat}`.
-  - [ ] 5.5.3 `apt.state.yaml` has `resources.bat.state == removed`.
-  - [ ] 5.5.4 `resources.bat.first_install_at == $T_FI`.
-  - [ ] 5.5.5 `resources.bat.removed_at` is present + non-empty.
-  - [ ] 5.5.6 `resources.bat.updated_at > first_install_at` (lexicographic compare, since format is sortable).
-- [ ] 5.6 Scenario E3: `hams apt install bat` again + `hams apply` → assert:
-  - [ ] 5.6.1 `command -v bat` succeeds.
-  - [ ] 5.6.2 `resources.bat.state == ok`.
-  - [ ] 5.6.3 `resources.bat.first_install_at == $T_FI` (immutable).
-  - [ ] 5.6.4 `resources.bat.removed_at` is absent.
-- [ ] 5.7 Scenario E4: write `profile_tag: dev` into `<store>/hams.config.yaml`; run any hams command → assert:
-  - [ ] 5.7.1 Exit code non-zero.
-  - [ ] 5.7.2 Stderr contains `profile_tag`, the full file path, and `hams.config.yaml` (pointing to global location).
-  - [ ] 5.7.3 Cleanup: restore the fixture file.
-- [ ] 5.8 Scenario E5: pre-create synthetic v1 state file, run `hams apply` → assert file is rewritten with `schema_version: 2` and `first_install_at`.
-- [ ] 5.9 Hook `run_apt_imperative_tests` into `e2e/debian/run-tests.sh` (call after existing apply-based tests).
-- [ ] 5.10 `task ci:integration` passes locally via `act`.
-- [ ] 5.11 Commit: `test(e2e): add debian apt imperative scenarios E1–E5 + yaml_assert helpers`.
+- [x] 5.1 Create `e2e/lib/yaml_assert.sh` with functions `assert_yaml_field_eq <file> <yq-path> <expected>`, `assert_yaml_field_absent <file> <yq-path>`, `assert_yaml_field_present <file> <yq-path>`. Uses `yq` (Mike Farah's Go implementation).
+- [x] 5.2 Verify `yq` is available in `e2e/integration/Dockerfile`; add `apt-get install -y yq` if missing.
+- [x] 5.3 Create `e2e/debian/assert-apt-imperative.sh` — sourced bash file exporting `run_apt_imperative_tests()`.
+- [x] 5.4 Scenario E1: `hams apt install bat` + `hams apply` → assert:
+  - [x] 5.4.1 `command -v bat` succeeds.
+  - [x] 5.4.2 `apt.hams.yaml` contains `{app: bat}` (via yq).
+  - [x] 5.4.3 `apt.state.yaml` has `resources.bat.state == ok`.
+  - [x] 5.4.4 `resources.bat.first_install_at` is a non-empty timestamp.
+  - [x] 5.4.5 `resources.bat.removed_at` is absent.
+- [x] 5.5 Scenario E2: record `first_install_at` as `$T_FI`; `hams apt remove bat` + `hams apply` → assert:
+  - [x] 5.5.1 `command -v bat` fails (non-zero exit).
+  - [x] 5.5.2 `apt.hams.yaml` no longer has `{app: bat}`.
+  - [x] 5.5.3 `apt.state.yaml` has `resources.bat.state == removed`.
+  - [x] 5.5.4 `resources.bat.first_install_at == $T_FI`.
+  - [x] 5.5.5 `resources.bat.removed_at` is present + non-empty.
+  - [x] 5.5.6 `resources.bat.updated_at > first_install_at` (lexicographic compare, since format is sortable).
+- [x] 5.6 Scenario E3: `hams apt install bat` again + `hams apply` → assert:
+  - [x] 5.6.1 `command -v bat` succeeds.
+  - [x] 5.6.2 `resources.bat.state == ok`.
+  - [x] 5.6.3 `resources.bat.first_install_at == $T_FI` (immutable).
+  - [x] 5.6.4 `resources.bat.removed_at` is absent.
+- [x] 5.7 Scenario E4: write `profile_tag: dev` into `<store>/hams.config.yaml`; run any hams command → assert:
+  - [x] 5.7.1 Exit code non-zero.
+  - [x] 5.7.2 Stderr contains `profile_tag`, the full file path, and `hams.config.yaml` (pointing to global location).
+  - [x] 5.7.3 Cleanup: restore the fixture file.
+- [x] 5.8 Scenario E5: pre-create synthetic v1 state file, run `hams apply` → assert file is rewritten with `schema_version: 2` and `first_install_at`.
+- [x] 5.9 Hook `run_apt_imperative_tests` into `e2e/debian/run-tests.sh` (call after existing apply-based tests).
+- [x] 5.10 `task ci:integration` passes locally via `act`.
+- [x] 5.11 Commit: `test(e2e): add debian apt imperative scenarios E1–E5 + yaml_assert helpers`.
 
 ## 6. CI workflow refactor: setup-task + Taskfile tasks only
 
@@ -138,7 +138,7 @@ Delivers: project-structure GitHub Actions CI Pipeline requirement additions.
 
 - [ ] 6.1 Audit current `.github/workflows/ci.yml`. Record which steps inline raw commands.
 - [ ] 6.2 For each inlined raw command, ensure a Taskfile task exists. Add missing ones under `ci:*` namespace (e.g., `ci:lint`, `ci:lint:md`, `ci:lint:spell`, `ci:unit`, `ci:build`).
-- [ ] 6.3 Add `go-task/setup-task@v1` step to every job that needs to invoke `task`. Pin to `@v1`.
+- [ ] 6.3 Add `go-task/setup-task@v2` step to every job that needs to invoke `task`. Pin to `@v2`.
 - [ ] 6.4 Replace each inlined command with `run: task <name>`.
 - [ ] 6.5 Retain `actions/checkout@v4`, `actions/setup-go@v5`, `actions/upload-artifact@v4`, and other setup/upload actions (per the carve-out in the spec).
 - [ ] 6.6 Verify workflow runs locally via `act pull_request -j lint` (dry-run compile + one job) — smoke test.
