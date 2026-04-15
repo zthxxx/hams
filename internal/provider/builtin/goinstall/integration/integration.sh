@@ -27,6 +27,21 @@ YAML
 assert_output_contains "hams --version" "hams version" hams --version
 assert_success "go is on PATH" command -v go
 
-# hey and goreleaser are fast-to-install Go modules. If either breaks, swap
-# for another small Go binary.
+# go install <module>@version produces a binary named after the last
+# path component (before @version), e.g. github.com/rakyll/hey@latest
+# installs /root/go/bin/hey. default_post_install_check would look for
+# a literal binary of the full module path, which doesn't exist. Supply
+# a custom check that parses the binary name out of the module path.
+goinstall_installed_check() {
+  local pkg="$1"
+  local no_ver="${pkg%@*}"         # strip @version
+  local bin="${no_ver##*/}"        # last path segment
+  command -v "$bin" >/dev/null 2>&1
+}
+export -f goinstall_installed_check
+export POST_INSTALL_CHECK=goinstall_installed_check
+
+# hey (load gen) + revive (lint). Revive pulls in Go 1.25 via the
+# embedded toolchain directive — slower than hey but still sub-minute
+# on a warm cache.
 standard_cli_flow goinstall install "github.com/rakyll/hey@latest" "github.com/mgechev/revive@latest"
