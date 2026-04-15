@@ -14,17 +14,19 @@ type legacyFile struct {
 }
 
 type legacyResource struct {
-	State          ResourceState `yaml:"state"`
-	Version        string        `yaml:"version,omitempty"`
-	Value          string        `yaml:"value,omitempty"`
-	CheckCmd       string        `yaml:"check_cmd,omitempty"`
-	CheckStdout    string        `yaml:"check_stdout,omitempty"`
-	InstallAt      string        `yaml:"install_at,omitempty"`
-	FirstInstallAt string        `yaml:"first_install_at,omitempty"`
-	UpdatedAt      string        `yaml:"updated_at,omitempty"`
-	RemovedAt      string        `yaml:"removed_at,omitempty"`
-	CheckedAt      string        `yaml:"checked_at,omitempty"`
-	LastError      string        `yaml:"last_error,omitempty"`
+	State            ResourceState `yaml:"state"`
+	Version          string        `yaml:"version,omitempty"`
+	RequestedVersion string        `yaml:"requested_version,omitempty"`
+	RequestedSource  string        `yaml:"requested_source,omitempty"`
+	Value            string        `yaml:"value,omitempty"`
+	CheckCmd         string        `yaml:"check_cmd,omitempty"`
+	CheckStdout      string        `yaml:"check_stdout,omitempty"`
+	InstallAt        string        `yaml:"install_at,omitempty"`
+	FirstInstallAt   string        `yaml:"first_install_at,omitempty"`
+	UpdatedAt        string        `yaml:"updated_at,omitempty"`
+	RemovedAt        string        `yaml:"removed_at,omitempty"`
+	CheckedAt        string        `yaml:"checked_at,omitempty"`
+	LastError        string        `yaml:"last_error,omitempty"`
 }
 
 // migrate converts a loaded legacyFile into the current File shape, promoting
@@ -49,16 +51,18 @@ func migrate(lf *legacyFile, path string) (*File, error) {
 			firstInstallAt = lr.InstallAt
 		}
 		resources[id] = &Resource{
-			State:          lr.State,
-			Version:        lr.Version,
-			Value:          lr.Value,
-			CheckCmd:       lr.CheckCmd,
-			CheckStdout:    lr.CheckStdout,
-			FirstInstallAt: firstInstallAt,
-			UpdatedAt:      lr.UpdatedAt,
-			RemovedAt:      lr.RemovedAt,
-			CheckedAt:      lr.CheckedAt,
-			LastError:      lr.LastError,
+			State:            lr.State,
+			Version:          lr.Version,
+			RequestedVersion: lr.RequestedVersion,
+			RequestedSource:  lr.RequestedSource,
+			Value:            lr.Value,
+			CheckCmd:         lr.CheckCmd,
+			CheckStdout:      lr.CheckStdout,
+			FirstInstallAt:   firstInstallAt,
+			UpdatedAt:        lr.UpdatedAt,
+			RemovedAt:        lr.RemovedAt,
+			CheckedAt:        lr.CheckedAt,
+			LastError:        lr.LastError,
 		}
 	}
 

@@ -192,6 +192,24 @@ func (f *File) FindApp(appName string) (tag string, index int) {
 // AddApp adds a package entry under the specified tag.
 // If the tag doesn't exist, it creates a new top-level section.
 func (f *File) AddApp(tag, appName, intro string) {
+	f.AddAppWithFields(tag, appName, intro, nil)
+}
+
+// AddAppWithFields ensures a package entry exists with the given
+// structured fields. Semantics:
+//
+//   - If `appName` is NOT in any tag yet, append a new entry under
+//     `tag` (creating the tag if needed). Each non-empty key/value
+//     in `extra` is emitted in `extraFieldOrder` so YAML round-trips
+//     deterministically. Empty values are skipped — bare-name
+//     entries stay byte-identical.
+//   - If `appName` already exists under SOME tag, MERGE the
+//     non-empty extras into that existing entry's mapping node in
+//     place. The entry is NOT moved across tags. Empty extras are
+//     no-ops on the existing entry. This makes the helper idempotent
+//     and lets the apt CLI upgrade a bare `{app: nginx}` to
+//     `{app: nginx, version: "1.24.0"}` on a re-install with a pin.
+func (f *File) AddAppWithFields(tag, appName, intro string, extra map[string]string) {
 	mu.Lock()
 	defer mu.Unlock()
 
@@ -200,12 +218,14 @@ func (f *File) AddApp(tag, appName, intro string) {
 		return
 	}
 
-	// Build the new app entry node.
-	entry := buildAppEntry(appName, intro)
+	if existing := findAppEntry(doc, appName); existing != nil {
+		mergeFieldsIntoEntry(existing, extra)
+		return
+	}
 
+	entry := buildAppEntryWithFields(appName, intro, extra)
 	for i := 0; i < len(doc.Content)-1; i += 2 {
 		if doc.Content[i].Kind == yaml.ScalarNode && doc.Content[i].Value == tag {
-			// Tag exists — append to its sequence.
 			seq := doc.Content[i+1]
 			if seq.Kind == yaml.SequenceNode {
 				seq.Content = append(seq.Content, entry)
@@ -214,10 +234,97 @@ func (f *File) AddApp(tag, appName, intro string) {
 		}
 	}
 
-	// Tag doesn't exist — create it.
 	tagKey := &yaml.Node{Kind: yaml.ScalarNode, Value: tag, Tag: "!!str"}
 	tagSeq := &yaml.Node{Kind: yaml.SequenceNode, Content: []*yaml.Node{entry}}
 	doc.Content = append(doc.Content, tagKey, tagSeq)
+}
+
+// AppFields returns the structured per-app fields (everything except
+// `app` and `intro`) for the entry whose `app` value matches name.
+// Returns nil when no entry matches OR when the entry has no extra
+// fields. Read-side counterpart to AddAppWithFields; callers consult
+// it to recover provider-specific pins (e.g., apt's version, source)
+// from a hand-edited or restored hamsfile.
+func (f *File) AppFields(appName string) map[string]string {
+	mu.Lock()
+	defer mu.Unlock()
+
+	doc := f.DocMapping()
+	if doc == nil {
+		return nil
+	}
+	entry := findAppEntry(doc, appName)
+	if entry == nil {
+		return nil
+	}
+	out := map[string]string{}
+	for k := 0; k < len(entry.Content)-1; k += 2 {
+		key := entry.Content[k].Value
+		val := entry.Content[k+1]
+		if key == fieldApp || key == "intro" {
+			continue
+		}
+		if val.Kind != yaml.ScalarNode {
+			continue
+		}
+		out[key] = val.Value
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+// findAppEntry returns the mapping node of the entry whose `app`
+// scalar matches appName, searching across all tags. Returns nil when
+// no entry matches. Caller must hold the mutex.
+func findAppEntry(doc *yaml.Node, appName string) *yaml.Node {
+	for i := 0; i < len(doc.Content)-1; i += 2 {
+		valNode := doc.Content[i+1]
+		if valNode.Kind != yaml.SequenceNode {
+			continue
+		}
+		for _, item := range valNode.Content {
+			if item.Kind != yaml.MappingNode {
+				continue
+			}
+			for k := 0; k < len(item.Content)-1; k += 2 {
+				if item.Content[k].Value == fieldApp && item.Content[k+1].Value == appName {
+					return item
+				}
+			}
+		}
+	}
+	return nil
+}
+
+// mergeFieldsIntoEntry walks `extraFieldOrder` and, for each non-empty
+// value in `extra`, sets it on the entry's mapping node — overwriting
+// an existing scalar with the same key, OR appending a new key/value
+// pair when absent. Empty values are skipped. Caller must hold the
+// mutex.
+func mergeFieldsIntoEntry(entry *yaml.Node, extra map[string]string) {
+	for _, key := range extraFieldOrder {
+		val, ok := extra[key]
+		if !ok || val == "" {
+			continue
+		}
+		setOrAppendScalarPair(entry, key, val)
+	}
+}
+
+func setOrAppendScalarPair(entry *yaml.Node, key, val string) {
+	for i := 0; i < len(entry.Content)-1; i += 2 {
+		if entry.Content[i].Kind == yaml.ScalarNode && entry.Content[i].Value == key {
+			entry.Content[i+1].Value = val
+			entry.Content[i+1].Tag = "!!str"
+			return
+		}
+	}
+	entry.Content = append(entry.Content,
+		&yaml.Node{Kind: yaml.ScalarNode, Value: key, Tag: "!!str"},
+		&yaml.Node{Kind: yaml.ScalarNode, Value: val, Tag: "!!str"},
+	)
 }
 
 // RemoveApp removes a package entry by app name from all tags.
@@ -306,7 +413,13 @@ func (f *File) SetPreviewCmd(resourceName, previewCmd string) {
 	}
 }
 
-func buildAppEntry(appName, intro string) *yaml.Node {
+// extraFieldOrder is the canonical emission order for the `extra` map
+// in buildAppEntryWithFields. Iteration over a Go map is unordered; we
+// fix the order so YAML round-trips byte-deterministically. Adding new
+// providers' structured fields means appending to this slice.
+var extraFieldOrder = []string{"version", "source"}
+
+func buildAppEntryWithFields(appName, intro string, extra map[string]string) *yaml.Node {
 	content := []*yaml.Node{
 		{Kind: yaml.ScalarNode, Value: "app", Tag: "!!str"},
 		{Kind: yaml.ScalarNode, Value: appName, Tag: "!!str"},
@@ -315,6 +428,16 @@ func buildAppEntry(appName, intro string) *yaml.Node {
 		content = append(content,
 			&yaml.Node{Kind: yaml.ScalarNode, Value: "intro", Tag: "!!str"},
 			&yaml.Node{Kind: yaml.ScalarNode, Value: intro, Tag: "!!str"},
+		)
+	}
+	for _, key := range extraFieldOrder {
+		val, ok := extra[key]
+		if !ok || val == "" {
+			continue
+		}
+		content = append(content,
+			&yaml.Node{Kind: yaml.ScalarNode, Value: key, Tag: "!!str"},
+			&yaml.Node{Kind: yaml.ScalarNode, Value: val, Tag: "!!str"},
 		)
 	}
 	return &yaml.Node{Kind: yaml.MappingNode, Content: content}

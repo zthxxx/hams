@@ -45,16 +45,18 @@ type File struct {
 
 // Resource represents the state of a single managed resource.
 type Resource struct {
-	State          ResourceState `yaml:"state"`
-	Version        string        `yaml:"version,omitempty"`
-	Value          string        `yaml:"value,omitempty"`
-	CheckCmd       string        `yaml:"check_cmd,omitempty"`
-	CheckStdout    string        `yaml:"check_stdout,omitempty"`
-	FirstInstallAt string        `yaml:"first_install_at,omitempty"`
-	UpdatedAt      string        `yaml:"updated_at,omitempty"`
-	RemovedAt      string        `yaml:"removed_at,omitempty"`
-	CheckedAt      string        `yaml:"checked_at,omitempty"`
-	LastError      string        `yaml:"last_error,omitempty"`
+	State            ResourceState `yaml:"state"`
+	Version          string        `yaml:"version,omitempty"`
+	RequestedVersion string        `yaml:"requested_version,omitempty"`
+	RequestedSource  string        `yaml:"requested_source,omitempty"`
+	Value            string        `yaml:"value,omitempty"`
+	CheckCmd         string        `yaml:"check_cmd,omitempty"`
+	CheckStdout      string        `yaml:"check_stdout,omitempty"`
+	FirstInstallAt   string        `yaml:"first_install_at,omitempty"`
+	UpdatedAt        string        `yaml:"updated_at,omitempty"`
+	RemovedAt        string        `yaml:"removed_at,omitempty"`
+	CheckedAt        string        `yaml:"checked_at,omitempty"`
+	LastError        string        `yaml:"last_error,omitempty"`
 }
 
 // New creates a new empty state file for a provider.
@@ -139,9 +141,25 @@ func (f *File) SetResource(id string, s ResourceState, opts ...ResourceOption) {
 // ResourceOption is a functional option for SetResource.
 type ResourceOption func(*Resource)
 
-// WithVersion sets the version field.
+// WithVersion sets the version field (the version observed by the
+// provider's probe — for apt this is `dpkg -s <pkg>`'s reported version).
 func WithVersion(v string) ResourceOption {
 	return func(r *Resource) { r.Version = v }
+}
+
+// WithRequestedVersion sets the requested-version pin (the version the
+// user declared in the hamsfile, e.g. via `hams apt install nginx=1.24.0`).
+// Empty values clear the field. Plan compares requested against the
+// observed Version to detect drift and emit Update actions.
+func WithRequestedVersion(v string) ResourceOption {
+	return func(r *Resource) { r.RequestedVersion = v }
+}
+
+// WithRequestedSource sets the requested-source pin (e.g. apt's release
+// pin via `hams apt install nginx/bookworm-backports`). Empty values
+// clear the field.
+func WithRequestedSource(s string) ResourceOption {
+	return func(r *Resource) { r.RequestedSource = s }
 }
 
 // WithValue sets the value field (for KV config resources).

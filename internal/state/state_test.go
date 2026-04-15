@@ -364,3 +364,62 @@ func TestLoad_FutureSchemaVersionRejected(t *testing.T) {
 		t.Errorf("error should recommend self-upgrade, got %q", err.Error())
 	}
 }
+
+// TestSetResource_WithRequestedVersion_RoundTrips verifies the new
+// requested_version field survives save+load.
+func TestSetResource_WithRequestedVersion_RoundTrips(t *testing.T) {
+	t.Parallel()
+	tmp := t.TempDir() + "/state.yaml"
+
+	f := New("apt", "test")
+	f.SetResource("nginx", StateOK,
+		WithVersion("1.22.1"),
+		WithRequestedVersion("1.24.0"),
+		WithRequestedSource("bookworm-backports"),
+	)
+	if err := f.Save(tmp); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	loaded, err := Load(tmp)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	r, ok := loaded.Resources["nginx"]
+	if !ok {
+		t.Fatal("nginx missing from loaded state")
+	}
+	if r.RequestedVersion != "1.24.0" {
+		t.Errorf("RequestedVersion = %q, want 1.24.0", r.RequestedVersion)
+	}
+	if r.RequestedSource != "bookworm-backports" {
+		t.Errorf("RequestedSource = %q, want bookworm-backports", r.RequestedSource)
+	}
+	if r.Version != "1.22.1" {
+		t.Errorf("Version = %q, want 1.22.1", r.Version)
+	}
+}
+
+// TestSetResource_BareDoesNotEmitEmptyRequestedFields verifies that
+// bare-name SetResource calls (no RequestedVersion / RequestedSource
+// options) do NOT emit empty `requested_version: ""` lines in YAML.
+func TestSetResource_BareDoesNotEmitEmptyRequestedFields(t *testing.T) {
+	t.Parallel()
+	tmp := t.TempDir() + "/state.yaml"
+
+	f := New("apt", "test")
+	f.SetResource("htop", StateOK, WithVersion("3.3.0"))
+	if err := f.Save(tmp); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	data, err := os.ReadFile(tmp)
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	body := string(data)
+	if strings.Contains(body, "requested_version") {
+		t.Errorf("bare entry leaked requested_version: %q", body)
+	}
+	if strings.Contains(body, "requested_source") {
+		t.Errorf("bare entry leaked requested_source: %q", body)
+	}
+}

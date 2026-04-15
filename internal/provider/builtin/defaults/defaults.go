@@ -16,6 +16,9 @@ import (
 	"github.com/zthxxx/hams/internal/state"
 )
 
+// cliName is the macOS `defaults` CLI binary and provider name.
+const cliName = "defaults"
+
 // Provider implements the macOS defaults provider.
 type Provider struct {
 	cfg *config.Config
@@ -27,17 +30,17 @@ func New(cfg *config.Config) *Provider { return &Provider{cfg: cfg} }
 // Manifest returns the defaults provider metadata.
 func (p *Provider) Manifest() provider.Manifest {
 	return provider.Manifest{
-		Name:          "defaults",
-		DisplayName:   "defaults",
+		Name:          cliName,
+		DisplayName:   cliName,
 		Platforms:     []provider.Platform{provider.PlatformDarwin},
 		ResourceClass: provider.ClassKVConfig,
-		FilePrefix:    "defaults",
+		FilePrefix:    cliName,
 	}
 }
 
 // Bootstrap checks if defaults is available (always on macOS).
 func (p *Provider) Bootstrap(_ context.Context) error {
-	if _, err := exec.LookPath("defaults"); err != nil {
+	if _, err := exec.LookPath(cliName); err != nil {
 		return fmt.Errorf("defaults not found in PATH (macOS only)")
 	}
 	return nil
@@ -57,7 +60,7 @@ func (p *Provider) Probe(ctx context.Context, sf *state.File) ([]provider.ProbeR
 			continue
 		}
 
-		cmd := exec.CommandContext(ctx, "defaults", "read", domain, key) //nolint:gosec // domain/key from state entries
+		cmd := exec.CommandContext(ctx, cliName, "read", domain, key) //nolint:gosec // domain/key from state entries
 		output, err := cmd.Output()
 		if err != nil {
 			results = append(results, provider.ProbeResult{ID: id, State: state.StateFailed})
@@ -89,7 +92,7 @@ func (p *Provider) Apply(ctx context.Context, action provider.Action) error {
 
 	slog.Info("defaults write", "domain", domain, "key", key, "type", typeStr, "value", value)
 	args := []string{"write", domain, key, "-" + typeStr, value}
-	cmd := exec.CommandContext(ctx, "defaults", args...) //nolint:gosec // defaults args from hamsfile declarations
+	cmd := exec.CommandContext(ctx, cliName, args...) //nolint:gosec // defaults args from hamsfile declarations
 	return cmd.Run()
 }
 
@@ -97,7 +100,7 @@ func (p *Provider) Apply(ctx context.Context, action provider.Action) error {
 func (p *Provider) Remove(ctx context.Context, resourceID string) error {
 	domain, key := parseDomainKey(resourceID)
 	slog.Info("defaults delete", "domain", domain, "key", key)
-	cmd := exec.CommandContext(ctx, "defaults", "delete", domain, key) //nolint:gosec // defaults args from hamsfile declarations
+	cmd := exec.CommandContext(ctx, cliName, "delete", domain, key) //nolint:gosec // defaults args from hamsfile declarations
 	return cmd.Run()
 }
 
@@ -121,7 +124,7 @@ func (p *Provider) HandleCommand(_ context.Context, args []string, hamsFlags map
 		return nil
 	}
 
-	cmd := exec.CommandContext(context.Background(), "defaults", args...) //nolint:gosec // defaults args from CLI input
+	cmd := exec.CommandContext(context.Background(), cliName, args...) //nolint:gosec // defaults args from CLI input
 	if err := cmd.Run(); err != nil {
 		return err
 	}
@@ -152,7 +155,7 @@ func (p *Provider) recordPreviewCmd(args []string, hamsFlags map[string]string, 
 	}
 
 	cfg := p.effectiveConfig(flags)
-	path := filepath.Join(cfg.ProfileDir(), "defaults"+suffix)
+	path := filepath.Join(cfg.ProfileDir(), cliName+suffix)
 	hf, err := hamsfile.Read(path)
 	if err != nil {
 		slog.Debug("could not load hamsfile for preview-cmd", "path", path, "error", err)
@@ -184,10 +187,10 @@ func (p *Provider) effectiveConfig(flags *provider.GlobalFlags) *config.Config {
 }
 
 // Name returns the CLI name.
-func (p *Provider) Name() string { return "defaults" }
+func (p *Provider) Name() string { return cliName }
 
 // DisplayName returns the display name.
-func (p *Provider) DisplayName() string { return "defaults" }
+func (p *Provider) DisplayName() string { return cliName }
 
 // parseDomainKey splits "domain.key" from a resource ID like "domain.key=type:value".
 func parseDomainKey(resourceID string) (domain, key string) {

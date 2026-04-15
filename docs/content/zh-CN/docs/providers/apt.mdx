@@ -59,6 +59,36 @@ groups:
 探测方式：hams 调 `dpkg-query -W -f='${Status} ${Package} ${Version}\n'` 把本机装了哪些 apt 包全捞出来，
 然后看 Hamsfile 里声明的每个包在不在列表里。这个办法比 `apt list --installed` 快，也不用解析人类可读的输出。
 
+## 版本和发行版固定（pinning）
+
+`hams apt install` 接受 apt 标准的 pin 语法，并把 pin 记录到 hamsfile 里，这样跨机器也保持一致：
+
+```bash
+# 固定到具体版本
+hams apt install nginx=1.24.0
+
+# 固定到具体的发行版/suite
+hams apt install nginx/bookworm-backports
+```
+
+记录形态：
+
+```yaml
+cli:
+  - app: nginx
+    version: "1.24.0"
+  # 或
+  - app: nginx
+    source: bookworm-backports
+```
+
+下次跑 `hams apply` 时，executor 会把 dpkg 观测到的实际版本和 state 里的 pin 比对。
+如果发生了漂移（实际是 `1.22.1`，pin 要的是 `1.24.0`），apply 会带着 pin 重装一遍。
+
+**Dry-run 类标志**（`--download-only`、`--simulate`、`-s`、`--just-print`、`--no-act`、`--recon`）
+照常透传给 apt-get，但 hams 会跳过 auto-record —— 反正 host 上没真的发生变化，记进去也是骗自己。
+CLI 会 warn 一句，提醒你如果想让 hams 记着这个包，请手动写到 hamsfile 里。
+
 ## 关于 PPA 和第三方源
 
 `apt` provider 本身不管 `add-apt-repository`、`apt-key add` 这类操作 —— 它们属于"配置系统源"，

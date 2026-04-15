@@ -838,7 +838,15 @@ apps:
 
 ### Requirement: apt Provider
 
-The apt provider SHALL wrap `apt-get install`, `apt-get remove`, and `dpkg -s` for Debian/Ubuntu-based Linux systems. The CLI handlers SHALL also write `<store>/.state/<machine-id>/apt.state.yaml` directly after each successful install / remove (in addition to mutating the hamsfile), so imperative actions produce a state-file audit trail without requiring a follow-up `hams apply`. The `apt` Provider has the same shape as `homebrew`, with Debian/Ubuntu-specific commands:
+The apt provider SHALL wrap `apt-get install`, `apt-get remove`, and `dpkg -s` for Debian/Ubuntu-based Linux systems. The CLI handlers SHALL also write `<store>/.state/<machine-id>/apt.state.yaml` directly after each successful install / remove (in addition to mutating the hamsfile), so imperative actions produce a state-file audit trail without requiring a follow-up `hams apply`.
+
+The auto-record path SHALL accept three install-args shapes (bare, version pinned, release pinned). The recording loop SHALL upgrade an existing bare entry to pinned in-place when the user re-runs the install with a pin. Bookkeeping SHALL call the hamsfile's structured-fields helper unconditionally (not just on absent entries) — the helper merges the new fields into the existing mapping node when an entry already exists under any tag.
+
+`Plan` SHALL inspect each declared app's structured fields directly from the hamsfile (not just the app name) so that a hamsfile authored or restored on a fresh machine — including the `apply --from-repo=...` bootstrap path — replays the user's pinned versions on first install. Drift detection (observed dpkg version differs from the requested pin) SHALL emit an Update action whose `ID` remains the bare package name AND whose `Resource` field carries the install-token form (`pkg=version` / `pkg/source`). The executor's `Provider.Apply` SHALL prefer `action.Resource` over `action.ID` when invoking the runner so that state stays keyed on the canonical bare name (no `nginx=1.24.0` orphan rows). Plan SHALL also populate `action.StateOpts` with the `requested_version` / `requested_source` options so the executor records the pin onto the bare-keyed state row.
+
+Dry-run flags (`--download-only`, `--simulate`, `-s`, `--just-print`, `--no-act`, `--recon`) MUST still trigger the "complex invocation: do not record" short-circuit — they are correctly unrecordable because no host state change occurred this invocation.
+
+The `apt` Provider has the same shape as `homebrew`, with Debian/Ubuntu-specific commands:
 
 - **Detect:** `command -v apt-get` and `[ -f /etc/debian_version ]`.
 - **Capabilities:** `install`, `remove`, `update`, `upgrade`, `list`, `search`, `show`, `apply`.
@@ -893,6 +901,18 @@ All commands invoked through the `CmdRunner` interface's real implementation (bo
 **State ownership:**
 
 The apt provider's CLI handlers (`hams apt install`, `hams apt remove`) SHALL load and atomically persist `<store>/.state/<machine-id>/apt.state.yaml` after each successful `runner.Install` / `runner.Remove` invocation. State writes from the CLI handlers SHALL go through `state.SetResource(...)` (with `state.WithVersion(...)` for installs) so timestamps (`first_install_at`, `updated_at`, `removed_at`) follow the same lifecycle rules the executor uses. The executor (`provider.Executor`) retains state-write authority for the declarative `hams apply` path. Both writers reuse the same atomic-write helper to avoid partial-state on crash.
+
+**Complex invocation scope (auto-record contract):**
+
+The auto-record path (CLI mutation of hamsfile + state) covers ONLY the bare-name install/remove syntax: `hams apt install <pkg1> <pkg2> ...` and `hams apt remove <pkg1> <pkg2> ...`. Apt-get grammar extensions and dry-run flags fall outside this contract:
+
+- **Version pinning** — any token containing `=` (e.g., `nginx=1.24.0`).
+- **Release pinning** — any token containing `/` (e.g., `nginx/bookworm-backports`).
+- **Dry-run flags** — `--download-only`, `--simulate`, `-s`, `--just-print`, `--no-act`, `--recon`.
+
+A "complex invocation" SHALL still execute apt-get (passthrough is preserved — flags reach the real package manager) but SHALL NOT mutate the hamsfile or state. The CLI handler SHALL emit a warning log naming the invocation and pointing the user at the declarative path: edit the hamsfile and run `hams apply`. This boundary keeps hams from silently recording phantom packages from `-o KEY=VAL` flag values, from misclassifying version-pinned tokens as raw package names, or from recording packages that were already installed when a dry-run flag short-circuited the actual install.
+
+Future grammar-aware recording (e.g., serialising version pins as a structured `{app: nginx, version: '1.24.0'}` hamsfile entry) requires hamsfile schema extensions and is tracked in the deferred openspec proposal `apt-cli-complex-invocations`.
 
 **LLM enrichment:**
 
@@ -989,6 +1009,106 @@ The apt provider's CLI handlers (`hams apt install`, `hams apt remove`) SHALL lo
 - **AND** SHALL assert that `apt.hams.yaml` on the test tempdir now contains `{app: htop}`
 - **AND** SHALL assert that `apt.state.yaml` on the test tempdir now contains `resources.htop.state = ok` with `first_install_at` and `updated_at` populated
 - **AND** SHALL fail if any assertion fails — the fake does not shell out to real `apt-get`, making this assertion runnable on any developer's machine regardless of OS or privilege level.
+
+#### Scenario: Version-pinned install records structured entry
+
+- **WHEN** the user runs `hams apt install nginx=1.24.0` on a Debian system
+- **THEN** the apt provider SHALL invoke `runner.Install(ctx, ["nginx=1.24.0"])` so apt-get installs nginx pinned to version 1.24.0
+- **AND** on success, SHALL append `{app: nginx, version: "1.24.0"}` to `apt.hams.yaml`
+- **AND** on success, SHALL write `apt.state.yaml.resources.nginx` with `state=ok`, `version` populated from `dpkg -s nginx`, AND a `requested_version` field equal to `"1.24.0"`
+- **AND** SHALL NOT emit the legacy "complex invocation; not auto-recorded" warning.
+
+#### Scenario: Existing bare entry is upgraded to pinned in-place
+
+- **WHEN** `apt.hams.yaml` already contains a bare entry `{app: nginx}` AND the user runs `hams apt install nginx=1.24.0`
+- **THEN** the apt provider SHALL invoke `runner.Install(ctx, ["nginx=1.24.0"])`
+- **AND** SHALL update the existing nginx entry in `apt.hams.yaml` IN PLACE to `{app: nginx, version: "1.24.0"}` (NOT add a duplicate entry, NOT leave the bare entry unchanged)
+- **AND** SHALL set `apt.state.yaml.resources.nginx.requested_version = "1.24.0"`.
+
+#### Scenario: Plan replays hamsfile-declared pin on fresh state
+
+- **WHEN** `apt.hams.yaml` declares `{app: nginx, version: "1.24.0"}` AND `apt.state.yaml` has no entry for nginx (fresh machine OR restore path)
+- **THEN** `Plan` SHALL emit an Install action with `ID = "nginx"` AND `Resource = "nginx=1.24.0"`
+- **AND** Execute SHALL invoke `runner.Install(ctx, ["nginx=1.24.0"])`
+- **AND** the resulting state row SHALL be keyed on the bare name `nginx` AND carry `requested_version: "1.24.0"`.
+
+#### Scenario: Plan re-installs when host version differs from pin (state-key invariant)
+
+- **WHEN** `apt.hams.yaml` declares `{app: nginx, version: "1.24.0"}` and `apt.state.yaml.resources.nginx` has `version: "1.22.1"` (host was upgraded out of band)
+- **THEN** `Plan` SHALL emit an Update action with `ID = "nginx"` AND `Resource = "nginx=1.24.0"`
+- **AND** Execute SHALL invoke `runner.Install(ctx, ["nginx=1.24.0"])` to re-pin
+- **AND** the state file SHALL retain a SINGLE row for nginx, keyed on the bare name (no duplicate `resources["nginx=1.24.0"]` orphan).
+
+#### Scenario: Release-pinned install records structured entry
+
+- **WHEN** the user runs `hams apt install nginx/bookworm-backports`
+- **THEN** the apt provider SHALL invoke `runner.Install(ctx, ["nginx/bookworm-backports"])` so apt-get installs nginx from the bookworm-backports release
+- **AND** on success, SHALL ensure `apt.hams.yaml` contains `{app: nginx, source: "bookworm-backports"}` (whether by appending a new entry or upgrading an existing bare one in place)
+- **AND** on success, SHALL record `apt.state.yaml.resources.nginx` with `state=ok` and the `source` field replicated.
+
+#### Scenario: Dry-run flag still short-circuits auto-record
+
+- **WHEN** the user runs `hams apt install --download-only nginx=1.24.0`
+- **THEN** the apt provider SHALL invoke `runner.Install(ctx, ["--download-only", "nginx=1.24.0"])` so apt-get downloads but does not install
+- **AND** SHALL emit the "complex invocation; not auto-recorded" warning
+- **AND** SHALL NOT mutate `apt.hams.yaml` or `apt.state.yaml`. Dry-run wins over version-pinning recording — the host did not change, so no record is appropriate.
+
+#### Scenario: Benign passthrough flag still auto-records
+
+- **WHEN** the user runs `hams apt install --no-install-recommends htop`
+- **THEN** the apt provider SHALL invoke `runner.Install(ctx, ["--no-install-recommends", "htop"])` and continue into the auto-record path
+- **AND** SHALL append `{app: htop}` to `apt.hams.yaml`
+- **AND** SHALL write `apt.state.yaml.resources.htop.state = ok`. Benign flags (those that do not pin versions, pin releases, or short-circuit installation) preserve the auto-record contract.
+
+---
+
+### Requirement: Hamsfile structured-fields read API
+
+The hamsfile package SHALL expose `(*File).AppFields(appName string) map[string]string` returning the structured per-app fields (e.g., `version`, `source`) for the entry whose `app` value matches `appName`. The `app` and `intro` fields SHALL be omitted from the result; only the optional structured fields are returned. When no entry matches, SHALL return nil.
+
+This API is the read-side counterpart to `AddAppWithFields`: callers that need to consult per-app structured fields (e.g., apt's `Plan` reading version/source pins from a hamsfile) SHALL use this helper rather than re-walking the YAML node tree at every call site.
+
+#### Scenario: AppFields returns recorded structured fields
+
+- **WHEN** the hamsfile contains `{app: nginx, version: "1.24.0", source: "bookworm-backports"}`
+- **AND** a caller invokes `f.AppFields("nginx")`
+- **THEN** the result SHALL be a map equal to `{"version": "1.24.0", "source": "bookworm-backports"}` (NO `app` key, NO `intro` key).
+
+#### Scenario: AppFields returns nil for unknown apps
+
+- **WHEN** the hamsfile does not contain an entry for `nginx`
+- **AND** a caller invokes `f.AppFields("nginx")`
+- **THEN** the result SHALL be nil (NOT an empty non-nil map).
+
+#### Scenario: AppFields returns nil for bare entries
+
+- **WHEN** the hamsfile contains `{app: htop}` (no extra fields)
+- **AND** a caller invokes `f.AppFields("htop")`
+- **THEN** the result SHALL be nil OR an empty map (callers MUST NOT distinguish between the two; both signal "no structured fields recorded").
+
+---
+
+### Requirement: apt resource schema fields for version and release pinning
+
+The hamsfile per-package entry for apt SHALL accept two optional fields beyond `app`:
+
+- `version: "<spec>"` — the version specifier the user wants apt-get to pin. Forwarded verbatim to apt-get as `<app>=<version>` on install.
+- `source: "<release>"` — the release/suite the user wants apt-get to install from. Forwarded verbatim to apt-get as `<app>/<release>`.
+
+The state file's per-resource entry SHALL accept the symmetric `requested_version` and `requested_source` fields so refresh/probe can detect host drift away from the pin.
+
+Both new hamsfile fields and both new state fields SHALL be optional and omitempty. Existing bare-name entries SHALL continue to round-trip without modification.
+
+#### Scenario: Bare-name entry round-trips without new fields appearing
+
+- **WHEN** the hamsfile contains `{app: htop}` and is loaded, mutated (e.g., a comment added), and saved
+- **THEN** the persisted YAML SHALL still be `{app: htop}` — no spurious `version: ""` or `source: ""` keys SHALL appear.
+
+#### Scenario: Version-pinned entry round-trips through hamsfile + state
+
+- **WHEN** the hamsfile contains `{app: nginx, version: "1.24.0"}` and `hams apply` runs
+- **THEN** the executor SHALL invoke `runner.Install(ctx, ["nginx=1.24.0"])`
+- **AND** the resulting state row SHALL carry `requested_version: "1.24.0"` AND `version: "<observed>"` populated from `dpkg -s nginx`.
 
 ---
 

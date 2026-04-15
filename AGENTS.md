@@ -134,10 +134,24 @@ This project uses [OpenSpec](https://openspec.dev) for spec-driven development.
 
 ## Current Task
 
-No active change. Two cycles archived this session:
+No active change. Four cycles archived this session:
 
-1. `fix-apt-cli-state-write-and-htop-rename` (2026-04-15, archive at `openspec/changes/archive/2026-04-15-fix-apt-cli-state-write-and-htop-rename/`) — apt CLI state-write + bat→htop rename + two-stage scope gate + per-provider docker integration matrix.
-2. `clarify-apply-state-only-semantics` (2026-04-15, archive at `openspec/changes/archive/2026-04-15-clarify-apply-state-only-semantics/`) — `hams apply --prune-orphans` opt-in destructive reconciliation for state-only providers (when the user has deleted the hamsfile). Default behavior preserved (skip).
+1. `fix-apt-cli-state-write-and-htop-rename` (2026-04-15) — apt CLI state-write + bat→htop rename + two-stage scope gate + per-provider docker integration matrix.
+2. `clarify-apply-state-only-semantics` (2026-04-15) — `hams apply --prune-orphans` opt-in destructive reconciliation for state-only providers. Default skip preserved.
+3. `apt-cli-complex-invocations` (2026-04-15) — apt CLI now auto-records `nginx=1.24.0` and `nginx/bookworm-backports` as structured `{app, version, source}` hamsfile entries on the imperative install path; state carries symmetric `requested_version` / `requested_source` fields.
+4. `fix-apt-pin-apply-path` (2026-04-15) — closes cycle-3's three correctness gaps so pinning works on the **declarative + restore** paths too: Plan reads pins from the hamsfile via the new `(*File).AppFields(name)` helper; pinned actions carry the install token in `Action.Resource` (state stays keyed on the bare name); `AddAppWithFields` upgrades existing bare entries in place; executor populates `Action.StateOpts` so state records the pin after a successful install.
+
+Codex review fed each cycle's design (5 rounds total). Each round surfaced P2 findings → architect+user agent debate → in-session fix or new openspec proposal. Pattern: rounds 1-3 narrowed-then-extended the apt auto-record contract until grammar-aware recording was a deliberate spec extension; round 4 closed the apply-path gap that the cycle-3 spec scenarios promised but the implementation didn't deliver; round 5 found two more cycle-4 gaps (Skip-without-drift loses pin on hash-promotion; multi-arch package syntax `pkg:arch` rejected by parser) and both landed in-session as cycle-4-spec-mandated correctness. Net: the canonical hams workflow (hand-edit YAML + apply, fresh-machine restore) now actually honors apt pins on every documented path.
+
+A holistic outside code-review at session end (superpowers code-reviewer) confirmed: NO ship-blockers. The work is correct on every path the user will touch. Three NITs were noted around state-pin field residuals — all three landed in-session as commit `95bd349 fix(apt): clear pin fields on remove + unpin so audit trail stays truthful`:
+
+- `hams apt install nginx=1.24.0` then `hams apt remove nginx` now clears `requested_version` on the StateRemoved row (no more lying audit trail).
+- `hams apt remove nginx=1.24.0` (the symmetric install-token form) keys state on bare `nginx` (no orphan `nginx=1.24.0` row).
+- Hand-edit unpin (`{app: nginx, version: "1.24.0"}` → `{app: nginx}` + apply) now clears the stale `requested_version` from state via Plan's Skip branch stamping explicit clears that fire on hash-promotion.
+
+3 new unit tests (U36-U38) lock in the audit-truth invariant.
+
+Reviewer's architectural retrospective: cycle 3 was under-scoped (assumed declarative path was "just plumbing", missed the `AppFields` API extension needed by Plan). Cycle 4 framed itself as cycle 3's correctness fix, but the archive structure presents them as peer features. Future improvement: scope the next pinning-shaped change "end-to-end across imperative + declarative + restore" in one spec rather than across two cycles.
 
 Summary of the most recent (clarify-apply-state-only-semantics) cycle:
 
