@@ -43,6 +43,7 @@ hams apply --except=ansible
 | `--from-repo` | string | Clone the store from a remote GitHub repo and apply. Perfect for a new machine |
 | `--only` | string | Comma-separated providers to run. Everything else is skipped |
 | `--except` | string | Comma-separated providers to skip. Everything else runs |
+| `--prune-orphans` | bool | Process providers that have a state file but no hamsfile by removing every state-tracked resource. **Destructive; default off.** Useful when you've stopped tracking a tool and want hams to clean up. Be sure your hamsfiles are present (not in a half-pulled worktree) before using this — on a partial checkout this would mass-uninstall |
 | `--dry-run` | bool | Print the plan, don't execute it |
 
 ## What actually happens
