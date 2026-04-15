@@ -1283,8 +1283,14 @@ func TestPlan_UnpinClearsStaleStatePin(t *testing.T) {
 		t.Fatalf("sf.Save: %v", saveErr)
 	}
 
-	hf2, _ := hamsfile.Read(h.hamsfilePath)
-	sf2, _ := state.Load(h.statePath)
+	hf2, readErr := hamsfile.Read(h.hamsfilePath)
+	if readErr != nil {
+		t.Fatalf("re-read hamsfile: %v", readErr)
+	}
+	sf2, loadErr := state.Load(h.statePath)
+	if loadErr != nil {
+		t.Fatalf("re-load state: %v", loadErr)
+	}
 	actions, err := h.provider.Plan(context.Background(), hf2, sf2)
 	if err != nil {
 		t.Fatalf("Plan: %v", err)
