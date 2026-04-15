@@ -150,5 +150,43 @@ if grep -qE '^[[:space:]]*install_at:' "$APT_STATE"; then
 fi
 echo "  ok: legacy install_at key removed after migration"
 
+# -----------------------------------------------------------------------
+# E6: --prune-orphans destructive opt-in. Default skip; flag uninstalls.
+# -----------------------------------------------------------------------
+echo ""
+echo "E6: hams apply --prune-orphans removes state-only resources"
+
+# Reset state from the v1-migration probe above.
+rm -f "$APT_STATE"
+
+assert_success "seed install of jq via CLI" \
+  hams --store="$HAMS_STORE" apt install jq
+assert_yaml_field_eq "jq.state=ok after seed install" \
+  "$APT_STATE" '.resources.jq.state' 'ok'
+assert_success "jq is on PATH" command -v jq
+
+# Delete the hamsfile to create the state-only scenario.
+rm -f "$APT_HAMS"
+
+# Default: skip. State and PATH must be unchanged.
+assert_success "hams apply (no flag) skips state-only providers" \
+  hams --store="$HAMS_STORE" apply --only=apt
+assert_yaml_field_eq "jq.state still ok after default apply" \
+  "$APT_STATE" '.resources.jq.state' 'ok'
+assert_success "jq still on PATH after default apply" command -v jq
+
+# Opt-in: --prune-orphans must remove jq from both apt and state.
+assert_success "hams apply --prune-orphans removes jq" \
+  hams --store="$HAMS_STORE" apply --only=apt --prune-orphans
+assert_yaml_field_eq "jq.state=removed after prune" \
+  "$APT_STATE" '.resources.jq.state' 'removed'
+assert_yaml_field_present "jq.removed_at set after prune" \
+  "$APT_STATE" '.resources.jq.removed_at'
+if command -v jq >/dev/null 2>&1; then
+  echo "FAIL: E6 — jq is still in PATH after --prune-orphans"
+  exit 1
+fi
+echo "  ok: jq is no longer in PATH"
+
 echo ""
 echo "=== apt integration test passed ==="

@@ -113,7 +113,7 @@ func TestRunApply_UsesFilePrefixStatePathAndProviderPlan(t *testing.T) {
 	}
 
 	spy := &sudo.SpyAcquirer{}
-	if err := runApply(context.Background(), flags, registry, spy, "", true, "", ""); err != nil {
+	if err := runApply(context.Background(), flags, registry, spy, "", true, "", "", false); err != nil {
 		t.Fatalf("runApply error: %v", err)
 	}
 
@@ -190,11 +190,11 @@ func TestRunApply_PersistsConfigHashAndRemovesOnNextRun(t *testing.T) {
 		t.Fatalf("Register provider: %v", err)
 	}
 
-	if err := runApply(context.Background(), flags, registry, sudo.NoopAcquirer{}, "", true, "", ""); err != nil {
+	if err := runApply(context.Background(), flags, registry, sudo.NoopAcquirer{}, "", true, "", "", false); err != nil {
 		t.Fatalf("first runApply error: %v", err)
 	}
 	writeApplyTestFile(t, hamsfilePath, "packages: []\n")
-	if err := runApply(context.Background(), flags, registry, sudo.NoopAcquirer{}, "", true, "", ""); err != nil {
+	if err := runApply(context.Background(), flags, registry, sudo.NoopAcquirer{}, "", true, "", "", false); err != nil {
 		t.Fatalf("second runApply error: %v", err)
 	}
 
@@ -268,7 +268,7 @@ func TestRunApply_BootstrapsProvidersInDAGOrderBeforePlanning(t *testing.T) {
 		}
 	}
 
-	if err := runApply(context.Background(), flags, registry, sudo.NoopAcquirer{}, "", true, "", ""); err != nil {
+	if err := runApply(context.Background(), flags, registry, sudo.NoopAcquirer{}, "", true, "", "", false); err != nil {
 		t.Fatalf("runApply error: %v", err)
 	}
 
@@ -349,4 +349,193 @@ func expectedConfigHashFromFile(path string) string {
 	}
 	sum := sha256.Sum256(data)
 	return hex.EncodeToString(sum[:])
+}
+
+// --- prune-orphans tests ---
+
+// writePruneOrphanState writes a state file at <stateDir>/<filePrefix>.state.yaml
+// declaring a single resource in state=ok. Used to simulate the state-only
+// scenario (state present, hamsfile missing) for the four prune-orphans tests.
+func writePruneOrphanState(t *testing.T, stateDir, filePrefix, providerName, resourceID string) string {
+	t.Helper()
+	if err := os.MkdirAll(stateDir, 0o750); err != nil {
+		t.Fatalf("mkdir state dir: %v", err)
+	}
+	statePath := filepath.Join(stateDir, filePrefix+".state.yaml")
+	body := strings.Join([]string{
+		"schema_version: 2",
+		"provider: " + providerName,
+		"machine_id: test-machine",
+		"resources:",
+		"  " + resourceID + ":",
+		"    state: ok",
+		"    first_install_at: \"20260101T000000\"",
+		"    updated_at: \"20260101T000000\"",
+		"",
+	}, "\n")
+	writeApplyTestFile(t, statePath, body)
+	return statePath
+}
+
+// pruneOrphanProvider returns a minimal apt-shaped provider that records every
+// Remove call. Plan computes one remove-action per state resource that is NOT
+// in the desired hamsfile (mirrors provider.ComputePlan semantics for package
+// providers, but kept inline so the test has zero dependency surface).
+func pruneOrphanProvider(removed *[]string) *applyTestProvider {
+	return &applyTestProvider{
+		manifest: provider.Manifest{
+			Name:        "apt",
+			DisplayName: "apt",
+			Platforms:   []provider.Platform{provider.PlatformAll},
+			FilePrefix:  "apt",
+		},
+		planFn: func(_ context.Context, desired *hamsfile.File, observed *state.File) ([]provider.Action, error) {
+			declared := map[string]bool{}
+			for _, app := range desired.ListApps() {
+				declared[app] = true
+			}
+			var actions []provider.Action
+			for id, r := range observed.Resources {
+				if r.State == state.StateRemoved {
+					continue
+				}
+				if !declared[id] {
+					actions = append(actions, provider.Action{
+						ID:   id,
+						Type: provider.ActionRemove,
+					})
+				}
+			}
+			return actions, nil
+		},
+		removeFn: func(_ context.Context, id string) error {
+			*removed = append(*removed, id)
+			return nil
+		},
+	}
+}
+
+// 3.1 With --prune-orphans, a provider that has only a state file (no
+// hamsfile) reconciles against an empty desired-state — every tracked
+// resource is removed, and state.<resource>.state transitions to "removed".
+func TestApply_PruneOrphans_RemovesOrphanedStateResources(t *testing.T) {
+	_, _, stateDir, flags := setupApplyTestEnv(t, []string{"apt"})
+	statePath := writePruneOrphanState(t, stateDir, "apt", "apt", "htop")
+
+	var removed []string
+	registry := provider.NewRegistry()
+	if err := registry.Register(pruneOrphanProvider(&removed)); err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+
+	if err := runApply(context.Background(), flags, registry, sudo.NoopAcquirer{}, "", true, "", "", true); err != nil {
+		t.Fatalf("runApply: %v", err)
+	}
+
+	if !slices.Contains(removed, "htop") {
+		t.Errorf("removed = %v, want to contain htop", removed)
+	}
+
+	sf, loadErr := state.Load(statePath)
+	if loadErr != nil {
+		t.Fatalf("state.Load: %v", loadErr)
+	}
+	r, ok := sf.Resources["htop"]
+	if !ok {
+		t.Fatal("htop missing from state after prune")
+	}
+	if r.State != state.StateRemoved {
+		t.Errorf("htop.State = %q, want %q", r.State, state.StateRemoved)
+	}
+	if r.RemovedAt == "" {
+		t.Error("htop.RemovedAt is empty after prune")
+	}
+}
+
+// 3.2 Default behavior (no flag): state-only providers are skipped, state
+// remains untouched, no Remove call.
+func TestApply_NoPruneOrphans_PreservesOrphanedStateResources(t *testing.T) {
+	_, _, stateDir, flags := setupApplyTestEnv(t, []string{"apt"})
+	statePath := writePruneOrphanState(t, stateDir, "apt", "apt", "htop")
+	originalState, readErr := os.ReadFile(statePath)
+	if readErr != nil {
+		t.Fatalf("read original state: %v", readErr)
+	}
+
+	var removed []string
+	registry := provider.NewRegistry()
+	if err := registry.Register(pruneOrphanProvider(&removed)); err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+
+	if err := runApply(context.Background(), flags, registry, sudo.NoopAcquirer{}, "", true, "", "", false); err != nil {
+		t.Fatalf("runApply: %v", err)
+	}
+
+	if len(removed) != 0 {
+		t.Errorf("removed = %v, want empty (state-only skip is the default)", removed)
+	}
+	currentState, readErr := os.ReadFile(statePath)
+	if readErr != nil {
+		t.Fatalf("read current state: %v", readErr)
+	}
+	if string(currentState) != string(originalState) {
+		t.Error("state file was modified despite state-only skip default")
+	}
+}
+
+// 3.3 Defensive: if neither hamsfile nor state file exists, --prune-orphans
+// must be a no-op (stage-1 should already have filtered the provider out,
+// but apply must not panic if a registered provider somehow reaches this
+// point in pruneOrphans=true mode).
+func TestApply_PruneOrphans_NoStateFile_IsNoOp(t *testing.T) {
+	_, _, _, flags := setupApplyTestEnv(t, []string{"apt"})
+
+	var removed []string
+	registry := provider.NewRegistry()
+	if err := registry.Register(pruneOrphanProvider(&removed)); err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+
+	// stage-1 filter excludes the provider entirely (no artifacts at all),
+	// so runApply prints "no providers match" and returns nil. Either way
+	// no Remove must occur.
+	if err := runApply(context.Background(), flags, registry, sudo.NoopAcquirer{}, "", true, "", "", true); err != nil {
+		t.Fatalf("runApply: %v", err)
+	}
+	if len(removed) != 0 {
+		t.Errorf("removed = %v, want empty (no state, nothing to prune)", removed)
+	}
+}
+
+// 3.4 --prune-orphans does NOT affect a provider whose hamsfile is still
+// present. The flag's semantics are scoped to state-only providers — if the
+// hamsfile declares htop and state has htop=ok, htop stays installed.
+func TestApply_PruneOrphans_HamsfilePresent_DoesNotPrune(t *testing.T) {
+	_, profileDir, stateDir, flags := setupApplyTestEnv(t, []string{"apt"})
+	hamsfilePath := filepath.Join(profileDir, "apt.hams.yaml")
+	writeApplyTestFile(t, hamsfilePath, "packages:\n  - app: htop\n")
+	statePath := writePruneOrphanState(t, stateDir, "apt", "apt", "htop")
+
+	var removed []string
+	registry := provider.NewRegistry()
+	if err := registry.Register(pruneOrphanProvider(&removed)); err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+
+	if err := runApply(context.Background(), flags, registry, sudo.NoopAcquirer{}, "", true, "", "", true); err != nil {
+		t.Fatalf("runApply: %v", err)
+	}
+
+	if len(removed) != 0 {
+		t.Errorf("removed = %v, want empty (htop is still declared in hamsfile)", removed)
+	}
+	sf, loadErr := state.Load(statePath)
+	if loadErr != nil {
+		t.Fatalf("state.Load: %v", loadErr)
+	}
+	r := sf.Resources["htop"]
+	if r.State != state.StateOK {
+		t.Errorf("htop.State = %q, want %q (still declared, must not transition)", r.State, state.StateOK)
+	}
 }

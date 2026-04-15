@@ -41,6 +41,7 @@ hams apply --except=ansible
 | `--from-repo` | string | 从远端 GitHub 仓库克隆 store 再 apply。适合新机器开荒。 |
 | `--only` | string | 只跑指定的 provider，逗号分隔 |
 | `--except` | string | 排除掉指定的 provider，其他都跑 |
+| `--prune-orphans` | bool | 对那些只有 state 文件、没有对应 hamsfile 的 provider 做清理：把 state 里登记的所有资源都卸掉。**有破坏性，默认关闭。** 适合那种"我已经不用这个工具了，让 hams 帮我清理"的场景。注意：用之前确认 hamsfile 不是因为半截 git pull 缺失的，否则会一次性卸掉一堆 |
 | `--dry-run` | bool | 只打印计划，不真动手 |
 
 ## 执行流程

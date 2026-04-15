@@ -44,6 +44,23 @@ func Read(path string) (*File, error) {
 	return &File{Path: path, Root: &root}, nil
 }
 
+// NewEmpty returns an in-memory empty Hamsfile rooted at path. The Root
+// is a DocumentNode wrapping an empty MappingNode; callers persist with
+// Write(). Useful when synthesizing a "no desired state" hamsfile for
+// prune-orphan reconciliation paths in apply, or as the create-empty
+// branch of LoadOrCreateEmpty.
+func NewEmpty(path string) *File {
+	return &File{
+		Path: path,
+		Root: &yaml.Node{
+			Kind: yaml.DocumentNode,
+			Content: []*yaml.Node{
+				{Kind: yaml.MappingNode, Tag: "!!map"},
+			},
+		},
+	}
+}
+
 // LoadOrCreateEmpty reads a Hamsfile, returning an empty in-memory File
 // rooted at path when the file does not exist on disk. Callers persist
 // the result by calling Write(). errors.Is + fs.ErrNotExist is required
@@ -62,15 +79,7 @@ func LoadOrCreateEmpty(path string) (*File, error) {
 		return nil, fmt.Errorf("create profile dir for %s: %w", path, err)
 	}
 
-	return &File{
-		Path: path,
-		Root: &yaml.Node{
-			Kind: yaml.DocumentNode,
-			Content: []*yaml.Node{
-				{Kind: yaml.MappingNode, Tag: "!!map"},
-			},
-		},
-	}, nil
+	return NewEmpty(path), nil
 }
 
 // DocMapping returns the top-level mapping node, unwrapping the document node if present.

@@ -134,9 +134,22 @@ This project uses [OpenSpec](https://openspec.dev) for spec-driven development.
 
 ## Current Task
 
-No active change. `fix-apt-cli-state-write-and-htop-rename` was archived on 2026-04-15 at `openspec/changes/archive/2026-04-15-fix-apt-cli-state-write-and-htop-rename/`.
+No active change. Two cycles archived this session:
 
-Summary of the last cycle:
+1. `fix-apt-cli-state-write-and-htop-rename` (2026-04-15, archive at `openspec/changes/archive/2026-04-15-fix-apt-cli-state-write-and-htop-rename/`) — apt CLI state-write + bat→htop rename + two-stage scope gate + per-provider docker integration matrix.
+2. `clarify-apply-state-only-semantics` (2026-04-15, archive at `openspec/changes/archive/2026-04-15-clarify-apply-state-only-semantics/`) — `hams apply --prune-orphans` opt-in destructive reconciliation for state-only providers (when the user has deleted the hamsfile). Default behavior preserved (skip).
+
+Summary of the most recent (clarify-apply-state-only-semantics) cycle:
+
+- [x] Codex review on the prior cycle's branch surfaced 2 P2 findings; an autonomous architect+user agent debate decided per-finding. P2 #1 (apt CLI flag passthrough + multi-pkg atomicity) → fixed in-session at commit `fcc3415` (widened `CmdRunner.Install/Remove` to `args []string`, added U18 + U19 unit tests). P2 #2 → deferred to this new spec because the destructive default flip warrants explicit scenarios + an opt-in path.
+- [x] `/opsx:new` + `/opsx:continue` produced the full 4-artifact set (proposal, design, cli-architecture spec delta, tasks).
+- [x] `/opsx:apply` implemented `hams apply --prune-orphans`: new `hamsfile.NewEmpty(path)` helper, runApply branches into the prune path when stateOnly && pruneOrphans, stamps the synthesized empty-doc hash on observed.ConfigHash so ComputePlan generates remove-actions (the existing `lastConfigHash != ""` guard would otherwise suppress them since CLI install handlers never set ConfigHash).
+- [x] 4 unit tests (default skip, prune removes, no state file no-op, hamsfile-present no-op) + apt itest E6 (real apt-get install→delete hamsfile→apply with/without flag) all green.
+- [x] en + zh-CN docs updated with explicit "destructive; default off" warnings.
+- [x] `/opsx:verify` — 0 critical / 0 warning; all 7 scenarios mapped to code or tests.
+- [x] `/opsx:archive` — archived with `--skip-specs` (same auto-sync header bug as prior cycle); cli-architecture delta applied manually.
+
+Summary of the earlier (fix-apt-cli-state-write-and-htop-rename) cycle:
 
 - [x] `/opsx:new fix-apt-cli-state-write-and-htop-rename` + `/opsx:continue` (proposal → design → specs → tasks).
 - [x] `/opsx:apply` — implemented in atomic commits: apt CLI handler writes state directly (new DI: `statePath` + `loadOrCreateStateFile`), `bat`→`htop` rename across specs/examples/README/docs/E2E fixtures, two-stage scope gate (`provider.HasArtifacts` stage-1 before `--only`/`--except` stage-2) in both `runApply` and `runRefresh`, per-provider docker integration-test scaffolding (`hams-itest-base` + per-provider Dockerfile/integration.sh with SHA-keyed cache, shared `standard_cli_flow` helper, `task ci:itest:run PROVIDER=<name>`).

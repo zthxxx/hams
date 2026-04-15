@@ -37,6 +37,7 @@ Use --no-refresh to skip probing and apply based on state alone.`,
 			&cli.BoolFlag{Name: "no-refresh", Usage: "Skip environment probing before applying"},
 			&cli.StringFlag{Name: "only", Usage: "Only apply these providers (comma-separated)"},
 			&cli.StringFlag{Name: "except", Usage: "Skip these providers (comma-separated)"},
+			&cli.BoolFlag{Name: "prune-orphans", Usage: "Process providers that have a state file but no hamsfile by removing every state-tracked resource. Destructive; default off."},
 		},
 		Action: func(ctx context.Context, cmd *cli.Command) error {
 			flags := globalFlags(cmd)
@@ -45,12 +46,13 @@ Use --no-refresh to skip probing and apply based on state alone.`,
 				cmd.Bool("no-refresh"),
 				cmd.String("only"),
 				cmd.String("except"),
+				cmd.Bool("prune-orphans"),
 			)
 		},
 	}
 }
 
-func runApply(ctx context.Context, flags *provider.GlobalFlags, registry *provider.Registry, sudoAcq sudo.Acquirer, fromRepo string, noRefresh bool, only, except string) error {
+func runApply(ctx context.Context, flags *provider.GlobalFlags, registry *provider.Registry, sudoAcq sudo.Acquirer, fromRepo string, noRefresh bool, only, except string, pruneOrphans bool) error {
 	if flags.DryRun {
 		fmt.Println("[dry-run] Would apply configurations. No changes will be made.")
 	}
@@ -232,9 +234,24 @@ func runApply(ctx context.Context, flags *provider.GlobalFlags, registry *provid
 		if _, statErr := os.Stat(hamsfileLocalPath); os.IsNotExist(statErr) {
 			localExists = false
 		}
-		if !mainExists && !localExists {
-			slog.Debug("no hamsfile for provider, skipping", "provider", name)
+
+		// State-only provider: no hamsfile present. Default behavior is to
+		// skip — a missing hamsfile is "no declared intent", not "intent:
+		// zero". `--prune-orphans` opts into destructive reconciliation by
+		// substituting an empty in-memory hamsfile so Plan computes
+		// remove-actions against state.
+		statePath := filepath.Join(stateDir, filePrefix+".state.yaml")
+		stateOnly := !mainExists && !localExists
+		if stateOnly && !pruneOrphans {
+			slog.Debug("no hamsfile for provider, skipping (use --prune-orphans to remove orphaned state resources)", "provider", name)
 			continue
+		}
+		if stateOnly && pruneOrphans {
+			if _, statErr := os.Stat(statePath); os.IsNotExist(statErr) {
+				slog.Debug("--prune-orphans requested but no state file either, nothing to prune", "provider", name)
+				continue
+			}
+			slog.Info("--prune-orphans: reconciling against empty desired-state", "provider", name, "state_file", statePath)
 		}
 
 		mergeStrategy := hamsfile.MergeAppend
@@ -244,9 +261,12 @@ func runApply(ctx context.Context, flags *provider.GlobalFlags, registry *provid
 
 		var hf *hamsfile.File
 		var readErr error
-		if mainExists {
+		switch {
+		case stateOnly:
+			hf = hamsfile.NewEmpty(hamsfilePath)
+		case mainExists:
 			hf, readErr = hamsfile.ReadMerged(hamsfilePath, hamsfileLocalPath, mergeStrategy)
-		} else {
+		default:
 			// Only local file exists — read it directly.
 			hf, readErr = hamsfile.Read(hamsfileLocalPath)
 		}
@@ -256,10 +276,21 @@ func runApply(ctx context.Context, flags *provider.GlobalFlags, registry *provid
 			continue
 		}
 
-		statePath := filepath.Join(stateDir, filePrefix+".state.yaml")
 		sf, loadErr := state.Load(statePath)
 		if loadErr != nil {
 			sf = state.New(name, cfg.MachineID)
+		}
+
+		// ComputePlan only considers state-resources for removal when
+		// observed.ConfigHash is non-empty (a guard against accidentally
+		// removing pre-existing host state on a fresh machine). The CLI
+		// install handlers populate state directly without setting
+		// ConfigHash, so a state-only provider in prune mode would see
+		// zero remove-actions. Stamp the synthesized empty-doc hash now
+		// — semantically correct: in prune mode, the "last applied
+		// desired state" IS the empty hamsfile we just synthesized.
+		if stateOnly && pruneOrphans && sf.ConfigHash == "" {
+			sf.ConfigHash = configHashForHamsfile(hf)
 		}
 
 		actions, planErr := p.Plan(ctx, hf, sf)
