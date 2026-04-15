@@ -134,17 +134,20 @@ This project uses [OpenSpec](https://openspec.dev) for spec-driven development.
 
 ## Current Task
 
-No active change. `fix-apt-provider-and-store-config-scope` was archived on 2026-04-15 at `openspec/changes/archive/2026-04-15-fix-apt-provider-and-store-config-scope/`.
+No active change. `fix-apt-cli-state-write-and-htop-rename` was archived on 2026-04-15 at `openspec/changes/archive/2026-04-15-fix-apt-cli-state-write-and-htop-rename/`.
 
 Summary of the last cycle:
 
-- [x] `/opsx:new fix-apt-provider-and-store-config-scope` + `/opsx:continue` (proposal → design → specs → tasks)
-- [x] `/opsx:apply` — implemented in 7 atomic commits (state schema migration, config scope validation, apt CmdRunner DI seam + CLI hamsfile mutation, debian E2E scenarios E1–E5, CI workflow refactor to Taskfile, docs sync, simplify-tidy).
-- [x] `/opsx:verify` — 0 critical, 0 warning. 19 scenarios mapped to code + tests.
-- [x] `/simplify` — 3 in-scope fixes applied (unexport FakeCmdRunner internals, drop tautology test, trim WHAT-comments). 6 cross-provider refactors deferred with full provenance in the archived `review-followups.md`.
-- [x] `/codex:review` — skipped, Codex rate-limited (same pattern as the prior dev-sandbox cycle). Recorded in the archived tasks.md 9.2.
-- [x] `/codex:rescue` — not applicable (no /codex:review findings to rescue).
-- [x] `/opsx:archive` — archived with `--skip-specs` (auto-sync hit an internal header-matching bug on tables inside MODIFIED blocks); deltas then applied to main specs manually and committed.
+- [x] `/opsx:new fix-apt-cli-state-write-and-htop-rename` + `/opsx:continue` (proposal → design → specs → tasks).
+- [x] `/opsx:apply` — implemented in atomic commits: apt CLI handler writes state directly (new DI: `statePath` + `loadOrCreateStateFile`), `bat`→`htop` rename across specs/examples/README/docs/E2E fixtures, two-stage scope gate (`provider.HasArtifacts` stage-1 before `--only`/`--except` stage-2) in both `runApply` and `runRefresh`, per-provider docker integration-test scaffolding (`hams-itest-base` + per-provider Dockerfile/integration.sh with SHA-keyed cache, shared `standard_cli_flow` helper, `task ci:itest:run PROVIDER=<name>`).
+- [x] All 11 linux-containerizable providers shipped their `integration/{Dockerfile, integration.sh}`: apt (canonical), ansible, bash, cargo, git (config + clone in shared container), goinstall, homebrew (non-root brew user workaround), npm, pnpm, uv, vscodeext.
+- [x] `/opsx:verify` — 0 critical, 0 warning; spec deltas mapped to code.
+- [x] Local docker verification of the full itest matrix on OrbStack (2026-04-16): all 11 providers green end-to-end. Three last-mile fixes surfaced and landed as atomic commits:
+  - `fix(mas)`: extract `cliName` const (pre-existing goconst regression).
+  - `fix(homebrew)`: `os.IsNotExist` doesn't traverse `%w`-wrapped errors; switched to `errors.Is(err, fs.ErrNotExist)`, matching apt.
+  - `fix(itest/homebrew)`: `bash -lc` is non-interactive, `.bashrc` early-returns and the linuxbrew shellenv never ran; replaced with `env -i` + explicit PATH; added `apply --only=brew` after each CLI mutation (brew doesn't write state from CLI like apt does); step 5 now uses hamsfile-delete + apply so removal runs once.
+  - `fix(itest/vscodeext)`: tunnel `code` CLI cannot install extensions; switched to Microsoft's apt repo with a root-safe `/usr/local/bin/code` wrapper.
+- [x] `/opsx:archive` — archived with `--skip-specs` (auto-sync hit the same internal header-matching bug as last cycle on tables inside MODIFIED blocks); deltas then applied to main specs manually (builtin-providers, cli-architecture, dev-sandbox, schema-design) and committed.
 
 ## Rules
 
