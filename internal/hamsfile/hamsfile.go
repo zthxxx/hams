@@ -192,6 +192,19 @@ func (f *File) FindApp(appName string) (tag string, index int) {
 // AddApp adds a package entry under the specified tag.
 // If the tag doesn't exist, it creates a new top-level section.
 func (f *File) AddApp(tag, appName, intro string) {
+	f.AddAppWithFields(tag, appName, intro, nil)
+}
+
+// AddAppWithFields is the structured-fields variant of AddApp. Each
+// non-empty key/value pair in `extra` is emitted as an additional scalar
+// entry on the package's mapping node, in iteration order. Empty values
+// are skipped so callers can pass `{"version": "", "source": ""}`
+// without polluting the YAML for bare-name entries.
+//
+// Used by providers that record optional structured pins (e.g., apt's
+// version + source). Tag handling is identical to AddApp: append to an
+// existing tag's sequence, or create a new tag at the document root.
+func (f *File) AddAppWithFields(tag, appName, intro string, extra map[string]string) {
 	mu.Lock()
 	defer mu.Unlock()
 
@@ -200,12 +213,10 @@ func (f *File) AddApp(tag, appName, intro string) {
 		return
 	}
 
-	// Build the new app entry node.
-	entry := buildAppEntry(appName, intro)
+	entry := buildAppEntryWithFields(appName, intro, extra)
 
 	for i := 0; i < len(doc.Content)-1; i += 2 {
 		if doc.Content[i].Kind == yaml.ScalarNode && doc.Content[i].Value == tag {
-			// Tag exists — append to its sequence.
 			seq := doc.Content[i+1]
 			if seq.Kind == yaml.SequenceNode {
 				seq.Content = append(seq.Content, entry)
@@ -214,7 +225,6 @@ func (f *File) AddApp(tag, appName, intro string) {
 		}
 	}
 
-	// Tag doesn't exist — create it.
 	tagKey := &yaml.Node{Kind: yaml.ScalarNode, Value: tag, Tag: "!!str"}
 	tagSeq := &yaml.Node{Kind: yaml.SequenceNode, Content: []*yaml.Node{entry}}
 	doc.Content = append(doc.Content, tagKey, tagSeq)
@@ -306,7 +316,13 @@ func (f *File) SetPreviewCmd(resourceName, previewCmd string) {
 	}
 }
 
-func buildAppEntry(appName, intro string) *yaml.Node {
+// extraFieldOrder is the canonical emission order for the `extra` map
+// in buildAppEntryWithFields. Iteration over a Go map is unordered; we
+// fix the order so YAML round-trips byte-deterministically. Adding new
+// providers' structured fields means appending to this slice.
+var extraFieldOrder = []string{"version", "source"}
+
+func buildAppEntryWithFields(appName, intro string, extra map[string]string) *yaml.Node {
 	content := []*yaml.Node{
 		{Kind: yaml.ScalarNode, Value: "app", Tag: "!!str"},
 		{Kind: yaml.ScalarNode, Value: appName, Tag: "!!str"},
@@ -315,6 +331,16 @@ func buildAppEntry(appName, intro string) *yaml.Node {
 		content = append(content,
 			&yaml.Node{Kind: yaml.ScalarNode, Value: "intro", Tag: "!!str"},
 			&yaml.Node{Kind: yaml.ScalarNode, Value: intro, Tag: "!!str"},
+		)
+	}
+	for _, key := range extraFieldOrder {
+		val, ok := extra[key]
+		if !ok || val == "" {
+			continue
+		}
+		content = append(content,
+			&yaml.Node{Kind: yaml.ScalarNode, Value: key, Tag: "!!str"},
+			&yaml.Node{Kind: yaml.ScalarNode, Value: val, Tag: "!!str"},
 		)
 	}
 	return &yaml.Node{Kind: yaml.MappingNode, Content: content}

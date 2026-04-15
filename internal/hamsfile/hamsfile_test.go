@@ -339,3 +339,70 @@ func TestProperty_RoundtripPreservesApps(t *testing.T) {
 		}
 	})
 }
+
+// TestAddAppWithFields_RoundTripsExtraFields verifies that structured
+// `version` and `source` fields survive a write+read cycle.
+func TestAddAppWithFields_RoundTripsExtraFields(t *testing.T) {
+	tmp := t.TempDir()
+	path := tmp + "/test.hams.yaml"
+	if err := os.WriteFile(path, []byte("cli: []\n"), 0o600); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	f, err := Read(path)
+	if err != nil {
+		t.Fatalf("Read: %v", err)
+	}
+	f.AddAppWithFields("cli", "nginx", "", map[string]string{
+		"version": "1.24.0",
+		"source":  "bookworm-backports",
+	})
+	if err := f.Write(); err != nil {
+		t.Fatalf("Write: %v", err)
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	body := string(data)
+	if !strings.Contains(body, "app: nginx") {
+		t.Errorf("app line missing: %q", body)
+	}
+	if !strings.Contains(body, "version: 1.24.0") {
+		t.Errorf("version line missing: %q", body)
+	}
+	if !strings.Contains(body, "source: bookworm-backports") {
+		t.Errorf("source line missing: %q", body)
+	}
+}
+
+// TestAddAppWithFields_BareNameDoesNotEmitEmptyFields verifies that
+// passing empty-string extras does NOT pollute the YAML — bare-name
+// entries continue to round-trip identically.
+func TestAddAppWithFields_BareNameDoesNotEmitEmptyFields(t *testing.T) {
+	tmp := t.TempDir()
+	path := tmp + "/test.hams.yaml"
+	if err := os.WriteFile(path, []byte("cli: []\n"), 0o600); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	f, err := Read(path)
+	if err != nil {
+		t.Fatalf("Read: %v", err)
+	}
+	f.AddAppWithFields("cli", "htop", "", map[string]string{
+		"version": "",
+		"source":  "",
+	})
+	if err := f.Write(); err != nil {
+		t.Fatalf("Write: %v", err)
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	body := string(data)
+	if strings.Contains(body, "version:") || strings.Contains(body, "source:") {
+		t.Errorf("empty extras leaked into YAML: %q", body)
+	}
+}
