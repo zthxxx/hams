@@ -692,14 +692,12 @@ func TestHandleCommand_U20_DownloadOnlyDoesNotRecordState(t *testing.T) {
 	}
 }
 
-// U21: a flag-VALUE that sneaks past packageArgs (e.g., `Debug::NoLocking=true`
-// from `-o Debug::NoLocking=true`) trips the `=`/`/` complex-invocation
-// detector. The whole invocation is passthrough but no auto-record runs —
-// not for the flag value (correct), and also not for the legitimate `htop`
-// (the user took explicit control of the apt invocation; they own the
-// hamsfile declaration too). Documented in the spec's "Complex invocation
-// scope" paragraph.
-func TestHandleCommand_U21_ComplexInvocationDoesNotAutoRecord(t *testing.T) {
+// U21: an apt option value (`-o KEY=VAL`) is filtered by parseAptInstallToken's
+// debian-package-name regex — `Debug::NoLocking` contains `::` which is
+// not a valid Debian package name character, so the parser returns
+// empty and the bookkeeping skips it. Only the legitimate `htop` is
+// recorded.
+func TestHandleCommand_U21_AptOptionValueNotRecordedAsPackage(t *testing.T) {
 	h := newHarness(t)
 
 	if err := h.provider.HandleCommand(context.Background(),
@@ -707,19 +705,16 @@ func TestHandleCommand_U21_ComplexInvocationDoesNotAutoRecord(t *testing.T) {
 		t.Fatalf("install: %v", err)
 	}
 
-	if apps := h.hamsfileApps(); len(apps) != 0 {
-		t.Errorf("hamsfile apps = %v, want [] (complex invocation must not auto-record)", apps)
-	}
-	if _, statErr := os.Stat(h.statePath); statErr == nil {
-		t.Error("state file should not exist after complex invocation auto-record refusal")
+	apps := h.hamsfileApps()
+	if len(apps) != 1 || apps[0] != "htop" {
+		t.Errorf("hamsfile apps = %v, want [htop] (option value must not be recorded)", apps)
 	}
 }
 
-// U22: version-pinning syntax (`foo=1.2`) — apt installs `foo` with the
-// pinned version, but the auto-record path refuses because hams's bare-name
-// recording can't carry the version pin (would need a hamsfile schema
-// extension; tracked in apt-cli-complex-invocations proposal).
-func TestHandleCommand_U22_VersionPinDoesNotAutoRecord(t *testing.T) {
+// U22: version-pinning syntax (`pkg=version`) — apt installs the pinned
+// version AND hams records a structured entry with `version: "<pin>"` in
+// the hamsfile and `requested_version` in state.
+func TestHandleCommand_U22_VersionPinRecordsStructuredEntry(t *testing.T) {
 	h := newHarness(t)
 
 	if err := h.provider.HandleCommand(context.Background(),
@@ -727,13 +722,36 @@ func TestHandleCommand_U22_VersionPinDoesNotAutoRecord(t *testing.T) {
 		t.Fatalf("install: %v", err)
 	}
 
-	if apps := h.hamsfileApps(); len(apps) != 0 {
-		t.Errorf("hamsfile apps = %v, want [] (version pin must not auto-record)", apps)
+	apps := h.hamsfileApps()
+	if len(apps) != 1 || apps[0] != "nginx" {
+		t.Fatalf("hamsfile apps = %v, want [nginx]", apps)
+	}
+
+	data, readErr := os.ReadFile(h.hamsfilePath)
+	if readErr != nil {
+		t.Fatalf("read hamsfile: %v", readErr)
+	}
+	if !strings.Contains(string(data), "version: \"1.24.0\"") &&
+		!strings.Contains(string(data), "version: 1.24.0") {
+		t.Errorf("hamsfile body = %q, want to contain version: 1.24.0", string(data))
+	}
+
+	sf, loadErr := state.Load(h.statePath)
+	if loadErr != nil {
+		t.Fatalf("state.Load: %v", loadErr)
+	}
+	r, ok := sf.Resources["nginx"]
+	if !ok {
+		t.Fatal("nginx missing from state after version-pin install")
+	}
+	if r.RequestedVersion != "1.24.0" {
+		t.Errorf("nginx.RequestedVersion = %q, want 1.24.0", r.RequestedVersion)
 	}
 }
 
-// U23: release-pinning syntax (`foo/release`) — same contract as U22.
-func TestHandleCommand_U23_ReleasePinDoesNotAutoRecord(t *testing.T) {
+// U23: release-pinning syntax (`pkg/release`) — same shape as U22 but
+// recording `source` instead of `version`.
+func TestHandleCommand_U23_ReleasePinRecordsStructuredEntry(t *testing.T) {
 	h := newHarness(t)
 
 	if err := h.provider.HandleCommand(context.Background(),
@@ -741,8 +759,26 @@ func TestHandleCommand_U23_ReleasePinDoesNotAutoRecord(t *testing.T) {
 		t.Fatalf("install: %v", err)
 	}
 
-	if apps := h.hamsfileApps(); len(apps) != 0 {
-		t.Errorf("hamsfile apps = %v, want [] (release pin must not auto-record)", apps)
+	apps := h.hamsfileApps()
+	if len(apps) != 1 || apps[0] != "nginx" {
+		t.Fatalf("hamsfile apps = %v, want [nginx]", apps)
+	}
+
+	data, readErr := os.ReadFile(h.hamsfilePath)
+	if readErr != nil {
+		t.Fatalf("read hamsfile: %v", readErr)
+	}
+	if !strings.Contains(string(data), "source: bookworm-backports") {
+		t.Errorf("hamsfile body = %q, want to contain source: bookworm-backports", string(data))
+	}
+
+	sf, loadErr := state.Load(h.statePath)
+	if loadErr != nil {
+		t.Fatalf("state.Load: %v", loadErr)
+	}
+	r := sf.Resources["nginx"]
+	if r.RequestedSource != "bookworm-backports" {
+		t.Errorf("nginx.RequestedSource = %q, want bookworm-backports", r.RequestedSource)
 	}
 }
 
@@ -762,4 +798,148 @@ func TestHandleCommand_U24_BenignPassthroughFlagStillRecords(t *testing.T) {
 	if len(apps) != 1 || apps[0] != "htop" {
 		t.Errorf("hamsfile apps = %v, want [htop] (--no-install-recommends is benign)", apps)
 	}
+}
+
+// U25: parseAptInstallToken unit cases.
+func TestParseAptInstallToken(t *testing.T) {
+	tests := []struct {
+		arg                          string
+		wantPkg, wantVer, wantSource string
+	}{
+		{"nginx", "nginx", "", ""},
+		{"nginx=1.24.0", "nginx", "1.24.0", ""},
+		{"nginx/bookworm-backports", "nginx", "", "bookworm-backports"},
+		{"", "", "", ""},
+		{"-y", "", "", ""},
+		{"--no-install-recommends", "", "", ""},
+		{"Debug::NoLocking=true", "", "", ""}, // not a valid package name
+		{"Bad/Pkg", "", "", ""},               // not a valid package name
+	}
+	for _, tt := range tests {
+		t.Run(tt.arg, func(t *testing.T) {
+			pkg, ver, src := parseAptInstallToken(tt.arg)
+			if pkg != tt.wantPkg || ver != tt.wantVer || src != tt.wantSource {
+				t.Errorf("parseAptInstallToken(%q) = (%q, %q, %q), want (%q, %q, %q)",
+					tt.arg, pkg, ver, src, tt.wantPkg, tt.wantVer, tt.wantSource)
+			}
+		})
+	}
+}
+
+// U26: bare-name hamsfile entries do not gain spurious version/source
+// keys after this change. Round-trip a `{app: htop}` install and inspect
+// the serialized YAML for unexpected `version:` / `source:` lines.
+func TestHandleCommand_U26_BareNameEntryHasNoExtraFields(t *testing.T) {
+	h := newHarness(t)
+
+	if err := h.provider.HandleCommand(context.Background(),
+		[]string{"install", "htop"}, nil, h.flags); err != nil {
+		t.Fatalf("install: %v", err)
+	}
+
+	data, err := os.ReadFile(h.hamsfilePath)
+	if err != nil {
+		t.Fatalf("read hamsfile: %v", err)
+	}
+	body := string(data)
+	if strings.Contains(body, "version:") || strings.Contains(body, "source:") {
+		t.Errorf("bare-name entry leaked structured fields: %q", body)
+	}
+}
+
+// U27: Plan emits Update with the pinned token when state shows drift
+// (observed version != requested_version).
+func TestPlan_VersionDriftEmitsUpdate(t *testing.T) {
+	h := newHarness(t)
+
+	// Seed hamsfile with `{app: nginx, version: "1.24.0"}` via the new helper.
+	hf, err := h.provider.loadOrCreateHamsfile(nil, h.flags)
+	if err != nil {
+		t.Fatalf("loadOrCreateHamsfile: %v", err)
+	}
+	hf.AddAppWithFields("cli", "nginx", "", map[string]string{"version": "1.24.0"})
+	if writeErr := hf.Write(); writeErr != nil {
+		t.Fatalf("hf.Write: %v", writeErr)
+	}
+
+	// Seed state: nginx observed at 1.22.1 with requested_version=1.24.0.
+	sf := state.New("apt", "test-machine")
+	sf.SetResource("nginx", state.StateOK,
+		state.WithVersion("1.22.1"),
+		state.WithRequestedVersion("1.24.0"),
+	)
+	sf.ConfigHash = "sentinel"
+	if saveErr := sf.Save(h.statePath); saveErr != nil {
+		t.Fatalf("sf.Save: %v", saveErr)
+	}
+
+	hf2, err := hamsfile.Read(h.hamsfilePath)
+	if err != nil {
+		t.Fatalf("re-read hamsfile: %v", err)
+	}
+	sf2, err := state.Load(h.statePath)
+	if err != nil {
+		t.Fatalf("re-load state: %v", err)
+	}
+
+	actions, err := h.provider.Plan(context.Background(), hf2, sf2)
+	if err != nil {
+		t.Fatalf("Plan: %v", err)
+	}
+
+	var found bool
+	for _, a := range actions {
+		if a.Type == provider.ActionUpdate && a.ID == "nginx=1.24.0" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("Plan actions = %#v, want one with Type=Update and ID=nginx=1.24.0", actions)
+	}
+}
+
+// U28: Plan emits Skip when observed matches requested (no drift).
+func TestPlan_VersionMatchEmitsSkip(t *testing.T) {
+	h := newHarness(t)
+	hf, err := h.provider.loadOrCreateHamsfile(nil, h.flags)
+	if err != nil {
+		t.Fatalf("loadOrCreateHamsfile: %v", err)
+	}
+	hf.AddAppWithFields("cli", "nginx", "", map[string]string{"version": "1.24.0"})
+	if writeErr := hf.Write(); writeErr != nil {
+		t.Fatalf("hf.Write: %v", writeErr)
+	}
+
+	sf := state.New("apt", "test-machine")
+	sf.SetResource("nginx", state.StateOK,
+		state.WithVersion("1.24.0"),
+		state.WithRequestedVersion("1.24.0"),
+	)
+	if saveErr := sf.Save(h.statePath); saveErr != nil {
+		t.Fatalf("sf.Save: %v", saveErr)
+	}
+
+	hf2, readErr := hamsfile.Read(h.hamsfilePath)
+	if readErr != nil {
+		t.Fatalf("re-read hamsfile: %v", readErr)
+	}
+	sf2, loadErr := state.Load(h.statePath)
+	if loadErr != nil {
+		t.Fatalf("re-load state: %v", loadErr)
+	}
+
+	actions, err := h.provider.Plan(context.Background(), hf2, sf2)
+	if err != nil {
+		t.Fatalf("Plan: %v", err)
+	}
+	for _, a := range actions {
+		if a.ID == "nginx" || strings.HasPrefix(a.ID, "nginx=") {
+			if a.Type != provider.ActionSkip {
+				t.Errorf("nginx action = %#v, want Skip when observed matches requested", a)
+			}
+			return
+		}
+	}
+	t.Errorf("Plan actions = %#v, want one for nginx", actions)
 }

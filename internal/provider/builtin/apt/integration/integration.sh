@@ -188,5 +188,42 @@ if command -v jq >/dev/null 2>&1; then
 fi
 echo "  ok: jq is no longer in PATH"
 
+# -----------------------------------------------------------------------
+# E7: --prune-orphans flow leaves no state row when the hamsfile is
+# already empty AND we want to verify version-pin recording lands cleanly
+# in a fresh hamsfile + state pair.
+# -----------------------------------------------------------------------
+echo ""
+echo "E7: hams apt install <pkg>=<version> records structured version pin"
+
+# Reset hamsfile + state.
+rm -f "$APT_HAMS" "$APT_STATE"
+
+# Pick a version that's actually available in the bookworm archive.
+# Probe apt-cache for jq's installed-candidate version, then pin to it
+# so the install succeeds deterministically.
+JQ_VER=$(apt-cache madison jq 2>/dev/null | head -1 | awk '{print $3}')
+if [ -z "$JQ_VER" ]; then
+  echo "  skipped: apt-cache madison returned no candidate version for jq"
+else
+  echo "  pinning jq to candidate version: $JQ_VER"
+
+  assert_success "hams apt install jq=<pin>" \
+    hams --store="$HAMS_STORE" apt install "jq=$JQ_VER"
+
+  assert_yaml_field_eq "hamsfile records jq.version pin" \
+    "$APT_HAMS" '.cli[] | select(.app == "jq") | .version' "$JQ_VER"
+  assert_yaml_field_eq "state records jq.requested_version pin" \
+    "$APT_STATE" '.resources.jq.requested_version' "$JQ_VER"
+  assert_yaml_field_eq "state observed jq.version matches the pin" \
+    "$APT_STATE" '.resources.jq.version' "$JQ_VER"
+
+  # Drift-free apply: jq is already pinned + installed; expect Skip.
+  assert_success "hams apply --only=apt is a no-op when state matches pin" \
+    hams --store="$HAMS_STORE" apply --only=apt
+  assert_yaml_field_eq "jq.state still ok after no-op apply" \
+    "$APT_STATE" '.resources.jq.state' 'ok'
+fi
+
 echo ""
 echo "=== apt integration test passed ==="

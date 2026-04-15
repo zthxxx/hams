@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"strings"
 
@@ -75,10 +76,34 @@ func (p *Provider) Probe(ctx context.Context, sf *state.File) ([]provider.ProbeR
 	return results, nil
 }
 
-// Plan computes actions for apt packages.
+// Plan computes actions for apt packages, then overlays drift detection
+// for version-pinned resources: if state has a `requested_version` that
+// doesn't match the observed dpkg version, promote the action to Update
+// and rewrite its ID to the pinned form (`pkg=version`) so the executor
+// re-invokes apt-get with the pin. Source-pinned resources promote
+// similarly using `pkg/source`.
 func (p *Provider) Plan(_ context.Context, desired *hamsfile.File, observed *state.File) ([]provider.Action, error) {
 	apps := desired.ListApps()
-	return provider.ComputePlan(apps, observed, observed.ConfigHash), nil
+	actions := provider.ComputePlan(apps, observed, observed.ConfigHash)
+
+	for i, a := range actions {
+		if a.Type != provider.ActionSkip {
+			continue
+		}
+		r, ok := observed.Resources[a.ID]
+		if !ok {
+			continue
+		}
+		switch {
+		case r.RequestedVersion != "" && r.Version != r.RequestedVersion:
+			actions[i].Type = provider.ActionUpdate
+			actions[i].ID = a.ID + "=" + r.RequestedVersion
+		case r.RequestedSource != "" && r.Version == "":
+			actions[i].Type = provider.ActionUpdate
+			actions[i].ID = a.ID + "/" + r.RequestedSource
+		}
+	}
+	return actions, nil
 }
 
 // Apply installs an apt package.
@@ -147,15 +172,11 @@ func (p *Provider) handleInstall(ctx context.Context, args []string, hamsFlags m
 		return err
 	}
 
-	// Complex invocation? hams owns the bare-name install/remove path
-	// (`hams apt install jq htop`). Anything beyond that — version pinning
-	// (`foo=1.2`), release pinning (`foo/bookworm-backports`), or any
-	// dry-run flag — is executed (passthrough preserved) but NOT auto-
-	// recorded: the user opted into apt-grammar-aware behavior, so they
-	// also own the hamsfile + state declaration. Tracked in the deferred
-	// proposal `apt-cli-complex-invocations`.
+	// Dry-run flags executed apt-get but didn't change host state, so
+	// post-hoc bookkeeping cannot represent the invocation truthfully.
+	// Skip the auto-record entirely and warn the user.
 	if isComplexAptInvocation(args) {
-		slog.Warn("hams apt install completed but did not auto-record (complex invocation: version pin, release pin, or dry-run flag). To declare these resources, edit the apt hamsfile and run `hams apply`.", "args", args)
+		slog.Warn("hams apt install completed but did not auto-record (dry-run flag detected). To declare these resources, edit the apt hamsfile and run `hams apply`.", "args", args)
 		return nil
 	}
 
@@ -166,17 +187,32 @@ func (p *Provider) handleInstall(ctx context.Context, args []string, hamsFlags m
 
 	sf := p.loadOrCreateStateFile(flags)
 
-	for _, pkg := range packages {
-		// AddApp is a no-op on duplicate append at the YAML level, so guard
-		// with FindApp to keep the hamsfile idempotent.
-		if existingTag, _ := hf.FindApp(pkg); existingTag == "" {
-			hf.AddApp(tagCLI, pkg, "")
+	for _, raw := range args {
+		pkg, requestedVersion, requestedSource := parseAptInstallToken(raw)
+		if pkg == "" {
+			continue
 		}
-		_, version, probeErr := p.runner.IsInstalled(ctx, pkg)
+		// AddAppWithFields is a no-op on duplicate append at the YAML
+		// level, so guard with FindApp to keep the hamsfile idempotent.
+		if existingTag, _ := hf.FindApp(pkg); existingTag == "" {
+			extra := map[string]string{
+				"version": requestedVersion,
+				"source":  requestedSource,
+			}
+			hf.AddAppWithFields(tagCLI, pkg, "", extra)
+		}
+		_, observed, probeErr := p.runner.IsInstalled(ctx, pkg)
 		if probeErr != nil {
 			slog.Warn("post-install version probe failed", "package", pkg, "error", probeErr)
 		}
-		sf.SetResource(pkg, state.StateOK, state.WithVersion(version))
+		opts := []state.ResourceOption{state.WithVersion(observed)}
+		if requestedVersion != "" {
+			opts = append(opts, state.WithRequestedVersion(requestedVersion))
+		}
+		if requestedSource != "" {
+			opts = append(opts, state.WithRequestedSource(requestedSource))
+		}
+		sf.SetResource(pkg, state.StateOK, opts...)
 	}
 
 	if writeErr := hf.Write(); writeErr != nil {
@@ -212,10 +248,10 @@ func (p *Provider) handleRemove(ctx context.Context, args []string, hamsFlags ma
 		return err
 	}
 
-	// Same complex-invocation guard as install: dry-run flags + grammar
-	// extensions are passed through but not auto-recorded.
+	// Same dry-run guard as install: dry-run flags execute apt-get but
+	// don't change host state, so the remove bookkeeping would lie.
 	if isComplexAptInvocation(args) {
-		slog.Warn("hams apt remove completed but did not auto-record (complex invocation: dry-run flag or grammar extension). To declare these resources, edit the apt hamsfile and run `hams apply`.", "args", args)
+		slog.Warn("hams apt remove completed but did not auto-record (dry-run flag detected). To declare these resources, edit the apt hamsfile and run `hams apply`.", "args", args)
 		return nil
 	}
 
@@ -282,35 +318,66 @@ var aptDryRunFlags = map[string]bool{
 	"--recon":         true,
 }
 
-// isComplexAptInvocation returns true if any arg uses apt-get grammar
-// extensions beyond the bare-name install/remove path that hams's CLI
-// auto-record contract supports. The three trip-wires:
+// isComplexAptInvocation returns true if any arg invokes apt-get in a
+// mode where post-hoc bookkeeping cannot determine what this invocation
+// did. Currently only dry-run flags trip this — they execute apt-get
+// without changing host state, so neither hamsfile nor state writes
+// would be meaningful.
 //
-//   - `=` anywhere in a token: version pinning (`foo=1.2`) or an apt
-//     `-o KEY=VALUE` option value.
-//   - `/` anywhere in a token: release pinning (`foo/bookworm-backports`).
-//   - any token in `aptDryRunFlags`: apt invoked without changing host
-//     state, so post-hoc dpkg probing cannot distinguish what THIS
-//     invocation did from prior installs.
-//
-// A true result short-circuits the auto-record bookkeeping; apt-get is
-// still executed (passthrough preserved). Future grammar-aware recording
-// is tracked in the deferred openspec proposal `apt-cli-complex-invocations`.
+// Version pinning (`pkg=version`) and release pinning (`pkg/release`)
+// are NOT complex anymore: parseAptInstallToken recovers the structured
+// pin and the bookkeeping loop records it as a structured hamsfile
+// entry + state row. See `apt-cli-complex-invocations` archive.
 func isComplexAptInvocation(args []string) bool {
 	for _, a := range args {
 		if aptDryRunFlags[a] {
 			return true
 		}
-		if strings.HasPrefix(a, "-") {
-			// -o KEY=VAL passes the value as a separate arg; the value
-			// will trip the `=` check on the next iteration.
-			continue
-		}
-		if strings.ContainsAny(a, "=/") {
-			return true
-		}
 	}
 	return false
+}
+
+// debianPkgName matches a valid Debian package name per Policy §5.6.7:
+// must start with [a-z0-9] and contain only [a-z0-9.+-]. This guards
+// the parser against arg tokens that LOOK like `pkg=value` but are
+// really apt option values (e.g., `Debug::NoLocking=true` from `-o`)
+// — those don't match the regex and get rejected.
+var debianPkgName = regexp.MustCompile(`^[a-z0-9][a-z0-9+\-.]*$`)
+
+// parseAptInstallToken splits a single install arg into (pkg, version,
+// source). Recognized forms:
+//
+//   - `nginx`               → ("nginx", "", "")
+//   - `nginx=1.24.0`        → ("nginx", "1.24.0", "")
+//   - `nginx/bookworm-bp`   → ("nginx", "", "bookworm-bp")
+//   - flag-prefixed (`-y`)  → ("", "", "")  (caller filters first)
+//   - non-package token     → ("", "", "")  (e.g., `Debug::NoLocking=true`
+//     from an apt `-o` value)
+//
+// The combined `pkg=ver/release` form that apt-get accepts is rare and
+// out of scope; it parses as ("pkg", "ver/release", "") which is
+// unhelpful but harmless — the version pin still flows through to
+// apt-get on re-install.
+func parseAptInstallToken(arg string) (pkg, version, source string) {
+	if arg == "" || strings.HasPrefix(arg, "-") {
+		return "", "", ""
+	}
+	if name, ver, ok := strings.Cut(arg, "="); ok {
+		if !debianPkgName.MatchString(name) {
+			return "", "", ""
+		}
+		return name, ver, ""
+	}
+	if name, src, ok := strings.Cut(arg, "/"); ok {
+		if !debianPkgName.MatchString(name) {
+			return "", "", ""
+		}
+		return name, "", src
+	}
+	if !debianPkgName.MatchString(arg) {
+		return "", "", ""
+	}
+	return arg, "", ""
 }
 
 func parseDpkgVersion(output string) string {
