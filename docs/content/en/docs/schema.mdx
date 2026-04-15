@@ -93,7 +93,7 @@ Check exits 0 and hams skips. Anything else and hams runs `run`.
 Lives at `<store>/.state/<machine-id>/<Provider>.state.yaml`:
 
 ```yaml
-schema_version: 1
+schema_version: 2
 provider: homebrew
 machine_id: MacbookProM5X
 last_apply_session: "20260413T100000"
@@ -101,8 +101,15 @@ resources:
   htop:
     state: ok
     version: "3.3.0"
-    install_at: "20260413T100000"
+    first_install_at: "20260413T100000"
+    updated_at: "20260413T100000"
 ```
+
+The `first_install_at` timestamp is set once on the resource's very first install and is
+**immutable** thereafter — re-install, upgrade, removal, and re-install-after-remove never change it.
+`updated_at` bumps on every transition. When a resource is removed, hams adds a `removed_at` field
+(and clears it again on the next install). Legacy `schema_version: 1` files with the old `install_at`
+field are migrated forward to `first_install_at` automatically on the next read.
 
 State files capture **what's actually true on this machine right now**: is the resource installed,
 at what version, as of when. `.state/` is gitignored by default — it's a local fact, not something

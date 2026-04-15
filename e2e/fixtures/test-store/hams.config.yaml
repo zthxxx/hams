@@ -1,2 +1,3 @@
-profile_tag: test
-machine_id: docker-test
+# Store-level test fixture. Intentionally omits profile_tag / machine_id —
+# those are machine-scoped and only valid at global level. The test harness
+# supplies them via HAMS_CONFIG_HOME before invoking hams.

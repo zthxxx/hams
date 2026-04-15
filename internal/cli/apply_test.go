@@ -291,13 +291,20 @@ func setupApplyTestEnv(t *testing.T, providerPriority []string) (storeDir, profi
 		t.Fatalf("MkdirAll profile: %v", err)
 	}
 
-	configBody := strings.Join([]string{
+	// Machine-scoped fields (profile_tag, machine_id) live in the global config.
+	globalBody := strings.Join([]string{
 		"profile_tag: macOS",
 		"machine_id: test-machine",
+		"",
+	}, "\n")
+	writeApplyTestFile(t, filepath.Join(configHome, "hams.config.yaml"), globalBody)
+
+	// Store-level config only carries store-scoped fields.
+	storeBody := strings.Join([]string{
 		formatProviderPriority(providerPriority),
 		"",
 	}, "\n")
-	writeApplyTestFile(t, filepath.Join(storeDir, "hams.config.yaml"), configBody)
+	writeApplyTestFile(t, filepath.Join(storeDir, "hams.config.yaml"), storeBody)
 
 	return storeDir, profileDir, stateDir, &provider.GlobalFlags{Store: storeDir}
 }

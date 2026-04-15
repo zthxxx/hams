@@ -12,7 +12,10 @@ import (
 )
 
 // SchemaVersion is the current state file format version.
-const SchemaVersion = 1
+const SchemaVersion = 2
+
+// timestampFormat is the compact ISO format used across hams YAML files.
+const timestampFormat = "20060102T150405"
 
 // ResourceState represents the status of a managed resource.
 type ResourceState string
@@ -42,15 +45,16 @@ type File struct {
 
 // Resource represents the state of a single managed resource.
 type Resource struct {
-	State       ResourceState `yaml:"state"`
-	Version     string        `yaml:"version,omitempty"`
-	Value       string        `yaml:"value,omitempty"`
-	CheckCmd    string        `yaml:"check_cmd,omitempty"`
-	CheckStdout string        `yaml:"check_stdout,omitempty"`
-	InstallAt   string        `yaml:"install_at,omitempty"`
-	UpdatedAt   string        `yaml:"updated_at,omitempty"`
-	CheckedAt   string        `yaml:"checked_at,omitempty"`
-	LastError   string        `yaml:"last_error,omitempty"`
+	State          ResourceState `yaml:"state"`
+	Version        string        `yaml:"version,omitempty"`
+	Value          string        `yaml:"value,omitempty"`
+	CheckCmd       string        `yaml:"check_cmd,omitempty"`
+	CheckStdout    string        `yaml:"check_stdout,omitempty"`
+	FirstInstallAt string        `yaml:"first_install_at,omitempty"`
+	UpdatedAt      string        `yaml:"updated_at,omitempty"`
+	RemovedAt      string        `yaml:"removed_at,omitempty"`
+	CheckedAt      string        `yaml:"checked_at,omitempty"`
+	LastError      string        `yaml:"last_error,omitempty"`
 }
 
 // New creates a new empty state file for a provider.
@@ -63,23 +67,28 @@ func New(provider, machineID string) *File {
 	}
 }
 
-// Load reads a state file from disk.
+// Load reads a state file from disk, auto-migrating legacy schemas.
 func Load(path string) (*File, error) {
 	data, err := os.ReadFile(path) //nolint:gosec // state paths are derived from store directory
 	if err != nil {
 		return nil, fmt.Errorf("reading state file %s: %w", path, err)
 	}
 
-	var f File
-	if err := yaml.Unmarshal(data, &f); err != nil {
-		return nil, fmt.Errorf("parsing state file %s: %w", path, err)
+	var legacy legacyFile
+	if unmarshalErr := yaml.Unmarshal(data, &legacy); unmarshalErr != nil {
+		return nil, fmt.Errorf("parsing state file %s: %w", path, unmarshalErr)
+	}
+
+	f, err := migrate(&legacy, path)
+	if err != nil {
+		return nil, err
 	}
 
 	if f.Resources == nil {
 		f.Resources = make(map[string]*Resource)
 	}
 
-	return &f, nil
+	return f, nil
 }
 
 // Save writes the state file to disk atomically.
@@ -101,13 +110,14 @@ func (f *File) SetResource(id string, s ResourceState, opts ...ResourceOption) {
 	}
 
 	r.State = s
-	now := time.Now().Format("20060102T150405")
+	now := time.Now().Format(timestampFormat)
 
 	switch s {
 	case StateOK:
-		if r.InstallAt == "" {
-			r.InstallAt = now
+		if r.FirstInstallAt == "" {
+			r.FirstInstallAt = now
 		}
+		r.RemovedAt = ""
 		r.UpdatedAt = now
 		r.LastError = ""
 	case StatePending:
@@ -115,6 +125,7 @@ func (f *File) SetResource(id string, s ResourceState, opts ...ResourceOption) {
 	case StateFailed:
 		r.UpdatedAt = now
 	case StateRemoved:
+		r.RemovedAt = now
 		r.UpdatedAt = now
 	case StateHookFailed:
 		r.UpdatedAt = now

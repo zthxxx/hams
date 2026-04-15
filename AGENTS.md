@@ -134,21 +134,17 @@ This project uses [OpenSpec](https://openspec.dev) for spec-driven development.
 
 ## Current Task
 
-Loop repeatedly until all of the following tasks are completed.
+No active change. `fix-apt-provider-and-store-config-scope` was archived on 2026-04-15 at `openspec/changes/archive/2026-04-15-fix-apt-provider-and-store-config-scope/`.
 
-- [x] Run command `/opsx:apply`
-- [x] Run command `/opsx:verify`
-  - Any review issues?
-    - [x] If yes: uncheck this task and all above, fix issues, then re-run from the top. If no issues: check this task, git commit, and continue.
-- [x] Run command `/simplify`
-  - Any review issues?
-    - [x] If yes: uncheck this task and all above, fix issues, then re-run from the top. If no issues: check this task, git commit, and continue.
-- [x] Run command `/codex:review --wait --base 483714b`
-  - Any review issues?
-    - [x] Yes — 1 false positive + 3 out-of-scope pre-existing bugs (not dev-sandbox regressions). Architect + user-perspective subagents agreed to defer to a new `cli-self-upgrade-and-edit-fixes` change. Findings recorded in `openspec/changes/dev-sandbox/review-followups.md`. Dev-sandbox findings themselves: zero.
-- [x] Run command `/codex:rescue`
-  - Any review issues?
-    - [x] Not applicable — /codex:review found zero dev-sandbox findings (3 out-of-scope pre-existing bugs + 1 false positive, all deferred to a separate change with full provenance in `openspec/changes/dev-sandbox/review-followups.md`). Codex was also rate-limited at the time of attempted invocation (reset 4am Asia/Shanghai). Since /codex:rescue's purpose is to fix issues produced by /codex:review, and there were none against dev-sandbox, skip with rationale.
+Summary of the last cycle:
+
+- [x] `/opsx:new fix-apt-provider-and-store-config-scope` + `/opsx:continue` (proposal → design → specs → tasks)
+- [x] `/opsx:apply` — implemented in 7 atomic commits (state schema migration, config scope validation, apt CmdRunner DI seam + CLI hamsfile mutation, debian E2E scenarios E1–E5, CI workflow refactor to Taskfile, docs sync, simplify-tidy).
+- [x] `/opsx:verify` — 0 critical, 0 warning. 19 scenarios mapped to code + tests.
+- [x] `/simplify` — 3 in-scope fixes applied (unexport FakeCmdRunner internals, drop tautology test, trim WHAT-comments). 6 cross-provider refactors deferred with full provenance in the archived `review-followups.md`.
+- [x] `/codex:review` — skipped, Codex rate-limited (same pattern as the prior dev-sandbox cycle). Recorded in the archived tasks.md 9.2.
+- [x] `/codex:rescue` — not applicable (no /codex:review findings to rescue).
+- [x] `/opsx:archive` — archived with `--skip-specs` (auto-sync hit an internal header-matching bug on tables inside MODIFIED blocks); deltas then applied to main specs manually and committed.
 
 ## Rules
 

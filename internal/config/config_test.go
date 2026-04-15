@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -75,17 +76,21 @@ func TestLoad_4LevelMerge(t *testing.T) {
 	configHome := t.TempDir()
 	storeDir := t.TempDir()
 
-	// Level 2: global config.
+	// Level 2a: global config holds machine-scoped fields.
 	globalCfg := filepath.Join(configHome, "hams.config.yaml")
-	writeYAML(t, globalCfg, "profile_tag: macOS\nmachine_id: global-machine\n")
+	writeYAML(t, globalCfg, "profile_tag: macOS\nmachine_id: global-machine\nllm_cli: base\n")
 
-	// Level 3: project config.
+	// Level 2b: global local override bumps machine_id.
+	globalLocal := filepath.Join(configHome, "hams.config.local.yaml")
+	writeYAML(t, globalLocal, "machine_id: local-machine\n")
+
+	// Level 3: project (store) config tweaks non-machine-scoped fields.
 	projectCfg := filepath.Join(storeDir, "hams.config.yaml")
-	writeYAML(t, projectCfg, "machine_id: project-machine\nllm_cli: claude\n")
+	writeYAML(t, projectCfg, "llm_cli: claude\n")
 
-	// Level 4: local override.
+	// Level 4: store local override wins for non-machine-scoped fields.
 	localCfg := filepath.Join(storeDir, "hams.config.local.yaml")
-	writeYAML(t, localCfg, "machine_id: local-machine\n")
+	writeYAML(t, localCfg, "llm_cli: codex\n")
 
 	paths := Paths{ConfigHome: configHome, DataHome: t.TempDir()}
 	cfg, err := Load(paths, storeDir)
@@ -93,17 +98,14 @@ func TestLoad_4LevelMerge(t *testing.T) {
 		t.Fatalf("Load error: %v", err)
 	}
 
-	// ProfileTag from global (not overridden).
 	if cfg.ProfileTag != "macOS" {
 		t.Errorf("ProfileTag = %q, want 'macOS'", cfg.ProfileTag)
 	}
-	// MachineID overridden by local (level 4 > level 3 > level 2).
 	if cfg.MachineID != "local-machine" {
-		t.Errorf("MachineID = %q, want 'local-machine'", cfg.MachineID)
+		t.Errorf("MachineID = %q, want 'local-machine' (from global local)", cfg.MachineID)
 	}
-	// LLMCLI from project (level 3).
-	if cfg.LLMCLI != "claude" {
-		t.Errorf("LLMCLI = %q, want 'claude'", cfg.LLMCLI)
+	if cfg.LLMCLI != "codex" {
+		t.Errorf("LLMCLI = %q, want 'codex' (from store local override)", cfg.LLMCLI)
 	}
 }
 
@@ -172,5 +174,121 @@ func writeYAML(t *testing.T, path, content string) {
 	t.Helper()
 	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
 		t.Fatalf("writeYAML: %v", err)
+	}
+}
+
+// C1: store hams.config.yaml with profile_tag rejected with actionable error.
+func TestLoad_C1_StoreProfileTagRejected(t *testing.T) {
+	configHome := t.TempDir()
+	storeDir := t.TempDir()
+
+	projectCfg := filepath.Join(storeDir, "hams.config.yaml")
+	writeYAML(t, projectCfg, "profile_tag: dev\n")
+
+	paths := Paths{ConfigHome: configHome, DataHome: t.TempDir()}
+	_, err := Load(paths, storeDir)
+	if err == nil {
+		t.Fatal("Load should reject store-level profile_tag")
+	}
+	msg := err.Error()
+	if !strings.Contains(msg, projectCfg) {
+		t.Errorf("error should contain offending file path %q, got %q", projectCfg, msg)
+	}
+	if !strings.Contains(msg, "profile_tag") {
+		t.Errorf("error should name profile_tag, got %q", msg)
+	}
+	if !strings.Contains(msg, "hams.config.yaml") {
+		t.Errorf("error should point to global hams.config.yaml, got %q", msg)
+	}
+}
+
+// C2: store hams.config.yaml with machine_id rejected.
+func TestLoad_C2_StoreMachineIDRejected(t *testing.T) {
+	configHome := t.TempDir()
+	storeDir := t.TempDir()
+
+	projectCfg := filepath.Join(storeDir, "hams.config.yaml")
+	writeYAML(t, projectCfg, "machine_id: sandbox\n")
+
+	paths := Paths{ConfigHome: configHome, DataHome: t.TempDir()}
+	_, err := Load(paths, storeDir)
+	if err == nil {
+		t.Fatal("Load should reject store-level machine_id")
+	}
+	msg := err.Error()
+	if !strings.Contains(msg, "machine_id") {
+		t.Errorf("error should name machine_id, got %q", msg)
+	}
+	if !strings.Contains(msg, projectCfg) {
+		t.Errorf("error should contain offending path, got %q", msg)
+	}
+}
+
+// C3: store hams.config.local.yaml with profile_tag also rejected (symmetric strictness).
+func TestLoad_C3_StoreLocalMachineScopedRejected(t *testing.T) {
+	configHome := t.TempDir()
+	storeDir := t.TempDir()
+
+	localCfg := filepath.Join(storeDir, "hams.config.local.yaml")
+	writeYAML(t, localCfg, "profile_tag: dev\n")
+
+	paths := Paths{ConfigHome: configHome, DataHome: t.TempDir()}
+	_, err := Load(paths, storeDir)
+	if err == nil {
+		t.Fatal("Load should reject store-local profile_tag (symmetric with tracked file)")
+	}
+	if !strings.Contains(err.Error(), localCfg) {
+		t.Errorf("error should contain store-local path %q, got %q", localCfg, err.Error())
+	}
+}
+
+// C4: global hams.config.yaml with profile_tag + machine_id is accepted.
+func TestLoad_C4_GlobalMachineScopedAccepted(t *testing.T) {
+	configHome := t.TempDir()
+	storeDir := t.TempDir()
+
+	globalCfg := filepath.Join(configHome, "hams.config.yaml")
+	writeYAML(t, globalCfg, "profile_tag: macOS\nmachine_id: MacM5X\n")
+
+	paths := Paths{ConfigHome: configHome, DataHome: t.TempDir()}
+	cfg, err := Load(paths, storeDir)
+	if err != nil {
+		t.Fatalf("Load should accept global machine-scoped fields: %v", err)
+	}
+	if cfg.ProfileTag != "macOS" {
+		t.Errorf("ProfileTag = %q, want 'macOS'", cfg.ProfileTag)
+	}
+	if cfg.MachineID != "MacM5X" {
+		t.Errorf("MachineID = %q, want 'MacM5X'", cfg.MachineID)
+	}
+}
+
+// C5: store config without machine-scoped fields loads successfully and merges normally.
+func TestLoad_C5_StoreWithoutMachineScopedOk(t *testing.T) {
+	configHome := t.TempDir()
+	storeDir := t.TempDir()
+
+	globalCfg := filepath.Join(configHome, "hams.config.yaml")
+	writeYAML(t, globalCfg, "profile_tag: dev\nmachine_id: sandbox\n")
+
+	projectCfg := filepath.Join(storeDir, "hams.config.yaml")
+	writeYAML(t, projectCfg, "llm_cli: claude\nprovider_priority:\n  - bash\n  - apt\n")
+
+	paths := Paths{ConfigHome: configHome, DataHome: t.TempDir()}
+	cfg, err := Load(paths, storeDir)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.ProfileTag != "dev" {
+		t.Errorf("ProfileTag = %q, want 'dev' (from global)", cfg.ProfileTag)
+	}
+	if cfg.MachineID != "sandbox" {
+		t.Errorf("MachineID = %q, want 'sandbox' (from global)", cfg.MachineID)
+	}
+	if cfg.LLMCLI != "claude" {
+		t.Errorf("LLMCLI = %q, want 'claude' (from store)", cfg.LLMCLI)
+	}
+	if len(cfg.ProviderPriority) != 2 || cfg.ProviderPriority[0] != "bash" {
+		t.Errorf("ProviderPriority = %v, want [bash, apt] (from store)", cfg.ProviderPriority)
 	}
 }

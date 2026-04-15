@@ -3,4 +3,7 @@
 # Mounted by start-container.sh at $HOME/.config/hams/hams.config.yaml
 # inside the container (HAMS_CONFIG_HOME=$HOME/.config/hams).
 
+profile_tag: dev
+machine_id: sandbox
+
 store_path: /workspace/store
