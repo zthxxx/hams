@@ -644,7 +644,11 @@ func TestHandleCommand_U19_InstallMultiPackageIsAtomic(t *testing.T) {
 	}
 	// Neither package is installed (apt-get atomic: dep-resolution failure
 	// rolls back the whole batch).
-	if installed, _, _ := h.runner.IsInstalled(context.Background(), "ok-pkg"); installed {
+	installed, _, probeErr := h.runner.IsInstalled(context.Background(), "ok-pkg")
+	if probeErr != nil {
+		t.Fatalf("IsInstalled probe: %v", probeErr)
+	}
+	if installed {
 		t.Error("ok-pkg should NOT be installed when batch failed atomically")
 	}
 	// Neither hamsfile nor state should record either package — install
