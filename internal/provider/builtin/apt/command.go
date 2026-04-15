@@ -17,12 +17,15 @@ import (
 // "installed packages" set. The seam keeps apt-provider tests host-safe —
 // they never shell out to apt-get or dpkg.
 type CmdRunner interface {
-	// Install runs `sudo apt-get install -y <pkg>`, streaming stdout/stderr
-	// to the user's terminal.
-	Install(ctx context.Context, pkg string) error
+	// Install runs `sudo apt-get install -y <args...>`. args is forwarded
+	// verbatim to apt-get so passthrough flags (e.g. `--no-install-recommends`)
+	// reach the real package manager AND multiple packages are installed in
+	// a single apt-get transaction (atomic on dependency-resolution failure).
+	Install(ctx context.Context, args []string) error
 
-	// Remove runs `sudo apt-get remove -y <pkg>`, streaming stdout/stderr.
-	Remove(ctx context.Context, pkg string) error
+	// Remove runs `sudo apt-get remove -y <args...>` with the same passthrough
+	// + transactional semantics as Install.
+	Remove(ctx context.Context, args []string) error
 
 	// IsInstalled probes `dpkg -s <pkg>`. Returns (true, version, nil) when
 	// the package is present with `Status: install ok installed`; (false, "",
@@ -41,22 +44,22 @@ type realCmdRunner struct {
 	sudo sudo.CmdBuilder
 }
 
-func (r *realCmdRunner) Install(ctx context.Context, pkg string) error {
-	cmd := r.sudo.Command(ctx, "apt-get", "install", "-y", pkg)
+func (r *realCmdRunner) Install(ctx context.Context, args []string) error {
+	cmd := r.sudo.Command(ctx, "apt-get", append([]string{"install", "-y"}, args...)...)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("apt-get install %s: %w", pkg, err)
+		return fmt.Errorf("apt-get install %s: %w", strings.Join(args, " "), err)
 	}
 	return nil
 }
 
-func (r *realCmdRunner) Remove(ctx context.Context, pkg string) error {
-	cmd := r.sudo.Command(ctx, "apt-get", "remove", "-y", pkg)
+func (r *realCmdRunner) Remove(ctx context.Context, args []string) error {
+	cmd := r.sudo.Command(ctx, "apt-get", append([]string{"remove", "-y"}, args...)...)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("apt-get remove %s: %w", pkg, err)
+		return fmt.Errorf("apt-get remove %s: %w", strings.Join(args, " "), err)
 	}
 	return nil
 }

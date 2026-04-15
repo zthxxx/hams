@@ -605,3 +605,54 @@ func TestHandleCommand_U17_DryRunDoesNotTouchState(t *testing.T) {
 		t.Error("dry-run should not create the state file")
 	}
 }
+
+// U18: passthrough flags survive into runner.Install args. Locks in the
+// codex P2 fix — `hams apt install --no-install-recommends htop` had been
+// silently dropping the flag because the CLI loop iterated `packageArgs(args)`
+// (filtered names only) and called `runner.Install(ctx, pkg)` per package.
+func TestHandleCommand_U18_InstallPreservesPassthroughFlags(t *testing.T) {
+	h := newHarness(t)
+	if err := h.provider.HandleCommand(context.Background(),
+		[]string{"install", "--no-install-recommends", "htop"}, nil, h.flags); err != nil {
+		t.Fatalf("install: %v", err)
+	}
+	got := h.runner.LastCallArgs("install")
+	want := []string{"--no-install-recommends", "htop"}
+	if !slicesEqual(got, want) {
+		t.Errorf("runner.Install args = %v, want %v", got, want)
+	}
+}
+
+// U19: multi-package install runs as one apt-get transaction. Locks in
+// the codex P2 fix — looping `runner.Install(ctx, pkg)` per package broke
+// atomicity (ok-pkg would install successfully on the host, then bad-pkg
+// would fail, leaving ok-pkg installed but unrecorded in hamsfile/state).
+func TestHandleCommand_U19_InstallMultiPackageIsAtomic(t *testing.T) {
+	h := newHarness(t)
+	h.runner.WithInstallError("bad-pkg", errors.New("E: Unable to locate package bad-pkg"))
+
+	err := h.provider.HandleCommand(context.Background(),
+		[]string{"install", "ok-pkg", "bad-pkg"}, nil, h.flags)
+	if err == nil {
+		t.Fatal("expected error for failed multi-package install")
+	}
+
+	// Exactly one Install call (transactional batch), not two.
+	if h.runner.CallCount("install", "") != 1 {
+		t.Errorf("runner.Install was called %d times, want 1 (atomic batch)",
+			h.runner.CallCount("install", ""))
+	}
+	// Neither package is installed (apt-get atomic: dep-resolution failure
+	// rolls back the whole batch).
+	if installed, _, _ := h.runner.IsInstalled(context.Background(), "ok-pkg"); installed {
+		t.Error("ok-pkg should NOT be installed when batch failed atomically")
+	}
+	// Neither hamsfile nor state should record either package — install
+	// failed, the post-runner-bookkeeping was never reached.
+	if apps := h.hamsfileApps(); len(apps) != 0 {
+		t.Errorf("hamsfile apps = %v, want []", apps)
+	}
+	if _, statErr := os.Stat(h.statePath); statErr == nil {
+		t.Error("state file should not exist after atomic install failure")
+	}
+}

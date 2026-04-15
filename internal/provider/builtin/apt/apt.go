@@ -84,13 +84,13 @@ func (p *Provider) Plan(_ context.Context, desired *hamsfile.File, observed *sta
 // Apply installs an apt package.
 func (p *Provider) Apply(ctx context.Context, action provider.Action) error {
 	slog.Info("apt install", "package", action.ID)
-	return p.runner.Install(ctx, action.ID)
+	return p.runner.Install(ctx, []string{action.ID})
 }
 
 // Remove uninstalls an apt package.
 func (p *Provider) Remove(ctx context.Context, resourceID string) error {
 	slog.Info("apt remove", "package", resourceID)
-	return p.runner.Remove(ctx, resourceID)
+	return p.runner.Remove(ctx, []string{resourceID})
 }
 
 // List returns installed packages with status.
@@ -136,14 +136,15 @@ func (p *Provider) handleInstall(ctx context.Context, args []string, hamsFlags m
 	}
 
 	if flags.DryRun {
-		fmt.Printf("[dry-run] Would install: sudo apt-get install -y %s\n", strings.Join(packages, " "))
+		fmt.Printf("[dry-run] Would install: sudo apt-get install -y %s\n", strings.Join(args, " "))
 		return nil
 	}
 
-	for _, pkg := range packages {
-		if err := p.runner.Install(ctx, pkg); err != nil {
-			return err
-		}
+	// Forward args verbatim so passthrough flags (e.g. --no-install-recommends)
+	// reach apt-get AND the multi-package install runs as one transaction
+	// (apt-get errors atomically if any package fails dependency resolution).
+	if err := p.runner.Install(ctx, args); err != nil {
+		return err
 	}
 
 	hf, err := p.loadOrCreateHamsfile(hamsFlags, flags)
@@ -191,14 +192,14 @@ func (p *Provider) handleRemove(ctx context.Context, args []string, hamsFlags ma
 	}
 
 	if flags.DryRun {
-		fmt.Printf("[dry-run] Would remove: sudo apt-get remove -y %s\n", strings.Join(packages, " "))
+		fmt.Printf("[dry-run] Would remove: sudo apt-get remove -y %s\n", strings.Join(args, " "))
 		return nil
 	}
 
-	for _, pkg := range packages {
-		if err := p.runner.Remove(ctx, pkg); err != nil {
-			return err
-		}
+	// Forward args verbatim — preserves passthrough flags (e.g. --purge) and
+	// runs the multi-package remove as one transaction.
+	if err := p.runner.Remove(ctx, args); err != nil {
+		return err
 	}
 
 	hf, err := p.loadOrCreateHamsfile(hamsFlags, flags)
