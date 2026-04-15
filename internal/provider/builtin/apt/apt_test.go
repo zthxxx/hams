@@ -1077,3 +1077,111 @@ func TestApply_FallsBackToIDWhenResourceEmpty(t *testing.T) {
 		t.Errorf("runner.Install args = %v, want %v (no Resource → use ID)", got, want)
 	}
 }
+
+// U33: pinned-skip actions carry pin metadata even WITHOUT drift.
+// runApply may promote Skip→Update via the hamsfile-hash check; without
+// pin metadata that promotion would Apply with the bare ID and lose the
+// pin. Locks in the round-5 finding I fix.
+func TestPlan_PinnedSkipCarriesPinMetadataEvenWithoutDrift(t *testing.T) {
+	h := newHarness(t)
+	hf, err := h.provider.loadOrCreateHamsfile(nil, h.flags)
+	if err != nil {
+		t.Fatalf("loadOrCreateHamsfile: %v", err)
+	}
+	hf.AddAppWithFields("cli", "nginx", "", map[string]string{"version": "1.24.0"})
+	if writeErr := hf.Write(); writeErr != nil {
+		t.Fatalf("hf.Write: %v", writeErr)
+	}
+
+	// State has nginx at the matching version → ComputePlan returns Skip.
+	sf := state.New("apt", "test-machine")
+	sf.SetResource("nginx", state.StateOK,
+		state.WithVersion("1.24.0"),
+		state.WithRequestedVersion("1.24.0"),
+	)
+	if saveErr := sf.Save(h.statePath); saveErr != nil {
+		t.Fatalf("sf.Save: %v", saveErr)
+	}
+
+	hf2, readErr := hamsfile.Read(h.hamsfilePath)
+	if readErr != nil {
+		t.Fatalf("re-read hamsfile: %v", readErr)
+	}
+	sf2, loadErr := state.Load(h.statePath)
+	if loadErr != nil {
+		t.Fatalf("re-load state: %v", loadErr)
+	}
+
+	actions, err := h.provider.Plan(context.Background(), hf2, sf2)
+	if err != nil {
+		t.Fatalf("Plan: %v", err)
+	}
+
+	var found bool
+	for _, a := range actions {
+		if a.ID != "nginx" {
+			continue
+		}
+		// Skip is correct here; the test's contract is that the
+		// pin metadata IS present so a hash-promotion to Update by
+		// runApply doesn't lose it.
+		res, ok := a.Resource.(string)
+		if !ok || res != "nginx=1.24.0" {
+			t.Errorf("nginx Skip action.Resource = %q (ok=%v), want nginx=1.24.0 attached even without drift", res, ok)
+		}
+		if len(a.StateOpts) == 0 {
+			t.Errorf("nginx Skip action.StateOpts is empty; want WithRequestedVersion to be present so a hash-promotion preserves the pin")
+		}
+		found = true
+	}
+	if !found {
+		t.Errorf("Plan returned no nginx action: %#v", actions)
+	}
+}
+
+// U34: parseAptInstallToken accepts apt's multi-arch suffix.
+// `libssl3:amd64` and `zlib1g:i386` are valid apt install tokens; the
+// parser must not reject them as non-package names. Locks in the
+// round-5 finding II fix.
+func TestParseAptInstallToken_AcceptsMultiArchSuffix(t *testing.T) {
+	tests := []struct {
+		arg                          string
+		wantPkg, wantVer, wantSource string
+	}{
+		{"libssl3:amd64", "libssl3:amd64", "", ""},
+		{"zlib1g:i386", "zlib1g:i386", "", ""},
+		{"nginx:amd64=1.24.0", "nginx:amd64", "1.24.0", ""},
+		{"nginx:arm64/bookworm-backports", "nginx:arm64", "", "bookworm-backports"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.arg, func(t *testing.T) {
+			pkg, ver, src := parseAptInstallToken(tt.arg)
+			if pkg != tt.wantPkg || ver != tt.wantVer || src != tt.wantSource {
+				t.Errorf("parseAptInstallToken(%q) = (%q, %q, %q), want (%q, %q, %q)",
+					tt.arg, pkg, ver, src, tt.wantPkg, tt.wantVer, tt.wantSource)
+			}
+		})
+	}
+}
+
+// U35: end-to-end via handleInstall — `hams apt install libssl3:amd64`
+// records `{app: libssl3:amd64}` in hamsfile + state row keyed on the
+// same. Locks in the round-5 finding II fix at the integration boundary.
+func TestHandleCommand_U35_MultiArchPackageRecords(t *testing.T) {
+	h := newHarness(t)
+	if err := h.provider.HandleCommand(context.Background(),
+		[]string{"install", "libssl3:amd64"}, nil, h.flags); err != nil {
+		t.Fatalf("install: %v", err)
+	}
+	apps := h.hamsfileApps()
+	if len(apps) != 1 || apps[0] != "libssl3:amd64" {
+		t.Errorf("hamsfile apps = %v, want [libssl3:amd64]", apps)
+	}
+	sf, err := state.Load(h.statePath)
+	if err != nil {
+		t.Fatalf("state.Load: %v", err)
+	}
+	if _, ok := sf.Resources["libssl3:amd64"]; !ok {
+		t.Errorf("state has no libssl3:amd64 row: keys=%v", sf.Resources)
+	}
+}

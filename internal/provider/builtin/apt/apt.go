@@ -18,6 +18,9 @@ import (
 	"github.com/zthxxx/hams/internal/state"
 )
 
+// cliName is the apt provider's manifest + CLI name.
+const cliName = "apt"
+
 // AutoInjectFlags auto-adds -y if not present for non-interactive installs.
 var AutoInjectFlags = map[string]string{"-y": ""}
 
@@ -35,11 +38,11 @@ func New(cfg *config.Config, runner CmdRunner) *Provider {
 // Manifest returns the apt provider metadata.
 func (p *Provider) Manifest() provider.Manifest {
 	return provider.Manifest{
-		Name:          "apt",
-		DisplayName:   "apt",
+		Name:          cliName,
+		DisplayName:   cliName,
 		Platforms:     []provider.Platform{provider.PlatformLinux},
 		ResourceClass: provider.ClassPackage,
-		FilePrefix:    "apt",
+		FilePrefix:    cliName,
 	}
 }
 
@@ -111,25 +114,25 @@ func (p *Provider) Plan(_ context.Context, desired *hamsfile.File, observed *sta
 			if !hasPin {
 				continue
 			}
+			// Always attach pin metadata on pinned-skip actions.
+			// runApply may later promote Skip→Update via the
+			// hamsfile-hash check; without the metadata that
+			// promotion would Apply with the bare ID and lose the
+			// pin. The drift cases below additionally promote here
+			// so the user-visible Apply summary correctly shows
+			// "1 updated".
+			actions[i].Resource = token
+			actions[i].StateOpts = append(actions[i].StateOpts, pinStateOpts(a.ID, token)...)
+
 			r, observedExists := observed.Resources[a.ID]
-			// Drift cases: observed version doesn't match the
-			// hamsfile-declared pin (state may carry a stale
-			// requested_version, or none at all on a fresh machine
-			// — the hamsfile is canonical). For source pins, drift
-			// detection is best-effort because dpkg doesn't surface
-			// the install-source; we re-pin if observed is missing.
 			versionPin := strings.HasPrefix(token, a.ID+"=")
 			sourcePin := strings.HasPrefix(token, a.ID+"/")
 			declaredVer := strings.TrimPrefix(token, a.ID+"=")
 			switch {
 			case versionPin && (!observedExists || r.Version != declaredVer):
 				actions[i].Type = provider.ActionUpdate
-				actions[i].Resource = token
-				actions[i].StateOpts = append(actions[i].StateOpts, pinStateOpts(a.ID, token)...)
 			case sourcePin && (!observedExists || r.Version == ""):
 				actions[i].Type = provider.ActionUpdate
-				actions[i].Resource = token
-				actions[i].StateOpts = append(actions[i].StateOpts, pinStateOpts(a.ID, token)...)
 			}
 		}
 	}
@@ -192,10 +195,10 @@ func (p *Provider) HandleCommand(ctx context.Context, args []string, hamsFlags m
 }
 
 // Name returns the CLI name.
-func (p *Provider) Name() string { return "apt" }
+func (p *Provider) Name() string { return cliName }
 
 // DisplayName returns the display name.
-func (p *Provider) DisplayName() string { return "apt" }
+func (p *Provider) DisplayName() string { return cliName }
 
 func (p *Provider) handleInstall(ctx context.Context, args []string, hamsFlags map[string]string, flags *provider.GlobalFlags) error {
 	if len(args) == 0 {
@@ -398,7 +401,11 @@ func isComplexAptInvocation(args []string) bool {
 // the parser against arg tokens that LOOK like `pkg=value` but are
 // really apt option values (e.g., `Debug::NoLocking=true` from `-o`)
 // — those don't match the regex and get rejected.
-var debianPkgName = regexp.MustCompile(`^[a-z0-9][a-z0-9+\-.]*$`)
+//
+// The optional `:arch` suffix (e.g., `libssl3:amd64`, `zlib1g:i386`)
+// is apt's multi-arch syntax; we accept it as part of the package
+// identity. Arch is `[a-z0-9]+` per dpkg architecture spec.
+var debianPkgName = regexp.MustCompile(`^[a-z0-9][a-z0-9+\-.]*(:[a-z0-9]+)?$`)
 
 // parseAptInstallToken splits a single install arg into (pkg, version,
 // source). Recognized forms:
