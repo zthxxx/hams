@@ -49,7 +49,9 @@ task dev EXAMPLE=basic-debian
    拷过去（从第一次起就进 git）。
 2. **检测架构** —— `uname -m` → `amd64` 或 `arm64`。
 3. **初始构建** —— `GOOS=linux GOARCH=<arch> CGO_ENABLED=0 go build
-   -o bin/hams-linux-<arch> ./cmd/hams`。
+   -ldflags "-X …/version.commit=<short-sha>" -o bin/hams-linux-<arch>
+   ./cmd/hams`。`-ldflags` 把 HEAD 的短 SHA 注入进去，所以容器里第一次调
+   `hams --version` 就能看到当前的 commit。
 4. **构建镜像** —— `docker build -t hams-dev-basic-debian`。
 5. **启容器** —— `docker run -d --name hams-basic-debian --rm`，带四个 bind
    mount，并把 `/usr/local/bin/hams` 软链到 `/hams-bin/` 下对应架构的二进制。

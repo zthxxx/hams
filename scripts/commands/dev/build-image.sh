@@ -10,6 +10,10 @@
 # sources is a ~100ms no-op.
 set -Eeuo pipefail
 
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=./_lib.sh
+source "${script_dir}/_lib.sh"
+
 example=""
 
 while [[ $# -gt 0 ]]; do
@@ -25,10 +29,7 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-if [[ -z "${example}" ]]; then
-  echo "build-image: --example <name> is required" >&2
-  exit 2
-fi
+validate_example_name build-image "${example}"
 
 context_dir="examples/${example}"
 dockerfile="${context_dir}/Dockerfile"

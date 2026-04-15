@@ -20,6 +20,10 @@
 # a SIGKILL) is force-stopped before the new one starts.
 set -Eeuo pipefail
 
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=./_lib.sh
+source "${script_dir}/_lib.sh"
+
 example=""
 arch=""
 
@@ -40,8 +44,10 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-if [[ -z "${example}" || -z "${arch}" ]]; then
-  echo "start-container: --example <name> and --arch <amd64|arm64> are required" >&2
+validate_example_name start-container "${example}"
+
+if [[ -z "${arch}" ]]; then
+  echo "start-container: --arch <amd64|arm64> is required" >&2
   exit 2
 fi
 

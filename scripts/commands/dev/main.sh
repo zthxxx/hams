@@ -95,40 +95,57 @@ mkdir -p bin
 # watcher will correct the SHA on the next build if the repo resolves later.
 initial_commit="$(git rev-parse --short HEAD 2>/dev/null || echo unknown)"
 initial_ldflags="-X github.com/zthxxx/hams/internal/version.commit=${initial_commit}"
+
+# Install the cleanup trap *before* starting any background work. The trap
+# covers: (a) the backgrounded `go build` child so it can't orphan if we
+# abort during `docker build`; (b) the container, whose name we can fix
+# upfront since it's deterministic. Under `set -Eeuo pipefail`, subcommand
+# failures abort bash mid-function — without a trap already in place, the
+# go-build PID would leak and any already-created container would survive.
+container_name="hams-${example}"
+go_pid=""
+cleanup() {
+  local status=$?
+  if [[ -n "${go_pid}" ]] && kill -0 "${go_pid}" 2>/dev/null; then
+    kill "${go_pid}" 2>/dev/null || true
+    wait "${go_pid}" 2>/dev/null || true
+  fi
+  if docker inspect "${container_name}" >/dev/null 2>&1; then
+    printf '\ntask dev: stopping %s\n' "${container_name}"
+    docker stop "${container_name}" >/dev/null 2>&1 || true
+  fi
+  exit "${status}"
+}
+trap cleanup INT TERM EXIT
+
 printf 'task dev: building %s (initial, commit=%s) in parallel with image\n' \
   "${output}" "${initial_commit}"
 
 # Run the initial `go build` and `docker build` concurrently: they touch
 # disjoint inputs (Go sources on one side, examples/<name>/Dockerfile on
 # the other) so there's no ordering requirement between them. The container
-# only needs the binary once start-container.sh mounts ./bin/ — which
-# happens after both waits complete.
+# only needs the binary once start-container.sh mounts ./bin/.
 GOOS=linux GOARCH="${arch}" CGO_ENABLED=0 \
   go build -ldflags "${initial_ldflags}" -o "${output}" ./cmd/hams &
 go_pid=$!
 
-bash "${script_dir}/build-image.sh" --example "${example}"
-image_rc=$?
+# Use `if !` so a non-zero exit isn't swallowed by `set -e` before we get
+# a chance to surface a descriptive error.
+if ! bash "${script_dir}/build-image.sh" --example "${example}"; then
+  printf 'task dev: docker build failed\n' >&2
+  exit 1
+fi
 
 if ! wait "${go_pid}"; then
   printf 'task dev: initial go build failed\n' >&2
   exit 1
 fi
-if [[ "${image_rc}" -ne 0 ]]; then
-  printf 'task dev: docker build failed\n' >&2
-  exit "${image_rc}"
+go_pid=""
+
+if ! bash "${script_dir}/start-container.sh" --example "${example}" --arch "${arch}"; then
+  printf 'task dev: start-container failed\n' >&2
+  exit 1
 fi
-
-bash "${script_dir}/start-container.sh" --example "${example}" --arch "${arch}"
-
-container_name="hams-${example}"
-cleanup() {
-  local status=$?
-  printf '\ntask dev: stopping %s\n' "${container_name}"
-  docker stop "${container_name}" >/dev/null 2>&1 || true
-  exit "${status}"
-}
-trap cleanup INT TERM EXIT
 
 cat <<EOF
 

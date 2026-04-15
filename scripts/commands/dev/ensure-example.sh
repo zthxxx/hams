@@ -12,6 +12,10 @@
 # the task level; we re-validate here for defense in depth.
 set -Eeuo pipefail
 
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=./_lib.sh
+source "${script_dir}/_lib.sh"
+
 templates_root="examples/.template"
 example=""
 
@@ -32,21 +36,7 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-if [[ -z "${example}" ]]; then
-  echo "ensure-example: --example <name> is required" >&2
-  exit 2
-fi
-
-case "${example}" in
-  *[!a-zA-Z0-9._-]*)
-    printf 'ensure-example: example name %q must contain only [a-zA-Z0-9._-]\n' "${example}" >&2
-    exit 2
-    ;;
-  "" | "." | ".." | /* | */*)
-    printf 'ensure-example: example name %q is not a safe single-segment name\n' "${example}" >&2
-    exit 2
-    ;;
-esac
+validate_example_name ensure-example "${example}"
 
 target="examples/${example}"
 

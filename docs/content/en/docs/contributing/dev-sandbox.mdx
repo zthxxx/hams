@@ -53,7 +53,10 @@ The script at `scripts/commands/dev/main.sh` runs this pipeline:
    `examples/.template/` into place (it's tracked on first use).
 2. **Detect arch** — `uname -m` → `amd64` or `arm64`.
 3. **Initial build** — `GOOS=linux GOARCH=<arch> CGO_ENABLED=0 go build
-   -o bin/hams-linux-<arch> ./cmd/hams`.
+   -ldflags "-X …/version.commit=<short-sha>" -o bin/hams-linux-<arch>
+   ./cmd/hams`. The ldflags injection makes `hams --version` show the
+   current HEAD's short SHA from the very first invocation inside the
+   container.
 4. **Build image** — `docker build -t hams-dev-basic-debian`.
 5. **Start container** — `docker run -d --name hams-basic-debian --rm` with
    four bind mounts and `/usr/local/bin/hams` symlinked to the arch-specific
