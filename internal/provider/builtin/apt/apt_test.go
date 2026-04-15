@@ -1185,3 +1185,134 @@ func TestHandleCommand_U35_MultiArchPackageRecords(t *testing.T) {
 		t.Errorf("state has no libssl3:amd64 row: keys=%v", sf.Resources)
 	}
 }
+
+// U36: hams apt remove nginx clears the pin from state. Locks in the
+// audit-trail-truth fix surfaced by the holistic reviewer:
+// install pinned then remove leaves stale `requested_version` in the
+// StateRemoved row, suggesting the user still wants the pin even
+// though they uninstalled.
+func TestHandleCommand_U36_RemoveClearsRequestedPinInState(t *testing.T) {
+	h := newHarness(t)
+
+	// First, install pinned.
+	if err := h.provider.HandleCommand(context.Background(),
+		[]string{"install", "nginx=1.24.0"}, nil, h.flags); err != nil {
+		t.Fatalf("install: %v", err)
+	}
+
+	// Then remove (bare).
+	if err := h.provider.HandleCommand(context.Background(),
+		[]string{"remove", "nginx"}, nil, h.flags); err != nil {
+		t.Fatalf("remove: %v", err)
+	}
+
+	sf, err := state.Load(h.statePath)
+	if err != nil {
+		t.Fatalf("state.Load: %v", err)
+	}
+	r, ok := sf.Resources["nginx"]
+	if !ok {
+		t.Fatal("nginx missing from state after remove")
+	}
+	if r.State != state.StateRemoved {
+		t.Errorf("nginx.State = %q, want %q", r.State, state.StateRemoved)
+	}
+	if r.RequestedVersion != "" {
+		t.Errorf("nginx.RequestedVersion = %q after remove, want empty (audit trail must not lie)", r.RequestedVersion)
+	}
+}
+
+// U37: hams apt remove nginx=1.24.0 (the pinned form) keys state on
+// the bare `nginx`, not on `nginx=1.24.0`. Locks in the round-5-style
+// "remove with install-token form must use bare key" fix.
+func TestHandleCommand_U37_RemoveWithPinKeysStateOnBareName(t *testing.T) {
+	h := newHarness(t)
+
+	// Pre-install pinned so remove has something to do.
+	h.runner.Seed("nginx", "1.24.0")
+	if err := h.provider.HandleCommand(context.Background(),
+		[]string{"install", "nginx=1.24.0"}, nil, h.flags); err != nil {
+		t.Fatalf("install: %v", err)
+	}
+
+	if err := h.provider.HandleCommand(context.Background(),
+		[]string{"remove", "nginx=1.24.0"}, nil, h.flags); err != nil {
+		t.Fatalf("remove with pin: %v", err)
+	}
+
+	sf, err := state.Load(h.statePath)
+	if err != nil {
+		t.Fatalf("state.Load: %v", err)
+	}
+	if _, ok := sf.Resources["nginx=1.24.0"]; ok {
+		t.Errorf("state has orphan nginx=1.24.0 row; remove must key on bare nginx")
+	}
+	r, ok := sf.Resources["nginx"]
+	if !ok {
+		t.Fatal("nginx missing from state — remove failed to find the bare key")
+	}
+	if r.State != state.StateRemoved {
+		t.Errorf("nginx.State = %q, want %q", r.State, state.StateRemoved)
+	}
+}
+
+// U38: Plan clears stale state-pin when the hamsfile no longer
+// declares a pin (user hand-edits {app: nginx, version: "1.24.0"} to
+// {app: nginx}). The cleared StateOpts fires when runApply
+// hash-promotes Skip→Update.
+func TestPlan_UnpinClearsStaleStatePin(t *testing.T) {
+	h := newHarness(t)
+	hf, err := h.provider.loadOrCreateHamsfile(nil, h.flags)
+	if err != nil {
+		t.Fatalf("loadOrCreateHamsfile: %v", err)
+	}
+	// Hamsfile: bare nginx (no pin).
+	hf.AddAppWithFields("cli", "nginx", "", nil)
+	if writeErr := hf.Write(); writeErr != nil {
+		t.Fatalf("hf.Write: %v", writeErr)
+	}
+
+	// State: nginx with stale requested_version (the pin was there before
+	// the user hand-edited the hamsfile).
+	sf := state.New("apt", "test-machine")
+	sf.SetResource("nginx", state.StateOK,
+		state.WithVersion("1.24.0"),
+		state.WithRequestedVersion("1.24.0"),
+	)
+	if saveErr := sf.Save(h.statePath); saveErr != nil {
+		t.Fatalf("sf.Save: %v", saveErr)
+	}
+
+	hf2, _ := hamsfile.Read(h.hamsfilePath)
+	sf2, _ := state.Load(h.statePath)
+	actions, err := h.provider.Plan(context.Background(), hf2, sf2)
+	if err != nil {
+		t.Fatalf("Plan: %v", err)
+	}
+
+	var found bool
+	for _, a := range actions {
+		if a.ID != "nginx" {
+			continue
+		}
+		// Action stays Skip (no version drift), but StateOpts must
+		// carry the explicit clears so a future hash-promotion
+		// removes the stale pin.
+		if len(a.StateOpts) == 0 {
+			t.Errorf("nginx action.StateOpts is empty; want WithRequestedVersion('') to clear the stale pin")
+		}
+		// Apply the StateOpts to a fresh resource and assert clear.
+		probe := &state.File{Resources: map[string]*state.Resource{
+			"nginx": {RequestedVersion: "1.24.0", RequestedSource: "stale"},
+		}}
+		probe.SetResource("nginx", state.StateOK, a.StateOpts...)
+		got := probe.Resources["nginx"]
+		if got.RequestedVersion != "" || got.RequestedSource != "" {
+			t.Errorf("after applying StateOpts: RequestedVersion=%q RequestedSource=%q, want both cleared", got.RequestedVersion, got.RequestedSource)
+		}
+		found = true
+	}
+	if !found {
+		t.Errorf("Plan returned no nginx action: %#v", actions)
+	}
+}

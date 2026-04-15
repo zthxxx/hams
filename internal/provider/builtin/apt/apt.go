@@ -112,6 +112,20 @@ func (p *Provider) Plan(_ context.Context, desired *hamsfile.File, observed *sta
 		case provider.ActionSkip:
 			token, hasPin := pins[a.ID]
 			if !hasPin {
+				// Hamsfile unpinned this resource (user hand-edited
+				// `{app: nginx, version: "1.24.0"}` → `{app: nginx}`).
+				// Stamp explicit clears so the next state-write
+				// removes the stale `requested_version` /
+				// `requested_source` instead of letting the audit
+				// trail lie. No drift on the version field itself,
+				// so action Type stays Skip — but the StateOpts
+				// will fire if runApply hash-promotes Skip→Update.
+				if r, ok := observed.Resources[a.ID]; ok && (r.RequestedVersion != "" || r.RequestedSource != "") {
+					actions[i].StateOpts = append(actions[i].StateOpts,
+						state.WithRequestedVersion(""),
+						state.WithRequestedSource(""),
+					)
+				}
 				continue
 			}
 			// Always attach pin metadata on pinned-skip actions.
@@ -321,9 +335,23 @@ func (p *Provider) handleRemove(ctx context.Context, args []string, hamsFlags ma
 
 	sf := p.loadOrCreateStateFile(flags)
 
-	for _, pkg := range packages {
+	for _, raw := range args {
+		// Parse the install-token form so `hams apt remove nginx=1.24.0`
+		// resolves to the bare `nginx` key (state stays canonical) and
+		// flag-prefixed args are filtered out.
+		pkg, _, _ := parseAptInstallToken(raw)
+		if pkg == "" {
+			continue
+		}
 		hf.RemoveApp(pkg)
-		sf.SetResource(pkg, state.StateRemoved)
+		// Clear pin fields on the StateRemoved transition so the audit
+		// trail doesn't lie ("removed" with stale `requested_version`
+		// would suggest the user still wants 1.24.0 even though they
+		// just uninstalled the package).
+		sf.SetResource(pkg, state.StateRemoved,
+			state.WithRequestedVersion(""),
+			state.WithRequestedSource(""),
+		)
 	}
 
 	if writeErr := hf.Write(); writeErr != nil {
