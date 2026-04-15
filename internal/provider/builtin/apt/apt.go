@@ -52,7 +52,7 @@ func (p *Provider) Bootstrap(_ context.Context) error {
 	return nil
 }
 
-// Probe queries dpkg (via the DI-injected runner) for installed packages.
+// Probe queries dpkg for installed packages.
 func (p *Provider) Probe(ctx context.Context, sf *state.File) ([]provider.ProbeResult, error) {
 	var results []provider.ProbeResult
 	for id, r := range sf.Resources {
@@ -80,13 +80,13 @@ func (p *Provider) Plan(_ context.Context, desired *hamsfile.File, observed *sta
 	return provider.ComputePlan(apps, observed, observed.ConfigHash), nil
 }
 
-// Apply installs an apt package via the DI runner.
+// Apply installs an apt package.
 func (p *Provider) Apply(ctx context.Context, action provider.Action) error {
 	slog.Info("apt install", "package", action.ID)
 	return p.runner.Install(ctx, action.ID)
 }
 
-// Remove uninstalls an apt package via the DI runner.
+// Remove uninstalls an apt package.
 func (p *Provider) Remove(ctx context.Context, resourceID string) error {
 	slog.Info("apt remove", "package", resourceID)
 	return p.runner.Remove(ctx, resourceID)

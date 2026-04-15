@@ -176,6 +176,6 @@ Final pre-archive validation. ALL must pass before archiving.
 
 - [ ] 9.1 Run `/opsx:verify` — resolve any findings (findings become new task items in the relevant task.md file).
 - [ ] 9.2 Run `/codex:review --wait --base <base-sha>` — record findings as tasks, fix via `/codex:rescue`.
-- [ ] 9.3 Run `/simplify` — address any review issues.
+- [x] 9.3 Run `/simplify` — in-scope fixes applied (see commit + review-followups.md); cross-provider refactors deferred to a new change per the same pattern used for dev-sandbox.
 - [ ] 9.4 Run `/opsx:archive` — move change to `openspec/archive/` and merge deltas into `openspec/specs/`.
 - [ ] 9.5 Commit: `chore: archive fix-apt-provider-and-store-config-scope`.

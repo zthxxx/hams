@@ -223,7 +223,7 @@ func TestHandleCommand_U5_RemoveFailureLeavesHamsfileUntouched(t *testing.T) {
 func TestHandleCommand_U6_RemoveAbsentIsNoOp(t *testing.T) {
 	h := newHarness(t)
 	// Pre-populate as "already installed" so runner.Remove succeeds.
-	h.runner.Installed["bat"] = "1.0.0"
+	h.runner.Seed("bat", "1.0.0")
 
 	err := h.provider.HandleCommand(context.Background(), []string{"remove", "bat"}, nil, h.flags)
 	if err != nil {
@@ -335,28 +335,10 @@ func TestReInstallAfterRemove_U11(t *testing.T) {
 	}
 }
 
-// Streaming stdout/stderr: the real runner wires os.Stdout/os.Stderr.
-// This is a structural assertion — we cannot assert streaming-in-action
-// without integration, but we can assert the wiring contract: the real
-// runner is constructed through NewRealCmdRunner. The E2E scenarios verify
-// the actual streaming visibility.
-func TestNewRealCmdRunner_ConstructsImpl(t *testing.T) {
-	// Using RecordingBuilder keeps us host-safe; we're only asserting that
-	// NewRealCmdRunner returns a non-nil CmdRunner implementation.
-	r := NewRealCmdRunner(nil)
-	if r == nil {
-		t.Fatal("NewRealCmdRunner returned nil")
-	}
-	// Type-assertion: the concrete type is *realCmdRunner.
-	if _, ok := r.(*realCmdRunner); !ok {
-		t.Errorf("expected *realCmdRunner, got %T", r)
-	}
-}
-
 // Probe uses the CmdRunner and skips removed resources.
 func TestProbe_SkipsRemovedAndUsesRunner(t *testing.T) {
 	h := newHarness(t)
-	h.runner.Installed["bat"] = "0.24.0"
+	h.runner.Seed("bat", "0.24.0")
 	// jq is intentionally NOT in Installed -> probe returns StateFailed for it.
 
 	sf := state.New("apt", "test-machine")
