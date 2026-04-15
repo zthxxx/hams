@@ -57,6 +57,51 @@ func FilterByArtifacts(providers []Provider, profileDir, stateDir string) []Prov
 	return result
 }
 
+// IsStateOnly reports whether the given provider has a state file but
+// neither a hamsfile nor a local-override hamsfile. Used by `hams apply`
+// to identify providers whose desired state has been undeclared (the
+// hamsfile was deleted) but whose state file still tracks resources.
+func IsStateOnly(p Provider, profileDir, stateDir string) bool {
+	prefix := manifestFilePrefix(p.Manifest())
+	hams := filepath.Join(profileDir, prefix+".hams.yaml")
+	hamsLocal := filepath.Join(profileDir, prefix+".hams.local.yaml")
+	if _, err := os.Stat(hams); err == nil {
+		return false
+	}
+	if _, err := os.Stat(hamsLocal); err == nil {
+		return false
+	}
+	statePath := filepath.Join(stateDir, prefix+".state.yaml")
+	_, err := os.Stat(statePath)
+	return err == nil
+}
+
+// FilterStateOnlyWithoutPrune removes providers that are in the
+// state-only position (have a state file but no hamsfile) when
+// pruneOrphans is false. The default `hams apply` semantics promise
+// that state-only providers are NOT touched without `--prune-orphans`;
+// removing them here (BEFORE refresh + bootstrap + plan/execute) keeps
+// `ProbeAll` from rewriting their state file as a side-effect of the
+// "did we select them" stage-1 filter. When pruneOrphans is true, all
+// providers pass through unchanged so the prune-reconcile path runs.
+//
+// Preserves input order. The dropped providers are reported via the
+// returned `dropped` slice so the caller can debug-log them.
+func FilterStateOnlyWithoutPrune(providers []Provider, profileDir, stateDir string, pruneOrphans bool) (kept, dropped []Provider) {
+	if pruneOrphans {
+		return providers, nil
+	}
+	kept = make([]Provider, 0, len(providers))
+	for _, p := range providers {
+		if IsStateOnly(p, profileDir, stateDir) {
+			dropped = append(dropped, p)
+			continue
+		}
+		kept = append(kept, p)
+	}
+	return kept, dropped
+}
+
 // ManifestFilePrefix returns the canonical file prefix for a provider's
 // hamsfile and state file: `Manifest.FilePrefix` when set, falling back
 // to `Manifest.Name`. Single source of truth — `internal/cli` consumes

@@ -164,6 +164,22 @@ func runApply(ctx context.Context, flags *provider.GlobalFlags, registry *provid
 		return fmt.Errorf("resolving provider dependencies: %w", dagErr)
 	}
 
+	// Default `hams apply` does NOT touch state-only providers (those with
+	// a state file but no hamsfile). Remove them BEFORE refresh so
+	// `ProbeAll` cannot mutate their state as a side-effect — without this
+	// gate, an orphaned apt resource that was manually uninstalled on the
+	// host would have its state silently flipped from `ok` → `failed` even
+	// though the user did NOT pass `--prune-orphans`.
+	var stateOnlyDropped []provider.Provider
+	sorted, stateOnlyDropped = provider.FilterStateOnlyWithoutPrune(sorted, profileDir, stateDir, pruneOrphans)
+	for _, p := range stateOnlyDropped {
+		slog.Debug("provider skipped (state-only without --prune-orphans)", "provider", p.Manifest().Name)
+	}
+	if len(sorted) == 0 {
+		fmt.Println("No providers match: every selected provider is state-only and --prune-orphans was not given.")
+		return nil
+	}
+
 	// Bootstrap providers. Stage 1 guarantees each `sorted` provider has at
 	// least a hamsfile OR a state file. Bootstrap failure policy:
 	//   - hamsfile present → fatal (user actively declared resources).
@@ -235,22 +251,14 @@ func runApply(ctx context.Context, flags *provider.GlobalFlags, registry *provid
 			localExists = false
 		}
 
-		// State-only provider: no hamsfile present. Default behavior is to
-		// skip — a missing hamsfile is "no declared intent", not "intent:
-		// zero". `--prune-orphans` opts into destructive reconciliation by
-		// substituting an empty in-memory hamsfile so Plan computes
+		// State-only provider (no hamsfile, only a state file). Reachable
+		// here only when --prune-orphans is set — without the flag, the
+		// pre-refresh `FilterStateOnlyWithoutPrune` already dropped them.
+		// Synthesize an empty in-memory hamsfile so Plan computes
 		// remove-actions against state.
 		statePath := filepath.Join(stateDir, filePrefix+".state.yaml")
 		stateOnly := !mainExists && !localExists
-		if stateOnly && !pruneOrphans {
-			slog.Debug("no hamsfile for provider, skipping (use --prune-orphans to remove orphaned state resources)", "provider", name)
-			continue
-		}
-		if stateOnly && pruneOrphans {
-			if _, statErr := os.Stat(statePath); os.IsNotExist(statErr) {
-				slog.Debug("--prune-orphans requested but no state file either, nothing to prune", "provider", name)
-				continue
-			}
+		if stateOnly {
 			slog.Info("--prune-orphans: reconciling against empty desired-state", "provider", name, "state_file", statePath)
 		}
 
