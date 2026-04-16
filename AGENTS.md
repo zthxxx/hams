@@ -187,6 +187,10 @@ Spec corrections:
 
 Total commits in cycle 2: 15+ (still growing — iteration 3 adds hooks+OTel defer).
 
+### Cycle 130 — Direct tests for `matchesPlatform`
+
+- [x] `matchesPlatform` had no direct tests — only exercised transitively via DAG resolution and RunBootstrap dep-filter paths. A regression flipping the empty-string=all semantic would silently drop every unfiltered `DependsOn` entry from bootstrap. 3 tests: wildcards (empty + PlatformAll), current runtime.GOOS match, bogus-GOOS false. Mirrors cycle 109's `IsPlatformsMatch` gate but at the dep-level instead of manifest-level. (commit `5e55492`)
+
 ### Cycle 129 — Populate dev-sandbox spec Purpose + finish cycle 127 race fix
 
 - [x] Two fixes. (1) `openspec/specs/dev-sandbox/spec.md` had literal `"TBD - created by archiving change dev-sandbox. Update Purpose after archive."` as the Purpose — a spec artifact defect from the archive workflow. Wrote proper Purpose explaining why dev-sandbox exists (host-safe reproducible environment for `hams apply` end-to-end testing, filling the gap between unit tests and CI-driven Dockerized integration tests). (2) Cycle 127's captureStdout mutex wasn't enough on its own — `TestCloneRemoteRepo_CanceledContextAborts` passes `os.Stdout` to go-git's `PlainCloneContext`'s `Progress` field (a READ of the global), and another Parallel test's `captureStdout` swap (WRITE) raced. Removed `t.Parallel()` from that test since it genuinely requires a stable `os.Stdout`. task check green. (commit `28bbeac`)
