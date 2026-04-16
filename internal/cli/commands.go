@@ -688,6 +688,7 @@ func listCmd(registry *provider.Registry) *cli.Command {
 			stateDir := cfg.StateDir()
 			var jsonResults []listResource
 			printedAny := false
+			hadAnyResources := false // any provider had >0 pre-filter resources
 
 			for _, p := range providers {
 				manifest := p.Manifest()
@@ -706,6 +707,7 @@ func listCmd(registry *provider.Registry) *cli.Command {
 				if len(sf.Resources) == 0 {
 					continue
 				}
+				hadAnyResources = true
 
 				// Collect filtered resources for this provider.
 				var filteredIDs []string
@@ -760,13 +762,22 @@ func listCmd(registry *provider.Registry) *cli.Command {
 				}
 				fmt.Println(string(data))
 			} else if !printedAny {
-				// Empty-state message so users know the command worked but
-				// no state files contain resources matching the current
-				// filter. Silent exit 0 was indistinguishable from
-				// "command hung" or "wrong flag".
-				fmt.Println("No managed resources found.")
-				fmt.Println("Run 'hams <provider> install <package>' to start managing resources,")
-				fmt.Println("or 'hams apply' to replay configurations from the store.")
+				// Distinguish truly-empty state (no resources anywhere)
+				// from filter-matched-nothing (resources exist but a
+				// valid --status/--only/--except excluded them all).
+				// The original "no managed resources" message was
+				// misleading in the latter case.
+				switch {
+				case hadAnyResources:
+					fmt.Println("No resources match the current filter.")
+					if statusFilter != "" {
+						fmt.Printf("  --status=%q matched zero entries. Try without it or widen the set.\n", statusFilter)
+					}
+				default:
+					fmt.Println("No managed resources found.")
+					fmt.Println("Run 'hams <provider> install <package>' to start managing resources,")
+					fmt.Println("or 'hams apply' to replay configurations from the store.")
+				}
 			}
 
 			return nil
