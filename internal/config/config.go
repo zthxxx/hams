@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 
 	"gopkg.in/yaml.v3"
 
@@ -154,6 +155,15 @@ func (c *Config) StateDir() string {
 	return filepath.Join(c.StorePath, ".state", id)
 }
 
+// warnOnceProfileTag and warnOnceMachineID dedup the "using default"
+// warnings so they fire at most once per process, even when config.Load
+// runs multiple times per command (e.g., once during provider registration
+// and again when the command action executes).
+var (
+	warnOnceProfileTag sync.Once
+	warnOnceMachineID  sync.Once
+)
+
 // Validate checks that required configuration fields are set.
 // Returns nil if the configuration is valid for operations that need a store.
 func (c *Config) Validate() error {
@@ -161,13 +171,24 @@ func (c *Config) Validate() error {
 	// ProfileTag and MachineID have defaults, so just warn if empty.
 	if c.StorePath != "" {
 		if c.ProfileTag == "" {
-			slog.Warn("profile_tag is empty, using 'default'")
+			warnOnceProfileTag.Do(func() {
+				slog.Warn("profile_tag is empty, using 'default'")
+			})
 		}
 		if c.MachineID == "" {
-			slog.Warn("machine_id is empty, using 'unknown'")
+			warnOnceMachineID.Do(func() {
+				slog.Warn("machine_id is empty, using 'unknown'")
+			})
 		}
 	}
 	return nil
+}
+
+// ResetValidationWarnOnce resets the once-guards so tests can exercise the
+// warn path repeatedly. Do not call outside tests.
+func ResetValidationWarnOnce() {
+	warnOnceProfileTag = sync.Once{}
+	warnOnceMachineID = sync.Once{}
 }
 
 // sensitiveKeys are config keys that should be written to .local.yaml files.

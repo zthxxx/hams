@@ -1,6 +1,7 @@
 package config
 
 import (
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -290,5 +291,37 @@ func TestLoad_C5_StoreWithoutMachineScopedOk(t *testing.T) {
 	}
 	if len(cfg.ProviderPriority) != 2 || cfg.ProviderPriority[0] != "bash" {
 		t.Errorf("ProviderPriority = %v, want [bash, apt] (from store)", cfg.ProviderPriority)
+	}
+}
+
+// TestValidate_WarnsOncePerProcess asserts that repeated Validate() calls
+// with empty profile_tag/machine_id fire at most one slog.Warn per field.
+// Before the once-guard, `hams list` duplicated the warnings 2x per
+// command (once during provider registration, once during command action).
+func TestValidate_WarnsOncePerProcess(t *testing.T) {
+	// Reset to a known clean state; also arrange a buffer to capture logs.
+	ResetValidationWarnOnce()
+	t.Cleanup(ResetValidationWarnOnce)
+
+	var buf strings.Builder
+	prev := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelWarn})))
+	t.Cleanup(func() { slog.SetDefault(prev) })
+
+	c := &Config{StorePath: "/some/store"}
+	for range 5 {
+		if err := c.Validate(); err != nil {
+			t.Fatalf("Validate: %v", err)
+		}
+	}
+
+	out := buf.String()
+	profileCount := strings.Count(out, "profile_tag is empty")
+	machineCount := strings.Count(out, "machine_id is empty")
+	if profileCount != 1 {
+		t.Errorf("profile_tag warning fired %d times, want 1", profileCount)
+	}
+	if machineCount != 1 {
+		t.Errorf("machine_id warning fired %d times, want 1", machineCount)
 	}
 }

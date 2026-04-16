@@ -503,6 +503,7 @@ func listCmd(registry *provider.Registry) *cli.Command {
 
 			stateDir := cfg.StateDir()
 			var jsonResults []listResource
+			printedAny := false
 
 			for _, p := range providers {
 				manifest := p.Manifest()
@@ -557,6 +558,7 @@ func listCmd(registry *provider.Registry) *cli.Command {
 						}
 						fmt.Printf("  %-30s %s%s\n", id, status, ver)
 					}
+					printedAny = true
 				}
 			}
 
@@ -569,6 +571,14 @@ func listCmd(registry *provider.Registry) *cli.Command {
 					return fmt.Errorf("marshaling JSON output: %w", marshalErr)
 				}
 				fmt.Println(string(data))
+			} else if !printedAny {
+				// Empty-state message so users know the command worked but
+				// no state files contain resources matching the current
+				// filter. Silent exit 0 was indistinguishable from
+				// "command hung" or "wrong flag".
+				fmt.Println("No managed resources found.")
+				fmt.Println("Run 'hams <provider> install <package>' to start managing resources,")
+				fmt.Println("or 'hams apply' to replay configurations from the store.")
 			}
 
 			return nil
