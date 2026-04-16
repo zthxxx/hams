@@ -68,19 +68,39 @@ aren't repeated.
 
 ## About the bootstrap prompt
 
-On a fresh machine, a provider's prerequisite may be missing — typically Homebrew on a new Mac.
+On a fresh machine, a provider's prerequisite may be missing. Several providers now opt into the
+bootstrap consent flow — each with its own install script declared in the provider's manifest:
+
+| Provider | Install script | Host |
+|----------|----------------|------|
+| `brew` (Homebrew) | `curl -fsSL .../install.sh` | macOS / Linuxbrew |
+| `pnpm` | `npm install -g pnpm` | requires npm already on PATH |
+| `duti` | `brew install duti` | macOS; chains through brew |
+| `mas` | `brew install mas` | macOS; chains through brew |
+| `ansible` | `pipx install --include-deps ansible` | requires pipx (apt install pipx / brew install pipx) |
+
+Other providers (`npm`, `cargo`, `go`, `uv`, `vscodeext`, `apt`, `defaults`, `git`) intentionally
+DO NOT adopt `--bootstrap` — language runtime installation is user-owned (nvm / fnm / rustup /
+distro), `vscodeext` needs a GUI app, `apt`/`defaults` are platform-gated, `git` is pre-present
+on any machine that ran hams's installer. For these, hams emits a plain "not found in PATH" error
+with the install hint.
+
 When hams reaches a provider whose prerequisite is absent, it stops and does one of three things:
 
-1. If you passed `--bootstrap`, it runs the provider's declared install script (e.g.
-   `/bin/bash -c "$(curl -fsSL .../install.sh)"`) through the bash provider and retries.
+1. If you passed `--bootstrap`, it runs the provider's declared install script through the
+   bash provider and retries.
 2. If stdin is a terminal and you didn't pass `--no-bootstrap`, it shows the exact script
-   about to run, warns about sudo password prompts + potential Xcode Command Line Tools
-   GUI dialog + corporate-proxy issues, and asks `[y/N/s]` (yes / no / skip-this-provider).
+   about to run, warns about expected side effects (sudo, Xcode CLT on macOS, corporate
+   proxies), and asks `[y/N/s]` (yes / no / skip-this-provider).
 3. Otherwise (CI, pipe, `--no-bootstrap`), hams surfaces an actionable error and exits — no
-   network traffic, no side effects.
+   network traffic, no side effects. The error includes the binary name, the exact script,
+   and the `--bootstrap` remedy so you can copy-paste.
 
 hams NEVER auto-executes a remote install script without an explicit opt-in. This is the same
 pattern as `--prune-orphans`: destructive or remote-executing defaults are always behind a flag.
+
+The brew → {duti, mas} chain resolves in one `hams apply --bootstrap` run because the DAG
+orders brew first; once brew is installed, `brew install duti` works seamlessly.
 
 <Callout type="warning">
   On macOS, Homebrew's `install.sh` may trigger the Xcode Command Line Tools GUI installer
