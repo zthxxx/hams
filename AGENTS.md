@@ -157,6 +157,7 @@ converged on Option C — **explicit opt-in**. Core arguments:
   consent; TTY prompt = `[y/N/s]` with Xcode-CLT gotcha warning.
 
 Implementation (4 commits + docs):
+
 1. `feat(provider)`: `RunBootstrap(ctx, p, registry)` + `BashScriptRunner`
    interface + `WithBootstrapAllowed`/`BootstrapAllowed` ctx helpers +
    `ErrBootstrapRequired` sentinel + `BootstrapRequiredError` typed
@@ -185,6 +186,34 @@ remove-via-hamsfile-delete). 13 spec scenarios all mapped to named
 unit tests in the archived `tasks.md §6.8`. Archived with spec
 deltas hand-applied (same workaround as the prior 4 cycles for the
 openspec auto-sync header-matching bug on MODIFIED blocks).
+
+**Post-archive code-reviewer pass** (superpowers:code-reviewer)
+surfaced one CRITICAL + two WARNINGs + one NIT. All four landed
+in-session as atomic fixes (same post-merge-NIT pattern as cycle 4's
+commit `95bd349`):
+
+- `fix(apply)` commit `2c39ad5` — **C1** actionable error body
+  (spec/code divergence: shipped `UserFacingError.Suggestions` didn't
+  name the binary, script, or remedy that the spec scenario
+  explicitly requires); **W2** skip-cascade (TTY `s` answer left
+  DAG-dependent providers like vscodeext probing against a
+  just-skipped brew prereq); **N3** platform-gate the Xcode-CLT
+  warning on Linux hosts.
+- `fix(homebrew)` commit `452f938` — **W1** PATH augmentation on
+  the retry path. install.sh writes brew to `/opt/homebrew/bin`
+  (Apple Silicon) or `/home/linuxbrew/.linuxbrew/bin` (Linuxbrew),
+  neither on the hams process's $PATH. Without augmentation, every
+  fresh-Mac `hams apply --bootstrap` would complete install.sh only
+  to abort with "provider still unavailable after bootstrap". The
+  existing integration test hid the gap by pre-setting PATH in
+  `integration.sh:19`; real users don't get that. Fix augments
+  os.Getenv("PATH") with the canonical install locations and
+  re-checks before returning the error. Two new unit tests lock in
+  both the success retry AND the still-missing fallback (no
+  error-swallowing).
+
+Net: 3 post-archive commits + 3 new unit tests for the code-reviewer
+findings. All 4 reviewer findings addressed end-to-end.
 
 ---
 
