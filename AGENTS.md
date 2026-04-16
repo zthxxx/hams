@@ -187,6 +187,10 @@ Spec corrections:
 
 Total commits in cycle 2: 15+ (still growing — iteration 3 adds hooks+OTel defer).
 
+### Cycle 43 — Silent state-reset on corrupted state file (CRITICAL DATA)
+
+- [x] **Real data-integrity bug**: `state.Load` returns a wrapped error for any read/parse failure. Both `apply.go` and `probe.go` swallowed all errors and substituted `state.New()` — a corrupted state file would silently reset to empty, losing drift tracking for every tracked resource and potentially re-triggering installs. Distinguished `errors.Is(err, fs.ErrNotExist)` (first-run, OK) from other errors (corruption, permission). Corrupt state now skips the provider with a clear ERROR log and surfaces via the cycle 39/40 ExitPartialFailure flow. (commit `5fac677`)
+
 ### Cycle 42 — git-clone Plan coverage (23% → 43%)
 
 - [x] 3 tests for git-clone's Plan + cloneParseResources: structured-fields path, legacy `"remote -> path"` scalar fallback, non-mapping-root error. Biggest git-provider coverage uplift in this run — remaining uncovered code (Apply/handleAdd/HandleCommand) needs real git execution and is covered by Docker integration tests. (commit `4e07068`)
