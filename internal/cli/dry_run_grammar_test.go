@@ -13,7 +13,7 @@ import (
 // output said "1 resources already at desired state" which reads
 // as broken English in the common single-app case.
 func TestPrintDryRunActions_SingularResource(t *testing.T) {
-	t.Parallel()
+	// NOT Parallel: captureStdout swaps the global os.Stdout.
 	actions := []provider.Action{
 		{ID: "htop", Type: provider.ActionSkip},
 	}
@@ -32,7 +32,7 @@ func TestPrintDryRunActions_SingularResource(t *testing.T) {
 // TestPrintDryRunActions_PluralResources asserts the plural form
 // kicks in correctly for count > 1.
 func TestPrintDryRunActions_PluralResources(t *testing.T) {
-	t.Parallel()
+	// NOT Parallel: captureStdout swaps the global os.Stdout.
 	actions := []provider.Action{
 		{ID: "htop", Type: provider.ActionSkip},
 		{ID: "jq", Type: provider.ActionSkip},
@@ -49,7 +49,7 @@ func TestPrintDryRunActions_PluralResources(t *testing.T) {
 // grammar fix for the "(N resources unchanged)" line that prints
 // alongside install/update/remove actions.
 func TestPrintDryRunActions_SingularUnchanged(t *testing.T) {
-	t.Parallel()
+	// NOT Parallel: captureStdout swaps the global os.Stdout.
 	actions := []provider.Action{
 		{ID: "htop", Type: provider.ActionInstall},
 		{ID: "jq", Type: provider.ActionSkip},

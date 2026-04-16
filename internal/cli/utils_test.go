@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/zthxxx/hams/internal/config"
@@ -233,15 +234,24 @@ func TestPrintConfigKey_SensitiveKey_NoFile(t *testing.T) {
 }
 
 // captureStdout is the stdout twin of captureStderr.
+// captureStdoutMu serializes os.Stdout swaps across tests that run
+// in parallel. Without this, two Parallel tests both calling
+// captureStdout would race on the global os.Stdout variable — Go's
+// race detector flags this and the test suite fails.
+var captureStdoutMu sync.Mutex
+
 func captureStdout(t *testing.T, fn func()) string {
 	t.Helper()
+	captureStdoutMu.Lock()
+	defer captureStdoutMu.Unlock()
+
 	r, w, err := os.Pipe()
 	if err != nil {
 		t.Fatalf("os.Pipe: %v", err)
 	}
 	original := os.Stdout
 	os.Stdout = w
-	t.Cleanup(func() { os.Stdout = original })
+	defer func() { os.Stdout = original }()
 	fn()
 	if closeErr := w.Close(); closeErr != nil {
 		t.Fatalf("close pipe: %v", closeErr)
@@ -308,18 +318,26 @@ func TestLocalConfigPath(t *testing.T) {
 	}
 }
 
+// captureStderrMu serializes os.Stderr swaps, same rationale as
+// captureStdoutMu: concurrent -race runs flagged the global
+// variable mutation as a race.
+var captureStderrMu sync.Mutex
+
 // captureStderr swaps os.Stderr with a pipe for the duration of fn,
 // returns the captured output. Restores stderr on return regardless
 // of test outcome.
 func captureStderr(t *testing.T, fn func()) string {
 	t.Helper()
+	captureStderrMu.Lock()
+	defer captureStderrMu.Unlock()
+
 	r, w, err := os.Pipe()
 	if err != nil {
 		t.Fatalf("os.Pipe: %v", err)
 	}
 	original := os.Stderr
 	os.Stderr = w
-	t.Cleanup(func() { os.Stderr = original })
+	defer func() { os.Stderr = original }()
 
 	fn()
 	if closeErr := w.Close(); closeErr != nil {

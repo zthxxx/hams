@@ -993,10 +993,7 @@ func listCmd(registry *provider.Registry) *cli.Command {
 						})
 					}
 				} else {
-					noun := "resources"
-					if len(filteredIDs) == 1 {
-						noun = "resource"
-					}
+					noun := pluralize(len(filteredIDs), "resource", "resources")
 					fmt.Printf("\n%s (%d %s):\n", displayName, len(filteredIDs), noun)
 					for _, id := range filteredIDs {
 						r := sf.Resources[id]
