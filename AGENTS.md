@@ -187,6 +187,10 @@ Spec corrections:
 
 Total commits in cycle 2: 15+ (still growing — iteration 3 adds hooks+OTel defer).
 
+### Cycle 95 — provider arg parser handles `--flag=value` forms symmetrically
+
+- [x] Follow-up to cycle 94 (which fixed the top-level error path). The same bug class lived in `parseProviderArgs` and `stripGlobalFlags`: only bare `--json` / `--debug` / `--dry-run` / `--no-color` matched. So `hams apt --json=true install foo` leaked `--json=true` into passthrough, which `ParseVerb` then treated as the verb, which fell through to apt-get as `--json=true` — apt-get rejected it with "option is not understood". Fix: new `boolFlagMatch(arg, flag, *target)` helper that consumes bare, `=true`, `=1`, `=false`, `=0` forms. Replaces the four existing case branches in both parsers so the two entry points stay in lockstep. Regression test `TestParseProviderArgs_BoolFlagEqualsForm` — 7 table-driven cases covering all forms plus the "unknown --flag=value stays in passthrough" invariant. (commit `5847a8e`)
+
 ### Cycle 94 — `--json=true` / `--json=false` now parsed at error boundary
 
 - [x] Real user-workflow bug caught by manual end-to-end test. urfave/cli accepts all of `--json`, `--json=true`, `--json=false`, `--json=1`, `--json=0` for BoolFlag. But the top-level `Execute()` error path in `root.go` scans `os.Args` directly (urfave's parsed value is unreachable from the os.Exit path) and only matched the bare `--json` form. Result: `hams --json=true apply --store=/nope` silently emitted the text error instead of the JSON object users expect from scripts. Fix: extracted `hasJSONFlag(args)` helper handling all five forms with right-wins semantics (matching urfave/cli). Nine-case table-driven test `TestHasJSONFlag_AllForms` covers the full grid including "embedded in other args doesn't match" (e.g., `--jsonx` negative case). `internal/cli` coverage: 59.1% → 59.7%. (commit `ac20935`)
