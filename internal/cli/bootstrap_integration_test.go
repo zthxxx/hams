@@ -3,6 +3,7 @@
 package cli
 
 import (
+	"context"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -61,7 +62,7 @@ func TestIntegration_BootstrapFromRepo_LocalGitRepo(t *testing.T) {
 		DataHome:   filepath.Join(root, "data"),
 	}
 
-	storePath, err := bootstrapFromRepo(repoDir, paths)
+	storePath, err := bootstrapFromRepo(context.Background(), repoDir, paths)
 	if err != nil {
 		t.Fatalf("bootstrapFromRepo: %v", err)
 	}
@@ -142,7 +143,7 @@ func TestIntegration_BootstrapFromRepo_CloneLocal(t *testing.T) {
 		DataHome:   filepath.Join(root, "data"),
 	}
 
-	storePath, err := bootstrapFromRepo("file://"+bareDir, paths)
+	storePath, err := bootstrapFromRepo(context.Background(), "file://"+bareDir, paths)
 	if err != nil {
 		t.Fatalf("bootstrapFromRepo bare: %v", err)
 	}

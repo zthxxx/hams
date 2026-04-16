@@ -148,7 +148,7 @@ func runApply(ctx context.Context, flags *provider.GlobalFlags, registry *provid
 	}
 	if effectiveFromRepo != "" {
 		slog.Info("from-repo specified", "repo", effectiveFromRepo)
-		resolvedPath, done, resolveErr := resolveFromRepoStorePath(effectiveFromRepo, paths, flags.DryRun)
+		resolvedPath, done, resolveErr := resolveFromRepoStorePath(ctx, effectiveFromRepo, paths, flags.DryRun)
 		if resolveErr != nil {
 			return fmt.Errorf("bootstrap from repo: %w", resolveErr)
 		}
