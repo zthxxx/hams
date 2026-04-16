@@ -187,6 +187,10 @@ Spec corrections:
 
 Total commits in cycle 2: 15+ (still growing — iteration 3 adds hooks+OTel defer).
 
+### Cycle 72 — `--from-repo` friendly error for missing remote repo
+
+- [x] **Real UX confusion**: go-git reports missing public GitHub repos as "authentication required: Repository not found" — users chased credential issues when the real cause was a typo in the URL. Detect the "Repository not found" substring and emit a targeted UserFacingError with three suggestions (verify URL / configure git credentials for private / use absolute path for local). Other go-git errors still propagate verbatim. (commit `35443f5`)
+
 ### Cycle 71 — `list --json` adds spec-required `name` field
 
 - [x] **Spec drift**: cli-architecture §"List in JSON format" says each element SHALL contain `provider`, `name`, `status`, `version`. My prior `listResource` had `id` (the full URN like `urn:hams:apt:htop`) but no short `name` — JSON consumers had to parse URNs themselves. Added `name` field via new `shortName(id)` helper that strips the `urn:hams:<provider>:` prefix; `id` retained for scripts that want the unique handle. Regression test covers 7 cases including bare names and malformed URNs. (commit `03dacc2`)
