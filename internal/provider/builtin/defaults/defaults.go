@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"log/slog"
 	"os/exec"
-	"path/filepath"
 	"strings"
 
 	"github.com/zthxxx/hams/internal/config"
@@ -109,7 +108,12 @@ func (p *Provider) List(_ context.Context, desired *hamsfile.File, sf *state.Fil
 	return provider.FormatDiff(&diff), nil
 }
 
-// HandleCommand processes CLI subcommands for defaults.
+// HandleCommand processes CLI subcommands for defaults. The two
+// recognized shapes — `defaults write <domain> <key> -<type> <value>`
+// and `defaults delete <domain> <key>` — are auto-recorded into the
+// hamsfile and state so subsequent `hams apply` runs reproduce the
+// mutation. Other `defaults` verbs (e.g., `read`, `domains`) are
+// passed through to the real binary without bookkeeping.
 func (p *Provider) HandleCommand(ctx context.Context, args []string, hamsFlags map[string]string, flags *provider.GlobalFlags) error {
 	if len(args) < 3 {
 		return hamserr.NewUserError(hamserr.ExitUsageError,
@@ -118,53 +122,144 @@ func (p *Provider) HandleCommand(ctx context.Context, args []string, hamsFlags m
 		)
 	}
 
+	verb := args[0]
+	switch verb {
+	case "write":
+		return p.handleWrite(ctx, args, hamsFlags, flags)
+	case "delete":
+		return p.handleDelete(ctx, args, hamsFlags, flags)
+	}
+
 	if flags.DryRun {
 		fmt.Printf("[dry-run] Would run: defaults %s\n", strings.Join(args, " "))
 		return nil
 	}
-
 	cmd := exec.CommandContext(ctx, cliName, args...) //nolint:gosec // defaults args from CLI input
-	if err := cmd.Run(); err != nil {
-		return err
-	}
-
-	if len(args) >= 5 && args[0] == "write" {
-		p.recordPreviewCmd(args, hamsFlags, flags)
-	}
-
-	return nil
+	return cmd.Run()
 }
 
-// recordPreviewCmd saves the preview-cmd field to the hamsfile for a defaults write.
-func (p *Provider) recordPreviewCmd(args []string, hamsFlags map[string]string, flags *provider.GlobalFlags) {
-	if p.cfg == nil || p.cfg.StorePath == "" {
-		return
+// handleWrite executes `defaults write` via the CmdRunner and records
+// the resulting (domain, key, type, value) tuple into the hamsfile
+// and state. A re-write with the same domain+key but a different
+// value replaces the old hamsfile entry in place (old → StateRemoved,
+// new → StateOK) so the hamsfile stays single-valued per key.
+func (p *Provider) handleWrite(ctx context.Context, args []string, hamsFlags map[string]string, flags *provider.GlobalFlags) error {
+	if len(args) < 5 {
+		return hamserr.NewUserError(hamserr.ExitUsageError,
+			"defaults write requires: write <domain> <key> -<type> <value>",
+			"Usage: hams defaults write com.apple.dock autohide -bool true",
+		)
 	}
 
 	domain := args[1]
 	key := args[2]
 	typeStr := strings.TrimPrefix(args[3], "-")
 	value := args[4]
+
+	if flags.DryRun {
+		fmt.Printf("[dry-run] Would run: defaults %s\n", strings.Join(args, " "))
+		return nil
+	}
+
+	if err := p.runner.Write(ctx, domain, key, typeStr, value); err != nil {
+		return err
+	}
+
 	resourceID := fmt.Sprintf("%s.%s=%s:%s", domain, key, typeStr, value)
 	previewCmd := "defaults " + strings.Join(args, " ")
+	return p.recordWrite(resourceID, previewCmd, domain, key, value, hamsFlags, flags)
+}
 
-	suffix := ".hams.yaml"
-	if _, ok := hamsFlags["local"]; ok {
-		suffix = ".hams.local.yaml"
+// handleDelete executes `defaults delete` via the CmdRunner and
+// removes the matching hamsfile entry (by `<domain>.<key>` prefix),
+// marking the state resource as StateRemoved.
+func (p *Provider) handleDelete(ctx context.Context, args []string, hamsFlags map[string]string, flags *provider.GlobalFlags) error {
+	if len(args) < 3 {
+		return hamserr.NewUserError(hamserr.ExitUsageError,
+			"defaults delete requires: delete <domain> <key>",
+			"Usage: hams defaults delete com.apple.dock autohide",
+		)
 	}
 
-	cfg := p.effectiveConfig(flags)
-	path := filepath.Join(cfg.ProfileDir(), cliName+suffix)
-	hf, err := hamsfile.Read(path)
+	domain := args[1]
+	key := args[2]
+
+	if flags.DryRun {
+		fmt.Printf("[dry-run] Would run: defaults %s\n", strings.Join(args, " "))
+		return nil
+	}
+
+	if err := p.runner.Delete(ctx, domain, key); err != nil {
+		return err
+	}
+
+	return p.recordDelete(domain, key, hamsFlags, flags)
+}
+
+// recordWrite persists an auto-record entry from a `defaults write`
+// invocation. Same-key-different-value invocations remove the stale
+// entry in place so the hamsfile never accumulates out-of-date values
+// for a single (domain, key) pair.
+func (p *Provider) recordWrite(resourceID, previewCmd, domain, key, value string, hamsFlags map[string]string, flags *provider.GlobalFlags) error {
+	hf, err := p.loadOrCreateHamsfile(hamsFlags, flags)
 	if err != nil {
-		slog.Debug("could not load hamsfile for preview-cmd", "path", path, "error", err)
-		return
+		return err
+	}
+	sf := p.loadOrCreateStateFile(flags)
+
+	prefix := domain + "." + key + "="
+	for _, existing := range hf.ListApps() {
+		if existing == resourceID {
+			continue
+		}
+		if strings.HasPrefix(existing, prefix) {
+			hf.RemoveApp(existing)
+			sf.SetResource(existing, state.StateRemoved)
+		}
 	}
 
+	hf.AddApp(tagCLI, resourceID, "")
 	hf.SetPreviewCmd(resourceID, previewCmd)
+	sf.SetResource(resourceID, state.StateOK, state.WithValue(value))
+
 	if writeErr := hf.Write(); writeErr != nil {
-		slog.Debug("could not save preview-cmd", "path", path, "error", writeErr)
+		return writeErr
 	}
+	return sf.Save(p.statePath(flags))
+}
+
+// recordDelete removes any hamsfile entry for (domain, key) and marks
+// the state resource as removed. A delete that matches no hamsfile
+// entry still updates state for auditability.
+func (p *Provider) recordDelete(domain, key string, hamsFlags map[string]string, flags *provider.GlobalFlags) error {
+	hf, err := p.loadOrCreateHamsfile(hamsFlags, flags)
+	if err != nil {
+		return err
+	}
+	sf := p.loadOrCreateStateFile(flags)
+
+	prefix := domain + "." + key + "="
+	removed := false
+	for _, existing := range hf.ListApps() {
+		if strings.HasPrefix(existing, prefix) {
+			hf.RemoveApp(existing)
+			sf.SetResource(existing, state.StateRemoved)
+			removed = true
+		}
+	}
+
+	if !removed {
+		// No matching hamsfile entry. Still record the delete in
+		// state for audit purposes so a future `hams apply` sees the
+		// tombstone and doesn't attempt to re-assert the old value.
+		tombstoneID := prefix
+		sf.SetResource(tombstoneID, state.StateRemoved)
+	}
+
+	if writeErr := hf.Write(); writeErr != nil {
+		return writeErr
+	}
+	return sf.Save(p.statePath(flags))
 }
 
 // effectiveConfig returns the config with flag overrides applied.
