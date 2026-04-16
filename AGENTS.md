@@ -187,6 +187,10 @@ Spec corrections:
 
 Total commits in cycle 2: 15+ (still growing — iteration 3 adds hooks+OTel defer).
 
+### Cycle 56 — `store status` surfaces profile tag, machine-id, git changes
+
+- [x] Spec drift (cli-architecture §"Store command"): spec required `hams store status` to display profile tag, machine-id, and git status; impl only printed store path + derived profile/state dirs + hamsfile count. Added explicit `Profile tag:` / `Machine ID:` lines and a conditional `Git status:` line (clean / N changes / fail-open on non-git stores). 5s timeout on the git call guards against hangs. (commit `979c012`)
+
 ### Cycle 55 — `list` distinguishes empty-state from filter-excluded-all
 
 - [x] `hams list --status=hook-failed` against a store with 5 tracked resources (none in that status) printed "No managed resources found. Run 'hams install ...'" — misleading because the user HAS resources. Added `hadAnyResources` tracker; split the final output into two branches (truly-empty vs. filter-matched-zero) with appropriate hints. (commit `dc28d96`)
