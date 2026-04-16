@@ -100,3 +100,83 @@ func contains(haystack, needle string) bool {
 	}
 	return false
 }
+
+// TestIsPlatformsMatch_EmptyMatchesAll pins the "no platform filter
+// means compatible everywhere" contract. Providers with empty
+// Platforms lists MUST dispatch on every OS — a change that breaks
+// this would silently hide every such provider.
+func TestIsPlatformsMatch_EmptyMatchesAll(t *testing.T) {
+	t.Parallel()
+	if !IsPlatformsMatch(nil) {
+		t.Error("IsPlatformsMatch(nil) = false, want true (empty filter matches all)")
+	}
+	if !IsPlatformsMatch([]Platform{}) {
+		t.Error("IsPlatformsMatch([]) = false, want true (empty filter matches all)")
+	}
+}
+
+// TestIsPlatformsMatch_PlatformAllWildcard asserts the PlatformAll
+// sentinel always matches regardless of runtime.GOOS.
+func TestIsPlatformsMatch_PlatformAllWildcard(t *testing.T) {
+	t.Parallel()
+	if !IsPlatformsMatch([]Platform{PlatformAll}) {
+		t.Error("PlatformAll should match any GOOS")
+	}
+}
+
+// TestIsPlatformsMatch_EmptyStringTreatedAsWildcard asserts that a
+// literal empty-string Platform entry is treated identically to
+// PlatformAll. This matches the YAML-loader's default behavior for
+// unset `if:` fields.
+func TestIsPlatformsMatch_EmptyStringTreatedAsWildcard(t *testing.T) {
+	t.Parallel()
+	if !IsPlatformsMatch([]Platform{Platform("")}) {
+		t.Error(`IsPlatformsMatch([""]) = false, want true (empty-string treated as wildcard)`)
+	}
+}
+
+// TestIsPlatformsMatch_NonMatchingPlatformFalse asserts a platform
+// filter that names only OSes the current runtime isn't returns
+// false. Using a clearly-bogus platform name avoids runtime.GOOS
+// dependence in the test.
+func TestIsPlatformsMatch_NonMatchingPlatformFalse(t *testing.T) {
+	t.Parallel()
+	if IsPlatformsMatch([]Platform{Platform("plan9")}) {
+		t.Error("IsPlatformsMatch([plan9]) should be false on this runtime")
+	}
+}
+
+// TestHasAny_Nil and the other three TestHasAny_* tests cover each
+// branch of HookSet.HasAny — previously at 66.7% coverage with no
+// direct tests (indirectly exercised through other hooks tests).
+func TestHasAny_Nil(t *testing.T) {
+	t.Parallel()
+	var hs *HookSet
+	if hs.HasAny() {
+		t.Error("nil HookSet.HasAny() = true, want false")
+	}
+}
+
+func TestHasAny_EmptyHookSet(t *testing.T) {
+	t.Parallel()
+	hs := &HookSet{}
+	if hs.HasAny() {
+		t.Error("empty HookSet.HasAny() = true, want false")
+	}
+}
+
+func TestHasAny_PreInstallOnly(t *testing.T) {
+	t.Parallel()
+	hs := &HookSet{PreInstall: []Hook{{Command: "echo pre"}}}
+	if !hs.HasAny() {
+		t.Error("HookSet with PreInstall.HasAny() = false, want true")
+	}
+}
+
+func TestHasAny_PostUpdateOnly(t *testing.T) {
+	t.Parallel()
+	hs := &HookSet{PostUpdate: []Hook{{Command: "echo post"}}}
+	if !hs.HasAny() {
+		t.Error("HookSet with PostUpdate.HasAny() = false, want true")
+	}
+}
