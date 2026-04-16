@@ -245,7 +245,7 @@ groups:
 
 #### Script-Type Item Schema
 
-For script-type providers (bash, defaults, duti, git-config, system, file, ansible):
+For script-type providers (bash, defaults, duti, git-config, ansible):
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
