@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"os/exec"
+	"slices"
 	"strings"
 	"testing"
 
@@ -77,4 +78,75 @@ func TestBootstrap_ScriptMatchesManifest(t *testing.T) {
 		t.Errorf("BootstrapRequiredError.Script does not match manifest: %q vs %q",
 			brerr.Script, manifestScript)
 	}
+}
+
+// After install.sh runs, the brew binary sits in /opt/homebrew/bin
+// (Apple Silicon) or /home/linuxbrew/.linuxbrew/bin (Linuxbrew) — not
+// on the hams process's $PATH. Bootstrap MUST augment $PATH and
+// re-check, or the --bootstrap flow bails with "still unavailable
+// after bootstrap" on every fresh Mac/Linux install.
+func TestBootstrap_PathAugmentationAfterInstall(t *testing.T) {
+	p := New(&config.Config{})
+	origLookup := brewBinaryLookup
+	origAugment := envPathAugment
+	defer func() {
+		brewBinaryLookup = origLookup
+		envPathAugment = origAugment
+	}()
+
+	var augmentCalls [][]string
+	var pathAugmented bool
+
+	brewBinaryLookup = func(string) (string, error) {
+		if pathAugmented {
+			return "/opt/homebrew/bin/brew", nil
+		}
+		return "", exec.ErrNotFound
+	}
+	envPathAugment = func(paths []string) {
+		augmentCalls = append(augmentCalls, paths)
+		pathAugmented = true
+	}
+
+	if err := p.Bootstrap(context.Background()); err != nil {
+		t.Fatalf("Bootstrap should succeed after PATH augmentation; got %v", err)
+	}
+	if len(augmentCalls) != 1 {
+		t.Fatalf("envPathAugment should be called exactly once; got %d calls", len(augmentCalls))
+	}
+	if !containsAll(augmentCalls[0], []string{"/opt/homebrew/bin", "/home/linuxbrew/.linuxbrew/bin"}) {
+		t.Errorf("augment list should include /opt/homebrew/bin AND /home/linuxbrew/.linuxbrew/bin; got %v", augmentCalls[0])
+	}
+}
+
+// When PATH augmentation doesn't surface brew either, Bootstrap must
+// still return the actionable BootstrapRequiredError (not swallow the
+// error silently). This guards the "install.sh succeeded but dropped
+// brew somewhere weird" edge case.
+func TestBootstrap_PathAugmentationStillMissingSignalsConsent(t *testing.T) {
+	p := New(&config.Config{})
+	origLookup := brewBinaryLookup
+	origAugment := envPathAugment
+	defer func() {
+		brewBinaryLookup = origLookup
+		envPathAugment = origAugment
+	}()
+
+	brewBinaryLookup = func(string) (string, error) { return "", exec.ErrNotFound }
+	envPathAugment = func([]string) {}
+
+	err := p.Bootstrap(context.Background())
+	var brerr *provider.BootstrapRequiredError
+	if !errors.As(err, &brerr) {
+		t.Fatalf("expected BootstrapRequiredError even after failed augmentation, got %T (%v)", err, err)
+	}
+}
+
+func containsAll(haystack, needles []string) bool {
+	for _, n := range needles {
+		if !slices.Contains(haystack, n) {
+			return false
+		}
+	}
+	return true
 }

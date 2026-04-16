@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"maps"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"slices"
@@ -61,15 +62,58 @@ func (p *Provider) Manifest() provider.Manifest {
 // host's real PATH. Production value is exec.LookPath.
 var brewBinaryLookup = exec.LookPath
 
+// brewInstallLocations are the canonical directories where the official
+// `install.sh` drops the brew binary. After a fresh install.sh, the
+// user's login shell would source `brew shellenv` and pick these up,
+// but the hams process's own $PATH won't have them — so we prepend them
+// here on the retry path. Order matches what `install.sh` itself checks.
+var brewInstallLocations = []string{
+	"/opt/homebrew/bin",              // macOS Apple Silicon
+	"/usr/local/bin",                 // macOS Intel (usually already on $PATH)
+	"/home/linuxbrew/.linuxbrew/bin", // Linuxbrew
+}
+
+// envPathAugment is the env-mutation seam Bootstrap uses to surface a
+// post-install-sh brew onto the process $PATH. Swapped in tests to
+// assert path augmentation without mutating the test harness's env.
+// Production value mutates the live process env via os.Setenv.
+var envPathAugment = func(additions []string) {
+	existing := os.Getenv("PATH")
+	for _, dir := range additions {
+		if strings.Contains(existing, dir) {
+			continue
+		}
+		existing = dir + string(os.PathListSeparator) + existing
+	}
+	if err := os.Setenv("PATH", existing); err != nil {
+		slog.Warn("failed to set PATH for brew lookup", "error", err)
+	}
+}
+
 // Bootstrap reports whether brew is installed. A missing binary is
 // signaled via provider.BootstrapRequiredError (which wraps
 // provider.ErrBootstrapRequired); the CLI orchestrator decides whether to
 // run the manifest-declared install script based on --bootstrap / TTY
 // prompt. Bootstrap itself NEVER executes a network install.
+//
+// On a retry after RunBootstrap succeeded, we proactively prepend the
+// canonical install locations to $PATH before the second LookPath —
+// otherwise users on a fresh Mac/Linux would hit "still unavailable
+// after bootstrap" because `install.sh` writes to /opt/homebrew/bin
+// (or linuxbrew equivalent), which the hams process never sourced.
 func (p *Provider) Bootstrap(_ context.Context) error {
 	if _, err := brewBinaryLookup("brew"); err == nil {
 		return nil
 	}
+	// Fallback: maybe install.sh just ran and brew is sitting in one of
+	// the canonical locations but not on our $PATH. Augment and retry.
+	envPathAugment(brewInstallLocations)
+	if _, err := brewBinaryLookup("brew"); err == nil {
+		slog.Info("Homebrew found after PATH augmentation",
+			"paths", strings.Join(brewInstallLocations, ":"))
+		return nil
+	}
+
 	manifest := p.Manifest()
 	script := ""
 	if len(manifest.DependsOn) > 0 {
