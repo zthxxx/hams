@@ -11,6 +11,41 @@ import (
 	"github.com/zthxxx/hams/internal/sudo"
 )
 
+// TestStoreStatus_MissingStorePath locks in cycle-69: when the
+// configured store_path points at a non-existent directory, status
+// must emit a loud "(does NOT exist)" indicator, NOT print the
+// derived paths as if the store were just empty.
+func TestStoreStatus_MissingStorePath(t *testing.T) {
+	// Build a config pointing at a store that doesn't exist.
+	configHome := t.TempDir()
+	dataHome := t.TempDir()
+	t.Setenv("HAMS_CONFIG_HOME", configHome)
+	t.Setenv("HAMS_DATA_HOME", dataHome)
+	ghostStore := filepath.Join(t.TempDir(), "ghost-store")
+	writeApplyTestFile(t, filepath.Join(configHome, "hams.config.yaml"),
+		"profile_tag: t\nmachine_id: m\nstore_path: "+ghostStore+"\n")
+
+	got := captureStdout(t, func() {
+		app := NewApp(provider.NewRegistry(), sudo.NoopAcquirer{})
+		if err := app.Run(context.Background(), []string{"hams", "store", "status"}); err != nil {
+			t.Fatalf("store status: %v", err)
+		}
+	})
+
+	if !strings.Contains(got, "does NOT exist") {
+		t.Errorf("expected 'does NOT exist' indicator; got:\n%s", got)
+	}
+	// The actionable suggestions should both appear.
+	if !strings.Contains(got, "hams store init") {
+		t.Errorf("expected 'hams store init' suggestion; got:\n%s", got)
+	}
+	// Profile tag / machine id should NOT print — the full status
+	// block is skipped when the store doesn't exist.
+	if strings.Contains(got, "Profile tag:") {
+		t.Errorf("status block should be suppressed when store missing; got:\n%s", got)
+	}
+}
+
 // TestStoreStatus_SpecCompliantOutput asserts cycle-56: `hams store
 // status` emits the four spec-required lines (store path, profile
 // tag, machine-id, uncommitted changes). Previously profile tag +
