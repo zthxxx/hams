@@ -817,7 +817,8 @@ func printDryRunActions(name, displayName string, actions []provider.Action) {
 	}
 	fmt.Printf("[dry-run] %s (%s):\n", displayName, name)
 	if len(installs) == 0 && len(updates) == 0 && len(removes) == 0 {
-		fmt.Printf("  no changes (%d resources already at desired state)\n", len(skips))
+		fmt.Printf("  no changes (%d %s already at desired state)\n",
+			len(skips), pluralize(len(skips), "resource", "resources"))
 		return
 	}
 	for _, id := range installs {
@@ -830,7 +831,8 @@ func printDryRunActions(name, displayName string, actions []provider.Action) {
 		fmt.Printf("  - remove  %s\n", id)
 	}
 	if len(skips) > 0 {
-		fmt.Printf("  (%d resources unchanged)\n", len(skips))
+		fmt.Printf("  (%d %s unchanged)\n",
+			len(skips), pluralize(len(skips), "resource", "resources"))
 	}
 }
 
