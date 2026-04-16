@@ -187,6 +187,10 @@ Spec corrections:
 
 Total commits in cycle 2: 15+ (still growing — iteration 3 adds hooks+OTel defer).
 
+### Cycle 60 — `store status --json` emits machine-parseable payload
+
+- [x] Matches cycle 59's pattern. Refactored status computation (hamsfiles count, git status, git changes count) into local variables, then branch on flags.JSON. Added `git_changes` as an integer so scripts can detect "any uncommitted changes?" without parsing the string. (commit `6a3db54`)
+
 ### Cycle 59 — `config list --json` emits machine-parseable output
 
 - [x] `--json` global flag was honored by `hams list` and error output, but `hams config list --json` silently printed text. Added a flat JSON object emission covering the same fields as text output. Text path unchanged. (commit `5cfc09e`)
