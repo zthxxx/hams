@@ -656,9 +656,32 @@ func listCmd(registry *provider.Registry) *cli.Command {
 			statusFilter := cmd.String("status")
 			var statusSet map[string]bool
 			if statusFilter != "" {
+				// Validate against the defined ResourceState values so a
+				// typo like --status=failled doesn't silently produce
+				// "no managed resources found" — previously the typo
+				// matched zero resources and looked identical to an empty
+				// store to the user.
+				validStates := map[string]bool{
+					"ok": true, "failed": true, "pending": true,
+					"removed": true, "hook-failed": true,
+				}
 				statusSet = make(map[string]bool)
+				var unknown []string
 				for s := range strings.SplitSeq(statusFilter, ",") {
-					statusSet[strings.TrimSpace(s)] = true
+					trimmed := strings.TrimSpace(s)
+					if trimmed == "" {
+						continue
+					}
+					if !validStates[trimmed] {
+						unknown = append(unknown, trimmed)
+					}
+					statusSet[trimmed] = true
+				}
+				if len(unknown) > 0 {
+					return hamserr.NewUserError(hamserr.ExitUsageError,
+						fmt.Sprintf("unknown status value(s): %s", strings.Join(unknown, ", ")),
+						"Valid statuses: ok, failed, pending, removed, hook-failed",
+					)
 				}
 			}
 
