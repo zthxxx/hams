@@ -187,6 +187,10 @@ Spec corrections:
 
 Total commits in cycle 2: 15+ (still growing — iteration 3 adds hooks+OTel defer).
 
+### Cycle 127 — Dedupe pluralize; fix captureStdout/captureStderr race
+
+- [x] Two cleanups while verifying cycle 126. (1) `hams list` had inline `noun := "resources"; if count == 1 { noun = "resource" }` that duplicated the `pluralize` helper from cycle 125 — replaced. Drops 3 lines. (2) `captureStdout`/`captureStderr` swapped the global `os.Stdout`/`os.Stderr` without synchronization; two `t.Parallel()` tests calling either helper concurrently raced on that global. Go's `-race` detector flagged it during the task-check run after cycle 126. Added per-function mutexes (`captureStdoutMu`, `captureStderrMu`) to serialize the swap, and switched from `t.Cleanup` to `defer` inside the locked section so the restore happens while the lock is held (otherwise Cleanup would run AFTER the unlock and another test could race-restore first). (commit `9e95db4`)
+
 ### Cycle 126 — Dry-run text output uses correct singular grammar
 
 - [x] Extension of cycle 125's pluralize helper to the dry-run preview output (`printDryRunActions`). Two lines had the same bug: `"no changes (1 resources already at desired state)"` and `"(1 resources unchanged)"`. Both now branch on count via `pluralize`. 3 regression tests cover singular (count=1), plural (count=2), and the mixed-install+skip case (`(1 resource unchanged)` after install lines). cli coverage: 67.8% → 68.8%. (commit `a615597`)
