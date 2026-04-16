@@ -333,12 +333,19 @@ func runApply(ctx context.Context, flags *provider.GlobalFlags, registry *provid
 	}
 
 	if flags.DryRun {
-		return printDryRunPlan(sorted, cfg)
+		fmt.Println("[dry-run] Provider execution order:")
+		for i, p := range sorted {
+			fmt.Printf("  %d. %s (%s)\n", i+1, p.Manifest().DisplayName, p.Manifest().Name)
+		}
+		fmt.Println()
 	}
 
 	// Acquire sudo credentials once before any provider operations (after dry-run check).
-	if sudoErr := sudoAcq.Acquire(ctx); sudoErr != nil {
-		slog.Warn("sudo acquisition failed; some providers may fail", "error", sudoErr)
+	// Dry-run skips sudo acquisition — no commands will actually run.
+	if !flags.DryRun {
+		if sudoErr := sudoAcq.Acquire(ctx); sudoErr != nil {
+			slog.Warn("sudo acquisition failed; some providers may fail", "error", sudoErr)
+		}
 	}
 
 	var allResults []provider.ExecuteResult
@@ -426,6 +433,14 @@ func runApply(ctx context.Context, flags *provider.GlobalFlags, registry *provid
 			}
 		}
 
+		// Dry-run: print the planned actions per provider and skip
+		// execution. The user sees exactly which resources would be
+		// installed / updated / removed before committing to the real run.
+		if flags.DryRun {
+			printDryRunActions(name, manifest.DisplayName, actions)
+			continue
+		}
+
 		result := provider.Execute(ctx, p, actions, sf)
 		allResults = append(allResults, result)
 
@@ -439,6 +454,13 @@ func runApply(ctx context.Context, flags *provider.GlobalFlags, registry *provid
 
 		slog.Info("provider complete", "provider", name,
 			"installed", result.Installed, "failed", result.Failed, "skipped", result.Skipped)
+	}
+
+	// Dry-run: all providers have been planned and printed; skip
+	// enrichment and the execute-phase summary.
+	if flags.DryRun {
+		fmt.Println("[dry-run] No changes made.")
+		return nil
 	}
 
 	// Run async enrichment for providers that support it, non-blocking.
@@ -583,13 +605,46 @@ func parseCSV(s string) map[string]bool {
 	return m
 }
 
-func printDryRunPlan(providers []provider.Provider, _ *config.Config) error { //nolint:unparam // will return errors when plan details are computed
-	fmt.Println("[dry-run] Provider execution order:")
-	for i, p := range providers {
-		fmt.Printf("  %d. %s (%s)\n", i+1, p.Manifest().DisplayName, p.Manifest().Name)
+// printDryRunActions prints the list of planned actions for one
+// provider in dry-run mode. Groups by action type so the user can
+// quickly scan what install / update / remove operations would run.
+func printDryRunActions(name, displayName string, actions []provider.Action) {
+	var installs, updates, removes, skips []string
+	for _, a := range actions {
+		id := a.ID
+		if a.Resource != nil {
+			if token, ok := a.Resource.(string); ok && token != "" {
+				id = token
+			}
+		}
+		switch a.Type {
+		case provider.ActionInstall:
+			installs = append(installs, id)
+		case provider.ActionUpdate:
+			updates = append(updates, id)
+		case provider.ActionRemove:
+			removes = append(removes, id)
+		case provider.ActionSkip:
+			skips = append(skips, id)
+		}
 	}
-	fmt.Println("\n[dry-run] No changes made.")
-	return nil
+	fmt.Printf("[dry-run] %s (%s):\n", displayName, name)
+	if len(installs) == 0 && len(updates) == 0 && len(removes) == 0 {
+		fmt.Printf("  no changes (%d resources already at desired state)\n", len(skips))
+		return
+	}
+	for _, id := range installs {
+		fmt.Printf("  + install %s\n", id)
+	}
+	for _, id := range updates {
+		fmt.Printf("  ~ update  %s\n", id)
+	}
+	for _, id := range removes {
+		fmt.Printf("  - remove  %s\n", id)
+	}
+	if len(skips) > 0 {
+		fmt.Printf("  (%d resources unchanged)\n", len(skips))
+	}
 }
 
 // SetupLogging initializes logging from global flags and returns the cleanup function.
