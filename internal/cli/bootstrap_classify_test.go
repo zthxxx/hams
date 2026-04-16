@@ -107,7 +107,9 @@ func TestIsLocalPathAttempt_ExistingDirectoryTrue(t *testing.T) {
 // before the DNS/TCP round-trip, giving a deterministic fast-
 // fail result.
 func TestCloneRemoteRepo_CanceledContextAborts(t *testing.T) {
-	t.Parallel()
+	// NOT Parallel: cloneRemoteRepo reads os.Stdout (for
+	// `Progress: os.Stdout`), which races with captureStdout in
+	// other tests that swap the global.
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
