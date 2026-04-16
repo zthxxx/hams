@@ -173,9 +173,22 @@ func runApply(ctx context.Context, flags *provider.GlobalFlags, registry *provid
 		return fmt.Errorf("loading config: %w", err)
 	}
 
-	// Honor --profile flag override.
+	// Honor --profile flag override. When the user explicitly passes
+	// --profile=X, validate that <store>/X exists — a typo like
+	// `--profile=Linux` (vs "linux") used to produce a misleading
+	// "No providers match: no hamsfile or state file present" + exit 0
+	// instead of "profile directory not found". Symmetric with cycle
+	// 87's store_path validation.
 	if flags.Profile != "" {
 		cfg.ProfileTag = flags.Profile
+		profileDir := cfg.ProfileDir()
+		if info, statErr := os.Stat(profileDir); statErr != nil || !info.IsDir() {
+			return hamserr.NewUserError(hamserr.ExitUsageError,
+				fmt.Sprintf("profile %q not found at %s", flags.Profile, profileDir),
+				"Check available profiles: ls "+storePath,
+				"Or create this profile: mkdir -p "+profileDir,
+			)
+		}
 	}
 
 	if cfg.ProfileTag == "" || cfg.MachineID == "" {

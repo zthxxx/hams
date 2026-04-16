@@ -802,6 +802,12 @@ func TestRunApply_NonTTYWithProfileFlagButNoMachineID(t *testing.T) {
 		"profile_tag: macOS\n")
 	writeApplyTestFile(t, filepath.Join(storeDir, "hams.config.yaml"),
 		"store_path: "+storeDir+"\n")
+	// Create the `linux` profile dir so cycle-92's explicit-profile
+	// validation passes — this test only cares about the machine_id
+	// branch, not profile dir existence.
+	if err := os.MkdirAll(filepath.Join(storeDir, "linux"), 0o750); err != nil {
+		t.Fatalf("mkdir profile: %v", err)
+	}
 
 	flags := &provider.GlobalFlags{Store: storeDir, Profile: "linux"} // override profile_tag; still no machine_id
 	registry := provider.NewRegistry()
@@ -969,5 +975,79 @@ func TestRunApply_StorePathIsFileNotDir(t *testing.T) {
 	}
 	if !strings.Contains(ufe.Message, "is not a directory") {
 		t.Errorf("message should distinguish file vs missing; got %q", ufe.Message)
+	}
+}
+
+// TestRunApply_ExplicitProfileNotFoundEmitsUserError locks in cycle 92:
+// when the user types `hams --profile=Linux apply` (typo) and
+// `<store>/Linux` doesn't exist, runApply MUST surface that with
+// ExitUsageError instead of silently printing "No providers match"
+// + exit 0. Symmetric with cycle 87's store_path validation.
+//
+// The check fires ONLY when flags.Profile is explicitly set —
+// profile_tag coming from config.yaml with no matching directory
+// is treated as "empty profile, nothing to do" (user may not have
+// any hamsfiles yet), which is different from an explicit CLI
+// typo signaling intent.
+func TestRunApply_ExplicitProfileNotFoundEmitsUserError(t *testing.T) {
+	storeDir, _, _, _ := setupApplyTestEnv(t, nil)
+
+	flags := &provider.GlobalFlags{Store: storeDir, Profile: "Linux"}
+	registry := provider.NewRegistry()
+
+	err := runApply(context.Background(), flags, registry,
+		sudo.NoopAcquirer{}, "", true, "", "", false, bootstrapMode{})
+	if err == nil {
+		t.Fatal("expected error when --profile dir doesn't exist; got nil (should not silently skip)")
+	}
+	var ufe *hamserr.UserFacingError
+	if !errors.As(err, &ufe) {
+		t.Fatalf("want *UserFacingError, got %T: %v", err, err)
+	}
+	if ufe.Code != hamserr.ExitUsageError {
+		t.Errorf("Code = %d, want ExitUsageError (%d)", ufe.Code, hamserr.ExitUsageError)
+	}
+	if !strings.Contains(ufe.Message, "Linux") {
+		t.Errorf("message should name the typo'd profile; got %q", ufe.Message)
+	}
+	if !strings.Contains(ufe.Message, "not found") {
+		t.Errorf("message should say the profile isn't found; got %q", ufe.Message)
+	}
+	// Suggestions must teach the user how to enumerate / create profiles.
+	joined := strings.Join(ufe.Suggestions, "\n")
+	if !strings.Contains(joined, "ls ") {
+		t.Errorf("suggestions should point at `ls <store>`; got %v", ufe.Suggestions)
+	}
+	if !strings.Contains(joined, "mkdir") {
+		t.Errorf("suggestions should offer the mkdir path; got %v", ufe.Suggestions)
+	}
+}
+
+// TestRunApply_ConfigProfileSilentlyEmptyIsNotAnError asserts the
+// converse of the cycle-92 check: when profile_tag comes from
+// `hams.config.yaml` (not from an explicit `--profile` flag) AND
+// the profile dir is empty/missing, runApply MUST still succeed
+// with "No providers match" rather than erroring. Users shouldn't
+// be forced to create empty profile dirs just to run apply.
+func TestRunApply_ConfigProfileSilentlyEmptyIsNotAnError(t *testing.T) {
+	// setupApplyTestEnv creates the profile dir at "macOS". We
+	// override cfg's profile_tag via the global config to point at
+	// a profile without a dir, but DON'T pass --profile so the
+	// cycle-92 check doesn't fire.
+	_, _, _, flags := setupApplyTestEnv(t, nil)
+	configHome := os.Getenv("HAMS_CONFIG_HOME")
+
+	// Rewrite global config with profile_tag pointing at "ghost"
+	// (no directory will ever exist at <store>/ghost).
+	globalCfg := filepath.Join(configHome, "hams.config.yaml")
+	writeApplyTestFile(t, globalCfg, "profile_tag: ghost\nmachine_id: test-machine\n")
+
+	// Leave flags.Profile unset so the check is skipped.
+	registry := provider.NewRegistry()
+
+	err := runApply(context.Background(), flags, registry,
+		sudo.NoopAcquirer{}, "", true, "", "", false, bootstrapMode{})
+	if err != nil {
+		t.Fatalf("config-derived empty profile should NOT error; got: %v", err)
 	}
 }
