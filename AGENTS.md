@@ -187,6 +187,10 @@ Spec corrections:
 
 Total commits in cycle 2: 15+ (still growing — iteration 3 adds hooks+OTel defer).
 
+### Cycle 63 — state ResourceOptions + FormatPID tests (72.6% → 84.1%)
+
+- [x] `WithValue`, `WithCheckCmd`, `WithCheckStdout`, `FormatPID` were all at 0%. Added table-driven `TestResourceOptions_Values` covering all three setters, and `TestFormatPID` covering both the bare-int fallback (negative PID) and the `/proc/<pid>/cmdline` happy path via `os.Getpid()`. (commit `7eb825f`)
+
 ### Cycle 62 — i18n Tf nil-localizer fallback (90.7% → 92%)
 
 - [x] `Tf` has an early-return branch when `localizer` is nil (Init not called / failed). Every UI caller depends on it passing through the msgID rather than panicking. Added regression test that swaps `localizer = nil` and asserts the guarantee. (commit `8dac8ad`)
