@@ -29,6 +29,12 @@ const dutiInstallScript = "brew install duti"
 var dutiBinaryLookup = exec.LookPath
 
 // Manifest returns the duti provider metadata.
+//
+// Two DependsOn entries, each with a single purpose (see pnpm.go for
+// the full rationale): one DAG-only entry ordering brew before duti,
+// and one bash-hosted script entry whose install command `brew install
+// duti` calls into the (already-bootstrapped) brew provider at the
+// shell layer. Only `bash` implements provider.BashScriptRunner.
 func (p *Provider) Manifest() provider.Manifest {
 	return provider.Manifest{
 		Name:          "duti",
@@ -36,7 +42,8 @@ func (p *Provider) Manifest() provider.Manifest {
 		Platforms:     []provider.Platform{provider.PlatformDarwin},
 		ResourceClass: provider.ClassKVConfig,
 		DependsOn: []provider.DependOn{
-			{Provider: "brew", Script: dutiInstallScript, Platform: provider.PlatformDarwin},
+			{Provider: "brew", Platform: provider.PlatformDarwin},
+			{Provider: "bash", Script: dutiInstallScript, Platform: provider.PlatformDarwin},
 		},
 		FilePrefix: "duti",
 	}

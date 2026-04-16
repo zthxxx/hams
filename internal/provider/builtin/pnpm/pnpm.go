@@ -36,6 +36,18 @@ const pnpmInstallScript = "npm install -g pnpm"
 var pnpmBinaryLookup = exec.LookPath
 
 // Manifest returns the pnpm provider metadata.
+//
+// Two DependsOn entries, each with a single purpose:
+//
+//   - `{Provider: "npm"}` — DAG ordering only (no Script). Ensures
+//     npm is processed before pnpm across the apply pipeline.
+//   - `{Provider: "bash", Script: ...}` — script host. `bash` is the
+//     only provider that implements `provider.BashScriptRunner`, so
+//     any DependsOn entry with a `.Script` MUST target bash; the
+//     script's own invocation (here `npm install -g pnpm`) is what
+//     calls into npm. Separating these avoids the conflation that
+//     would otherwise make RunBootstrap type-assert an npm provider
+//     to BashScriptRunner and fail.
 func (p *Provider) Manifest() provider.Manifest {
 	return provider.Manifest{
 		Name:          "pnpm",
@@ -43,7 +55,8 @@ func (p *Provider) Manifest() provider.Manifest {
 		Platforms:     []provider.Platform{provider.PlatformAll},
 		ResourceClass: provider.ClassPackage,
 		DependsOn: []provider.DependOn{
-			{Provider: "npm", Package: "pnpm", Script: pnpmInstallScript},
+			{Provider: "npm", Package: "pnpm"},
+			{Provider: "bash", Script: pnpmInstallScript},
 		},
 		FilePrefix: "pnpm",
 	}

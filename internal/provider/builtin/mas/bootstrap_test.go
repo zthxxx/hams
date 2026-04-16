@@ -45,6 +45,9 @@ func TestBootstrap_MasMissingReturnsStructuredError(t *testing.T) {
 }
 
 func TestBootstrap_ScriptMatchesManifest(t *testing.T) {
+	// DependsOn splits DAG ordering (Provider: brew, no Script) from
+	// script host (Provider: bash, with Script). Only bash implements
+	// BashScriptRunner, so the scripted entry's host must be bash.
 	p := New()
 	original := masBinaryLookup
 	defer func() { masBinaryLookup = original }()
@@ -55,8 +58,18 @@ func TestBootstrap_ScriptMatchesManifest(t *testing.T) {
 	if !errors.As(err, &brerr) {
 		t.Fatalf("expected BootstrapRequiredError, got %T", err)
 	}
-	if brerr.Script != p.Manifest().DependsOn[0].Script {
-		t.Errorf("Script mismatch: error=%q manifest=%q",
-			brerr.Script, p.Manifest().DependsOn[0].Script)
+	var manifestScript, scriptHost string
+	for _, dep := range p.Manifest().DependsOn {
+		if dep.Script != "" {
+			manifestScript = dep.Script
+			scriptHost = dep.Provider
+			break
+		}
+	}
+	if brerr.Script != manifestScript {
+		t.Errorf("Script mismatch: error=%q manifest=%q", brerr.Script, manifestScript)
+	}
+	if scriptHost != "bash" {
+		t.Errorf("script host must be 'bash', got %q", scriptHost)
 	}
 }

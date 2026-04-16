@@ -32,6 +32,12 @@ type Provider struct{}
 func New() *Provider { return &Provider{} }
 
 // Manifest returns the mas provider metadata.
+//
+// Two DependsOn entries, each with a single purpose (see pnpm.go for
+// the full rationale): DAG-only entry ordering brew before mas, and
+// a bash-hosted script entry whose install command `brew install mas`
+// calls into brew at the shell layer. Only `bash` implements
+// provider.BashScriptRunner.
 func (p *Provider) Manifest() provider.Manifest {
 	return provider.Manifest{
 		Name:          cliName,
@@ -39,7 +45,8 @@ func (p *Provider) Manifest() provider.Manifest {
 		Platforms:     []provider.Platform{provider.PlatformDarwin},
 		ResourceClass: provider.ClassPackage,
 		DependsOn: []provider.DependOn{
-			{Provider: "brew", Script: masInstallScript, Platform: provider.PlatformDarwin},
+			{Provider: "brew", Platform: provider.PlatformDarwin},
+			{Provider: "bash", Script: masInstallScript, Platform: provider.PlatformDarwin},
 		},
 		FilePrefix: cliName,
 	}

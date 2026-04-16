@@ -67,6 +67,9 @@ func TestBootstrap_ScriptUsesPipxNotPip(t *testing.T) {
 }
 
 func TestBootstrap_ScriptMatchesManifest(t *testing.T) {
+	// The scripted DependsOn entry's host must be bash (only provider
+	// implementing BashScriptRunner). ansible's install invokes pipx
+	// via the shell, so bash is the correct host.
 	p := New()
 	original := ansibleBinaryLookup
 	defer func() { ansibleBinaryLookup = original }()
@@ -77,8 +80,18 @@ func TestBootstrap_ScriptMatchesManifest(t *testing.T) {
 	if !errors.As(err, &brerr) {
 		t.Fatalf("expected BootstrapRequiredError, got %T", err)
 	}
-	if brerr.Script != p.Manifest().DependsOn[0].Script {
-		t.Errorf("Script mismatch: error=%q manifest=%q",
-			brerr.Script, p.Manifest().DependsOn[0].Script)
+	var manifestScript, scriptHost string
+	for _, dep := range p.Manifest().DependsOn {
+		if dep.Script != "" {
+			manifestScript = dep.Script
+			scriptHost = dep.Provider
+			break
+		}
+	}
+	if brerr.Script != manifestScript {
+		t.Errorf("Script mismatch: error=%q manifest=%q", brerr.Script, manifestScript)
+	}
+	if scriptHost != "bash" {
+		t.Errorf("script host must be 'bash', got %q", scriptHost)
 	}
 }

@@ -2811,9 +2811,21 @@ when `pnpm` is not on `$PATH`. The error SHALL carry:
 - `Binary: "pnpm"`
 - `Script: "npm install -g pnpm"`
 
-The pnpm manifest's `DependsOn[0]` SHALL declare `Script: "npm install -g pnpm"`
-so that `provider.RunBootstrap` can execute it under user consent
-(via the `--bootstrap` flag or TTY `[y/N/s]` prompt).
+The pnpm manifest's `DependsOn` SHALL declare two entries with
+single-purpose semantics:
+
+- `{Provider: "npm", Package: "pnpm"}` — DAG ordering only (no
+  `Script`). Ensures npm is processed before pnpm in the apply
+  pipeline.
+- `{Provider: "bash", Script: "npm install -g pnpm"}` — script host.
+  `bash` is the only provider that implements
+  `provider.BashScriptRunner`, so any DependsOn entry with a `.Script`
+  MUST target bash; the script's own invocation is what calls into
+  npm.
+
+`provider.RunBootstrap` can then execute the script under user
+consent (via the `--bootstrap` flag or TTY `[y/N/s]` prompt) by
+delegating to the bash provider's `RunScript` boundary.
 
 When pnpm IS on PATH, `Bootstrap` SHALL return nil as before.
 
@@ -2840,7 +2852,12 @@ The error SHALL carry:
 - `Binary: "duti"`
 - `Script: "brew install duti"`
 
-The duti manifest's `DependsOn` SHALL include `{Provider: "brew", Script: "brew install duti", Platform: darwin}`.
+The duti manifest's `DependsOn` SHALL declare two darwin-gated
+entries: `{Provider: "brew", Platform: darwin}` for DAG ordering
+(brew must be bootstrapped before duti) and `{Provider: "bash",
+Script: "brew install duti", Platform: darwin}` for the script host
+(bash is the only BashScriptRunner; the shell command itself calls
+into brew).
 
 #### Scenario: duti missing produces structured error
 
@@ -2857,7 +2874,10 @@ The error SHALL carry:
 - `Binary: "mas"`
 - `Script: "brew install mas"`
 
-The mas manifest's `DependsOn` SHALL include `{Provider: "brew", Script: "brew install mas", Platform: darwin}`.
+The mas manifest's `DependsOn` SHALL declare two darwin-gated
+entries: `{Provider: "brew", Platform: darwin}` for DAG ordering and
+`{Provider: "bash", Script: "brew install mas", Platform: darwin}`
+for the script host (same rationale as duti).
 
 #### Scenario: mas missing produces structured error
 
@@ -2892,6 +2912,34 @@ chain so users can `apt install pipx` (Debian) / `brew install pipx`
 
 - **WHEN** ansible-playbook is not on `$PATH`
 - **THEN** `Bootstrap` SHALL return `*provider.BootstrapRequiredError` with `Binary: "ansible-playbook"` and `Script: "pipx install --include-deps ansible"`.
+
+### Requirement: DependsOn Script entries must target the bash provider
+
+For every builtin provider manifest, any `DependsOn[i]` entry with a
+non-empty `.Script` field MUST have `.Provider == "bash"`. Rationale:
+`provider.RunBootstrap` looks up `dep.Provider` in the registry and
+type-asserts the looked-up provider to `provider.BashScriptRunner`.
+Only the `bash` builtin implements that interface. Targeting any
+other provider (e.g. `npm`, `brew`) makes RunBootstrap fail at
+`--bootstrap` time with "bootstrap host does not implement
+BashScriptRunner" — a runtime error surfaced exactly on the
+fresh-machine path the consent flow is meant to serve.
+
+DAG-only entries (empty `.Script`, present purely for topological
+ordering via `ResolveDAG`) can target any provider; this invariant
+applies only to scripted entries.
+
+This invariant is enforced by a unit test
+(`cli/bootstrap_invariant_test.go::TestBuiltinManifestScriptHostsAreBash`)
+that iterates every registered builtin's manifest and fails the build
+if a Script entry targets a non-bash host.
+
+#### Scenario: framework invariant enforces bash host
+
+- **WHEN** the test `TestBuiltinManifestScriptHostsAreBash` is run
+- **THEN** it SHALL iterate every registered builtin provider's `Manifest().DependsOn`
+- **AND** for each entry with a non-empty `.Script`, assert `.Provider == "bash"`
+- **AND** fail the test on any non-bash host, naming the offending provider and index.
 
 ### Requirement: Explicit skip-list for bootstrap-unsafe providers
 
