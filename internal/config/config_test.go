@@ -1,6 +1,7 @@
 package config
 
 import (
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -158,6 +159,8 @@ func TestIsSensitiveKey_SubstringMatch(t *testing.T) {
 		{"api_secret", true},
 		{"db_password", true},
 		{"oauth_credential", true},
+		{"api_key", true},        // "key" pattern — required by schema-design spec
+		{"openai_api_key", true}, // compound name with "key"
 		{"profile_tag", false},
 		{"machine_id", false},
 		{"store_path", false},
@@ -290,5 +293,118 @@ func TestLoad_C5_StoreWithoutMachineScopedOk(t *testing.T) {
 	}
 	if len(cfg.ProviderPriority) != 2 || cfg.ProviderPriority[0] != "bash" {
 		t.Errorf("ProviderPriority = %v, want [bash, apt] (from store)", cfg.ProviderPriority)
+	}
+}
+
+// TestReadRawConfigKey_SensitiveFromStoreLocal asserts that sensitive
+// keys (e.g., notification.bark_token) are read from the store-level
+// `hams.config.local.yaml` — matching where `WriteConfigKey` puts them.
+func TestReadRawConfigKey_SensitiveFromStoreLocal(t *testing.T) {
+	configHome := t.TempDir()
+	storeDir := t.TempDir()
+	paths := Paths{ConfigHome: configHome, DataHome: t.TempDir()}
+
+	localPath := filepath.Join(storeDir, "hams.config.local.yaml")
+	writeYAML(t, localPath, "notification.bark_token: mytoken\napi_key: sk-xxx\n")
+
+	value, ok, err := ReadRawConfigKey(paths, storeDir, "notification.bark_token")
+	if err != nil {
+		t.Fatalf("ReadRawConfigKey: %v", err)
+	}
+	if !ok {
+		t.Fatal("expected key to be found")
+	}
+	if value != "mytoken" {
+		t.Errorf("value = %q, want %q", value, "mytoken")
+	}
+}
+
+// TestReadRawConfigKey_UnsetReturnsFalse asserts missing keys return
+// ("", false, nil) — no error, just absence. Enables scripting-friendly
+// `hams config get <unset>` behavior (empty output, exit 0).
+func TestReadRawConfigKey_UnsetReturnsFalse(t *testing.T) {
+	paths := Paths{ConfigHome: t.TempDir(), DataHome: t.TempDir()}
+	value, ok, err := ReadRawConfigKey(paths, t.TempDir(), "notification.bark_token")
+	if err != nil {
+		t.Fatalf("ReadRawConfigKey on missing file: %v", err)
+	}
+	if ok {
+		t.Error("expected ok=false for unset key")
+	}
+	if value != "" {
+		t.Errorf("value = %q, want empty string", value)
+	}
+}
+
+// TestLoad_MalformedGlobalYAMLSurfaces asserts that a malformed global
+// config file returns an error containing the file path, so users can
+// fix the broken file. Previously the error was silently ignored by
+// apply.go's storePath-resolution path, demoting it to a confusing
+// "no store directory configured" message.
+func TestLoad_MalformedGlobalYAMLSurfaces(t *testing.T) {
+	configHome := t.TempDir()
+	globalCfg := filepath.Join(configHome, "hams.config.yaml")
+	writeYAML(t, globalCfg, "not : valid : yaml: at all")
+
+	paths := Paths{ConfigHome: configHome, DataHome: t.TempDir()}
+	_, err := Load(paths, "")
+	if err == nil {
+		t.Fatal("expected error loading malformed YAML")
+	}
+	if !strings.Contains(err.Error(), globalCfg) {
+		t.Errorf("error should reference the broken file path %q; got %q", globalCfg, err.Error())
+	}
+	if !strings.Contains(err.Error(), "yaml") {
+		t.Errorf("error should identify the root cause (yaml parse error); got %q", err.Error())
+	}
+}
+
+// TestLoad_MalformedStoreYAMLSurfaces is the equivalent check for
+// <store>/hams.config.yaml — the error SHALL name the specific file.
+func TestLoad_MalformedStoreYAMLSurfaces(t *testing.T) {
+	configHome := t.TempDir()
+	storeDir := t.TempDir()
+	projectCfg := filepath.Join(storeDir, "hams.config.yaml")
+	writeYAML(t, projectCfg, "not : valid : yaml: at all")
+
+	paths := Paths{ConfigHome: configHome, DataHome: t.TempDir()}
+	_, err := Load(paths, storeDir)
+	if err == nil {
+		t.Fatal("expected error loading malformed store YAML")
+	}
+	if !strings.Contains(err.Error(), projectCfg) {
+		t.Errorf("error should reference the broken store file path %q; got %q", projectCfg, err.Error())
+	}
+}
+
+// TestValidate_WarnsOncePerProcess asserts that repeated Validate() calls
+// with empty profile_tag/machine_id fire at most one slog.Warn per field.
+// Before the once-guard, `hams list` duplicated the warnings 2x per
+// command (once during provider registration, once during command action).
+func TestValidate_WarnsOncePerProcess(t *testing.T) {
+	// Reset to a known clean state; also arrange a buffer to capture logs.
+	ResetValidationWarnOnce()
+	t.Cleanup(ResetValidationWarnOnce)
+
+	var buf strings.Builder
+	prev := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelWarn})))
+	t.Cleanup(func() { slog.SetDefault(prev) })
+
+	c := &Config{StorePath: "/some/store"}
+	for range 5 {
+		if err := c.Validate(); err != nil {
+			t.Fatalf("Validate: %v", err)
+		}
+	}
+
+	out := buf.String()
+	profileCount := strings.Count(out, "profile_tag is empty")
+	machineCount := strings.Count(out, "machine_id is empty")
+	if profileCount != 1 {
+		t.Errorf("profile_tag warning fired %d times, want 1", profileCount)
+	}
+	if machineCount != 1 {
+		t.Errorf("machine_id warning fired %d times, want 1", machineCount)
 	}
 }

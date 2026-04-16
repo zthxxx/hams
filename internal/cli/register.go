@@ -58,13 +58,20 @@ func registerBuiltins(registry *provider.Registry, sudoCmd sudo.CmdBuilder) {
 		bash.New(),
 	}
 
-	// Register all into the provider registry.
+	// Register all into the provider registry. Platform mismatch
+	// (e.g. macOS-only `duti` on Linux) is silently skipped by
+	// registry.Register. Apply the SAME platform check before
+	// exposing the provider as a CLI subcommand, so `hams --help`
+	// and the dispatch path agree with the internal registry —
+	// otherwise Linux users see `defaults`/`duti`/`mas` in help,
+	// try them, and get a confusing exec-not-found error.
 	for _, p := range cliProviders {
 		if err := registry.Register(p); err != nil {
 			slog.Warn("failed to register provider", "provider", p.Manifest().Name, "error", err)
 		}
-		// Same instance for CLI routing.
-		RegisterProvider(p)
+		if provider.IsPlatformsMatch(p.Manifest().Platforms) {
+			RegisterProvider(p)
+		}
 	}
 
 	for _, p := range providerOnly {

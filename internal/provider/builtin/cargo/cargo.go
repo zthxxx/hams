@@ -87,7 +87,7 @@ func (p *Provider) List(_ context.Context, desired *hamsfile.File, sf *state.Fil
 }
 
 // HandleCommand processes CLI subcommands for cargo.
-func (p *Provider) HandleCommand(_ context.Context, args []string, _ map[string]string, flags *provider.GlobalFlags) error {
+func (p *Provider) HandleCommand(ctx context.Context, args []string, _ map[string]string, flags *provider.GlobalFlags) error {
 	verb, remaining := provider.ParseVerb(args)
 
 	switch verb {
@@ -103,15 +103,15 @@ func (p *Provider) HandleCommand(_ context.Context, args []string, _ map[string]
 			fmt.Printf("[dry-run] Would install: cargo install %s\n", strings.Join(remaining, " "))
 			return nil
 		}
-		return provider.WrapExecPassthrough(context.Background(), "cargo", append([]string{"install"}, remaining...), nil)
+		return provider.WrapExecPassthrough(ctx, "cargo", append([]string{"install"}, remaining...), nil)
 	case "remove", "uninstall", "rm":
 		if flags.DryRun {
 			fmt.Printf("[dry-run] Would remove: cargo uninstall %s\n", strings.Join(remaining, " "))
 			return nil
 		}
-		return provider.WrapExecPassthrough(context.Background(), "cargo", append([]string{"uninstall"}, remaining...), nil)
+		return provider.WrapExecPassthrough(ctx, "cargo", append([]string{"uninstall"}, remaining...), nil)
 	default:
-		return provider.WrapExecPassthrough(context.Background(), "cargo", args, nil)
+		return provider.WrapExecPassthrough(ctx, "cargo", args, nil)
 	}
 }
 

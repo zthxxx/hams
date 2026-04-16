@@ -96,7 +96,7 @@ func (p *Provider) List(_ context.Context, desired *hamsfile.File, sf *state.Fil
 }
 
 // HandleCommand processes CLI subcommands for npm.
-func (p *Provider) HandleCommand(_ context.Context, args []string, _ map[string]string, flags *provider.GlobalFlags) error {
+func (p *Provider) HandleCommand(ctx context.Context, args []string, _ map[string]string, flags *provider.GlobalFlags) error {
 	verb, remaining := provider.ParseVerb(args)
 
 	switch verb {
@@ -112,15 +112,15 @@ func (p *Provider) HandleCommand(_ context.Context, args []string, _ map[string]
 			fmt.Printf("[dry-run] Would install: npm install -g %s\n", strings.Join(remaining, " "))
 			return nil
 		}
-		return provider.WrapExecPassthrough(context.Background(), "npm", append([]string{"install"}, remaining...), AutoInjectFlags)
+		return provider.WrapExecPassthrough(ctx, "npm", append([]string{"install"}, remaining...), AutoInjectFlags)
 	case "remove", "uninstall", "rm":
 		if flags.DryRun {
 			fmt.Printf("[dry-run] Would remove: npm uninstall -g %s\n", strings.Join(remaining, " "))
 			return nil
 		}
-		return provider.WrapExecPassthrough(context.Background(), "npm", append([]string{"uninstall"}, remaining...), AutoInjectFlags)
+		return provider.WrapExecPassthrough(ctx, "npm", append([]string{"uninstall"}, remaining...), AutoInjectFlags)
 	default:
-		return provider.WrapExecPassthrough(context.Background(), "npm", args, nil)
+		return provider.WrapExecPassthrough(ctx, "npm", args, nil)
 	}
 }
 

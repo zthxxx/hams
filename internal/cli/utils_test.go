@@ -5,9 +5,11 @@ import (
 	"errors"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/zthxxx/hams/internal/config"
 	hamserr "github.com/zthxxx/hams/internal/error"
 )
 
@@ -136,6 +138,149 @@ func TestPrintError_PlainErrorIsWrapped(t *testing.T) {
 	})
 	if !strings.Contains(got, "Error: something broke") {
 		t.Errorf("plain errors should still produce 'Error: ...' line; got %q", got)
+	}
+}
+
+// TestPrintConfigKey_TypedFields asserts each whitelisted typed
+// field prints the expected Config field; previously 0% coverage.
+func TestPrintConfigKey_TypedFields(t *testing.T) {
+	cfg := &config.Config{
+		ProfileTag: "macOS",
+		MachineID:  "MyMac",
+		StoreRepo:  "user/repo",
+		LLMCLI:     "claude",
+	}
+	paths := config.Paths{ConfigHome: "/x/cfg", DataHome: "/x/data"}
+
+	cases := []struct {
+		key      string
+		contains string
+	}{
+		{"profile_tag", "macOS"},
+		{"machine_id", "MyMac"},
+		{"store_repo", "user/repo"},
+		{"llm_cli", "claude"},
+		{"config_home", "/x/cfg"},
+		{"data_home", "/x/data"},
+	}
+	for _, tc := range cases {
+		got := captureStdout(t, func() {
+			if err := printConfigKey(cfg, paths, "", tc.key); err != nil {
+				t.Fatalf("printConfigKey(%q): %v", tc.key, err)
+			}
+		})
+		if !strings.Contains(got, tc.contains) {
+			t.Errorf("%s: got %q, want to contain %q", tc.key, got, tc.contains)
+		}
+	}
+}
+
+// TestPrintConfigKey_UnknownKeyReturnsUserError asserts typos are
+// rejected with both the whitelist and the sensitive-pattern hint.
+func TestPrintConfigKey_UnknownKeyReturnsUserError(t *testing.T) {
+	t.Parallel()
+	err := printConfigKey(&config.Config{}, config.Paths{}, "", "profile_tg")
+	if err == nil {
+		t.Fatal("expected error for typo key")
+	}
+	var ufe *hamserr.UserFacingError
+	if !errors.As(err, &ufe) {
+		t.Fatalf("expected *UserFacingError, got %T", err)
+	}
+	if len(ufe.Suggestions) != 2 {
+		t.Errorf("want 2 suggestions (whitelist + pattern hint), got %d", len(ufe.Suggestions))
+	}
+}
+
+// TestPrintConfigKey_SensitiveKey_NoFile asserts a sensitive key
+// with no .local.yaml on disk prints nothing (scripting-friendly)
+// and returns nil error.
+func TestPrintConfigKey_SensitiveKey_NoFile(t *testing.T) {
+	t.Parallel()
+	paths := config.Paths{ConfigHome: t.TempDir(), DataHome: t.TempDir()}
+	got := captureStdout(t, func() {
+		if err := printConfigKey(&config.Config{}, paths, "", "notification.bark_token"); err != nil {
+			t.Errorf("unset sensitive key should be silent, got %v", err)
+		}
+	})
+	if got != "" {
+		t.Errorf("output should be empty for unset sensitive key, got %q", got)
+	}
+}
+
+// captureStdout is the stdout twin of captureStderr.
+func captureStdout(t *testing.T, fn func()) string {
+	t.Helper()
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("os.Pipe: %v", err)
+	}
+	original := os.Stdout
+	os.Stdout = w
+	t.Cleanup(func() { os.Stdout = original })
+	fn()
+	if closeErr := w.Close(); closeErr != nil {
+		t.Fatalf("close pipe: %v", closeErr)
+	}
+	var buf bytes.Buffer
+	if _, err := io.Copy(&buf, r); err != nil {
+		t.Fatalf("read pipe: %v", err)
+	}
+	return buf.String()
+}
+
+// TestEnsureStoreIsGitRepo covers the three gates added in cycle 27:
+// a real .git directory passes, a bare-repo HEAD file passes, and
+// anything else returns a UserFacingError with both suggestions.
+func TestEnsureStoreIsGitRepo(t *testing.T) {
+	t.Run("non-bare repo passes", func(t *testing.T) {
+		dir := t.TempDir()
+		if err := os.MkdirAll(filepath.Join(dir, ".git"), 0o750); err != nil {
+			t.Fatalf("mkdir .git: %v", err)
+		}
+		if err := ensureStoreIsGitRepo(dir); err != nil {
+			t.Errorf("expected nil, got %v", err)
+		}
+	})
+	t.Run("bare repo passes", func(t *testing.T) {
+		dir := t.TempDir()
+		if err := os.WriteFile(filepath.Join(dir, "HEAD"), []byte("ref: refs/heads/main\n"), 0o600); err != nil {
+			t.Fatalf("write HEAD: %v", err)
+		}
+		if err := ensureStoreIsGitRepo(dir); err != nil {
+			t.Errorf("expected nil, got %v", err)
+		}
+	})
+	t.Run("plain directory returns UserFacingError", func(t *testing.T) {
+		dir := t.TempDir()
+		err := ensureStoreIsGitRepo(dir)
+		if err == nil {
+			t.Fatal("expected error for non-git dir")
+		}
+		var ufe *hamserr.UserFacingError
+		if !errors.As(err, &ufe) {
+			t.Fatalf("expected *UserFacingError, got %T", err)
+		}
+		if ufe.Code != hamserr.ExitUsageError {
+			t.Errorf("Code = %d, want ExitUsageError", ufe.Code)
+		}
+		if len(ufe.Suggestions) != 2 {
+			t.Errorf("want 2 suggestions (git init, --from-repo), got %d", len(ufe.Suggestions))
+		}
+	})
+}
+
+// TestLocalConfigPath covers the routing helper that cycle 18 added:
+// when storePath is empty, the local config sits under ConfigHome;
+// otherwise it sits in the store.
+func TestLocalConfigPath(t *testing.T) {
+	paths := config.Paths{ConfigHome: "/home/u/.config/hams"}
+
+	if got := localConfigPath(paths, ""); got != "/home/u/.config/hams/hams.config.local.yaml" {
+		t.Errorf("no-store fallback = %q, want the global path", got)
+	}
+	if got := localConfigPath(paths, "/store"); got != "/store/hams.config.local.yaml" {
+		t.Errorf("store-scoped = %q, want '/store/hams.config.local.yaml'", got)
 	}
 }
 

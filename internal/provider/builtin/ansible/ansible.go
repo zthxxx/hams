@@ -116,7 +116,7 @@ func (p *Provider) List(_ context.Context, desired *hamsfile.File, sf *state.Fil
 }
 
 // HandleCommand processes CLI subcommands for ansible.
-func (p *Provider) HandleCommand(_ context.Context, args []string, _ map[string]string, flags *provider.GlobalFlags) error {
+func (p *Provider) HandleCommand(ctx context.Context, args []string, _ map[string]string, flags *provider.GlobalFlags) error {
 	if len(args) == 0 {
 		return hamserr.NewUserError(hamserr.ExitUsageError,
 			"ansible requires a playbook path",
@@ -129,7 +129,7 @@ func (p *Provider) HandleCommand(_ context.Context, args []string, _ map[string]
 		return nil
 	}
 
-	cmd := exec.CommandContext(context.Background(), "ansible-playbook", args...) //nolint:gosec // ansible args from CLI
+	cmd := exec.CommandContext(ctx, "ansible-playbook", args...) //nolint:gosec // ansible args from CLI
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	return cmd.Run()

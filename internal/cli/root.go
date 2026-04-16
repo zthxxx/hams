@@ -6,7 +6,10 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/signal"
 	"path/filepath"
+	"sort"
+	"syscall"
 
 	"github.com/urfave/cli/v3"
 
@@ -63,26 +66,67 @@ Use 'hams apply' to replay all installations from config.`,
 			storeCmd(),
 			listCmd(registry),
 			selfUpgradeCmd(),
+			versionCmd(),
 		},
 		Action: func(_ context.Context, cmd *cli.Command) error {
 			return cli.ShowAppHelp(cmd)
 		},
 	}
 
-	// Add provider commands dynamically.
-	for _, handler := range providerRegistry {
-		h := handler // capture
+	// Add provider commands dynamically, sorted alphabetically so
+	// `hams --help` lists providers in a stable order across runs
+	// (Go map iteration is randomized, which produced a different
+	// provider order every invocation — confusing for users and
+	// breaks reproducible help snapshots in tests/docs).
+	names := make([]string, 0, len(providerRegistry))
+	for n := range providerRegistry {
+		names = append(names, n)
+	}
+	sort.Strings(names)
+	for _, n := range names {
+		h := providerRegistry[n] // capture
 		app.Commands = append(app.Commands, &cli.Command{
 			Name:            h.Name(),
-			Usage:           fmt.Sprintf("Manage %s packages", h.DisplayName()),
+			Usage:           providerUsageDescription(h.Name(), h.DisplayName()),
 			SkipFlagParsing: true,
-			Action: func(_ context.Context, cmd *cli.Command) error {
-				return routeToProvider(h, cmd.Args().Slice(), globalFlags(cmd))
+			Action: func(ctx context.Context, cmd *cli.Command) error {
+				return routeToProvider(ctx, h, cmd.Args().Slice(), globalFlags(cmd))
 			},
 		})
 	}
 
 	return app
+}
+
+// providerUsageDescription returns the help-line text for a provider's
+// `hams <name>` subcommand. Maps each shipped provider to a sensible
+// noun ("packages" / "config entries" / "playbooks" / etc.) instead
+// of the previous one-size-fits-all "Manage X packages" — that
+// default was wrong for the 6 non-package builtins (git-config does
+// NOT manage packages, etc.).
+//
+// Unknown providers (e.g., future external plugins) fall through to
+// the package-class default so the help text is never empty.
+func providerUsageDescription(name, displayName string) string {
+	switch name {
+	case "git-config":
+		return "Manage git config entries"
+	case "git-clone":
+		return "Manage cloned git repositories"
+	case "defaults":
+		return "Manage macOS defaults preferences"
+	case "duti":
+		return "Manage macOS default-app associations"
+	case "bash": //nolint:goconst // provider identifier, same string pattern as the other case labels — extracting a constant for one name would be inconsistent with the rest of the switch
+		return "Run bash provisioning scripts"
+	case "ansible":
+		return "Run Ansible playbooks"
+	case "code-ext":
+		return "Manage VS Code extensions"
+	}
+	// Package-class default (brew, apt, pnpm, npm, uv, goinstall,
+	// cargo, mas) — accurate for installed packages.
+	return fmt.Sprintf("Manage %s packages", displayName)
 }
 
 // Execute runs the root command with all subcommands wired up.
@@ -95,7 +139,15 @@ func Execute() {
 
 	app := NewApp(registry, sudo.NewManager())
 
-	if err := app.Run(context.Background(), os.Args); err != nil {
+	// Root context cancels on SIGINT/SIGTERM so long-running providers
+	// (brew install, apt-get upgrade, etc.) can observe Ctrl+C and
+	// unwind cleanly. stop() must run before os.Exit — defer would not
+	// fire after os.Exit, so we call it explicitly.
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	err := app.Run(ctx, os.Args)
+	stop()
+
+	if err != nil {
 		flags := &provider.GlobalFlags{}
 		// Check if --json was passed.
 		for _, arg := range os.Args {

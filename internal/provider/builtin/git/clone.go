@@ -145,12 +145,12 @@ func (p *CloneProvider) List(_ context.Context, _ *hamsfile.File, sf *state.File
 }
 
 // HandleCommand processes CLI subcommands for git clone.
-func (p *CloneProvider) HandleCommand(_ context.Context, args []string, hamsFlags map[string]string, flags *provider.GlobalFlags) error {
+func (p *CloneProvider) HandleCommand(ctx context.Context, args []string, hamsFlags map[string]string, flags *provider.GlobalFlags) error {
 	verb, remaining := provider.ParseVerb(args)
 
 	switch verb {
 	case "add":
-		return p.handleAdd(remaining, hamsFlags, flags)
+		return p.handleAdd(ctx, remaining, hamsFlags, flags)
 	case "remove":
 		return p.handleRemove(remaining, hamsFlags, flags)
 	case "list":
@@ -166,11 +166,11 @@ func (p *CloneProvider) HandleCommand(_ context.Context, args []string, hamsFlag
 				"       hams git-clone list",
 			)
 		}
-		return p.clonePassthrough(args, flags)
+		return p.clonePassthrough(ctx, args, flags)
 	}
 }
 
-func (p *CloneProvider) handleAdd(args []string, hamsFlags map[string]string, flags *provider.GlobalFlags) error {
+func (p *CloneProvider) handleAdd(ctx context.Context, args []string, hamsFlags map[string]string, flags *provider.GlobalFlags) error {
 	if len(args) == 0 {
 		return hamserr.NewUserError(hamserr.ExitUsageError,
 			"git-clone add requires a remote URL",
@@ -192,7 +192,7 @@ func (p *CloneProvider) handleAdd(args []string, hamsFlags map[string]string, fl
 		return nil
 	}
 
-	cmd := exec.CommandContext(context.Background(), "git", "clone", remote, localPath) //nolint:gosec // git clone from CLI input
+	cmd := exec.CommandContext(ctx, "git", "clone", remote, localPath) //nolint:gosec // git clone from CLI input
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	if err := cmd.Run(); err != nil {
@@ -241,7 +241,7 @@ func (p *CloneProvider) handleRemove(args []string, hamsFlags map[string]string,
 	return nil
 }
 
-func (p *CloneProvider) clonePassthrough(args []string, flags *provider.GlobalFlags) error {
+func (p *CloneProvider) clonePassthrough(ctx context.Context, args []string, flags *provider.GlobalFlags) error {
 	remote := args[0]
 	localPath := args[1]
 
@@ -250,7 +250,7 @@ func (p *CloneProvider) clonePassthrough(args []string, flags *provider.GlobalFl
 		return nil
 	}
 
-	cmd := exec.CommandContext(context.Background(), "git", "clone", remote, localPath) //nolint:gosec // git clone from CLI input
+	cmd := exec.CommandContext(ctx, "git", "clone", remote, localPath) //nolint:gosec // git clone from CLI input
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	return cmd.Run()

@@ -118,7 +118,7 @@ func (p *Provider) List(_ context.Context, desired *hamsfile.File, sf *state.Fil
 }
 
 // HandleCommand processes CLI subcommands for mas.
-func (p *Provider) HandleCommand(_ context.Context, args []string, _ map[string]string, flags *provider.GlobalFlags) error {
+func (p *Provider) HandleCommand(ctx context.Context, args []string, _ map[string]string, flags *provider.GlobalFlags) error {
 	verb, remaining := provider.ParseVerb(args)
 
 	switch verb {
@@ -134,15 +134,15 @@ func (p *Provider) HandleCommand(_ context.Context, args []string, _ map[string]
 			fmt.Printf("[dry-run] Would install: mas install %s\n", strings.Join(remaining, " "))
 			return nil
 		}
-		return provider.WrapExecPassthrough(context.Background(), cliName, append([]string{"install"}, remaining...), nil)
+		return provider.WrapExecPassthrough(ctx, cliName, append([]string{"install"}, remaining...), nil)
 	case "remove", "uninstall", "rm":
 		if flags.DryRun {
 			fmt.Printf("[dry-run] Would remove: mas uninstall %s\n", strings.Join(remaining, " "))
 			return nil
 		}
-		return provider.WrapExecPassthrough(context.Background(), cliName, append([]string{"uninstall"}, remaining...), nil)
+		return provider.WrapExecPassthrough(ctx, cliName, append([]string{"uninstall"}, remaining...), nil)
 	default:
-		return provider.WrapExecPassthrough(context.Background(), cliName, args, nil)
+		return provider.WrapExecPassthrough(ctx, cliName, args, nil)
 	}
 }
 

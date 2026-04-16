@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 
 	"gopkg.in/yaml.v3"
 
@@ -114,13 +115,13 @@ func Load(paths Paths, storePath string) (*Config, error) {
 	if storePath != "" {
 		projectPath := filepath.Join(storePath, "hams.config.yaml")
 		if err := mergeFromStoreFile(cfg, projectPath); err != nil && !os.IsNotExist(err) {
-			return nil, err
+			return nil, fmt.Errorf("loading project config %s: %w", projectPath, err)
 		}
 
 		// Level 4: local overrides (same rejection rule as level 3).
 		localPath := filepath.Join(storePath, "hams.config.local.yaml")
 		if err := mergeFromStoreFile(cfg, localPath); err != nil && !os.IsNotExist(err) {
-			return nil, err
+			return nil, fmt.Errorf("loading local overrides %s: %w", localPath, err)
 		}
 	}
 
@@ -154,6 +155,15 @@ func (c *Config) StateDir() string {
 	return filepath.Join(c.StorePath, ".state", id)
 }
 
+// warnOnceProfileTag and warnOnceMachineID dedup the "using default"
+// warnings so they fire at most once per process, even when config.Load
+// runs multiple times per command (e.g., once during provider registration
+// and again when the command action executes).
+var (
+	warnOnceProfileTag sync.Once
+	warnOnceMachineID  sync.Once
+)
+
 // Validate checks that required configuration fields are set.
 // Returns nil if the configuration is valid for operations that need a store.
 func (c *Config) Validate() error {
@@ -161,13 +171,24 @@ func (c *Config) Validate() error {
 	// ProfileTag and MachineID have defaults, so just warn if empty.
 	if c.StorePath != "" {
 		if c.ProfileTag == "" {
-			slog.Warn("profile_tag is empty, using 'default'")
+			warnOnceProfileTag.Do(func() {
+				slog.Warn("profile_tag is empty, using 'default'")
+			})
 		}
 		if c.MachineID == "" {
-			slog.Warn("machine_id is empty, using 'unknown'")
+			warnOnceMachineID.Do(func() {
+				slog.Warn("machine_id is empty, using 'unknown'")
+			})
 		}
 	}
 	return nil
+}
+
+// ResetValidationWarnOnce resets the once-guards so tests can exercise the
+// warn path repeatedly. Do not call outside tests.
+func ResetValidationWarnOnce() {
+	warnOnceProfileTag = sync.Once{}
+	warnOnceMachineID = sync.Once{}
 }
 
 // sensitiveKeys are config keys that should be written to .local.yaml files.
@@ -176,8 +197,14 @@ var sensitiveKeys = map[string]bool{
 }
 
 // sensitivePatterns are substrings that mark a key as sensitive.
+// Per schema-design spec §"Sensitive Config Key Detection" — keys
+// containing any of these substrings auto-route to hams.config.local.yaml.
+// Note on "key": broad by design; any unusual identifier like "monkey_X"
+// would also match, but the spec explicitly requires this pattern
+// because common API-key key names (api_key, openai_key, etc.) should
+// be caught without requiring each integration to pre-register.
 var sensitivePatterns = []string{
-	"token", "secret", "password", "credential",
+	"token", "key", "secret", "password", "credential",
 }
 
 // IsSensitiveKey returns true if the key should be stored in a .local.yaml file.
@@ -201,6 +228,43 @@ var ValidConfigKeys = []string{"profile_tag", "machine_id", "store_path", "store
 // IsValidConfigKey returns true if the key is a recognized settable config key.
 func IsValidConfigKey(key string) bool {
 	return slices.Contains(ValidConfigKeys, key)
+}
+
+// ReadRawConfigKey reads a single key from the appropriate config file
+// using the same routing as WriteConfigKey: sensitive keys from
+// hams.config.local.yaml (store-local or global fallback), non-sensitive
+// from the global hams.config.yaml. Returns the value + found=true when
+// the key is present, "" + found=false when not. Used by `hams config
+// get` to support arbitrary sensitive keys (e.g., notification.bark_token)
+// that are not fields on the typed Config struct.
+func ReadRawConfigKey(paths Paths, storePath, key string) (value string, found bool, err error) {
+	targetPath := paths.GlobalConfigPath()
+	if IsSensitiveKey(key) {
+		if storePath == "" {
+			targetPath = filepath.Join(paths.ConfigHome, "hams.config.local.yaml")
+		} else {
+			targetPath = filepath.Join(storePath, "hams.config.local.yaml")
+		}
+	}
+
+	data, err := os.ReadFile(targetPath) //nolint:gosec // config paths are user-specified
+	if err != nil {
+		if os.IsNotExist(err) {
+			return "", false, nil
+		}
+		return "", false, fmt.Errorf("reading config %s: %w", targetPath, err)
+	}
+
+	var m map[string]any
+	if err := yaml.Unmarshal(data, &m); err != nil {
+		return "", false, fmt.Errorf("parsing config %s: %w", targetPath, err)
+	}
+
+	raw, ok := m[key]
+	if !ok {
+		return "", false, nil
+	}
+	return fmt.Sprint(raw), true, nil
 }
 
 // WriteConfigKey reads the appropriate config file, updates a single key, and writes it back atomically.

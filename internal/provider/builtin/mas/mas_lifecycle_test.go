@@ -6,6 +6,9 @@ import (
 	"os/exec"
 	"testing"
 
+	"gopkg.in/yaml.v3"
+
+	"github.com/zthxxx/hams/internal/hamsfile"
 	"github.com/zthxxx/hams/internal/provider"
 	"github.com/zthxxx/hams/internal/state"
 )
@@ -194,6 +197,40 @@ func TestU10_Bootstrap_MasMissingReturnsStructuredError(t *testing.T) {
 	}
 	if !errors.Is(err, provider.ErrBootstrapRequired) {
 		t.Errorf("error must wrap ErrBootstrapRequired")
+	}
+}
+
+// TestU11_Plan_WrapsComputePlanWithHooks exercises the previously
+// 0%-covered Plan function: hamsfile with two app URNs should produce
+// two Install actions (observed state is empty). Regression guard
+// against accidental short-circuiting of ComputePlan or
+// PopulateActionHooks.
+func TestU11_Plan_WrapsComputePlanWithHooks(t *testing.T) {
+	t.Parallel()
+	yamlDoc := `
+apps:
+  - urn: urn:hams:mas:497799835
+  - urn: urn:hams:mas:441258766
+`
+	var root yaml.Node
+	if err := yaml.Unmarshal([]byte(yamlDoc), &root); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	hf := &hamsfile.File{Path: "test.yaml", Root: &root}
+
+	p := New(NewFakeCmdRunner())
+	observed := state.New("mas", "test")
+	actions, err := p.Plan(context.Background(), hf, observed)
+	if err != nil {
+		t.Fatalf("Plan: %v", err)
+	}
+	if len(actions) != 2 {
+		t.Fatalf("got %d actions, want 2", len(actions))
+	}
+	for _, a := range actions {
+		if a.Type != provider.ActionInstall {
+			t.Errorf("action %q has Type=%v, want Install", a.ID, a.Type)
+		}
 	}
 }
 

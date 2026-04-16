@@ -13,7 +13,7 @@ import (
 	"time"
 
 	"github.com/urfave/cli/v3"
-	"gopkg.in/yaml.v3"
+	"golang.org/x/term"
 
 	"github.com/zthxxx/hams/internal/config"
 	hamserr "github.com/zthxxx/hams/internal/error"
@@ -21,7 +21,23 @@ import (
 	"github.com/zthxxx/hams/internal/provider"
 	"github.com/zthxxx/hams/internal/selfupdate"
 	"github.com/zthxxx/hams/internal/state"
+	"github.com/zthxxx/hams/internal/version"
 )
+
+// versionCmd exposes the detailed build info (semver, commit, date, OS/arch)
+// via `hams version`. Complements `--version` which returns the brief form;
+// users filing bug reports want the full string. Previously `version.Info()`
+// was defined + unit-tested but had zero callers.
+func versionCmd() *cli.Command {
+	return &cli.Command{
+		Name:  "version",
+		Usage: "Print detailed version information",
+		Action: func(_ context.Context, _ *cli.Command) error {
+			fmt.Println(version.Info())
+			return nil
+		},
+	}
+}
 
 func refreshCmd(registry *provider.Registry) *cli.Command {
 	return &cli.Command{
@@ -154,6 +170,14 @@ func configCmd() *cli.Command {
 					fmt.Printf("Config home:       %s\n", logging.TildePath(paths.ConfigHome))
 					fmt.Printf("Data home:         %s\n", logging.TildePath(paths.DataHome))
 					fmt.Printf("Global config:     %s\n", logging.TildePath(paths.GlobalConfigPath()))
+					// Point users at their local overrides file — sensitive
+					// values (`hams config set notification.bark_token ...`)
+					// land there, and `hams config list` otherwise has no
+					// way to surface arbitrary sensitive keys.
+					localPath := localConfigPath(paths, cfg.StorePath)
+					if localPath != "" {
+						fmt.Printf("Local overrides:   %s\n", logging.TildePath(localPath))
+					}
 					fmt.Printf("Profile tag:       %s\n", cfg.ProfileTag)
 					fmt.Printf("Machine ID:        %s\n", cfg.MachineID)
 					fmt.Printf("Store path:        %s\n", logging.TildePath(cfg.StorePath))
@@ -179,7 +203,7 @@ func configCmd() *cli.Command {
 					if loadErr != nil {
 						return fmt.Errorf("loading config: %w", loadErr)
 					}
-					return printConfigKey(cfg, paths, cmd.Args().First())
+					return printConfigKey(cfg, paths, flags.Store, cmd.Args().First())
 				},
 			},
 			{
@@ -196,10 +220,19 @@ func configCmd() *cli.Command {
 					}
 					key := cmd.Args().Get(0)
 					value := cmd.Args().Get(1)
-					if !config.IsValidConfigKey(key) {
+					// Accept either whitelisted keys OR keys matching a
+					// sensitive pattern (token/secret/password/credential).
+					// The sensitive branch supports deferred integrations
+					// like `notification.bark_token` per schema-design spec
+					// (fix-v1-planning-gaps delta). Without this allowance,
+					// `hams config set notification.bark_token abc` was
+					// rejected despite the spec saying it auto-routes to
+					// hams.config.local.yaml.
+					if !config.IsValidConfigKey(key) && !config.IsSensitiveKey(key) {
 						return hamserr.NewUserError(hamserr.ExitUsageError,
 							fmt.Sprintf("unknown config key %q", key),
 							"Valid keys: "+strings.Join(config.ValidConfigKeys, ", "),
+							"Or use a key containing token/key/secret/password/credential (auto-routes to .local.yaml)",
 						)
 					}
 					flags := globalFlags(cmd)
@@ -252,29 +285,83 @@ func configCmd() *cli.Command {
 	}
 }
 
-func printConfigKey(cfg *config.Config, paths config.Paths, key string) error {
+// ensureStoreIsGitRepo returns a user-facing error when the store is
+// not a git repository — the generic git fatal-output plus
+// "exit status 128" wrapping otherwise surfaces as a confusing error.
+// Actionable: point users at `git init` or `hams apply --from-repo=`.
+func ensureStoreIsGitRepo(storePath string) error {
+	gitDir := filepath.Join(storePath, ".git")
+	if _, err := os.Stat(gitDir); err == nil {
+		return nil
+	}
+	// Also accept bare repos (HEAD at the store root).
+	if _, err := os.Stat(filepath.Join(storePath, "HEAD")); err == nil {
+		return nil
+	}
+	return hamserr.NewUserError(hamserr.ExitUsageError,
+		fmt.Sprintf("store at %s is not a git repository", logging.TildePath(storePath)),
+		"Initialize git in the store: cd "+storePath+" && git init",
+		"Or clone an existing store: hams apply --from-repo=<user/repo>",
+	)
+}
+
+// localConfigPath returns the effective path for hams.config.local.yaml
+// — store-scoped when a store is active, otherwise the global fallback
+// in ConfigHome. Mirrors the routing in config.WriteConfigKey and
+// config.ReadRawConfigKey so `hams config list` points users at the
+// same file that sensitive-key writes land in.
+func localConfigPath(paths config.Paths, storePath string) string {
+	if storePath == "" {
+		return filepath.Join(paths.ConfigHome, "hams.config.local.yaml")
+	}
+	return filepath.Join(storePath, "hams.config.local.yaml")
+}
+
+func printConfigKey(cfg *config.Config, paths config.Paths, storePath, key string) error {
 	switch key {
 	case "profile_tag":
 		fmt.Println(cfg.ProfileTag)
+		return nil
 	case "machine_id":
 		fmt.Println(cfg.MachineID)
+		return nil
 	case "store_path":
 		fmt.Println(logging.TildePath(cfg.StorePath))
+		return nil
 	case "store_repo":
 		fmt.Println(cfg.StoreRepo)
+		return nil
 	case "llm_cli":
 		fmt.Println(cfg.LLMCLI)
+		return nil
 	case "config_home":
 		fmt.Println(logging.TildePath(paths.ConfigHome))
+		return nil
 	case "data_home":
 		fmt.Println(logging.TildePath(paths.DataHome))
-	default:
-		return hamserr.NewUserError(hamserr.ExitUsageError,
-			fmt.Sprintf("unknown config key %q", key),
-			"Valid keys: profile_tag, machine_id, store_path, store_repo, llm_cli, config_home, data_home",
-		)
+		return nil
 	}
-	return nil
+
+	// Arbitrary sensitive keys (e.g., notification.bark_token) aren't
+	// struct fields — read them directly from the routed file so `get`
+	// symmetrically retrieves whatever `set` wrote.
+	if config.IsSensitiveKey(key) {
+		value, ok, err := config.ReadRawConfigKey(paths, storePath, key)
+		if err != nil {
+			return err
+		}
+		if !ok {
+			return nil // key unset → empty output, exit 0 (scripting-friendly)
+		}
+		fmt.Println(value)
+		return nil
+	}
+
+	return hamserr.NewUserError(hamserr.ExitUsageError,
+		fmt.Sprintf("unknown config key %q", key),
+		"Valid keys: profile_tag, machine_id, store_path, store_repo, llm_cli, config_home, data_home",
+		"Or use a key containing token/key/secret/password/credential (reads from .local.yaml)",
+	)
 }
 
 func storeCmd() *cli.Command {
@@ -346,6 +433,26 @@ func storeCmd() *cli.Command {
 						)
 					}
 
+					// Prompt for profile tag when missing AND stdin is a
+					// TTY, per schema-design spec §"Initialize a new store".
+					// Non-TTY (CI, tests) falls back to the default so init
+					// stays scriptable. Persist the answer to the global
+					// config so subsequent `hams apply` doesn't re-prompt.
+					if cfg.ProfileTag == "" && term.IsTerminal(int(os.Stdin.Fd())) { //nolint:gosec // Fd() returns uintptr that fits in int on all supported platforms
+						tag, mid, promptErr := promptProfileInit()
+						if promptErr != nil {
+							return fmt.Errorf("profile init: %w", promptErr)
+						}
+						cfg.ProfileTag = tag
+						cfg.MachineID = mid
+						if writeErr := config.WriteConfigKey(paths, "", "profile_tag", tag); writeErr != nil {
+							slog.Warn("failed to persist profile_tag", "error", writeErr)
+						}
+						if writeErr := config.WriteConfigKey(paths, "", "machine_id", mid); writeErr != nil {
+							slog.Warn("failed to persist machine_id", "error", writeErr)
+						}
+					}
+
 					// Create profile directory.
 					profileDir := cfg.ProfileDir()
 					if mkErr := os.MkdirAll(profileDir, 0o750); mkErr != nil {
@@ -359,24 +466,41 @@ func storeCmd() *cli.Command {
 					}
 
 					// Create initial hams.config.yaml if it does not exist.
+					// Store-level config MUST NOT contain machine-scoped
+					// fields (profile_tag, machine_id) — the caller's
+					// Config carries these from the global layer, but
+					// writing them into the store file would fail
+					// validateStoreScope on the next load. Write a
+					// minimal placeholder and let the user populate it.
 					storeConfigPath := filepath.Join(storePath, "hams.config.yaml")
 					if _, statErr := os.Stat(storeConfigPath); os.IsNotExist(statErr) {
-						initial := config.Config{
-							ProfileTag: cfg.ProfileTag,
-							MachineID:  cfg.MachineID,
-						}
-						data, marshalErr := yaml.Marshal(&initial)
-						if marshalErr != nil {
-							return fmt.Errorf("marshaling initial config: %w", marshalErr)
-						}
-						if writeErr := os.WriteFile(storeConfigPath, data, 0o600); writeErr != nil {
+						const initialYAML = "# hams store project-level config\n" +
+							"# Machine-scoped fields (profile_tag, machine_id) MUST NOT appear here.\n" +
+							"# Set them via 'hams config set' in the global config instead.\n" +
+							"# See openspec/specs/schema-design/spec.md §Project-Level Config Schema.\n"
+						if writeErr := os.WriteFile(storeConfigPath, []byte(initialYAML), 0o600); writeErr != nil {
 							return fmt.Errorf("writing initial config: %w", writeErr)
+						}
+					}
+
+					// Create .gitignore per schema-design spec: hide state
+					// files and *.local.* overrides from git. Idempotent —
+					// skip if user already has one.
+					gitignorePath := filepath.Join(storePath, ".gitignore")
+					if _, statErr := os.Stat(gitignorePath); os.IsNotExist(statErr) {
+						const gi = "# hams store .gitignore — keep private state + local overrides out of the repo\n" +
+							".state/\n" +
+							"*.local.yaml\n" +
+							"*.local.*\n"
+						if writeErr := os.WriteFile(gitignorePath, []byte(gi), 0o600); writeErr != nil {
+							return fmt.Errorf("writing .gitignore: %w", writeErr)
 						}
 					}
 
 					fmt.Printf("Store initialized at %s\n", logging.TildePath(storePath))
 					fmt.Printf("  Profile dir: %s\n", logging.TildePath(profileDir))
 					fmt.Printf("  State dir:   %s\n", logging.TildePath(stateDir))
+					fmt.Printf("  .gitignore:  %s\n", logging.TildePath(gitignorePath))
 					return nil
 				},
 			},
@@ -397,6 +521,10 @@ func storeCmd() *cli.Command {
 							"no store directory configured",
 							"Set store_path in ~/.config/hams/hams.config.yaml",
 						)
+					}
+
+					if err := ensureStoreIsGitRepo(storePath); err != nil {
+						return err
 					}
 
 					gitAdd := exec.CommandContext(ctx, "git", "-C", storePath, "add", "-A") //nolint:gosec // storePath is user-configured
@@ -443,6 +571,10 @@ func storeCmd() *cli.Command {
 							"no store directory configured",
 							"Set store_path in ~/.config/hams/hams.config.yaml",
 						)
+					}
+
+					if err := ensureStoreIsGitRepo(storePath); err != nil {
+						return err
 					}
 
 					gitPull := exec.CommandContext(ctx, "git", "-C", storePath, "pull", "--rebase") //nolint:gosec // storePath is user-configured
@@ -503,6 +635,7 @@ func listCmd(registry *provider.Registry) *cli.Command {
 
 			stateDir := cfg.StateDir()
 			var jsonResults []listResource
+			printedAny := false
 
 			for _, p := range providers {
 				manifest := p.Manifest()
@@ -557,6 +690,7 @@ func listCmd(registry *provider.Registry) *cli.Command {
 						}
 						fmt.Printf("  %-30s %s%s\n", id, status, ver)
 					}
+					printedAny = true
 				}
 			}
 
@@ -569,6 +703,14 @@ func listCmd(registry *provider.Registry) *cli.Command {
 					return fmt.Errorf("marshaling JSON output: %w", marshalErr)
 				}
 				fmt.Println(string(data))
+			} else if !printedAny {
+				// Empty-state message so users know the command worked but
+				// no state files contain resources matching the current
+				// filter. Silent exit 0 was indistinguishable from
+				// "command hung" or "wrong flag".
+				fmt.Println("No managed resources found.")
+				fmt.Println("Run 'hams <provider> install <package>' to start managing resources,")
+				fmt.Println("or 'hams apply' to replay configurations from the store.")
 			}
 
 			return nil
@@ -583,27 +725,31 @@ func selfUpgradeCmd() *cli.Command {
 		Description: `Detects how hams was installed and upgrades accordingly:
 - Binary download: fetches latest from GitHub Releases
 - Homebrew: runs 'brew upgrade hams'`,
-		Action: func(ctx context.Context, _ *cli.Command) error {
-			return runSelfUpgrade(ctx)
+		Action: func(ctx context.Context, cmd *cli.Command) error {
+			return runSelfUpgrade(ctx, globalFlags(cmd))
 		},
 	}
 }
 
-func runSelfUpgrade(ctx context.Context) error {
+func runSelfUpgrade(ctx context.Context, flags *provider.GlobalFlags) error {
 	paths := config.ResolvePaths()
 	channel := selfupdate.DetectChannel(paths)
 
 	switch channel {
 	case selfupdate.ChannelHomebrew:
-		return runHomebrewUpgrade(ctx)
+		return runHomebrewUpgrade(ctx, flags)
 	case selfupdate.ChannelBinary:
-		return runBinaryUpgrade(ctx)
+		return runBinaryUpgrade(ctx, flags)
 	default:
 		return fmt.Errorf("unknown install channel %q", channel)
 	}
 }
 
-func runHomebrewUpgrade(ctx context.Context) error {
+func runHomebrewUpgrade(ctx context.Context, flags *provider.GlobalFlags) error {
+	if flags.DryRun {
+		fmt.Println("[dry-run] Would run: brew upgrade zthxxx/tap/hams")
+		return nil
+	}
 	fmt.Println("Detected Homebrew install, running brew upgrade...")
 	cmd := exec.CommandContext(ctx, "brew", "upgrade", "zthxxx/tap/hams")
 	cmd.Stdin = os.Stdin
@@ -615,7 +761,7 @@ func runHomebrewUpgrade(ctx context.Context) error {
 	return nil
 }
 
-func runBinaryUpgrade(ctx context.Context) error {
+func runBinaryUpgrade(ctx context.Context, flags *provider.GlobalFlags) error {
 	updater := selfupdate.NewUpdater()
 	current := selfupdate.CurrentVersion()
 
@@ -642,6 +788,12 @@ func runBinaryUpgrade(ctx context.Context) error {
 			fmt.Sprintf("no release asset found for %s", wantName),
 			"Download manually from https://github.com/zthxxx/hams/releases",
 		)
+	}
+
+	if flags.DryRun {
+		fmt.Printf("[dry-run] Would download %s and upgrade hams from v%s to v%s\n", wantName, current, release.Version)
+		fmt.Printf("[dry-run]   asset URL: %s\n", downloadURL)
+		return nil
 	}
 
 	fmt.Printf("Downloading %s (v%s -> v%s)...\n", wantName, current, release.Version)

@@ -34,7 +34,7 @@ func RegisterProvider(handler ProviderHandler) {
 
 // routeToProvider dispatches args to the provider handler.
 // Single pass: checks --help, strips global flags, and splits --hams- flags.
-func routeToProvider(handler ProviderHandler, args []string, flags *provider.GlobalFlags) error {
+func routeToProvider(ctx context.Context, handler ProviderHandler, args []string, flags *provider.GlobalFlags) error {
 	hamsFlags, passthrough := parseProviderArgs(args, flags)
 	if hamsFlags == nil {
 		// --help was found.
@@ -49,7 +49,7 @@ func routeToProvider(handler ProviderHandler, args []string, flags *provider.Glo
 		slog.Warn("--hams-lucky is parsed but silently ignored in v1 (LLM enrichment deferred to v1.1)",
 			"provider", handler.Name())
 	}
-	return handler.HandleCommand(context.TODO(), passthrough, hamsFlags, flags)
+	return handler.HandleCommand(ctx, passthrough, hamsFlags, flags)
 }
 
 // parseProviderArgs processes provider args in a single pass:
@@ -121,7 +121,7 @@ func parseProviderArgs(args []string, flags *provider.GlobalFlags) (hamsFlags ma
 }
 
 func showProviderHelp(handler ProviderHandler) error {
-	fmt.Printf("hams %s — Manage %s packages\n\n", handler.Name(), handler.DisplayName())
+	fmt.Printf("hams %s — %s\n\n", handler.Name(), providerUsageDescription(handler.Name(), handler.DisplayName()))
 	fmt.Printf("Usage:\n")
 	fmt.Printf("  hams %s <subcommand> [args] [--hams-flags] [-- passthrough]\n\n", handler.Name())
 	fmt.Printf("Provider subcommands are defined by the %s provider.\n", handler.DisplayName())

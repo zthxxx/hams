@@ -134,7 +134,13 @@ This project uses [OpenSpec](https://openspec.dev) for spec-driven development.
 
 ## Current Task
 
-Ralph Loop: Verification cycle 2 — execute deferred follow-ups from `2026-04-16-verification-findings`
+Ralph Loop: extended autonomous verification (cycles 11–28).
+
+This block logs the cycles that ran after the user instructed the agent to continue verifying/fixing autonomously overnight. Each cycle is a self-contained fix (code or spec) with `task check` passing and an atomic commit. See the per-cycle headings below for specifics.
+
+Status: `task check` passes with 0 lint issues across the full test suite. Coverage gains summary: `internal/cli` 37% → 44%, `internal/config` 74% → 77%, `internal/error` 36% → 100%, `internal/llm` 30% → 81%, `internal/provider/builtin/bash` 51% → 86%, `internal/provider/builtin/homebrew` 45% → 49%, `internal/provider/builtin/ansible` 18% → 77%, `internal/provider/builtin/defaults` 20% → 60%. Real user-facing bugs fixed across CLI ergonomics, context/signal handling, error surfacing, spec-impl reconciliation, and test coverage.
+
+### Completed in cycle 1 (initial audit)
 
 ### Completed in cycle 1
 
@@ -180,6 +186,117 @@ Spec corrections:
 - `goinstall`/`code-ext` naming reconciled across 4 spec files + en/zh-CN docs + README variants (commit 6f9e533).
 
 Total commits in cycle 2: 15+ (still growing — iteration 3 adds hooks+OTel defer).
+
+### Cycle 34 — selfupdate 0%-entry-point tests (68.9% → 76.4%)
+
+- [x] 3 tests for `NewUpdater`, `CurrentVersion`, `LatestRelease`. `LatestRelease` gets a full httptest round-trip asserting both Version and Assets are mapped from the GitHub API JSON — complements the existing `LatestVersion` tests that only covered tag-name extraction. (commit `c19b6c2`)
+
+### Cycle 33 — `printConfigKey` coverage (42.7% → 45.5%)
+
+- [x] 3 tests for the typed-fields switch, typo rejection, and the sensitive-key-no-file silent-exit path. Added a `captureStdout` helper mirroring the existing `captureStderr`. (commit `1bbdd1a`)
+
+### Cycle 32 — `ensureStoreIsGitRepo` + `localConfigPath` tests
+
+- [x] Added unit tests for the two helpers introduced in cycles 18/27 — both were at 0% coverage. 3 subtests for the git-repo check (`.git`, bare HEAD, plain dir), and a simple routing check for the config-path helper. Pure functions, cheap regression guards. (commit `da06d44`)
+
+### Cycle 31 — Plan coverage for remaining 6 providers (batch)
+
+- [x] cargo/goinstall/npm/pnpm/uv/vscodeext all had Plan at 0% despite being called on every apply. Added a uniform `TestPlan_WrapsComputePlanWithHooks` to each (dedicated `plan_test.go` for 5, U10 in cargo's lifecycle file). Coverage gains: cargo 68→71, goinstall 62→64, npm 67→70, pnpm 71→73, uv 70→72, vscodeext 67→69. Every v1 provider's Plan wrapper is now regression-guarded. (commit `97a0be3`)
+
+### Cycle 30 — duti Plan coverage (79.5% → 82.1%)
+
+- [x] TestU11_Plan for duti, matching the mas/ansible/defaults pattern. All 4 macOS-scoped Plan wrappers now covered. (commit `185f760`)
+
+### Cycle 29 — mas Plan coverage (72% → 74%)
+
+- [x] Added `TestU11_Plan_WrapsComputePlanWithHooks` following the cycle 22 pattern for ansible/defaults. Guards against accidental short-circuiting of ComputePlan/PopulateActionHooks in mas's Plan wrapper. (commit `01bdaad`)
+
+### Cycle 28 — `hams self-upgrade` honors `--dry-run`
+
+- [x] Global `--dry-run` advertised but `self-upgrade` ignored it — ran `brew upgrade` or actually downloaded+replaced the binary. Both channels now print a preview (no side effects). Binary path still resolves the latest release (read-only) so it can show "Would upgrade from vA to vB". Threads `*provider.GlobalFlags` end-to-end. (commit `5a31463`)
+
+### Cycle 27 — Friendly error when `store push/pull` runs in a non-git dir
+
+- [x] **Raw git error surfaced**: `hams store push` in a non-git store showed "fatal: not a git repository" + "git add: exit status 128" — user had no idea what to do. Added `ensureStoreIsGitRepo(storePath)` that checks for `.git/` or `HEAD` and returns a UserFacingError with two suggestions (`git init` or `hams apply --from-repo=`). Gate both push and pull. (commit `59ae404`)
+
+### Cycle 26 — Observability spec reconciled with HAMS_OTEL reality
+
+- [x] **Session-creation scenarios said unconditional**: spec said `hams apply` always creates an OTel session; impl requires `HAMS_OTEL=1` (cycle 5 un-deferral). Added a "v1 enablement gate" paragraph + `HAMS_OTEL=1` qualifier on relevant scenarios + new "OTel disabled by default" scenario.
+- [x] **`otel.exporter` config field doesn't exist**: spec had scenarios about `otel.exporter: otlp` in `hams.config.yaml`, but no such field is plumbed through. Marked scenarios as "(v1.1)" and added a "v1 status" note that the file exporter is selected unconditionally. Spec-only change. (commit `e2ba20a`)
+
+### Cycle 25 — `hams store init` prompts for profile tag on TTY
+
+- [x] Spec required prompting for initial profile tag on init; impl silently defaulted to "default". Added TTY-guarded prompt (non-TTY falls through for scriptability). Persists both `profile_tag` and `machine_id` to global config so subsequent apply doesn't re-prompt. Persist-failure degrades to WARN (store still usable). (commit `581575f`)
+
+### Cycle 24 — `hams store init` fixes + .gitignore generation
+
+- [x] **Missing `.gitignore`**: spec requires `.state/` + `*.local.*` patterns to prevent state/local overrides leaking into git. Users would commit machine-id + secrets. Added idempotent `.gitignore` creation on init.
+- [x] **Scope violation latent**: initial store config was a marshaled `Config{}` copying `profile_tag`/`machine_id` from the global layer. For users with profile_tag set globally, init wrote a machine-scoped field into the store file, which then failed `validateStoreScope` on next load. Replaced with a commented placeholder explaining the scope rule. Empty-string noise gone. (commit `c3020ce`)
+
+### Cycle 23 — `hams version` subcommand wires up the detailed build info
+
+- [x] `version.Info()` had zero production callers (scaffolded-but-unwired, same pattern as lucky/TUI/notify but small enough to close fully). Users filing bug reports needed the full "semver (commit) built <date> <goos>/<goarch>" string; `--version` only returned the brief form. Added `hams version` subcommand routing to `version.Info()`. Added `TestNewApp_VersionSubcommandAvailable`. (commit `e3a5d81`)
+
+### Cycle 22 — Plan coverage for ansible + defaults
+
+- [x] Ansible `TestU9_Plan_AttachesPlaybookPathAsResource` (70.5% → 76.9%) — verifies Plan decorates each action.Resource with the URN (string), required by Apply's type assertion.
+- [x] Defaults `TestU10_Plan_WrapsComputePlanWithHooks` (58.6% → 60.4%) — populated + empty subtests. Both previously 0%-covered Plan functions now exercised end-to-end. (commit `b156196`)
+
+### Cycle 21 — Bash Plan + bashParseResources coverage (51% → 86.5%)
+
+- [x] Added `TestPlan_ParsesAndEnrichesActions` — drives the bash provider's Plan → bashParseResources flow with a YAML hamsfile containing two URNs (one with check, one with sudo+remove). Asserts actions enriched with parsed Resource, including sudo-prefix on cached remove command. Biggest v1 coverage jump so far. (commit `413bd6e`)
+
+### Cycle 20 — Homebrew helper coverage (45.2% → 49.3%)
+
+- [x] **4 pure helpers uncovered**: `isTapFormat`, `parseInstallTag`, `packageArgs`, `hasCaskFlag`. Added table-driven tests with edge cases that document intended behavior (e.g., `isTapFormat("user/repo.git") = false`, `parseInstallTag("a,b") = "a"`). No production changes. (commit `03d1955`)
+
+### Cycle 19 — Context propagation through every provider HandleCommand
+
+- [x] **Signal handling broken at provider boundary**: cycle 12 wired SIGINT/SIGTERM into the root context and forwarded it to provider `HandleCommand`, but every single provider dropped the context by calling `exec.CommandContext(context.Background(), …)` or `WrapExecPassthrough(context.Background(), …)`. Ctrl+C during a long `brew install` / `pnpm add` / etc. did nothing. Threaded `ctx` through all 12 v1 providers (ansible, cargo, defaults, duti, git-config, git-clone, goinstall, mas, npm, pnpm, uv, vscodeext). No production code references `context.Background()` anymore. (commit `10f2897`)
+
+### Cycle 18 — `config list` surfaces the local-overrides path
+
+- [x] **Invisible .local.yaml**: after cycles 16/17 users could set/get `notification.bark_token`, but `hams config list` never told them where those values landed. Added a "Local overrides:" line using the same routing helper (`localConfigPath`) as WriteConfigKey/ReadRawConfigKey. Minimal fix — full per-key source-annotated listing per cli-architecture spec §"List all config values" is a larger refactor deferred to a future cycle. (commit `23fff82`)
+
+### Cycle 17 — Symmetric `config get/set` for sensitive keys
+
+- [x] **`config get notification.bark_token` rejected**: users could `set` but not `get` an arbitrary sensitive key — total info asymmetry. Added `config.ReadRawConfigKey(paths, storePath, key)` that uses the same routing as `WriteConfigKey`. `printConfigKey` now falls through to it for sensitive-pattern keys. Returns `(value, found, err)` so callers distinguish "unset" from "error". Tests: `TestReadRawConfigKey_SensitiveFromStoreLocal`, `TestReadRawConfigKey_UnsetReturnsFalse`. (commit `57bfc98`)
+
+### Cycle 16 — Sensitive config key gating matches the schema-design spec
+
+- [x] **`hams config set` accepted only 5 hardcoded keys**: the spec requires `notification.bark_token` (and similar) to auto-route to `hams.config.local.yaml`, but the `set` command rejected any key not in the `ValidConfigKeys` whitelist. Loosened the gate: accept whitelisted keys OR keys matching a sensitive pattern. Typos still rejected. (commit `910165c`)
+- [x] **Missing "key" pattern in `sensitivePatterns`**: schema-design spec lists `token, key, secret, password, credential` but impl only had 4 of them — `api_key` fell through as non-sensitive. Added "key" with an explanatory comment; expanded `TestIsSensitiveKey_SubstringMatch` to cover `api_key` and `openai_api_key`.
+- [x] Manual verification of `hams config set notification.bark_token abc123` and `openai_api_key sk-xxx` confirmed routing + 0600 perms on the `.local.yaml` file.
+
+### Cycle 15 — Platform consistency between internal and CLI registries
+
+- [x] **Platform mismatch leaked into `hams --help`**: internal registry silently skipped `defaults`/`duti`/`mas` on Linux (so `apply --only=defaults` correctly said "unknown provider"), but the CLI dispatch registry advertised them anyway. Linux users saw macOS-only commands in help and then exec-failed with "executable not found". Exported `provider.IsPlatformsMatch`; apply the same platform filter in `registerBuiltins` before calling `RegisterProvider`. Added `TestRegisterBuiltins_FiltersCLIByPlatform` with runtime.GOOS-aware assertions. (commit `d843bfd`)
+
+### Cycle 14 — Malformed YAML errors surface correctly
+
+- [x] **Swallowed config.Load error in `runApply`** — when resolving store path, a malformed `~/.config/hams/hams.config.yaml` was demoted to a generic "no store directory configured" error, hiding the real YAML parse failure. Now propagates the config.Load error as-is. (commit `cbd70f4`)
+- [x] **Store-config errors include the file path** — `mergeFromStoreFile` returned a bare YAML error; `config.Load` now wraps with the project/local file path so users know which file to fix.
+- [x] **Dropped triple-nested error message** — merge.go no longer adds its own "parsing <path>" wrap because the caller already names the path.
+- [x] Regression tests: `TestLoad_MalformedGlobalYAMLSurfaces`, `TestLoad_MalformedStoreYAMLSurfaces`.
+
+### Cycle 13 — UX papercuts surfaced by running `hams list` fresh
+
+- [x] **`hams list` empty-state** — silently exited 0 with no output when zero resources existed. Indistinguishable from a hung command or a silently swallowed error. Added a message pointing users to `hams <provider> install` + `hams apply`. JSON mode unchanged (still `[]`). (commit `c7b1456`)
+- [x] **Dedup `profile_tag`/`machine_id` WARN noise** — `config.Validate()` fired the "using 'default'" warnings on every `Load()`, and `hams list` calls `Load()` twice (once during provider registration, once during the command action). Duplicate log lines confuse users into thinking something is wrong. Guarded with `sync.Once` so each warning fires at most once per process. Exposed `ResetValidationWarnOnce()` for tests; added `TestValidate_WarnsOncePerProcess`. (commit `c7b1456`)
+
+### Cycle 12 — CLI correctness sweep
+
+Four related fixes turned up by following the Cycle 11 help-text audit downstream through the CLI layer (commit `1c41667`):
+
+- [x] **Context propagation** — `routeToProvider` was calling `context.TODO()`, dropping the cancellation context from urfave/cli. Now forwards the real context, so provider handlers see caller cancellation.
+- [x] **SIGINT/SIGTERM handling** — `Execute` now wraps root context with `signal.NotifyContext`; Ctrl+C cancels running provider commands instead of leaving them orphaned. `stop()` runs before `os.Exit`.
+- [x] **Deterministic `hams --help`** — provider subcommand list was in Go-map iteration order (changed every run). Sorted alphabetically before registering. Reproducible output for users and for docs snapshots.
+- [x] **Per-provider help heading fix** — `showProviderHelp` still said "Manage X packages" — same drift as Cycle 11 top-level help. Routed through `providerUsageDescription()`.
+- [x] Regression tests: `TestRouteToProvider_ContextForwarded`, `TestNewApp_ProviderCommandsAreSorted` (20-run determinism check).
+
+### Cycle 11 — UX fix: per-provider help-text Usage descriptions
+
+- [x] **`hams --help` drift**: the per-provider Usage string was hardcoded to `fmt.Sprintf("Manage %s packages", displayName)` for every provider. Wrong for 7 non-package providers (git-config, git-clone, defaults, duti, bash, ansible, code-ext). Introduced `providerUsageDescription(name, displayName)` with per-provider switch + package-class fallback for future external plugins. Added 3 table-driven tests covering all branches (16 cases total) (commit `0545c15`).
 
 ### Cycle 10 — internal/cli coverage gains (utility paths)
 

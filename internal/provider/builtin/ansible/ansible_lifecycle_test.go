@@ -5,6 +5,9 @@ import (
 	"errors"
 	"testing"
 
+	"gopkg.in/yaml.v3"
+
+	"github.com/zthxxx/hams/internal/hamsfile"
 	"github.com/zthxxx/hams/internal/provider"
 	"github.com/zthxxx/hams/internal/state"
 )
@@ -127,6 +130,38 @@ func TestU7_Bootstrap_AnsiblePresentReturnsNil(t *testing.T) {
 	p := New(NewFakeCmdRunner())
 	if err := p.Bootstrap(context.Background()); err != nil {
 		t.Errorf("Bootstrap = %v, want nil", err)
+	}
+}
+
+// U9 — Plan attaches each playbook URN (action.ID) as the action
+// Resource so Apply's Resource→string type assertion succeeds.
+// Regression guard for a previously 0% branch.
+func TestU9_Plan_AttachesPlaybookPathAsResource(t *testing.T) {
+	yamlDoc := `
+playbooks:
+  - urn: urn:hams:ansible:site.yml
+  - urn: urn:hams:ansible:deploy/db.yml
+`
+	var root yaml.Node
+	if err := yaml.Unmarshal([]byte(yamlDoc), &root); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	hf := &hamsfile.File{Path: "test.yaml", Root: &root}
+
+	p := New(NewFakeCmdRunner())
+	observed := state.New("ansible", "test")
+	actions, err := p.Plan(context.Background(), hf, observed)
+	if err != nil {
+		t.Fatalf("Plan: %v", err)
+	}
+	if len(actions) != 2 {
+		t.Fatalf("got %d actions, want 2", len(actions))
+	}
+	for _, a := range actions {
+		got, ok := a.Resource.(string)
+		if !ok || got != a.ID {
+			t.Errorf("action %q: Resource = %v, want string == ID", a.ID, a.Resource)
+		}
 	}
 }
 

@@ -5,6 +5,9 @@ import (
 	"errors"
 	"testing"
 
+	"gopkg.in/yaml.v3"
+
+	"github.com/zthxxx/hams/internal/hamsfile"
 	"github.com/zthxxx/hams/internal/provider"
 	"github.com/zthxxx/hams/internal/state"
 )
@@ -207,6 +210,57 @@ func TestU9_Bootstrap_DelegatesLookPath(t *testing.T) {
 		p := New(nil, NewFakeCmdRunner().WithLookPathError(want))
 		if err := p.Bootstrap(context.Background()); !errors.Is(err, want) {
 			t.Errorf("Bootstrap error = %v, want %v", err, want)
+		}
+	})
+}
+
+// TestU10_Plan_WrapsComputePlanWithHooks drives Plan end-to-end:
+// desired hamsfile → ComputePlan → PopulateActionHooks. Regression
+// guard for a previously 0% branch. Verifies actions are produced
+// and empty hamsfile yields empty actions (not an error).
+func TestU10_Plan_WrapsComputePlanWithHooks(t *testing.T) {
+	t.Parallel()
+
+	t.Run("populated", func(t *testing.T) {
+		t.Parallel()
+		yamlDoc := `
+dock:
+  - urn: urn:hams:defaults:com.apple.dock.autohide=bool:true
+  - urn: urn:hams:defaults:com.apple.dock.tilesize=int:36
+`
+		var root yaml.Node
+		if err := yaml.Unmarshal([]byte(yamlDoc), &root); err != nil {
+			t.Fatalf("unmarshal: %v", err)
+		}
+		hf := &hamsfile.File{Path: "test.yaml", Root: &root}
+
+		p := New(nil, NewFakeCmdRunner())
+		observed := state.New("defaults", "test")
+		actions, err := p.Plan(context.Background(), hf, observed)
+		if err != nil {
+			t.Fatalf("Plan: %v", err)
+		}
+		if len(actions) != 2 {
+			t.Fatalf("got %d actions, want 2", len(actions))
+		}
+		for _, a := range actions {
+			if a.Type != provider.ActionInstall {
+				t.Errorf("action %q has Type=%v, want Install (no observed state)", a.ID, a.Type)
+			}
+		}
+	})
+
+	t.Run("empty", func(t *testing.T) {
+		t.Parallel()
+		empty := &hamsfile.File{Path: "empty.yaml", Root: &yaml.Node{Kind: yaml.DocumentNode}}
+		p := New(nil, NewFakeCmdRunner())
+		observed := state.New("defaults", "test")
+		actions, err := p.Plan(context.Background(), empty, observed)
+		if err != nil {
+			t.Fatalf("Plan(empty): %v", err)
+		}
+		if len(actions) != 0 {
+			t.Errorf("empty hamsfile produced %d actions, want 0", len(actions))
 		}
 	})
 }

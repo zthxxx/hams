@@ -5,6 +5,9 @@ import (
 	"os/exec"
 	"testing"
 
+	"gopkg.in/yaml.v3"
+
+	"github.com/zthxxx/hams/internal/hamsfile"
 	"github.com/zthxxx/hams/internal/provider"
 	"github.com/zthxxx/hams/internal/state"
 )
@@ -220,6 +223,68 @@ func TestRemove_NoCommand(t *testing.T) {
 	err := p.Remove(context.Background(), "some-script")
 	if err != nil {
 		t.Fatalf("Remove without command should be no-op: %v", err)
+	}
+}
+
+// TestPlan_ParsesAndEnrichesActions drives bashParseResources → Plan
+// end to end: a hamsfile with two bash URNs (one with check+sudo, one
+// plain) should produce two Install actions, each enriched with the
+// parsed bashResource. Regression for a previously 0% branch in the
+// bash provider (bashParseResources + Plan).
+func TestPlan_ParsesAndEnrichesActions(t *testing.T) {
+	yamlDoc := `
+install:
+  - urn: urn:hams:bash:zsh-setup
+    run: "echo zsh"
+    check: "test -f ~/.zshrc"
+    sudo: false
+  - urn: urn:hams:bash:dev-tools
+    run: "echo tools"
+    remove: "echo rm-tools"
+    sudo: true
+`
+	var root yaml.Node
+	if err := yaml.Unmarshal([]byte(yamlDoc), &root); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	hf := &hamsfile.File{Path: "test.yaml", Root: &root}
+
+	p := New()
+	observed := state.New("bash", "test")
+	actions, err := p.Plan(context.Background(), hf, observed)
+	if err != nil {
+		t.Fatalf("Plan: %v", err)
+	}
+	if len(actions) != 2 {
+		t.Fatalf("got %d actions, want 2 (one per urn)", len(actions))
+	}
+
+	// Find action by ID (map iteration in ComputePlan is non-deterministic).
+	byID := map[string]provider.Action{}
+	for _, a := range actions {
+		byID[a.ID] = a
+	}
+
+	zsh, ok := byID["urn:hams:bash:zsh-setup"]
+	if !ok {
+		t.Fatalf("zsh-setup action missing; got %v", byID)
+	}
+	res, ok := zsh.Resource.(bashResource)
+	if !ok {
+		t.Fatalf("zsh-setup Resource is %T, want bashResource", zsh.Resource)
+	}
+	if res.Run != "echo zsh" || res.Check != "test -f ~/.zshrc" || res.Sudo {
+		t.Errorf("zsh-setup resource = %+v, want {Run:echo zsh Check:test -f ~/.zshrc Sudo:false}", res)
+	}
+
+	tools := byID["urn:hams:bash:dev-tools"]
+	res = tools.Resource.(bashResource) //nolint:errcheck // test assertion, already verified type above
+	if !res.Sudo || res.Remove != "echo rm-tools" {
+		t.Errorf("dev-tools resource = %+v, want Sudo=true Remove='echo rm-tools'", res)
+	}
+	// sudo: true should prefix the remove command in the cache.
+	if got := p.removeCommands["urn:hams:bash:dev-tools"]; got != "sudo echo rm-tools" {
+		t.Errorf("removeCommands[dev-tools] = %q, want 'sudo echo rm-tools'", got)
 	}
 }
 

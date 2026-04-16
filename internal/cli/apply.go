@@ -79,7 +79,15 @@ func runApply(ctx context.Context, flags *provider.GlobalFlags, registry *provid
 	storePath := flags.Store
 	if storePath == "" {
 		cfg, err := config.Load(paths, "")
-		if err == nil && cfg.StorePath != "" {
+		if err != nil {
+			// Previously this error was swallowed — which meant malformed
+			// YAML in ~/.config/hams/hams.config.yaml was demoted into a
+			// confusing "no store directory configured" message. Surface
+			// the real error so users can fix their config file. Do not
+			// double-wrap: config.Load already labels which file failed.
+			return err
+		}
+		if cfg.StorePath != "" {
 			storePath = cfg.StorePath
 		}
 	}

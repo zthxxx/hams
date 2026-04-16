@@ -2,22 +2,29 @@
 
 ### Requirement: OTel session initialization
 
-The CLI architecture SHALL initialize a lightweight OTel `Session` for instrumented commands (`apply`, `refresh`). The session SHALL provide span and metric collection APIs equivalent to a `TracerProvider` and `MeterProvider`, using a custom in-process model (not the official `go.opentelemetry.io` SDK) to minimize binary size and dependency footprint. The session SHALL export to the local file exporter at shutdown. A future version MAY migrate to the official OTel SDK if OTLP network export is needed.
+The CLI architecture SHALL initialize a lightweight OTel `Session` for instrumented commands (`apply`, `refresh`) when observability is enabled. The session SHALL provide span and metric collection APIs equivalent to a `TracerProvider` and `MeterProvider`, using a custom in-process model (not the official `go.opentelemetry.io` SDK) to minimize binary size and dependency footprint. The session SHALL export to the local file exporter at shutdown. A future version MAY migrate to the official OTel SDK if OTLP network export is needed.
 
-#### Scenario: Session created on hams apply
+**v1 enablement gate**: OTel is opt-in via the `HAMS_OTEL` environment variable (loose-boolean parsing accepts `1`, `true`, `yes`, `on`). When `HAMS_OTEL` is unset or set to a false-y value, no session is created — this keeps apply/refresh zero-overhead for users who don't want observability. A future `hams.config.yaml` field MAY replace or complement the env var (see `otel.exporter` section for the forward-compat plan).
 
-- **WHEN** the user runs `hams apply`
+#### Scenario: Session created on hams apply with HAMS_OTEL=1
+
+- **WHEN** the user runs `HAMS_OTEL=1 hams apply`
 - **THEN** the system creates an OTel `Session` with the local file exporter before any provider executes
 
-#### Scenario: Session created on hams refresh
+#### Scenario: Session created on hams refresh with HAMS_OTEL=1
 
-- **WHEN** the user runs `hams refresh`
+- **WHEN** the user runs `HAMS_OTEL=1 hams refresh`
 - **THEN** the system creates an OTel `Session` identically to `hams apply`
+
+#### Scenario: OTel disabled by default (no HAMS_OTEL)
+
+- **WHEN** the user runs `hams apply` without setting `HAMS_OTEL`
+- **THEN** no OTel session SHALL be created, and no trace or metric files SHALL appear under `${HAMS_DATA_HOME}/otel/`
 
 #### Scenario: OTel disabled for non-instrumented commands
 
 - **WHEN** the user runs a command that does not perform apply or refresh (e.g., `hams version`, `hams config`)
-- **THEN** no OTel session SHALL be created and no trace or metric data SHALL be emitted
+- **THEN** no OTel session SHALL be created and no trace or metric data SHALL be emitted, regardless of `HAMS_OTEL`
 
 ### Requirement: Root span per invocation
 
@@ -125,12 +132,14 @@ The system SHALL export traces and metrics to the local filesystem at `${HAMS_DA
 
 The OTel integration MUST use an internal `Exporter` interface that abstracts the export destination. The local file exporter SHALL be the only implementation in v1. The interface SHOULD be designed so that a future OTLP gRPC/HTTP exporter can be added by providing an alternative implementation selectable via `hams.config.yaml`. Migration to the official OTel SDK contracts (`SpanExporter`, `MetricReader`) MAY occur when OTLP network export is implemented.
 
-#### Scenario: Exporter resolved from config
+**v1 status**: there is no `otel.exporter` config field in v1 — the file exporter is the only option and is selected unconditionally when `HAMS_OTEL=1`. The scenarios below are forward-looking; they document the v1.1 config surface that SHOULD exist once OTLP or additional exporters are added.
+
+#### Scenario (v1.1): Exporter resolved from config
 
 - **WHEN** `hams.config.yaml` does not contain an `otel.exporter` field (or it is set to `file`)
 - **THEN** the system uses the local file exporter
 
-#### Scenario: Unknown exporter value rejected
+#### Scenario (v1.1): Unknown exporter value rejected
 
 - **WHEN** `hams.config.yaml` contains `otel.exporter: otlp`
 - **THEN** the system exits with a clear error message indicating that OTLP export is not supported in this version
