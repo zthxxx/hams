@@ -187,6 +187,10 @@ Spec corrections:
 
 Total commits in cycle 2: 15+ (still growing — iteration 3 adds hooks+OTel defer).
 
+### Cycle 97 — homebrew handleInstall/Remove on CmdRunner seam + U1-U7 tests
+
+- [x] Follow-up to cycle 96. The state-write feature landed but lost coverage (57.8% → 54.8%) because homebrew's `handleInstall` shelled out via `provider.WrapExecPassthrough`, which isn't DI-testable. Fix: switch `handleInstall` and `handleRemove` to drive `p.runner.Install` / `p.runner.Uninstall` per-package (same shape as cargo/npm/pnpm/uv/goinstall/mas/vscodeext); `--cask` flag now routes `isCask=true` through the runner. Extracted `tagCask = "cask"` const (goconst). Added 7 `TestHandleCommand_U*` tests mirroring apt's U1-U7: install records both hamsfile+state, idempotent re-install, install-failure leaves both untouched, remove deletes+marks state removed, remove-failure preserves both, dry-run skips everything, `--cask` routes under "cask" tag AND forwards `isCask=true`. Coverage recovers and tops baseline: 54.8% → 67.5%. (commit `3e06b89`)
+
 ### Cycle 96 — `hams brew install` now writes state (not just hamsfile)
 
 - [x] Closes the homebrew half of CP-1's auto-record gap. `hams brew install git` (cycle 52's work) wrote `Homebrew.hams.yaml` but NOT `Homebrew.state.yaml`, so `hams list --only=brew` returned empty immediately after install because list reads state only — users had to run `hams refresh` to see the resource. Fix: added `statePath` + `loadOrCreateStateFile` helpers (line-for-line port of apt's U12-U15 pattern), updated `handleInstall`/`handleRemove` to load both files, `SetResource(pkg, StateOK/StateRemoved)`, and `Write + Save` in order. Coverage dipped 57.8% → 54.8% because the state-write branch is not yet DI-testable — homebrew's `handleInstall` still uses `provider.WrapExecPassthrough` instead of the CmdRunner seam; switching it is a clean follow-up that lets apt-style U1-U5 tests exercise the path. (commit `0d08ae7`)
