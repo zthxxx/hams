@@ -66,6 +66,13 @@ func runRefresh(ctx context.Context, flags *provider.GlobalFlags, registry *prov
 		)
 	}
 	paths := resolvePaths(flags)
+
+	// Mirror runApply: persist session logs to ${HAMS_DATA_HOME}/<YYYY-MM>/
+	// for refresh too, since it's equally long-running when many
+	// providers are probed in parallel.
+	cleanupLog := SetupLogging(flags)
+	defer cleanupLog()
+
 	cfg, err := config.Load(paths, flags.Store)
 	if err != nil {
 		return fmt.Errorf("loading config: %w", err)

@@ -87,6 +87,16 @@ func runApply(ctx context.Context, flags *provider.GlobalFlags, registry *provid
 
 	paths := resolvePaths(flags)
 
+	// Wire session logging to a file under ${HAMS_DATA_HOME}/<YYYY-MM>/
+	// per logging.Setup. Previously SetupLogging was defined but never
+	// called, so every `hams apply` session ran with the default slog
+	// handler writing to stderr only — users had no rolling log file
+	// even though the spec + docs reference one. Enabling for apply/
+	// refresh only; short commands (`--version`, `config get`) don't
+	// need per-invocation log files.
+	cleanupLog := SetupLogging(flags)
+	defer cleanupLog()
+
 	storePath := flags.Store
 	var configuredRepo string
 	if storePath == "" {
