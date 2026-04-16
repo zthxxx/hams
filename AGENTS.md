@@ -187,6 +187,10 @@ Spec corrections:
 
 Total commits in cycle 2: 15+ (still growing — iteration 3 adds hooks+OTel defer).
 
+### Cycle 50 — Regression test for cycle 49 store_repo resolution
+
+- [x] `TestRunApply_AutoResolvesStoreFromConfigRepo` asserts runApply resolves the store via `store_repo` when no `--from-repo`/`--store`/`store_path` is set. Uses a local bare-repo fixture so the test is network-free. (commit `7bb688f`)
+
 ### Cycle 49 — `store_repo` config field actually used
 
 - [x] **Real spec drift**: schema-design spec lists `store_repo` as a REQUIRED config field that "points to the hams store repository". But the impl only read it back via `config get store_repo` for display — never used it to resolve the store. Users who followed the spec saw "no store configured" despite having it set. Fixed: when no `--from-repo`/`--store`/`store_path` is present, `store_repo` is now treated as the effective `--from-repo` (lowest precedence). (commit `b035a03`)
