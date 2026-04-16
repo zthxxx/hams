@@ -21,7 +21,7 @@ import (
 func TestU1_Apply_InstallsMissingCrate(t *testing.T) {
 	t.Parallel()
 	fake := NewFakeCmdRunner()
-	p := New(fake)
+	p := New(nil, fake)
 
 	const crate = "ripgrep"
 	if err := p.Apply(context.Background(), provider.Action{ID: crate}); err != nil {
@@ -40,7 +40,7 @@ func TestU1_Apply_InstallsMissingCrate(t *testing.T) {
 func TestU2_Apply_IdempotentOnReapply(t *testing.T) {
 	t.Parallel()
 	fake := NewFakeCmdRunner()
-	p := New(fake)
+	p := New(nil, fake)
 
 	const crate = "bat"
 	for range 3 {
@@ -62,7 +62,7 @@ func TestU3_Apply_FailureNotRecorded(t *testing.T) {
 	t.Parallel()
 	wantErr := errors.New("simulated install failure")
 	fake := NewFakeCmdRunner().WithInstallError("flaky-crate", wantErr)
-	p := New(fake)
+	p := New(nil, fake)
 
 	gotErr := p.Apply(context.Background(), provider.Action{ID: "flaky-crate"})
 	if !errors.Is(gotErr, wantErr) {
@@ -78,7 +78,7 @@ func TestU3_Apply_FailureNotRecorded(t *testing.T) {
 func TestU4_Remove_UninstallsCrate(t *testing.T) {
 	t.Parallel()
 	fake := NewFakeCmdRunner().Seed("fd-find", "10.1.0")
-	p := New(fake)
+	p := New(nil, fake)
 
 	if err := p.Remove(context.Background(), "fd-find"); err != nil {
 		t.Fatalf("Remove error: %v", err)
@@ -97,7 +97,7 @@ func TestU5_Remove_FailureLeavesCrateInstalled(t *testing.T) {
 	t.Parallel()
 	wantErr := errors.New("simulated remove failure")
 	fake := NewFakeCmdRunner().Seed("tokei", "12.1.2").WithUninstallError("tokei", wantErr)
-	p := New(fake)
+	p := New(nil, fake)
 
 	gotErr := p.Remove(context.Background(), "tokei")
 	if !errors.Is(gotErr, wantErr) {
@@ -116,7 +116,7 @@ func TestU6_Probe_OKAndFailedClassification(t *testing.T) {
 	fake := NewFakeCmdRunner().
 		Seed("ripgrep", "14.1.0").
 		Seed("bat", "0.24.0")
-	p := New(fake)
+	p := New(nil, fake)
 
 	sf := state.New("cargo", "test-machine")
 	sf.SetResource("ripgrep", state.StateOK) // installed
@@ -152,7 +152,7 @@ func TestU6_Probe_OKAndFailedClassification(t *testing.T) {
 func TestU7_Probe_SkipsRemovedResources(t *testing.T) {
 	t.Parallel()
 	fake := NewFakeCmdRunner()
-	p := New(fake)
+	p := New(nil, fake)
 
 	sf := state.New("cargo", "test-machine")
 	sf.SetResource("removed-crate", state.StateRemoved)
@@ -173,7 +173,7 @@ func TestU8_Probe_PropagatesRunnerError(t *testing.T) {
 	t.Parallel()
 	wantErr := errors.New("cargo not initialized")
 	fake := &erroringFake{listErr: wantErr}
-	p := New(fake)
+	p := New(nil, fake)
 
 	sf := state.New("cargo", "test-machine")
 	sf.SetResource("anything", state.StateOK)
@@ -189,7 +189,7 @@ func TestU9_Bootstrap_DelegatesLookPath(t *testing.T) {
 
 	t.Run("present", func(t *testing.T) {
 		t.Parallel()
-		p := New(NewFakeCmdRunner())
+		p := New(nil, NewFakeCmdRunner())
 		if err := p.Bootstrap(context.Background()); err != nil {
 			t.Errorf("Bootstrap error = %v, want nil", err)
 		}
@@ -198,7 +198,7 @@ func TestU9_Bootstrap_DelegatesLookPath(t *testing.T) {
 	t.Run("missing", func(t *testing.T) {
 		t.Parallel()
 		want := errors.New("cargo not on PATH")
-		p := New(NewFakeCmdRunner().WithLookPathError(want))
+		p := New(nil, NewFakeCmdRunner().WithLookPathError(want))
 		if err := p.Bootstrap(context.Background()); !errors.Is(err, want) {
 			t.Errorf("Bootstrap error = %v, want %v", err, want)
 		}
@@ -239,7 +239,7 @@ crates:
 	}
 	hf := &hamsfile.File{Path: "test.yaml", Root: &root}
 
-	p := New(NewFakeCmdRunner())
+	p := New(nil, NewFakeCmdRunner())
 	observed := state.New("cargo", "test")
 	actions, err := p.Plan(context.Background(), hf, observed)
 	if err != nil {

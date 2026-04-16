@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"strings"
 
+	"github.com/zthxxx/hams/internal/config"
 	hamserr "github.com/zthxxx/hams/internal/error"
 	"github.com/zthxxx/hams/internal/hamsfile"
 	"github.com/zthxxx/hams/internal/provider"
@@ -24,12 +25,18 @@ var AutoInjectFlags = map[string]string{"--global": ""}
 
 // Provider implements the npm package manager provider.
 type Provider struct {
+	cfg    *config.Config
 	runner CmdRunner
 }
 
 // New creates a new npm provider wired with a real CmdRunner.
+// cfg supplies store/profile paths used by the CLI-first auto-record
+// path (`hams npm install <pkg>` writes to the hamsfile after a
+// successful runner call).
 // Pass NewFakeCmdRunner from tests for DI-isolated unit testing.
-func New(runner CmdRunner) *Provider { return &Provider{runner: runner} }
+func New(cfg *config.Config, runner CmdRunner) *Provider {
+	return &Provider{cfg: cfg, runner: runner}
+}
 
 // Manifest returns the npm provider metadata.
 func (p *Provider) Manifest() provider.Manifest {
@@ -96,32 +103,108 @@ func (p *Provider) List(_ context.Context, desired *hamsfile.File, sf *state.Fil
 }
 
 // HandleCommand processes CLI subcommands for npm.
-func (p *Provider) HandleCommand(ctx context.Context, args []string, _ map[string]string, flags *provider.GlobalFlags) error {
+func (p *Provider) HandleCommand(ctx context.Context, args []string, hamsFlags map[string]string, flags *provider.GlobalFlags) error {
 	verb, remaining := provider.ParseVerb(args)
 
 	switch verb {
 	case "install", "i":
-		if len(remaining) == 0 {
-			return hamserr.NewUserError(hamserr.ExitUsageError,
-				"npm install requires a package name",
-				"Usage: hams npm install <package>",
-				"To install all recorded packages, use: hams apply --only=npm",
-			)
-		}
-		if flags.DryRun {
-			fmt.Printf("[dry-run] Would install: npm install -g %s\n", strings.Join(remaining, " "))
-			return nil
-		}
-		return provider.WrapExecPassthrough(ctx, "npm", append([]string{"install"}, remaining...), AutoInjectFlags)
+		return p.handleInstall(ctx, remaining, hamsFlags, flags)
 	case "remove", "uninstall", "rm":
-		if flags.DryRun {
-			fmt.Printf("[dry-run] Would remove: npm uninstall -g %s\n", strings.Join(remaining, " "))
-			return nil
-		}
-		return provider.WrapExecPassthrough(ctx, "npm", append([]string{"uninstall"}, remaining...), AutoInjectFlags)
+		return p.handleRemove(ctx, remaining, hamsFlags, flags)
 	default:
 		return provider.WrapExecPassthrough(ctx, "npm", args, nil)
 	}
+}
+
+// handleInstall runs `npm install -g <pkg>` via the CmdRunner seam and,
+// on success, appends each package to the npm hamsfile so `hams apply`
+// on another machine can restore it. All-or-nothing: any install
+// failure aborts before the hamsfile is touched.
+func (p *Provider) handleInstall(ctx context.Context, args []string, hamsFlags map[string]string, flags *provider.GlobalFlags) error {
+	if len(args) == 0 {
+		return hamserr.NewUserError(hamserr.ExitUsageError,
+			"npm install requires a package name",
+			"Usage: hams npm install <package>",
+			"To install all recorded packages, use: hams apply --only=npm",
+		)
+	}
+	pkgs := packageArgs(args)
+	if len(pkgs) == 0 {
+		return hamserr.NewUserError(hamserr.ExitUsageError,
+			"npm install requires at least one package name",
+			"Usage: hams npm install <package>",
+		)
+	}
+	if flags.DryRun {
+		fmt.Printf("[dry-run] Would install: npm install -g %s\n", strings.Join(args, " "))
+		return nil
+	}
+
+	for _, pkg := range pkgs {
+		if err := p.runner.Install(ctx, pkg); err != nil {
+			return err
+		}
+	}
+
+	hf, err := p.loadOrCreateHamsfile(hamsFlags, flags)
+	if err != nil {
+		return err
+	}
+	for _, pkg := range pkgs {
+		hf.AddApp(tagCLI, pkg, "")
+	}
+	return hf.Write()
+}
+
+// handleRemove runs `npm uninstall -g <pkg>` via the CmdRunner seam
+// and, on success, removes the package from the npm hamsfile.
+func (p *Provider) handleRemove(ctx context.Context, args []string, hamsFlags map[string]string, flags *provider.GlobalFlags) error {
+	if len(args) == 0 {
+		return hamserr.NewUserError(hamserr.ExitUsageError,
+			"npm remove requires a package name",
+			"Usage: hams npm remove <package>",
+		)
+	}
+	pkgs := packageArgs(args)
+	if len(pkgs) == 0 {
+		return hamserr.NewUserError(hamserr.ExitUsageError,
+			"npm remove requires at least one package name",
+			"Usage: hams npm remove <package>",
+		)
+	}
+	if flags.DryRun {
+		fmt.Printf("[dry-run] Would remove: npm uninstall -g %s\n", strings.Join(args, " "))
+		return nil
+	}
+
+	for _, pkg := range pkgs {
+		if err := p.runner.Uninstall(ctx, pkg); err != nil {
+			return err
+		}
+	}
+
+	hf, err := p.loadOrCreateHamsfile(hamsFlags, flags)
+	if err != nil {
+		return err
+	}
+	for _, pkg := range pkgs {
+		hf.RemoveApp(pkg)
+	}
+	return hf.Write()
+}
+
+// packageArgs filters positional tokens from args: flags (leading `-`)
+// are excluded so they don't get recorded as package names. Mirrors
+// apt.packageArgs and cargo.crateArgs.
+func packageArgs(args []string) []string {
+	out := make([]string, 0, len(args))
+	for _, a := range args {
+		if strings.HasPrefix(a, "-") {
+			continue
+		}
+		out = append(out, a)
+	}
+	return out
 }
 
 // Name returns the CLI name.

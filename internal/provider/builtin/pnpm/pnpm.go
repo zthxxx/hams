@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"strings"
 
+	"github.com/zthxxx/hams/internal/config"
 	hamserr "github.com/zthxxx/hams/internal/error"
 	"github.com/zthxxx/hams/internal/hamsfile"
 	"github.com/zthxxx/hams/internal/provider"
@@ -25,12 +26,18 @@ var AutoInjectFlags = map[string]string{"--global": ""}
 
 // Provider implements the pnpm package manager provider.
 type Provider struct {
+	cfg    *config.Config
 	runner CmdRunner
 }
 
 // New creates a new pnpm provider wired with a real CmdRunner.
+// cfg supplies store/profile paths used by the CLI-first auto-record
+// path (`hams pnpm add <pkg>` writes to the hamsfile after a
+// successful runner call).
 // Pass NewFakeCmdRunner from tests for DI-isolated unit testing.
-func New(runner CmdRunner) *Provider { return &Provider{runner: runner} }
+func New(cfg *config.Config, runner CmdRunner) *Provider {
+	return &Provider{cfg: cfg, runner: runner}
+}
 
 // pnpmInstallScript is the consent-gated install command. npm is the
 // host (already on PATH by the time this runs, since pnpm depends on
@@ -139,32 +146,106 @@ func (p *Provider) List(_ context.Context, desired *hamsfile.File, sf *state.Fil
 }
 
 // HandleCommand processes CLI subcommands for pnpm.
-func (p *Provider) HandleCommand(ctx context.Context, args []string, _ map[string]string, flags *provider.GlobalFlags) error {
+func (p *Provider) HandleCommand(ctx context.Context, args []string, hamsFlags map[string]string, flags *provider.GlobalFlags) error {
 	verb, remaining := provider.ParseVerb(args)
 
 	switch verb {
 	case "add", "install", "i":
-		if len(remaining) == 0 {
-			return hamserr.NewUserError(hamserr.ExitUsageError,
-				"pnpm install requires a package name",
-				"Usage: hams pnpm add <package>",
-				"To install all recorded packages, use: hams apply --only=pnpm",
-			)
-		}
-		if flags.DryRun {
-			fmt.Printf("[dry-run] Would install: pnpm add -g %s\n", strings.Join(remaining, " "))
-			return nil
-		}
-		return provider.WrapExecPassthrough(ctx, "pnpm", append([]string{"add"}, remaining...), AutoInjectFlags)
+		return p.handleInstall(ctx, remaining, hamsFlags, flags)
 	case "remove", "rm", "uninstall":
-		if flags.DryRun {
-			fmt.Printf("[dry-run] Would remove: pnpm remove -g %s\n", strings.Join(remaining, " "))
-			return nil
-		}
-		return provider.WrapExecPassthrough(ctx, "pnpm", append([]string{"remove"}, remaining...), AutoInjectFlags)
+		return p.handleRemove(ctx, remaining, hamsFlags, flags)
 	default:
 		return provider.WrapExecPassthrough(ctx, "pnpm", args, nil)
 	}
+}
+
+// handleInstall runs `pnpm add -g <pkg>` via the CmdRunner seam and,
+// on success, appends each package to the pnpm hamsfile. All-or-
+// nothing: any install failure aborts before the hamsfile is touched.
+func (p *Provider) handleInstall(ctx context.Context, args []string, hamsFlags map[string]string, flags *provider.GlobalFlags) error {
+	if len(args) == 0 {
+		return hamserr.NewUserError(hamserr.ExitUsageError,
+			"pnpm install requires a package name",
+			"Usage: hams pnpm add <package>",
+			"To install all recorded packages, use: hams apply --only=pnpm",
+		)
+	}
+	pkgs := packageArgs(args)
+	if len(pkgs) == 0 {
+		return hamserr.NewUserError(hamserr.ExitUsageError,
+			"pnpm install requires at least one package name",
+			"Usage: hams pnpm add <package>",
+		)
+	}
+	if flags.DryRun {
+		fmt.Printf("[dry-run] Would install: pnpm add -g %s\n", strings.Join(args, " "))
+		return nil
+	}
+
+	for _, pkg := range pkgs {
+		if err := p.runner.Install(ctx, pkg); err != nil {
+			return err
+		}
+	}
+
+	hf, err := p.loadOrCreateHamsfile(hamsFlags, flags)
+	if err != nil {
+		return err
+	}
+	for _, pkg := range pkgs {
+		hf.AddApp(tagCLI, pkg, "")
+	}
+	return hf.Write()
+}
+
+// handleRemove runs `pnpm remove -g <pkg>` via the CmdRunner seam and,
+// on success, removes each package from the pnpm hamsfile.
+func (p *Provider) handleRemove(ctx context.Context, args []string, hamsFlags map[string]string, flags *provider.GlobalFlags) error {
+	if len(args) == 0 {
+		return hamserr.NewUserError(hamserr.ExitUsageError,
+			"pnpm remove requires a package name",
+			"Usage: hams pnpm remove <package>",
+		)
+	}
+	pkgs := packageArgs(args)
+	if len(pkgs) == 0 {
+		return hamserr.NewUserError(hamserr.ExitUsageError,
+			"pnpm remove requires at least one package name",
+			"Usage: hams pnpm remove <package>",
+		)
+	}
+	if flags.DryRun {
+		fmt.Printf("[dry-run] Would remove: pnpm remove -g %s\n", strings.Join(args, " "))
+		return nil
+	}
+
+	for _, pkg := range pkgs {
+		if err := p.runner.Uninstall(ctx, pkg); err != nil {
+			return err
+		}
+	}
+
+	hf, err := p.loadOrCreateHamsfile(hamsFlags, flags)
+	if err != nil {
+		return err
+	}
+	for _, pkg := range pkgs {
+		hf.RemoveApp(pkg)
+	}
+	return hf.Write()
+}
+
+// packageArgs filters positional tokens: flags (leading `-`) are
+// excluded so they don't get recorded as package names.
+func packageArgs(args []string) []string {
+	out := make([]string, 0, len(args))
+	for _, a := range args {
+		if strings.HasPrefix(a, "-") {
+			continue
+		}
+		out = append(out, a)
+	}
+	return out
 }
 
 // Name returns the CLI name.

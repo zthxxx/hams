@@ -481,3 +481,46 @@ func TestValidate_WarnsOncePerProcess(t *testing.T) {
 		t.Errorf("machine_id warning fired %d times, want 1", machineCount)
 	}
 }
+
+// TestLoad_StorePathTildeExpansion locks in cycle 85: when a user
+// writes `store_path: ~/Project/hams-store` in the global config, the
+// loaded cfg.StorePath MUST be the expanded absolute path. Previously,
+// the literal `~` became a path component that never matched the real
+// home directory — silently producing "No providers match" on every
+// run because os.Stat(profileDir) always failed.
+func TestLoad_StorePathTildeExpansion(t *testing.T) {
+	configHome := t.TempDir()
+	fakeHome := t.TempDir()
+	t.Setenv("HOME", fakeHome)
+
+	// Write a config with ~-prefixed store_path.
+	globalPath := filepath.Join(configHome, "hams.config.yaml")
+	if err := os.WriteFile(globalPath, []byte("store_path: ~/my-store\n"), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	paths := Paths{ConfigHome: configHome, DataHome: t.TempDir()}
+	cfg, err := Load(paths, "")
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	want := filepath.Join(fakeHome, "my-store")
+	if cfg.StorePath != want {
+		t.Errorf("cfg.StorePath = %q, want %q (tilde expansion)", cfg.StorePath, want)
+	}
+}
+
+// TestExpandHome_NoTildePrefix asserts paths without a leading `~/`
+// are returned unchanged (avoid surprising mid-path expansions).
+func TestExpandHome_NoTildePrefix(t *testing.T) {
+	t.Parallel()
+	for _, input := range []string{"/abs/path", "relative/path", "", "~somelogin/path"} {
+		got, err := expandHome(input)
+		if err != nil {
+			t.Errorf("expandHome(%q): %v", input, err)
+		}
+		if got != input {
+			t.Errorf("expandHome(%q) = %q, want unchanged", input, got)
+		}
+	}
+}

@@ -18,7 +18,7 @@ import (
 func TestU1_Apply_AutoInjectsLatest(t *testing.T) {
 	t.Parallel()
 	fake := NewFakeCmdRunner()
-	p := New(fake)
+	p := New(nil, fake)
 
 	const bare = "github.com/example/tool"
 	if err := p.Apply(context.Background(), provider.Action{ID: bare}); err != nil {
@@ -34,7 +34,7 @@ func TestU1_Apply_AutoInjectsLatest(t *testing.T) {
 func TestU2_Apply_PreservesExplicitVersion(t *testing.T) {
 	t.Parallel()
 	fake := NewFakeCmdRunner()
-	p := New(fake)
+	p := New(nil, fake)
 
 	const pinned = "github.com/example/tool@v1.2.3"
 	if err := p.Apply(context.Background(), provider.Action{ID: pinned}); err != nil {
@@ -54,7 +54,7 @@ func TestU3_Apply_FailureNotRecorded(t *testing.T) {
 	wantErr := errors.New("simulated install failure")
 	const pkg = "github.com/example/flaky"
 	fake := NewFakeCmdRunner().WithInstallError(pkg+"@latest", wantErr)
-	p := New(fake)
+	p := New(nil, fake)
 
 	gotErr := p.Apply(context.Background(), provider.Action{ID: pkg})
 	if !errors.Is(gotErr, wantErr) {
@@ -66,7 +66,7 @@ func TestU3_Apply_FailureNotRecorded(t *testing.T) {
 // no native uninstall command).
 func TestU4_Remove_IsNoOp(t *testing.T) {
 	t.Parallel()
-	p := New(NewFakeCmdRunner())
+	p := New(nil, NewFakeCmdRunner())
 	if err := p.Remove(context.Background(), "github.com/example/tool"); err != nil {
 		t.Errorf("Remove should always return nil; got %v", err)
 	}
@@ -77,7 +77,7 @@ func TestU4_Remove_IsNoOp(t *testing.T) {
 func TestU5_Probe_OKAndFailedClassification(t *testing.T) {
 	t.Parallel()
 	fake := NewFakeCmdRunner().Seed("github.com/example/installed-tool")
-	p := New(fake)
+	p := New(nil, fake)
 
 	sf := state.New("goinstall", "test-machine")
 	sf.SetResource("github.com/example/installed-tool", state.StateOK)
@@ -106,7 +106,7 @@ func TestU5_Probe_OKAndFailedClassification(t *testing.T) {
 // U6 — Probe skips StateRemoved entries.
 func TestU6_Probe_SkipsRemovedResources(t *testing.T) {
 	t.Parallel()
-	p := New(NewFakeCmdRunner())
+	p := New(nil, NewFakeCmdRunner())
 	sf := state.New("goinstall", "test-machine")
 	sf.SetResource("github.com/example/removed", state.StateRemoved)
 
@@ -124,7 +124,7 @@ func TestU6_Probe_SkipsRemovedResources(t *testing.T) {
 func TestU7_Probe_OneRunnerCallPerResource(t *testing.T) {
 	t.Parallel()
 	fake := NewFakeCmdRunner().Seed("github.com/a/b").Seed("github.com/c/d")
-	p := New(fake)
+	p := New(nil, fake)
 
 	sf := state.New("goinstall", "test-machine")
 	sf.SetResource("github.com/a/b", state.StateOK)
@@ -145,7 +145,7 @@ func TestU8_Bootstrap_DelegatesLookPath(t *testing.T) {
 
 	t.Run("present", func(t *testing.T) {
 		t.Parallel()
-		p := New(NewFakeCmdRunner())
+		p := New(nil, NewFakeCmdRunner())
 		if err := p.Bootstrap(context.Background()); err != nil {
 			t.Errorf("Bootstrap error = %v, want nil", err)
 		}
@@ -154,7 +154,7 @@ func TestU8_Bootstrap_DelegatesLookPath(t *testing.T) {
 	t.Run("missing", func(t *testing.T) {
 		t.Parallel()
 		want := errors.New("go not on PATH")
-		p := New(NewFakeCmdRunner().WithLookPathError(want))
+		p := New(nil, NewFakeCmdRunner().WithLookPathError(want))
 		if err := p.Bootstrap(context.Background()); !errors.Is(err, want) {
 			t.Errorf("Bootstrap error = %v, want %v", err, want)
 		}

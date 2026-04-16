@@ -141,3 +141,108 @@ func TestRunRefresh_SaveFailure_ReturnsPartialFailure(t *testing.T) {
 		t.Fatalf("expected ExitPartialFailure, got %v (%T)", err, err)
 	}
 }
+
+// TestRunRefresh_ExplicitProfileNotFoundEmitsUserError locks in
+// cycle 93: symmetric to cycle 92's apply fix. `hams --profile=Typo
+// refresh` used to print "No providers match" + exit 0 instead of
+// naming the bad profile. Now it emits ExitUsageError with a clear
+// message identifying the profile and the missing path.
+func TestRunRefresh_ExplicitProfileNotFoundEmitsUserError(t *testing.T) {
+	storeDir, _, _, _ := setupApplyTestEnv(t, nil)
+
+	flags := &provider.GlobalFlags{Store: storeDir, Profile: "Typo"}
+	registry := provider.NewRegistry()
+
+	err := runRefresh(context.Background(), flags, registry, "", "")
+	if err == nil {
+		t.Fatal("expected error when --profile dir doesn't exist")
+	}
+	var ufe *hamserr.UserFacingError
+	if !errors.As(err, &ufe) {
+		t.Fatalf("want *UserFacingError, got %T: %v", err, err)
+	}
+	if ufe.Code != hamserr.ExitUsageError {
+		t.Errorf("Code = %d, want ExitUsageError (%d)", ufe.Code, hamserr.ExitUsageError)
+	}
+	if !strings.Contains(ufe.Message, "Typo") {
+		t.Errorf("message should name the typo'd profile; got %q", ufe.Message)
+	}
+	if !strings.Contains(ufe.Message, "not found") {
+		t.Errorf("message should say the profile isn't found; got %q", ufe.Message)
+	}
+}
+
+// TestRunRefresh_FlagStoreOverridesConfig locks in cycle 90: when the
+// user passes --store=X, it MUST take precedence over the global
+// config's store_path. Previously config.Load populated cfg.StorePath
+// from the global config; the flags.Store argument only influenced
+// where level-3 / level-4 project configs were looked up, not the
+// resolved cfg.StorePath. Result: `hams --store=/alt refresh`
+// silently refreshed the config's store (not /alt).
+//
+// The fix in runRefresh now overrides cfg.StorePath from flags.Store
+// AFTER config.Load. This test asserts that with BOTH a config
+// store_path AND a conflicting --store flag, refresh uses --store.
+func TestRunRefresh_FlagStoreOverridesConfig(t *testing.T) {
+	configHome := t.TempDir()
+	dataHome := t.TempDir()
+	configuredStore := t.TempDir() // exists but not what we want
+	t.Setenv("HAMS_CONFIG_HOME", configHome)
+	t.Setenv("HAMS_DATA_HOME", dataHome)
+	writeApplyTestFile(t, filepath.Join(configHome, "hams.config.yaml"),
+		"profile_tag: macOS\nmachine_id: mid1\nstore_path: "+configuredStore+"\n")
+
+	// --store points at a non-existent path; refresh should surface
+	// that via the store_path validation (cycle 88), NOT use the
+	// config's configuredStore and pretend nothing is wrong.
+	flags := &provider.GlobalFlags{Store: "/this/overrides/but/does/not/exist"}
+	registry := provider.NewRegistry()
+
+	err := runRefresh(context.Background(), flags, registry, "", "")
+	if err == nil {
+		t.Fatal("expected --store override to take precedence; got nil (refresh silently used config)")
+	}
+	var ufe *hamserr.UserFacingError
+	if !errors.As(err, &ufe) {
+		t.Fatalf("want *UserFacingError, got %T: %v", err, err)
+	}
+	if !strings.Contains(ufe.Message, "/this/overrides/but/does/not/exist") {
+		t.Errorf("error should name --store path, not config store_path; got %q", ufe.Message)
+	}
+}
+
+// TestRunRefresh_NonexistentStorePathEmitsUserError locks in cycle 88:
+// when store_path names a directory that doesn't exist, refresh used
+// to print "No providers match" and exit 0 — silently masking the
+// real misconfiguration. Now it emits the same UserFacingError that
+// runApply produces (cycle 87), so the user can't tell the two
+// commands apart on this class of bug.
+func TestRunRefresh_NonexistentStorePathEmitsUserError(t *testing.T) {
+	configHome := t.TempDir()
+	dataHome := t.TempDir()
+	t.Setenv("HAMS_CONFIG_HOME", configHome)
+	t.Setenv("HAMS_DATA_HOME", dataHome)
+	writeApplyTestFile(t, filepath.Join(configHome, "hams.config.yaml"),
+		"profile_tag: macOS\nmachine_id: mid1\n")
+
+	flags := &provider.GlobalFlags{Store: "/definitely/does/not/exist/ever"}
+	registry := provider.NewRegistry()
+
+	err := runRefresh(context.Background(), flags, registry, "", "")
+	if err == nil {
+		t.Fatal("expected error when store_path doesn't exist")
+	}
+	var ufe *hamserr.UserFacingError
+	if !errors.As(err, &ufe) {
+		t.Fatalf("want *UserFacingError, got %T: %v", err, err)
+	}
+	if ufe.Code != hamserr.ExitUsageError {
+		t.Errorf("Code = %d, want ExitUsageError (%d)", ufe.Code, hamserr.ExitUsageError)
+	}
+	if !strings.Contains(ufe.Message, "/definitely/does/not/exist/ever") {
+		t.Errorf("message should name the bad path; got %q", ufe.Message)
+	}
+	if !strings.Contains(ufe.Message, "does not exist or is not a directory") {
+		t.Errorf("message should explain what's wrong; got %q", ufe.Message)
+	}
+}

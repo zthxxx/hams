@@ -8,7 +8,7 @@ import (
 
 func TestManifest(t *testing.T) {
 	t.Parallel()
-	p := New(NewFakeCmdRunner())
+	p := New(nil, NewFakeCmdRunner())
 	m := p.Manifest()
 	if m.Name != "npm" {
 		t.Errorf("Name = %q", m.Name)
@@ -93,7 +93,7 @@ func TestParseNpmList(t *testing.T) {
 
 func TestNameDisplayName(t *testing.T) {
 	t.Parallel()
-	p := New(NewFakeCmdRunner())
+	p := New(nil, NewFakeCmdRunner())
 	if p.Name() != "npm" {
 		t.Errorf("Name() = %q", p.Name())
 	}

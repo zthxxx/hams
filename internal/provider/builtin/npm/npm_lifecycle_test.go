@@ -16,7 +16,7 @@ import (
 func TestU1_Apply_InstallsMissingPackage(t *testing.T) {
 	t.Parallel()
 	fake := NewFakeCmdRunner()
-	p := New(fake)
+	p := New(nil, fake)
 
 	const pkg = "typescript"
 	if err := p.Apply(context.Background(), provider.Action{ID: pkg}); err != nil {
@@ -36,7 +36,7 @@ func TestU1_Apply_InstallsMissingPackage(t *testing.T) {
 func TestU2_Apply_IdempotentOnReapply(t *testing.T) {
 	t.Parallel()
 	fake := NewFakeCmdRunner()
-	p := New(fake)
+	p := New(nil, fake)
 
 	const pkg = "serve"
 	for range 3 {
@@ -58,7 +58,7 @@ func TestU3_Apply_FailureNotRecorded(t *testing.T) {
 	t.Parallel()
 	wantErr := errors.New("simulated install failure")
 	fake := NewFakeCmdRunner().WithInstallError("flaky-pkg", wantErr)
-	p := New(fake)
+	p := New(nil, fake)
 
 	gotErr := p.Apply(context.Background(), provider.Action{ID: "flaky-pkg"})
 	if !errors.Is(gotErr, wantErr) {
@@ -74,7 +74,7 @@ func TestU3_Apply_FailureNotRecorded(t *testing.T) {
 func TestU4_Remove_UninstallsPackage(t *testing.T) {
 	t.Parallel()
 	fake := NewFakeCmdRunner().Seed("typescript", "5.3.3")
-	p := New(fake)
+	p := New(nil, fake)
 
 	if err := p.Remove(context.Background(), "typescript"); err != nil {
 		t.Fatalf("Remove error: %v", err)
@@ -92,7 +92,7 @@ func TestU5_Remove_FailureLeavesPackageInstalled(t *testing.T) {
 	t.Parallel()
 	wantErr := errors.New("simulated remove failure")
 	fake := NewFakeCmdRunner().Seed("serve", "14.2.0").WithUninstallError("serve", wantErr)
-	p := New(fake)
+	p := New(nil, fake)
 
 	gotErr := p.Remove(context.Background(), "serve")
 	if !errors.Is(gotErr, wantErr) {
@@ -112,7 +112,7 @@ func TestU6_Probe_OKAndFailedClassification(t *testing.T) {
 	fake := NewFakeCmdRunner().
 		Seed("typescript", "5.3.3").
 		Seed("serve", "14.2.0")
-	p := New(fake)
+	p := New(nil, fake)
 
 	sf := state.New("npm", "test-machine")
 	sf.SetResource("typescript", state.StateOK)
@@ -145,7 +145,7 @@ func TestU6_Probe_OKAndFailedClassification(t *testing.T) {
 // U7 — Probe skips StateRemoved entries.
 func TestU7_Probe_SkipsRemovedResources(t *testing.T) {
 	t.Parallel()
-	p := New(NewFakeCmdRunner())
+	p := New(nil, NewFakeCmdRunner())
 	sf := state.New("npm", "test-machine")
 	sf.SetResource("removed-pkg", state.StateRemoved)
 
@@ -165,7 +165,7 @@ func TestU8_Probe_PropagatesRunnerError(t *testing.T) {
 	t.Parallel()
 	wantErr := errors.New("npm not initialized")
 	fake := &erroringFake{listErr: wantErr}
-	p := New(fake)
+	p := New(nil, fake)
 
 	sf := state.New("npm", "test-machine")
 	sf.SetResource("anything", state.StateOK)
@@ -180,7 +180,7 @@ func TestU9_Bootstrap_DelegatesLookPath(t *testing.T) {
 
 	t.Run("present", func(t *testing.T) {
 		t.Parallel()
-		p := New(NewFakeCmdRunner())
+		p := New(nil, NewFakeCmdRunner())
 		if err := p.Bootstrap(context.Background()); err != nil {
 			t.Errorf("Bootstrap error = %v, want nil", err)
 		}
@@ -189,7 +189,7 @@ func TestU9_Bootstrap_DelegatesLookPath(t *testing.T) {
 	t.Run("missing", func(t *testing.T) {
 		t.Parallel()
 		want := errors.New("npm not on PATH")
-		p := New(NewFakeCmdRunner().WithLookPathError(want))
+		p := New(nil, NewFakeCmdRunner().WithLookPathError(want))
 		if err := p.Bootstrap(context.Background()); !errors.Is(err, want) {
 			t.Errorf("Bootstrap error = %v, want %v", err, want)
 		}

@@ -134,11 +134,14 @@ func runApply(ctx context.Context, flags *provider.GlobalFlags, registry *provid
 	}
 	if effectiveFromRepo != "" {
 		slog.Info("from-repo specified", "repo", effectiveFromRepo)
-		var cloneErr error
-		storePath, cloneErr = bootstrapFromRepo(effectiveFromRepo, paths)
-		if cloneErr != nil {
-			return fmt.Errorf("bootstrap from repo: %w", cloneErr)
+		resolvedPath, done, resolveErr := resolveFromRepoStorePath(effectiveFromRepo, paths, flags.DryRun)
+		if resolveErr != nil {
+			return fmt.Errorf("bootstrap from repo: %w", resolveErr)
 		}
+		if done {
+			return nil
+		}
+		storePath = resolvedPath
 	}
 
 	if storePath == "" {
@@ -149,14 +152,43 @@ func runApply(ctx context.Context, flags *provider.GlobalFlags, registry *provid
 		)
 	}
 
+	// Validate the configured/supplied store path exists as a directory
+	// BEFORE attempting config load / lock acquisition. Without this,
+	// a typo or stale path surfaced as "creating lock directory: mkdir
+	// /nonexistent: permission denied" — the error pointed at a
+	// symptom (the lock-file subpath) instead of the root cause (the
+	// store_path itself is wrong). Now users get a direct
+	// UserFacingError naming the bad path + remediation.
+	if info, statErr := os.Stat(storePath); statErr != nil || !info.IsDir() {
+		return hamserr.NewUserError(hamserr.ExitUsageError,
+			fmt.Sprintf("store_path %q does not exist or is not a directory", storePath),
+			"Fix store_path in ~/.config/hams/hams.config.yaml",
+			"Or clone a store: hams apply --from-repo=<user/repo>",
+			"Or initialize one: hams store init",
+		)
+	}
+
 	cfg, err := config.Load(paths, storePath)
 	if err != nil {
 		return fmt.Errorf("loading config: %w", err)
 	}
 
-	// Honor --profile flag override.
+	// Honor --profile flag override. When the user explicitly passes
+	// --profile=X, validate that <store>/X exists — a typo like
+	// `--profile=Linux` (vs "linux") used to produce a misleading
+	// "No providers match: no hamsfile or state file present" + exit 0
+	// instead of "profile directory not found". Symmetric with cycle
+	// 87's store_path validation.
 	if flags.Profile != "" {
 		cfg.ProfileTag = flags.Profile
+		profileDir := cfg.ProfileDir()
+		if info, statErr := os.Stat(profileDir); statErr != nil || !info.IsDir() {
+			return hamserr.NewUserError(hamserr.ExitUsageError,
+				fmt.Sprintf("profile %q not found at %s", flags.Profile, profileDir),
+				"Check available profiles: ls "+storePath,
+				"Or create this profile: mkdir -p "+profileDir,
+			)
+		}
 	}
 
 	if cfg.ProfileTag == "" || cfg.MachineID == "" {
@@ -576,6 +608,23 @@ func runApply(ctx context.Context, flags *provider.GlobalFlags, registry *provid
 		}
 		fmt.Println("[dry-run] No changes made.")
 		return nil
+	}
+
+	// If the user interrupted mid-apply (Ctrl+C → context.Canceled or
+	// SIGTERM → context.Canceled via signal.NotifyContext in root.go),
+	// the per-provider Execute loop would have bailed early and the
+	// outer for-loop kept iterating, producing a misleading
+	// "hams apply complete: 0 installed, ..." summary AND a zero exit
+	// code. Short-circuit here so the shell sees the interruption, the
+	// per-provider state that WAS saved during earlier iterations is
+	// still on disk, and no enrichment / summary prints pretend the
+	// work completed cleanly.
+	if ctx.Err() != nil {
+		return hamserr.NewUserError(hamserr.ExitPartialFailure,
+			fmt.Sprintf("hams apply interrupted: %s", ctx.Err().Error()),
+			"Partially-applied state has been saved to disk; inspect with `hams refresh`",
+			"Re-run `hams apply` to continue installing remaining resources",
+		)
 	}
 
 	// Run async enrichment for providers that support it, non-blocking.

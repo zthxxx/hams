@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"strings"
 
+	"github.com/zthxxx/hams/internal/config"
 	hamserr "github.com/zthxxx/hams/internal/error"
 	"github.com/zthxxx/hams/internal/hamsfile"
 	"github.com/zthxxx/hams/internal/provider"
@@ -27,12 +28,16 @@ var masBinaryLookup = exec.LookPath
 
 // Provider implements the Mac App Store provider.
 type Provider struct {
+	cfg    *config.Config
 	runner CmdRunner
 }
 
 // New creates a new mas provider wired with a real CmdRunner.
+// cfg supplies store/profile paths for the CLI-first auto-record path.
 // Pass NewFakeCmdRunner from tests for DI-isolated unit testing.
-func New(runner CmdRunner) *Provider { return &Provider{runner: runner} }
+func New(cfg *config.Config, runner CmdRunner) *Provider {
+	return &Provider{cfg: cfg, runner: runner}
+}
 
 // Manifest returns the mas provider metadata.
 //
@@ -118,32 +123,105 @@ func (p *Provider) List(_ context.Context, desired *hamsfile.File, sf *state.Fil
 }
 
 // HandleCommand processes CLI subcommands for mas.
-func (p *Provider) HandleCommand(ctx context.Context, args []string, _ map[string]string, flags *provider.GlobalFlags) error {
+func (p *Provider) HandleCommand(ctx context.Context, args []string, hamsFlags map[string]string, flags *provider.GlobalFlags) error {
 	verb, remaining := provider.ParseVerb(args)
 
 	switch verb {
 	case "install", "i":
-		if len(remaining) == 0 {
-			return hamserr.NewUserError(hamserr.ExitUsageError,
-				"mas install requires a numeric app ID",
-				"Usage: hams mas install <app-id>",
-				"To install all recorded apps, use: hams apply --only=mas",
-			)
-		}
-		if flags.DryRun {
-			fmt.Printf("[dry-run] Would install: mas install %s\n", strings.Join(remaining, " "))
-			return nil
-		}
-		return provider.WrapExecPassthrough(ctx, cliName, append([]string{"install"}, remaining...), nil)
+		return p.handleInstall(ctx, remaining, hamsFlags, flags)
 	case "remove", "uninstall", "rm":
-		if flags.DryRun {
-			fmt.Printf("[dry-run] Would remove: mas uninstall %s\n", strings.Join(remaining, " "))
-			return nil
-		}
-		return provider.WrapExecPassthrough(ctx, cliName, append([]string{"uninstall"}, remaining...), nil)
+		return p.handleRemove(ctx, remaining, hamsFlags, flags)
 	default:
 		return provider.WrapExecPassthrough(ctx, cliName, args, nil)
 	}
+}
+
+// handleInstall runs `mas install <id>` via the CmdRunner seam and,
+// on success, appends each numeric app ID to the mas hamsfile.
+func (p *Provider) handleInstall(ctx context.Context, args []string, hamsFlags map[string]string, flags *provider.GlobalFlags) error {
+	if len(args) == 0 {
+		return hamserr.NewUserError(hamserr.ExitUsageError,
+			"mas install requires a numeric app ID",
+			"Usage: hams mas install <app-id>",
+			"To install all recorded apps, use: hams apply --only=mas",
+		)
+	}
+	ids := appIDArgs(args)
+	if len(ids) == 0 {
+		return hamserr.NewUserError(hamserr.ExitUsageError,
+			"mas install requires at least one numeric app ID",
+			"Usage: hams mas install <app-id>",
+		)
+	}
+	if flags.DryRun {
+		fmt.Printf("[dry-run] Would install: mas install %s\n", strings.Join(args, " "))
+		return nil
+	}
+
+	for _, id := range ids {
+		if err := p.runner.Install(ctx, id); err != nil {
+			return err
+		}
+	}
+
+	hf, err := p.loadOrCreateHamsfile(hamsFlags, flags)
+	if err != nil {
+		return err
+	}
+	for _, id := range ids {
+		hf.AddApp(tagCLI, id, "")
+	}
+	return hf.Write()
+}
+
+// handleRemove runs `mas uninstall <id>` via the CmdRunner seam and,
+// on success, removes each ID from the mas hamsfile.
+func (p *Provider) handleRemove(ctx context.Context, args []string, hamsFlags map[string]string, flags *provider.GlobalFlags) error {
+	if len(args) == 0 {
+		return hamserr.NewUserError(hamserr.ExitUsageError,
+			"mas remove requires a numeric app ID",
+			"Usage: hams mas remove <app-id>",
+		)
+	}
+	ids := appIDArgs(args)
+	if len(ids) == 0 {
+		return hamserr.NewUserError(hamserr.ExitUsageError,
+			"mas remove requires at least one numeric app ID",
+			"Usage: hams mas remove <app-id>",
+		)
+	}
+	if flags.DryRun {
+		fmt.Printf("[dry-run] Would remove: mas uninstall %s\n", strings.Join(args, " "))
+		return nil
+	}
+
+	for _, id := range ids {
+		if err := p.runner.Uninstall(ctx, id); err != nil {
+			return err
+		}
+	}
+
+	hf, err := p.loadOrCreateHamsfile(hamsFlags, flags)
+	if err != nil {
+		return err
+	}
+	for _, id := range ids {
+		hf.RemoveApp(id)
+	}
+	return hf.Write()
+}
+
+// appIDArgs filters positional tokens: flags (leading `-`) are
+// excluded so they don't get recorded as app IDs.
+func appIDArgs(args []string) []string {
+	out := make([]string, 0, len(args))
+	for _, a := range args {
+		if strings.HasPrefix(a, "-") {
+			continue
+		}
+		out = append(out, a)
+	}
+	return out
 }
 
 // Name returns the CLI name.

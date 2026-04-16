@@ -17,7 +17,7 @@ import (
 func TestU1_Apply_InstallsMissingExtension(t *testing.T) {
 	t.Parallel()
 	fake := NewFakeCmdRunner()
-	p := New(fake)
+	p := New(nil, fake)
 
 	const ext = "ms-python.python"
 	if err := p.Apply(context.Background(), provider.Action{ID: ext}); err != nil {
@@ -35,7 +35,7 @@ func TestU1_Apply_InstallsMissingExtension(t *testing.T) {
 func TestU2_Apply_IdempotentOnReapply(t *testing.T) {
 	t.Parallel()
 	fake := NewFakeCmdRunner()
-	p := New(fake)
+	p := New(nil, fake)
 
 	const ext = "esbenp.prettier-vscode"
 	for range 3 {
@@ -56,7 +56,7 @@ func TestU3_Apply_FailureNotRecorded(t *testing.T) {
 	t.Parallel()
 	wantErr := errors.New("simulated install failure")
 	fake := NewFakeCmdRunner().WithInstallError("flaky.ext", wantErr)
-	p := New(fake)
+	p := New(nil, fake)
 
 	gotErr := p.Apply(context.Background(), provider.Action{ID: "flaky.ext"})
 	if !errors.Is(gotErr, wantErr) {
@@ -71,7 +71,7 @@ func TestU3_Apply_FailureNotRecorded(t *testing.T) {
 func TestU4_Remove_UninstallsExtension(t *testing.T) {
 	t.Parallel()
 	fake := NewFakeCmdRunner().Seed("ms-python.python", "2024.2.0")
-	p := New(fake)
+	p := New(nil, fake)
 
 	if err := p.Remove(context.Background(), "ms-python.python"); err != nil {
 		t.Fatalf("Remove error: %v", err)
@@ -91,7 +91,7 @@ func TestU5_Remove_FailureLeavesExtensionInstalled(t *testing.T) {
 	fake := NewFakeCmdRunner().
 		Seed("dbaeumer.vscode-eslint", "3.0.5").
 		WithUninstallError("dbaeumer.vscode-eslint", wantErr)
-	p := New(fake)
+	p := New(nil, fake)
 
 	gotErr := p.Remove(context.Background(), "dbaeumer.vscode-eslint")
 	if !errors.Is(gotErr, wantErr) {
@@ -111,7 +111,7 @@ func TestU6_Probe_OKAndFailedClassification_CaseInsensitive(t *testing.T) {
 	fake := NewFakeCmdRunner().
 		Seed("ms-python.python", "2024.2.0").
 		Seed("dbaeumer.vscode-eslint", "3.0.5")
-	p := New(fake)
+	p := New(nil, fake)
 
 	sf := state.New("code-ext", "test-machine")
 	// Mixed-case in the hamsfile entry — should still match because
@@ -146,7 +146,7 @@ func TestU6_Probe_OKAndFailedClassification_CaseInsensitive(t *testing.T) {
 // U7 — Probe skips StateRemoved entries.
 func TestU7_Probe_SkipsRemovedResources(t *testing.T) {
 	t.Parallel()
-	p := New(NewFakeCmdRunner())
+	p := New(nil, NewFakeCmdRunner())
 	sf := state.New("code-ext", "test-machine")
 	sf.SetResource("removed.ext", state.StateRemoved)
 
@@ -164,7 +164,7 @@ func TestU8_Probe_PropagatesRunnerError(t *testing.T) {
 	t.Parallel()
 	wantErr := errors.New("code CLI hung")
 	fake := &erroringFake{listErr: wantErr}
-	p := New(fake)
+	p := New(nil, fake)
 
 	sf := state.New("code-ext", "test-machine")
 	sf.SetResource("anything", state.StateOK)
@@ -179,7 +179,7 @@ func TestU9_Bootstrap_DelegatesLookPath(t *testing.T) {
 
 	t.Run("present", func(t *testing.T) {
 		t.Parallel()
-		p := New(NewFakeCmdRunner())
+		p := New(nil, NewFakeCmdRunner())
 		if err := p.Bootstrap(context.Background()); err != nil {
 			t.Errorf("Bootstrap = %v, want nil", err)
 		}
@@ -188,7 +188,7 @@ func TestU9_Bootstrap_DelegatesLookPath(t *testing.T) {
 	t.Run("missing", func(t *testing.T) {
 		t.Parallel()
 		want := errors.New("code CLI not found in PATH")
-		p := New(NewFakeCmdRunner().WithLookPathError(want))
+		p := New(nil, NewFakeCmdRunner().WithLookPathError(want))
 		if err := p.Bootstrap(context.Background()); !errors.Is(err, want) {
 			t.Errorf("Bootstrap error = %v, want %v", err, want)
 		}

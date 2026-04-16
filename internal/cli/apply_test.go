@@ -802,6 +802,12 @@ func TestRunApply_NonTTYWithProfileFlagButNoMachineID(t *testing.T) {
 		"profile_tag: macOS\n")
 	writeApplyTestFile(t, filepath.Join(storeDir, "hams.config.yaml"),
 		"store_path: "+storeDir+"\n")
+	// Create the `linux` profile dir so cycle-92's explicit-profile
+	// validation passes — this test only cares about the machine_id
+	// branch, not profile dir existence.
+	if err := os.MkdirAll(filepath.Join(storeDir, "linux"), 0o750); err != nil {
+		t.Fatalf("mkdir profile: %v", err)
+	}
 
 	flags := &provider.GlobalFlags{Store: storeDir, Profile: "linux"} // override profile_tag; still no machine_id
 	registry := provider.NewRegistry()
@@ -820,5 +826,228 @@ func TestRunApply_NonTTYWithProfileFlagButNoMachineID(t *testing.T) {
 	}
 	if strings.Contains(ufe.Message, "profile_tag") {
 		t.Errorf("message should NOT name profile_tag (user already set it via --profile); got %q", ufe.Message)
+	}
+}
+
+// TestRunApply_InterruptedContextReturnsPartialFailure locks in cycle 84:
+// when the root context is canceled mid-apply (Ctrl+C / SIGTERM from
+// root.go's signal.NotifyContext), runApply MUST NOT fall through to
+// the "hams apply complete" summary and return nil. Instead it emits
+// a UserFacingError with ExitPartialFailure whose message names the
+// interruption and whose suggestions point the user at `hams refresh`
+// and the re-run path.
+//
+// Without this, Ctrl+C during a long-running apply produced a silent
+// exit 0 + "0 installed" summary — the user's shell couldn't tell
+// they had canceled.
+func TestRunApply_InterruptedContextReturnsPartialFailure(t *testing.T) {
+	storeDir, profileDir, _, flags := setupApplyTestEnv(t, []string{"brew"})
+	writeApplyTestFile(t, filepath.Join(profileDir, "Homebrew.hams.yaml"),
+		"packages:\n  - app: git\n")
+
+	// A provider whose Apply would hang indefinitely; but since the
+	// context starts already canceled, provider.Execute's ctx.Done
+	// check returns immediately with a ctx.Err() in the result Errors.
+	p := &applyTestProvider{
+		manifest: provider.Manifest{
+			Name:        "brew",
+			DisplayName: "Homebrew",
+			Platforms:   []provider.Platform{provider.PlatformAll},
+			FilePrefix:  "Homebrew",
+		},
+		planFn: func(_ context.Context, _ *hamsfile.File, _ *state.File) ([]provider.Action, error) {
+			return []provider.Action{{ID: "git", Type: provider.ActionInstall}}, nil
+		},
+		applyFn: func(_ context.Context, _ provider.Action) error {
+			t.Fatalf("Apply should not be called when context is already canceled")
+			return nil
+		},
+	}
+	registry := provider.NewRegistry()
+	if err := registry.Register(p); err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // cancel before running — simulates early Ctrl+C
+
+	err := runApply(ctx, flags, registry, sudo.NoopAcquirer{}, "", true, "", "", false, bootstrapMode{})
+	if err == nil {
+		t.Fatal("runApply should surface the cancellation; got nil")
+	}
+	var ufe *hamserr.UserFacingError
+	if !errors.As(err, &ufe) {
+		t.Fatalf("want *UserFacingError, got %T: %v", err, err)
+	}
+	if ufe.Code != hamserr.ExitPartialFailure {
+		t.Errorf("Code = %d, want ExitPartialFailure (%d)", ufe.Code, hamserr.ExitPartialFailure)
+	}
+	if !strings.Contains(ufe.Message, "interrupted") {
+		t.Errorf("message should say `interrupted`; got %q", ufe.Message)
+	}
+	// Suggestions must teach the user how to recover.
+	joined := strings.Join(ufe.Suggestions, "\n")
+	if !strings.Contains(joined, "hams refresh") {
+		t.Errorf("suggestions should mention `hams refresh`; got %v", ufe.Suggestions)
+	}
+	if !strings.Contains(joined, "Re-run") {
+		t.Errorf("suggestions should point to re-run; got %v", ufe.Suggestions)
+	}
+	_ = storeDir
+}
+
+// TestRunApply_NonexistentStorePathEmitsUserError locks in cycle 87:
+// when cfg.StorePath (or --store) names a directory that doesn't
+// exist, runApply MUST surface that directly instead of propagating
+// a confusing "creating lock directory: mkdir X: permission denied"
+// error from state.NewLock.Acquire. The previous error pointed at
+// the `.state/<machine-id>/.lock` subpath, which had nothing to do
+// with the actual misconfiguration (the store_path itself).
+func TestRunApply_NonexistentStorePathEmitsUserError(t *testing.T) {
+	configHome := t.TempDir()
+	dataHome := t.TempDir()
+	t.Setenv("HAMS_CONFIG_HOME", configHome)
+	t.Setenv("HAMS_DATA_HOME", dataHome)
+	writeApplyTestFile(t, filepath.Join(configHome, "hams.config.yaml"),
+		"profile_tag: macOS\nmachine_id: mid1\n")
+
+	flags := &provider.GlobalFlags{Store: "/definitely/does/not/exist/ever"}
+	registry := provider.NewRegistry()
+
+	err := runApply(context.Background(), flags, registry,
+		sudo.NoopAcquirer{}, "", true, "", "", false, bootstrapMode{})
+	if err == nil {
+		t.Fatal("expected error when store_path doesn't exist")
+	}
+	var ufe *hamserr.UserFacingError
+	if !errors.As(err, &ufe) {
+		t.Fatalf("want *UserFacingError, got %T: %v", err, err)
+	}
+	if ufe.Code != hamserr.ExitUsageError {
+		t.Errorf("Code = %d, want ExitUsageError (%d)", ufe.Code, hamserr.ExitUsageError)
+	}
+	// Message must name the specific bad path so users can copy-paste.
+	if !strings.Contains(ufe.Message, "/definitely/does/not/exist/ever") {
+		t.Errorf("message should name the bad path; got %q", ufe.Message)
+	}
+	if !strings.Contains(ufe.Message, "does not exist or is not a directory") {
+		t.Errorf("message should explain what's wrong; got %q", ufe.Message)
+	}
+	// Error must NOT mention the downstream .lock symptom.
+	if strings.Contains(ufe.Message, ".lock") || strings.Contains(ufe.Message, "lock directory") {
+		t.Errorf("error should not point at the .lock subpath (that's a symptom); got %q", ufe.Message)
+	}
+	joined := strings.Join(ufe.Suggestions, "\n")
+	if !strings.Contains(joined, "hams store init") && !strings.Contains(joined, "--from-repo") {
+		t.Errorf("suggestions should teach recovery; got %v", ufe.Suggestions)
+	}
+}
+
+// TestRunApply_StorePathIsFileNotDir asserts the same error fires
+// when store_path points at a regular file rather than a directory —
+// catches typos like `store_path: ~/.config/hams/hams.config.yaml`
+// where the user accidentally pointed at the config file.
+func TestRunApply_StorePathIsFileNotDir(t *testing.T) {
+	configHome := t.TempDir()
+	dataHome := t.TempDir()
+	t.Setenv("HAMS_CONFIG_HOME", configHome)
+	t.Setenv("HAMS_DATA_HOME", dataHome)
+	writeApplyTestFile(t, filepath.Join(configHome, "hams.config.yaml"),
+		"profile_tag: macOS\nmachine_id: mid1\n")
+
+	// Create a file (not a directory) and point --store at it.
+	fileAsStore := filepath.Join(t.TempDir(), "oops.yaml")
+	if err := os.WriteFile(fileAsStore, []byte("not a store"), 0o600); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+
+	flags := &provider.GlobalFlags{Store: fileAsStore}
+	registry := provider.NewRegistry()
+
+	err := runApply(context.Background(), flags, registry,
+		sudo.NoopAcquirer{}, "", true, "", "", false, bootstrapMode{})
+	if err == nil {
+		t.Fatal("expected error when store_path points at a file")
+	}
+	var ufe *hamserr.UserFacingError
+	if !errors.As(err, &ufe) {
+		t.Fatalf("want *UserFacingError, got %T: %v", err, err)
+	}
+	if !strings.Contains(ufe.Message, "is not a directory") {
+		t.Errorf("message should distinguish file vs missing; got %q", ufe.Message)
+	}
+}
+
+// TestRunApply_ExplicitProfileNotFoundEmitsUserError locks in cycle 92:
+// when the user types `hams --profile=Linux apply` (typo) and
+// `<store>/Linux` doesn't exist, runApply MUST surface that with
+// ExitUsageError instead of silently printing "No providers match"
+// + exit 0. Symmetric with cycle 87's store_path validation.
+//
+// The check fires ONLY when flags.Profile is explicitly set —
+// profile_tag coming from config.yaml with no matching directory
+// is treated as "empty profile, nothing to do" (user may not have
+// any hamsfiles yet), which is different from an explicit CLI
+// typo signaling intent.
+func TestRunApply_ExplicitProfileNotFoundEmitsUserError(t *testing.T) {
+	storeDir, _, _, _ := setupApplyTestEnv(t, nil)
+
+	flags := &provider.GlobalFlags{Store: storeDir, Profile: "Linux"}
+	registry := provider.NewRegistry()
+
+	err := runApply(context.Background(), flags, registry,
+		sudo.NoopAcquirer{}, "", true, "", "", false, bootstrapMode{})
+	if err == nil {
+		t.Fatal("expected error when --profile dir doesn't exist; got nil (should not silently skip)")
+	}
+	var ufe *hamserr.UserFacingError
+	if !errors.As(err, &ufe) {
+		t.Fatalf("want *UserFacingError, got %T: %v", err, err)
+	}
+	if ufe.Code != hamserr.ExitUsageError {
+		t.Errorf("Code = %d, want ExitUsageError (%d)", ufe.Code, hamserr.ExitUsageError)
+	}
+	if !strings.Contains(ufe.Message, "Linux") {
+		t.Errorf("message should name the typo'd profile; got %q", ufe.Message)
+	}
+	if !strings.Contains(ufe.Message, "not found") {
+		t.Errorf("message should say the profile isn't found; got %q", ufe.Message)
+	}
+	// Suggestions must teach the user how to enumerate / create profiles.
+	joined := strings.Join(ufe.Suggestions, "\n")
+	if !strings.Contains(joined, "ls ") {
+		t.Errorf("suggestions should point at `ls <store>`; got %v", ufe.Suggestions)
+	}
+	if !strings.Contains(joined, "mkdir") {
+		t.Errorf("suggestions should offer the mkdir path; got %v", ufe.Suggestions)
+	}
+}
+
+// TestRunApply_ConfigProfileSilentlyEmptyIsNotAnError asserts the
+// converse of the cycle-92 check: when profile_tag comes from
+// `hams.config.yaml` (not from an explicit `--profile` flag) AND
+// the profile dir is empty/missing, runApply MUST still succeed
+// with "No providers match" rather than erroring. Users shouldn't
+// be forced to create empty profile dirs just to run apply.
+func TestRunApply_ConfigProfileSilentlyEmptyIsNotAnError(t *testing.T) {
+	// setupApplyTestEnv creates the profile dir at "macOS". We
+	// override cfg's profile_tag via the global config to point at
+	// a profile without a dir, but DON'T pass --profile so the
+	// cycle-92 check doesn't fire.
+	_, _, _, flags := setupApplyTestEnv(t, nil)
+	configHome := os.Getenv("HAMS_CONFIG_HOME")
+
+	// Rewrite global config with profile_tag pointing at "ghost"
+	// (no directory will ever exist at <store>/ghost).
+	globalCfg := filepath.Join(configHome, "hams.config.yaml")
+	writeApplyTestFile(t, globalCfg, "profile_tag: ghost\nmachine_id: test-machine\n")
+
+	// Leave flags.Profile unset so the check is skipped.
+	registry := provider.NewRegistry()
+
+	err := runApply(context.Background(), flags, registry,
+		sudo.NoopAcquirer{}, "", true, "", "", false, bootstrapMode{})
+	if err != nil {
+		t.Fatalf("config-derived empty profile should NOT error; got: %v", err)
 	}
 }

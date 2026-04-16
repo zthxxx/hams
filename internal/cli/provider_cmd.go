@@ -88,16 +88,19 @@ func parseProviderArgs(args []string, flags *provider.GlobalFlags) (hamsFlags ma
 			continue
 		}
 
-		// Global flags.
+		// Global flags. Each bool flag accepts both the bare form
+		// (`--debug`) and the explicit `=value` forms (`--debug=true`,
+		// `--debug=false`) so the parser agrees with urfave/cli's
+		// handling at the top-level entrypoint. Previously only the
+		// bare form matched, so `hams apt --json=true install foo`
+		// leaked `--json=true` through as a passthrough token which
+		// apt-get then rejected with "option --json=true is not
+		// understood".
 		switch {
-		case arg == "--debug":
-			flags.Debug = true
-		case arg == "--dry-run":
-			flags.DryRun = true
-		case arg == jsonFlag:
-			flags.JSON = true
-		case arg == "--no-color":
-			flags.NoColor = true
+		case boolFlagMatch(arg, "--debug", &flags.Debug):
+		case boolFlagMatch(arg, "--dry-run", &flags.DryRun):
+		case boolFlagMatch(arg, jsonFlag, &flags.JSON):
+		case boolFlagMatch(arg, "--no-color", &flags.NoColor):
 		case strings.HasPrefix(arg, "--config="):
 			flags.Config = strings.TrimPrefix(arg, "--config=")
 		case arg == "--config" && i+1 < len(args):
@@ -120,6 +123,24 @@ func parseProviderArgs(args []string, flags *provider.GlobalFlags) (hamsFlags ma
 	return hamsFlags, passthrough
 }
 
+// boolFlagMatch writes to *target if arg matches `flag`, `flag=true`,
+// `flag=1`, `flag=false`, or `flag=0`, and returns true so the switch
+// treats the arg as consumed. Unknown `flag=value` pairs fall through
+// (treated as non-match) and end up in passthrough — that's the
+// correct behavior for any flag we DON'T want to steal from the
+// provider.
+func boolFlagMatch(arg, flag string, target *bool) bool {
+	switch arg {
+	case flag, flag + "=true", flag + "=1":
+		*target = true
+		return true
+	case flag + "=false", flag + "=0":
+		*target = false
+		return true
+	}
+	return false
+}
+
 func showProviderHelp(handler ProviderHandler) error {
 	fmt.Printf("hams %s — %s\n\n", handler.Name(), providerUsageDescription(handler.Name(), handler.DisplayName()))
 	fmt.Printf("Usage:\n")
@@ -140,15 +161,15 @@ func stripGlobalFlags(args []string, flags *provider.GlobalFlags) []string {
 			skip = false
 			continue
 		}
+		// Same boolean-flag handling as parseProviderArgs so this
+		// early-bootstrap path doesn't drift. `hams --json=true ...`
+		// invoked before urfave/cli has parsed would otherwise leave
+		// jsonFlag as an unconsumed arg in register.go.
 		switch {
-		case arg == "--debug":
-			flags.Debug = true
-		case arg == "--dry-run":
-			flags.DryRun = true
-		case arg == jsonFlag:
-			flags.JSON = true
-		case arg == "--no-color":
-			flags.NoColor = true
+		case boolFlagMatch(arg, "--debug", &flags.Debug):
+		case boolFlagMatch(arg, "--dry-run", &flags.DryRun):
+		case boolFlagMatch(arg, jsonFlag, &flags.JSON):
+		case boolFlagMatch(arg, "--no-color", &flags.NoColor):
 		case strings.HasPrefix(arg, "--config="):
 			flags.Config = strings.TrimPrefix(arg, "--config=")
 		case arg == "--config" && i+1 < len(args):

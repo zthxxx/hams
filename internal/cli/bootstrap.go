@@ -42,6 +42,51 @@ func bootstrapFromRepo(repo string, paths config.Paths) (string, error) {
 	return cloneRemoteRepo(repo, paths)
 }
 
+// resolveFromRepoStorePath picks the store path to use for a given
+// --from-repo (or configured store_repo) input. In normal mode it
+// clones/pulls on demand. In dry-run mode it refuses to touch the
+// network or filesystem: if a local copy exists (direct local path
+// or cached clone) it's reused; otherwise the caller is told
+// "Would clone" and `done=true` signals it should return nil
+// immediately. Symmetric with the --dry-run --bootstrap branch
+// (cycle `6f8cbeb`).
+//
+// Returns (path, done, err):
+//   - path != "", done=false, err=nil — caller proceeds with path
+//   - path == "", done=true, err=nil  — caller returns nil (dry-run
+//     would clone)
+//   - path == "", done=false, err!=nil — caller propagates err
+func resolveFromRepoStorePath(repo string, paths config.Paths, dryRun bool) (storePath string, done bool, err error) {
+	if !dryRun {
+		path, cloneErr := bootstrapFromRepo(repo, paths)
+		return path, false, cloneErr
+	}
+	if preview, ok := previewExistingStoreFromRepo(repo, paths); ok {
+		return preview, false, nil
+	}
+	fmt.Printf("[dry-run] Would clone %s. Re-run without --dry-run to clone and preview the plan.\n", repo)
+	return "", true, nil
+}
+
+// previewExistingStoreFromRepo returns the local store path only if
+// the input resolves to something already on disk — either a valid
+// local git repo or a prior clone cached under `${HAMS_DATA_HOME}/repo/`.
+// Returns ("", false) when the repo would need to be cloned.
+//
+// Called exclusively by the `--dry-run --from-repo=X` branch so the
+// preview path can skip the network + disk write and report "Would
+// clone X" when no local copy exists yet.
+func previewExistingStoreFromRepo(repo string, paths config.Paths) (string, bool) {
+	if localPath, err := resolveLocalRepo(repo); err == nil {
+		return localPath, true
+	}
+	clonePath := resolveClonePath(repo, paths)
+	if _, err := os.Stat(filepath.Join(clonePath, ".git")); err == nil {
+		return clonePath, true
+	}
+	return "", false
+}
+
 // isLocalPathAttempt reports whether the input string unambiguously looks
 // like a local filesystem path — either prefixed with an explicit path
 // separator marker (`/`, `~/`, `./`, `../`) or naming an existing

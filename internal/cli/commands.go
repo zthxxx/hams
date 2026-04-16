@@ -79,6 +79,38 @@ func runRefresh(ctx context.Context, flags *provider.GlobalFlags, registry *prov
 	}
 	if flags.Profile != "" {
 		cfg.ProfileTag = flags.Profile
+		// Symmetric to cycle 92: when --profile is explicit, validate
+		// the profile dir exists. Same "silent no-op on typo" problem
+		// that cycle 92 fixed for apply.
+		profileDir := cfg.ProfileDir()
+		if info, statErr := os.Stat(profileDir); statErr != nil || !info.IsDir() {
+			return hamserr.NewUserError(hamserr.ExitUsageError,
+				fmt.Sprintf("profile %q not found at %s", flags.Profile, profileDir),
+				"Check available profiles: ls "+cfg.StorePath,
+				"Or create this profile: mkdir -p "+profileDir,
+			)
+		}
+	}
+	// NOTE: cycle 90 originally patched `cfg.StorePath = flags.Store`
+	// here; cycle 91 promoted that guarantee into `config.Load` itself
+	// (explicitStoreOverride), so the override now fires for every
+	// config.Load caller (apply / refresh / list / store-status /
+	// config-* / register) without duplication.
+
+	// Validate the configured/supplied store path exists as a directory.
+	// Without this, refresh against a typo'd store_path silently reported
+	// "No providers match" + exit 0 — the user couldn't tell whether
+	// there genuinely were no providers or their config was misaimed.
+	// Symmetric with the same check in runApply (cycle 87).
+	if cfg.StorePath != "" {
+		if info, statErr := os.Stat(cfg.StorePath); statErr != nil || !info.IsDir() {
+			return hamserr.NewUserError(hamserr.ExitUsageError,
+				fmt.Sprintf("store_path %q does not exist or is not a directory", cfg.StorePath),
+				"Fix store_path in ~/.config/hams/hams.config.yaml",
+				"Or clone a store: hams apply --from-repo=<user/repo>",
+				"Or initialize one: hams store init",
+			)
+		}
 	}
 
 	// OTel session is opt-in via HAMS_OTEL=1 (internal/cli/otel.go).

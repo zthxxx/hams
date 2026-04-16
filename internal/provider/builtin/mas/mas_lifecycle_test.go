@@ -20,7 +20,7 @@ import (
 func TestU1_Apply_InstallsMissingApp(t *testing.T) {
 	t.Parallel()
 	fake := NewFakeCmdRunner()
-	p := New(fake)
+	p := New(nil, fake)
 
 	const appID = "497799835"
 	if err := p.Apply(context.Background(), provider.Action{ID: appID}); err != nil {
@@ -38,7 +38,7 @@ func TestU1_Apply_InstallsMissingApp(t *testing.T) {
 func TestU2_Apply_IdempotentOnReapply(t *testing.T) {
 	t.Parallel()
 	fake := NewFakeCmdRunner()
-	p := New(fake)
+	p := New(nil, fake)
 
 	const appID = "409183694"
 	for range 3 {
@@ -60,7 +60,7 @@ func TestU3_Apply_FailureNotRecorded(t *testing.T) {
 	t.Parallel()
 	wantErr := errors.New("simulated install failure")
 	fake := NewFakeCmdRunner().WithInstallError("999999999", wantErr)
-	p := New(fake)
+	p := New(nil, fake)
 
 	gotErr := p.Apply(context.Background(), provider.Action{ID: "999999999"})
 	if !errors.Is(gotErr, wantErr) {
@@ -75,7 +75,7 @@ func TestU3_Apply_FailureNotRecorded(t *testing.T) {
 func TestU4_Remove_UninstallsApp(t *testing.T) {
 	t.Parallel()
 	fake := NewFakeCmdRunner().Seed("497799835", "15.2")
-	p := New(fake)
+	p := New(nil, fake)
 
 	if err := p.Remove(context.Background(), "497799835"); err != nil {
 		t.Fatalf("Remove error: %v", err)
@@ -93,7 +93,7 @@ func TestU5_Remove_FailureLeavesAppInstalled(t *testing.T) {
 	t.Parallel()
 	wantErr := errors.New("simulated remove failure")
 	fake := NewFakeCmdRunner().Seed("409183694", "13.2").WithUninstallError("409183694", wantErr)
-	p := New(fake)
+	p := New(nil, fake)
 
 	gotErr := p.Remove(context.Background(), "409183694")
 	if !errors.Is(gotErr, wantErr) {
@@ -111,7 +111,7 @@ func TestU6_Probe_OKAndFailedClassification(t *testing.T) {
 	fake := NewFakeCmdRunner().
 		Seed("497799835", "15.2").
 		Seed("409183694", "13.2")
-	p := New(fake)
+	p := New(nil, fake)
 
 	sf := state.New("mas", "test-machine")
 	sf.SetResource("497799835", state.StateOK)
@@ -141,7 +141,7 @@ func TestU6_Probe_OKAndFailedClassification(t *testing.T) {
 // U7 — Probe skips StateRemoved entries.
 func TestU7_Probe_SkipsRemovedResources(t *testing.T) {
 	t.Parallel()
-	p := New(NewFakeCmdRunner())
+	p := New(nil, NewFakeCmdRunner())
 	sf := state.New("mas", "test-machine")
 	sf.SetResource("removed-app", state.StateRemoved)
 
@@ -159,7 +159,7 @@ func TestU8_Probe_PropagatesRunnerError(t *testing.T) {
 	t.Parallel()
 	wantErr := errors.New("mas not initialized")
 	fake := &erroringFake{listErr: wantErr}
-	p := New(fake)
+	p := New(nil, fake)
 
 	sf := state.New("mas", "test-machine")
 	sf.SetResource("anything", state.StateOK)
@@ -171,7 +171,7 @@ func TestU8_Probe_PropagatesRunnerError(t *testing.T) {
 // U9 — Bootstrap returns nil when mas is on PATH.
 func TestU9_Bootstrap_MasPresentReturnsNil(t *testing.T) {
 	t.Parallel()
-	p := New(NewFakeCmdRunner())
+	p := New(nil, NewFakeCmdRunner())
 	if err := p.Bootstrap(context.Background()); err != nil {
 		t.Errorf("Bootstrap = %v, want nil", err)
 	}
@@ -182,7 +182,7 @@ func TestU9_Bootstrap_MasPresentReturnsNil(t *testing.T) {
 func TestU10_Bootstrap_MasMissingReturnsStructuredError(t *testing.T) {
 	t.Parallel()
 	fake := NewFakeCmdRunner().WithLookPathError(exec.ErrNotFound)
-	p := New(fake)
+	p := New(nil, fake)
 
 	err := p.Bootstrap(context.Background())
 	var brerr *provider.BootstrapRequiredError
@@ -218,7 +218,7 @@ apps:
 	}
 	hf := &hamsfile.File{Path: "test.yaml", Root: &root}
 
-	p := New(NewFakeCmdRunner())
+	p := New(nil, NewFakeCmdRunner())
 	observed := state.New("mas", "test")
 	actions, err := p.Plan(context.Background(), hf, observed)
 	if err != nil {
