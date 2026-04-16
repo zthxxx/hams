@@ -8,7 +8,9 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/urfave/cli/v3"
 	"gopkg.in/yaml.v3"
@@ -98,12 +100,24 @@ func runRefresh(ctx context.Context, flags *provider.GlobalFlags, registry *prov
 	otelSess.AttachRootAttrs(cfg.ProfileTag, len(providers))
 
 	slog.Info("refreshing state", "providers", len(providers))
+	probeStart := time.Now()
 	probeResults := provider.ProbeAll(ctx, providers, stateDir, cfg.MachineID)
+	probeElapsed := time.Since(probeStart).Milliseconds()
 	for name, sf := range probeResults {
 		statePath := filepath.Join(stateDir, name+".state.yaml")
 		if saveErr := sf.Save(statePath); saveErr != nil {
 			slog.Error("failed to save probed state", "provider", name, "error", saveErr)
 		}
+	}
+
+	// hams.probe.duration metric per observability spec — elapsed
+	// time for the refresh ProbeAll phase. Emitted only when OTel
+	// is active; no-op when otelSess.Session() is nil.
+	if sess := otelSess.Session(); sess != nil {
+		sess.RecordMetric("hams.probe.duration", float64(probeElapsed), "ms", map[string]string{
+			"hams.command":         "refresh",
+			"hams.providers.count": strconv.Itoa(len(providers)),
+		})
 	}
 
 	// ProbeAll swallows per-provider probe errors (best-effort) and
