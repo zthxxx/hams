@@ -2,22 +2,23 @@
 
 Each provider gets an atomic commit wiring auto-record + a regression test suite following `internal/provider/builtin/apt/apt_test.go` U1-U7 as the reference. Order: smallest surface first so the pattern settles before the larger providers.
 
-## 1. cargo (pilot)
+## 1. cargo (pilot) — DONE in commit `39f8f4c`
 
-- [ ] 1.1 Add `cfg *config.Config` field to `cargo.Provider` (`internal/provider/builtin/cargo/cargo.go`)
-- [ ] 1.2 Update `New(cfg *config.Config, runner CmdRunner)` signature
-- [ ] 1.3 Create `internal/provider/builtin/cargo/hamsfile.go` mirroring `apt/hamsfile.go` (with `tagCLI = "cli"`, `loadOrCreateHamsfile`, `hamsfilePath`, `effectiveConfig`)
-- [ ] 1.4 Update `HandleCommand` install branch to `loadOrCreateHamsfile` → `AddApp` → `Write` after successful passthrough
-- [ ] 1.5 Update `HandleCommand` remove branch to `loadOrCreateHamsfile` → `RemoveApp` → `Write` after successful passthrough
-- [ ] 1.6 Update `internal/cli/register.go` to pass `builtinCfg` into `cargo.New`
-- [ ] 1.7 Update `internal/cli/bootstrap_invariant_test.go` to pass `nil` cfg (or equivalent) to `cargo.New`
-- [ ] 1.8 Add `TestHandleCommand_U1_InstallAddsCrateToHamsfile` matching `apt`'s U1
-- [ ] 1.9 Add `TestHandleCommand_U2_InstallIsIdempotent` matching apt's U2
-- [ ] 1.10 Add `TestHandleCommand_U3_InstallFailureLeavesHamsfileUntouched` matching apt's U3
-- [ ] 1.11 Add `TestHandleCommand_U4_RemoveDeletesFromHamsfile` matching apt's U4
-- [ ] 1.12 Add `TestHandleCommand_U5_RemoveFailureLeavesHamsfileUntouched` matching apt's U5
-- [ ] 1.13 Add `TestHandleCommand_U6_DryRunDoesNotTouchHamsfile` matching apt's U7
-- [ ] 1.14 Verify `task check` passes
+- [x] 1.1 Add `cfg *config.Config` field to `cargo.Provider` (`internal/provider/builtin/cargo/cargo.go`)
+- [x] 1.2 Update `New(cfg *config.Config, runner CmdRunner)` signature
+- [x] 1.3 Create `internal/provider/builtin/cargo/hamsfile.go` mirroring `apt/hamsfile.go` (with `tagCLI = "cli"`, `loadOrCreateHamsfile`, `hamsfilePath`, `effectiveConfig`)
+- [x] 1.4 Update `HandleCommand` install branch to `loadOrCreateHamsfile` → `AddApp` → `Write` after successful runner.Install (switched from `WrapExecPassthrough` to runner seam for DI testability)
+- [x] 1.5 Update `HandleCommand` remove branch to `loadOrCreateHamsfile` → `RemoveApp` → `Write` after successful runner.Uninstall
+- [x] 1.6 Update `internal/cli/register.go` to pass `builtinCfg` into `cargo.New`
+- [x] 1.7 Update `internal/cli/bootstrap_invariant_test.go` to pass `cfg` to `cargo.New`
+- [x] 1.8 Add `TestHandleCommand_U1_InstallAddsCrateToHamsfile` matching `apt`'s U1
+- [x] 1.9 Add `TestHandleCommand_U2_InstallIsIdempotent` matching apt's U2
+- [x] 1.10 Add `TestHandleCommand_U3_InstallFailureLeavesHamsfileUntouched` matching apt's U3
+- [x] 1.11 Add `TestHandleCommand_U4_RemoveDeletesFromHamsfile` matching apt's U4
+- [x] 1.12 Add `TestHandleCommand_U5_RemoveFailureLeavesHamsfileUntouched` matching apt's U5
+- [x] 1.13 Add `TestHandleCommand_U6_DryRunSkipsRunnerAndHamsfile` matching apt's U7
+- [x] 1.14 Add U7 multi-crate install + U8 atomic-failure + U9 flag-filter + U10 flags-only-usage for cargo-specific edges
+- [x] 1.15 Verify `task check` passes (0 issues, all 33 packages PASS). Coverage 70.6% → 81.0%.
 
 ## 2. npm
 
