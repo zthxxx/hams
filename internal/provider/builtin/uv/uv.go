@@ -5,7 +5,6 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"os/exec"
 	"strings"
 
 	hamserr "github.com/zthxxx/hams/internal/error"
@@ -15,10 +14,13 @@ import (
 )
 
 // Provider implements the uv tool provider.
-type Provider struct{}
+type Provider struct {
+	runner CmdRunner
+}
 
-// New creates a new uv provider.
-func New() *Provider { return &Provider{} }
+// New creates a new uv provider wired with a real CmdRunner.
+// Pass NewFakeCmdRunner from tests for DI-isolated unit testing.
+func New(runner CmdRunner) *Provider { return &Provider{runner: runner} }
 
 // Manifest returns the uv provider metadata.
 func (p *Provider) Manifest() provider.Manifest {
@@ -33,21 +35,17 @@ func (p *Provider) Manifest() provider.Manifest {
 
 // Bootstrap checks if uv is available.
 func (p *Provider) Bootstrap(_ context.Context) error {
-	if _, err := exec.LookPath("uv"); err != nil {
-		return fmt.Errorf("uv not found in PATH")
-	}
-	return nil
+	return p.runner.LookPath()
 }
 
 // Probe queries uv for installed tools.
 func (p *Provider) Probe(ctx context.Context, sf *state.File) ([]provider.ProbeResult, error) {
-	cmd := exec.CommandContext(ctx, "uv", "tool", "list")
-	output, err := cmd.Output()
+	output, err := p.runner.List(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("uv tool list: %w", err)
+		return nil, err
 	}
 
-	installed := parseUvToolList(string(output))
+	installed := parseUvToolList(output)
 	var results []provider.ProbeResult
 	for id, r := range sf.Resources {
 		if r.State == state.StateRemoved {
@@ -71,13 +69,13 @@ func (p *Provider) Plan(_ context.Context, desired *hamsfile.File, observed *sta
 // Apply installs a uv tool.
 func (p *Provider) Apply(ctx context.Context, action provider.Action) error {
 	slog.Info("uv tool install", "package", action.ID)
-	return provider.WrapExecPassthrough(ctx, "uv", []string{"tool", "install", action.ID}, nil)
+	return p.runner.Install(ctx, action.ID)
 }
 
 // Remove uninstalls a uv tool.
 func (p *Provider) Remove(ctx context.Context, resourceID string) error {
 	slog.Info("uv tool uninstall", "package", resourceID)
-	return provider.WrapExecPassthrough(ctx, "uv", []string{"tool", "uninstall", resourceID}, nil)
+	return p.runner.Uninstall(ctx, resourceID)
 }
 
 // List returns installed uv tools with status.

@@ -5,7 +5,6 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"os/exec"
 	"strings"
 
 	hamserr "github.com/zthxxx/hams/internal/error"
@@ -22,10 +21,13 @@ const (
 )
 
 // Provider implements the go install provider.
-type Provider struct{}
+type Provider struct {
+	runner CmdRunner
+}
 
-// New creates a new go install provider.
-func New() *Provider { return &Provider{} }
+// New creates a new go install provider wired with a real CmdRunner.
+// Pass NewFakeCmdRunner from tests for DI-isolated unit testing.
+func New(runner CmdRunner) *Provider { return &Provider{runner: runner} }
 
 // Manifest returns the go install provider metadata.
 func (p *Provider) Manifest() provider.Manifest {
@@ -40,41 +42,23 @@ func (p *Provider) Manifest() provider.Manifest {
 
 // Bootstrap checks if go is available.
 func (p *Provider) Bootstrap(_ context.Context) error {
-	if _, err := exec.LookPath("go"); err != nil {
-		return fmt.Errorf("go not found in PATH")
-	}
-	return nil
+	return p.runner.LookPath()
 }
 
-// Probe checks installed Go binaries by examining GOPATH/bin.
+// Probe checks installed Go binaries by delegating presence detection
+// to the runner (which in production: queries `go env GOPATH`, runs
+// `<gopath>/bin/<name> --version`, falls back to exec.LookPath).
 func (p *Provider) Probe(ctx context.Context, sf *state.File) ([]provider.ProbeResult, error) {
-	cmd := exec.CommandContext(ctx, "go", "env", "GOPATH")
-	out, err := cmd.Output()
-	if err != nil {
-		return nil, fmt.Errorf("go env GOPATH: %w", err)
-	}
-	gopath := strings.TrimSpace(string(out))
-
 	var results []provider.ProbeResult
 	for id, r := range sf.Resources {
 		if r.State == state.StateRemoved {
 			continue
 		}
-		// Derive binary name from the package path (last path element, before @version).
-		pkg := strings.SplitN(id, "@", 2)[0]
-		parts := strings.Split(pkg, "/")
-		binName := parts[len(parts)-1]
-		binPath := gopath + "/bin/" + binName
-
-		checkCmd := exec.CommandContext(ctx, binPath, "--version") //nolint:gosec // path derived from GOPATH + tracked binary name
-		if err := checkCmd.Run(); err != nil {
-			// Fall back to LookPath.
-			if _, lookErr := exec.LookPath(binName); lookErr != nil {
-				results = append(results, provider.ProbeResult{ID: id, State: state.StateFailed})
-				continue
-			}
+		if p.runner.IsBinaryInstalled(ctx, id) {
+			results = append(results, provider.ProbeResult{ID: id, State: state.StateOK})
+		} else {
+			results = append(results, provider.ProbeResult{ID: id, State: state.StateFailed})
 		}
-		results = append(results, provider.ProbeResult{ID: id, State: state.StateOK})
 	}
 	return results, nil
 }
@@ -97,7 +81,7 @@ func injectLatest(resourceID string) string {
 func (p *Provider) Apply(ctx context.Context, action provider.Action) error {
 	pkg := injectLatest(action.ID)
 	slog.Info("go install", "package", pkg)
-	return provider.WrapExecPassthrough(ctx, "go", []string{"install", pkg}, nil)
+	return p.runner.Install(ctx, pkg)
 }
 
 // Remove is a no-op for go install; binaries must be removed manually.
