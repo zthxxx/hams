@@ -88,6 +88,7 @@ func runApply(ctx context.Context, flags *provider.GlobalFlags, registry *provid
 	paths := resolvePaths(flags)
 
 	storePath := flags.Store
+	var configuredRepo string
 	if storePath == "" {
 		cfg, err := config.Load(paths, "")
 		if err != nil {
@@ -101,12 +102,29 @@ func runApply(ctx context.Context, flags *provider.GlobalFlags, registry *provid
 		if cfg.StorePath != "" {
 			storePath = cfg.StorePath
 		}
+		configuredRepo = cfg.StoreRepo
 	}
 
-	if fromRepo != "" {
-		slog.Info("from-repo specified", "repo", fromRepo)
+	// Resolution order for where the store lives, from highest to
+	// lowest precedence:
+	//   1. --from-repo on the command line  (explicit override)
+	//   2. --store on the command line       (explicit override, handled above via flags.Store)
+	//   3. store_path in config              (handled above via cfg.StorePath)
+	//   4. store_repo in config              (auto-clone, per schema-design spec)
+	// Step 4 was missing — cfg.StoreRepo was defined, written on
+	// `config set store_repo`, and displayed by `config get` but
+	// NEVER resolved into an actual store path. Users who configured
+	// only store_repo got "no store directory configured" despite
+	// the spec calling store_repo a required field.
+	effectiveFromRepo := fromRepo
+	if effectiveFromRepo == "" && storePath == "" && configuredRepo != "" {
+		slog.Info("resolving store from configured store_repo", "store_repo", configuredRepo)
+		effectiveFromRepo = configuredRepo
+	}
+	if effectiveFromRepo != "" {
+		slog.Info("from-repo specified", "repo", effectiveFromRepo)
 		var cloneErr error
-		storePath, cloneErr = bootstrapFromRepo(fromRepo, paths)
+		storePath, cloneErr = bootstrapFromRepo(effectiveFromRepo, paths)
 		if cloneErr != nil {
 			return fmt.Errorf("bootstrap from repo: %w", cloneErr)
 		}
