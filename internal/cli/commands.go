@@ -153,11 +153,20 @@ func runRefresh(ctx context.Context, flags *provider.GlobalFlags, registry *prov
 	planned := len(providers)
 	if probed == planned {
 		fmt.Printf("Refresh complete: %d providers probed\n", planned)
-	} else {
-		fmt.Printf("Refresh complete: %d/%d providers probed (%d probe error(s); see log for details)\n",
-			probed, planned, planned-probed)
+		return nil
 	}
-	return nil
+	// Partial failure: some providers couldn't probe. Return
+	// ExitPartialFailure so scripts detect the anomaly; previously
+	// refresh returned nil (exit 0) despite the log line warning of
+	// errors — a silent-exit-0 UX bug matching the apply --dry-run
+	// drift fixed in cycle 39.
+	fmt.Printf("Refresh complete: %d/%d providers probed (%d probe error(s); see log for details)\n",
+		probed, planned, planned-probed)
+	return hamserr.NewUserError(hamserr.ExitPartialFailure,
+		fmt.Sprintf("%d of %d providers failed to probe", planned-probed, planned),
+		"Check slog output above for the specific error(s)",
+		"Use '--debug' for detailed error output",
+	)
 }
 
 func configCmd() *cli.Command {
