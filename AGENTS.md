@@ -181,6 +181,10 @@ Spec corrections:
 
 Total commits in cycle 2: 15+ (still growing — iteration 3 adds hooks+OTel defer).
 
+### Cycle 23 — `hams version` subcommand wires up the detailed build info
+
+- [x] `version.Info()` had zero production callers (scaffolded-but-unwired, same pattern as lucky/TUI/notify but small enough to close fully). Users filing bug reports needed the full "semver (commit) built <date> <goos>/<goarch>" string; `--version` only returned the brief form. Added `hams version` subcommand routing to `version.Info()`. Added `TestNewApp_VersionSubcommandAvailable`. (commit `e3a5d81`)
+
 ### Cycle 22 — Plan coverage for ansible + defaults
 
 - [x] Ansible `TestU9_Plan_AttachesPlaybookPathAsResource` (70.5% → 76.9%) — verifies Plan decorates each action.Resource with the URN (string), required by Apply's type assertion.
