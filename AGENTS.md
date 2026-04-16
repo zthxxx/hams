@@ -187,6 +187,10 @@ Spec corrections:
 
 Total commits in cycle 2: 15+ (still growing — iteration 3 adds hooks+OTel defer).
 
+### Cycle 129 — Populate dev-sandbox spec Purpose + finish cycle 127 race fix
+
+- [x] Two fixes. (1) `openspec/specs/dev-sandbox/spec.md` had literal `"TBD - created by archiving change dev-sandbox. Update Purpose after archive."` as the Purpose — a spec artifact defect from the archive workflow. Wrote proper Purpose explaining why dev-sandbox exists (host-safe reproducible environment for `hams apply` end-to-end testing, filling the gap between unit tests and CI-driven Dockerized integration tests). (2) Cycle 127's captureStdout mutex wasn't enough on its own — `TestCloneRemoteRepo_CanceledContextAborts` passes `os.Stdout` to go-git's `PlainCloneContext`'s `Progress` field (a READ of the global), and another Parallel test's `captureStdout` swap (WRITE) raced. Removed `t.Parallel()` from that test since it genuinely requires a stable `os.Stdout`. task check green. (commit `28bbeac`)
+
 ### Cycle 128 — selfupdate `IsUpToDate` version-comparison edges
 
 - [x] Expanded `IsUpToDate` test coverage to 4 edges that matter for real user workflows: (1) current newer than latest (dev build ahead of stable) — `>=` semantics must hold so `self-upgrade` doesn't downgrade; (2) pre-release/build-metadata stripped (`1.0.0-rc1` vs `1.0.0` treated as equal, per the stripping comment) so `self-upgrade` doesn't churn on every rc tag; (3) different dot depths (`1.0` vs `1.0.0`) treated equal (missing parts default to 0); (4) non-numeric fallback (`dev` vs `dev` string-equal; `dev` vs `1.0.0` not up-to-date). 4 regression tests. selfupdate coverage: 76.4% → 79.2%. (commit `2506e1a`)
