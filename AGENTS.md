@@ -187,6 +187,10 @@ Spec corrections:
 
 Total commits in cycle 2: 15+ (still growing — iteration 3 adds hooks+OTel defer).
 
+### Cycle 105 — Dead code cleanup + stringer tests
+
+- [x] Maintenance cycle. `Registry.All()` had zero callers anywhere in the codebase (grep across `internal/`, `pkg/`, `cmd/`, all `*.go` including tests). Deleted per "continuous garbage collection" rule. Added tests for `ResourceClass.String`, `ActionType.String`, and `BootstrapRequiredError.Error` / `Unwrap` — these implement user-facing formatting that the consent flow and dry-run preview rely on being stable, but previously sat at 0% coverage, so a rename would have silently garbled log messages without any test catching it. `errors.Is` / `errors.As` round-trip also asserted. provider coverage: 70.2% → 73.6%. (commit `95565e0`)
+
 ### Cycle 104 — git-config `set`/`remove`/`list` verb routing per spec
 
 - [x] Real user-workflow bug caught by comparing spec vs implementation. `builtin-providers.md §git-config` documents four CLI shapes (`set <key> <value>`, `remove <key>`, `list`, plus bare `<key> <value>`), but the implementation only accepted bare — so a user typing `hams git-config set user.name zthxxx` (the canonical form per spec/docs) hit a cryptic "scope.key=value" error because "set" was parsed as a key. `remove` and `list` were also broken. Fix: `HandleCommand` now routes on the first arg — `set <key> <value>` → doSet (same semantics as bare, kept for backward compat), `remove <key>` → `runner.UnsetGlobal` + delete matching hamsfile entry + `StateRemoved` tombstone (tombstone-only when no prior entry, so future apply won't re-assert a stale value), `list` → prints desired-vs-observed diff. Usage error now lists all four shapes. 8 new U-series tests (U10-U17: set verb happy path, set wrong arity, remove verb deletes + marks state, remove without prior entry tombstone, remove wrong arity, set dry-run, remove dry-run, list runs clean). git coverage: 53.3% → 59.7%. (commit `5ba5171`)
