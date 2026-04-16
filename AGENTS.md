@@ -181,6 +181,11 @@ Spec corrections:
 
 Total commits in cycle 2: 15+ (still growing — iteration 3 adds hooks+OTel defer).
 
+### Cycle 26 — Observability spec reconciled with HAMS_OTEL reality
+
+- [x] **Session-creation scenarios said unconditional**: spec said `hams apply` always creates an OTel session; impl requires `HAMS_OTEL=1` (cycle 5 un-deferral). Added a "v1 enablement gate" paragraph + `HAMS_OTEL=1` qualifier on relevant scenarios + new "OTel disabled by default" scenario.
+- [x] **`otel.exporter` config field doesn't exist**: spec had scenarios about `otel.exporter: otlp` in `hams.config.yaml`, but no such field is plumbed through. Marked scenarios as "(v1.1)" and added a "v1 status" note that the file exporter is selected unconditionally. Spec-only change. (commit `e2ba20a`)
+
 ### Cycle 25 — `hams store init` prompts for profile tag on TTY
 
 - [x] Spec required prompting for initial profile tag on init; impl silently defaulted to "default". Added TTY-guarded prompt (non-TTY falls through for scriptability). Persists both `profile_tag` and `machine_id` to global config so subsequent apply doesn't re-prompt. Persist-failure degrades to WARN (store still usable). (commit `581575f`)
