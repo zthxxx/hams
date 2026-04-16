@@ -187,6 +187,10 @@ Spec corrections:
 
 Total commits in cycle 2: 15+ (still growing — iteration 3 adds hooks+OTel defer).
 
+### Cycle 110 — Direct tests for `filterProviders` + `parseCSV`
+
+- [x] `filterProviders` and `parseCSV` were only exercised transitively through apply/refresh command tests — no direct unit tests. A silent change to the CSV trimming behavior (e.g. a future "optimize" that loses empty-skip) would slip past existing coverage. Added 9 direct tests covering the full contract surface: both-flags-empty short-circuit, `--only`/`--except` mutual exclusion, only-filters-down, except-filters-out, case-insensitive matching, whitespace-part trimming, unknown-name usage errors for both flags (asserted via `errors.As` on the `UserFacingError` to inspect the suggestions list, since `Error()` returns only the top-line message), and `parseCSV` whitespace + empty-part handling. Test harness introduces a minimal `namedProvider` fake — only `Manifest()` is consulted by the filter, other Provider methods are no-op stubs. cli coverage: 60.6% → 62.5%. (commit `ec0526b`)
+
 ### Cycle 109 — Direct tests for IsPlatformsMatch + HookSet.HasAny
 
 - [x] Small coverage cycle. Both functions sat at 66.7% with no direct tests — only indirectly exercised through provider dispatch and hook execution. Added explicit branch coverage for `IsPlatformsMatch` (empty/nil is wildcard, `PlatformAll` is wildcard, empty-string Platform is wildcard, non-matching platform returns false) and `HookSet.HasAny` (nil pointer safe, empty set false, PreInstall-only true, PostUpdate-only true). These test-gate subtle contracts — e.g., a future change that inverts the "empty platforms = all" default would silently hide every no-platform-filter provider from dispatch, but now fails the test suite instead. provider coverage: 73.6% → 74.2%. (commit `f217b18`)
