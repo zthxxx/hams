@@ -187,6 +187,10 @@ Spec corrections:
 
 Total commits in cycle 2: 15+ (still growing — iteration 3 adds hooks+OTel defer).
 
+### Cycle 128 — selfupdate `IsUpToDate` version-comparison edges
+
+- [x] Expanded `IsUpToDate` test coverage to 4 edges that matter for real user workflows: (1) current newer than latest (dev build ahead of stable) — `>=` semantics must hold so `self-upgrade` doesn't downgrade; (2) pre-release/build-metadata stripped (`1.0.0-rc1` vs `1.0.0` treated as equal, per the stripping comment) so `self-upgrade` doesn't churn on every rc tag; (3) different dot depths (`1.0` vs `1.0.0`) treated equal (missing parts default to 0); (4) non-numeric fallback (`dev` vs `dev` string-equal; `dev` vs `1.0.0` not up-to-date). 4 regression tests. selfupdate coverage: 76.4% → 79.2%. (commit `2506e1a`)
+
 ### Cycle 127 — Dedupe pluralize; fix captureStdout/captureStderr race
 
 - [x] Two cleanups while verifying cycle 126. (1) `hams list` had inline `noun := "resources"; if count == 1 { noun = "resource" }` that duplicated the `pluralize` helper from cycle 125 — replaced. Drops 3 lines. (2) `captureStdout`/`captureStderr` swapped the global `os.Stdout`/`os.Stderr` without synchronization; two `t.Parallel()` tests calling either helper concurrently raced on that global. Go's `-race` detector flagged it during the task-check run after cycle 126. Added per-function mutexes (`captureStdoutMu`, `captureStderrMu`) to serialize the swap, and switched from `t.Cleanup` to `defer` inside the locked section so the restore happens while the lock is held (otherwise Cleanup would run AFTER the unlock and another test could race-restore first). (commit `9e95db4`)
