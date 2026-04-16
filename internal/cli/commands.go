@@ -127,10 +127,12 @@ func runRefresh(ctx context.Context, flags *provider.GlobalFlags, registry *prov
 	probeStart := time.Now()
 	probeResults := provider.ProbeAll(ctx, providers, stateDir, cfg.MachineID)
 	probeElapsed := time.Since(probeStart).Milliseconds()
+	var saveFailures []string
 	for name, sf := range probeResults {
 		statePath := filepath.Join(stateDir, name+".state.yaml")
 		if saveErr := sf.Save(statePath); saveErr != nil {
-			slog.Error("failed to save probed state", "provider", name, "error", saveErr)
+			slog.Error("failed to save probed state", "provider", name, "path", statePath, "error", saveErr)
+			saveFailures = append(saveFailures, name)
 		}
 	}
 
@@ -151,19 +153,29 @@ func runRefresh(ctx context.Context, flags *provider.GlobalFlags, registry *prov
 	// misleading "1 providers probed".
 	probed := len(probeResults)
 	planned := len(providers)
-	if probed == planned {
+	if probed == planned && len(saveFailures) == 0 {
 		fmt.Printf("Refresh complete: %d providers probed\n", planned)
 		return nil
 	}
-	// Partial failure: some providers couldn't probe. Return
-	// ExitPartialFailure so scripts detect the anomaly; previously
-	// refresh returned nil (exit 0) despite the log line warning of
-	// errors — a silent-exit-0 UX bug matching the apply --dry-run
-	// drift fixed in cycle 39.
-	fmt.Printf("Refresh complete: %d/%d providers probed (%d probe error(s); see log for details)\n",
-		probed, planned, planned-probed)
+	// Partial failure: some providers couldn't probe or their state
+	// file couldn't be saved. Return ExitPartialFailure so scripts
+	// detect the anomaly; previously refresh returned nil (exit 0)
+	// despite the log line warning of errors — a silent-exit-0 UX
+	// bug matching the apply --dry-run drift fixed in cycle 39.
+	if probed == planned {
+		fmt.Printf("Refresh complete: %d providers probed, but %d state file(s) failed to save: %s\n",
+			planned, len(saveFailures), strings.Join(saveFailures, ", "))
+	} else {
+		fmt.Printf("Refresh complete: %d/%d providers probed (%d probe error(s); see log for details)\n",
+			probed, planned, planned-probed)
+	}
+	if len(saveFailures) > 0 {
+		fmt.Printf("Warning: %d state save failure(s): %s — next run may re-probe these\n",
+			len(saveFailures), strings.Join(saveFailures, ", "))
+	}
 	return hamserr.NewUserError(hamserr.ExitPartialFailure,
-		fmt.Sprintf("%d of %d providers failed to probe", planned-probed, planned),
+		fmt.Sprintf("%d of %d providers failed to probe, %d state saves failed",
+			planned-probed, planned, len(saveFailures)),
 		"Check slog output above for the specific error(s)",
 		"Use '--debug' for detailed error output",
 	)

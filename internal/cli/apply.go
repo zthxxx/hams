@@ -360,13 +360,22 @@ func runApply(ctx context.Context, flags *provider.GlobalFlags, registry *provid
 		)
 	}
 
+	// Per-provider failure tracking lists. Declared above the refresh
+	// block because the pre-apply probe also uses stateSaveFailures
+	// (failures there affect the final summary just like post-install
+	// save failures do — same drift consequences).
+	var allResults []provider.ExecuteResult
+	var skippedProviders []string
+	var stateSaveFailures []string
+
 	if !noRefresh {
 		slog.Info("refreshing state")
 		probeResults := provider.ProbeAll(ctx, sorted, stateDir, cfg.MachineID)
 		for filePrefix, sf := range probeResults {
 			statePath := filepath.Join(stateDir, filePrefix+".state.yaml")
 			if saveErr := sf.Save(statePath); saveErr != nil {
-				slog.Error("failed to save probed state", "provider", sf.Provider, "error", saveErr)
+				slog.Error("failed to save probed state", "provider", sf.Provider, "path", statePath, "error", saveErr)
+				stateSaveFailures = append(stateSaveFailures, sf.Provider)
 			}
 		}
 	}
@@ -387,9 +396,6 @@ func runApply(ctx context.Context, flags *provider.GlobalFlags, registry *provid
 		}
 	}
 
-	var allResults []provider.ExecuteResult
-	var skippedProviders []string
-	var stateSaveFailures []string
 	for _, p := range sorted {
 		manifest := p.Manifest()
 		name := manifest.Name
