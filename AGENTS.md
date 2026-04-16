@@ -64,7 +64,7 @@ Single test: `go test -race -run TestFuncName ./path/to/package/...`
 
 - **Provider plugin system**: builtins compiled in Go, externals via `hashicorp/go-plugin` (local gRPC).
 - **Terraform-style state**: `.state/<machine-id>/<Provider>.state.yaml`, single-writer lock, refresh-then-diff.
-- **TUI**: BubbleTea alternate screen, collapsible logs, interactive popup for stdin.
+- **TUI**: BubbleTea models scaffolded at `internal/tui/` (alternate screen, collapsible logs, popup) but **unwired in v1**; CLI uses plain `slog` log lines. v1.1 will plug `tui.RunApplyTUI` into `runApply`. See `openspec/changes/2026-04-16-defer-tui-and-notify/`.
 - **OTel**: trace + metrics, local file exporter at `${HAMS_DATA_HOME}/otel/`.
 - **Docs**: Nextra on GitHub Pages at `hams.zthxxx.me`.
 
