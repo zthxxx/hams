@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"runtime"
 	"testing"
 
 	"github.com/zthxxx/hams/internal/config"
@@ -71,6 +72,47 @@ func TestBuiltinManifestScriptHostsAreBash(t *testing.T) {
 				t.Errorf("provider %q DependsOn[%d] has Script but targets %q; Script entries must target 'bash' (the only BashScriptRunner implementer)",
 					manifest.Name, i, dep.Provider)
 			}
+		}
+	}
+}
+
+// TestRegisterBuiltins_FiltersCLIByPlatform asserts that `registerBuiltins`
+// keeps the CLI dispatch registry (`providerRegistry`) consistent with the
+// internal provider registry — i.e., macOS-only providers (defaults, duti,
+// mas) do NOT appear as `hams <name>` subcommands on Linux. Before this
+// fix, they showed up in `hams --help` on Linux and then exec-failed at
+// runtime with a confusing "executable not found" error.
+func TestRegisterBuiltins_FiltersCLIByPlatform(t *testing.T) {
+	// Save and restore registries.
+	origProv := providerRegistry
+	providerRegistry = make(map[string]ProviderHandler)
+	t.Cleanup(func() { providerRegistry = origProv })
+
+	registry := provider.NewRegistry()
+	registerBuiltins(registry, sudo.DirectBuilder{})
+
+	darwinOnly := []string{"defaults", "duti", "mas"}
+	for _, name := range darwinOnly {
+		_, cliHas := providerRegistry[name]
+		switch runtime.GOOS {
+		case "darwin":
+			if !cliHas {
+				t.Errorf("on darwin, %q should be in CLI registry", name)
+			}
+		default:
+			if cliHas {
+				t.Errorf("on %s, macOS-only provider %q should NOT be in CLI registry (would exec-fail)", runtime.GOOS, name)
+			}
+		}
+	}
+
+	// Sanity: PlatformAll providers are always in the CLI registry.
+	for _, name := range []string{"brew", "pnpm", "npm", "uv", "cargo", "bash"} {
+		if name == "bash" {
+			continue // bash is providerOnly, not in CLI registry by design
+		}
+		if _, ok := providerRegistry[name]; !ok {
+			t.Errorf("%q (PlatformAll) should always be in CLI registry", name)
 		}
 	}
 }

@@ -112,6 +112,15 @@ func (r *Registry) Ordered(priority []string) []Provider {
 }
 
 func isPlatformsMatch(platforms []Platform) bool {
+	return IsPlatformsMatch(platforms)
+}
+
+// IsPlatformsMatch reports whether the current runtime.GOOS matches any of
+// the given platforms. An empty list matches all platforms. Exported so CLI
+// wiring can filter provider dispatch by platform consistently with the
+// provider registry's own platform filtering (otherwise `hams --help` on
+// Linux would advertise macOS-only providers that silently exec-fail).
+func IsPlatformsMatch(platforms []Platform) bool {
 	if len(platforms) == 0 {
 		return true
 	}

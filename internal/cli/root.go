@@ -116,7 +116,7 @@ func providerUsageDescription(name, displayName string) string {
 		return "Manage macOS defaults preferences"
 	case "duti":
 		return "Manage macOS default-app associations"
-	case "bash":
+	case "bash": //nolint:goconst // provider identifier, same string pattern as the other case labels — extracting a constant for one name would be inconsistent with the rest of the switch
 		return "Run bash provisioning scripts"
 	case "ansible":
 		return "Run Ansible playbooks"
