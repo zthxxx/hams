@@ -187,6 +187,10 @@ Spec corrections:
 
 Total commits in cycle 2: 15+ (still growing — iteration 3 adds hooks+OTel defer).
 
+### Cycle 126 — Dry-run text output uses correct singular grammar
+
+- [x] Extension of cycle 125's pluralize helper to the dry-run preview output (`printDryRunActions`). Two lines had the same bug: `"no changes (1 resources already at desired state)"` and `"(1 resources unchanged)"`. Both now branch on count via `pluralize`. 3 regression tests cover singular (count=1), plural (count=2), and the mixed-install+skip case (`(1 resource unchanged)` after install lines). cli coverage: 67.8% → 68.8%. (commit `a615597`)
+
 ### Cycle 125 — `hams refresh` summary uses correct singular grammar
 
 - [x] Mirror of cycle 36 (which fixed the same bug in `hams list`). `hams refresh` printed `"Refresh complete: 1 providers probed"` for single-provider runs — grammatically wrong. Extracted a `pluralize(count, singular, plural)` helper and applied to all 3 refresh-summary variants (happy path, save-failure path, probe-failure path) so each emits "provider" vs "providers" based on count. Regression test `TestRunRefresh_SingularProviderNoun` seeds a one-provider refresh and asserts the output contains `"1 provider probed"` AND does NOT contain `"1 providers probed"`. cli coverage: 67.4% → 67.8%. (commit `227830c`)
