@@ -181,6 +181,10 @@ Spec corrections:
 
 Total commits in cycle 2: 15+ (still growing — iteration 3 adds hooks+OTel defer).
 
+### Cycle 19 — Context propagation through every provider HandleCommand
+
+- [x] **Signal handling broken at provider boundary**: cycle 12 wired SIGINT/SIGTERM into the root context and forwarded it to provider `HandleCommand`, but every single provider dropped the context by calling `exec.CommandContext(context.Background(), …)` or `WrapExecPassthrough(context.Background(), …)`. Ctrl+C during a long `brew install` / `pnpm add` / etc. did nothing. Threaded `ctx` through all 12 v1 providers (ansible, cargo, defaults, duti, git-config, git-clone, goinstall, mas, npm, pnpm, uv, vscodeext). No production code references `context.Background()` anymore. (commit `10f2897`)
+
 ### Cycle 18 — `config list` surfaces the local-overrides path
 
 - [x] **Invisible .local.yaml**: after cycles 16/17 users could set/get `notification.bark_token`, but `hams config list` never told them where those values landed. Added a "Local overrides:" line using the same routing helper (`localConfigPath`) as WriteConfigKey/ReadRawConfigKey. Minimal fix — full per-key source-annotated listing per cli-architecture spec §"List all config values" is a larger refactor deferred to a future cycle. (commit `23fff82`)
