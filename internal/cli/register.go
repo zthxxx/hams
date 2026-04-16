@@ -49,7 +49,7 @@ func registerBuiltins(registry *provider.Registry, sudoCmd sudo.CmdBuilder) {
 		defaults.New(builtinCfg, defaults.NewRealCmdRunner()),
 		duti.New(duti.NewRealCmdRunner()),
 		mas.New(mas.NewRealCmdRunner()),
-		vscodeext.New(),
+		vscodeext.New(vscodeext.NewRealCmdRunner()),
 		ansible.New(),
 	}
 

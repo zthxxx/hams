@@ -5,7 +5,6 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"os/exec"
 	"strings"
 
 	hamserr "github.com/zthxxx/hams/internal/error"
@@ -22,10 +21,14 @@ const (
 )
 
 // Provider implements the VS Code extension provider.
-type Provider struct{}
+type Provider struct {
+	runner CmdRunner
+}
 
-// New creates a new VS Code extension provider.
-func New() *Provider { return &Provider{} }
+// New creates a new VS Code extension provider wired with a real
+// CmdRunner. Pass NewFakeCmdRunner from tests for DI-isolated unit
+// testing.
+func New(runner CmdRunner) *Provider { return &Provider{runner: runner} }
 
 // Manifest returns the vscodeext provider metadata.
 func (p *Provider) Manifest() provider.Manifest {
@@ -46,21 +49,17 @@ func (p *Provider) Manifest() provider.Manifest {
 
 // Bootstrap checks if the code CLI is available.
 func (p *Provider) Bootstrap(_ context.Context) error {
-	if _, err := exec.LookPath("code"); err != nil {
-		return fmt.Errorf("code CLI not found in PATH; ensure VS Code is installed and 'code' is on PATH")
-	}
-	return nil
+	return p.runner.LookPath()
 }
 
 // Probe queries VS Code for installed extensions.
 func (p *Provider) Probe(ctx context.Context, sf *state.File) ([]provider.ProbeResult, error) {
-	cmd := exec.CommandContext(ctx, "code", "--list-extensions", "--show-versions")
-	output, err := cmd.Output()
+	output, err := p.runner.List(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("code --list-extensions: %w", err)
+		return nil, err
 	}
 
-	installed := parseExtensionList(string(output))
+	installed := parseExtensionList(output)
 	var results []provider.ProbeResult
 	for id, r := range sf.Resources {
 		if r.State == state.StateRemoved {
@@ -86,13 +85,13 @@ func (p *Provider) Plan(_ context.Context, desired *hamsfile.File, observed *sta
 // Apply installs a VS Code extension.
 func (p *Provider) Apply(ctx context.Context, action provider.Action) error {
 	slog.Info("code --install-extension", "extension", action.ID)
-	return provider.WrapExecPassthrough(ctx, "code", []string{"--install-extension", action.ID}, nil)
+	return p.runner.Install(ctx, action.ID)
 }
 
 // Remove uninstalls a VS Code extension.
 func (p *Provider) Remove(ctx context.Context, resourceID string) error {
 	slog.Info("code --uninstall-extension", "extension", resourceID)
-	return provider.WrapExecPassthrough(ctx, "code", []string{"--uninstall-extension", resourceID}, nil)
+	return p.runner.Uninstall(ctx, resourceID)
 }
 
 // List returns installed VS Code extensions with status.
