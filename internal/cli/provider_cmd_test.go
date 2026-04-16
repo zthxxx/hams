@@ -128,3 +128,90 @@ func TestRouteToProvider_ContextForwarded(t *testing.T) {
 		t.Errorf("context not forwarded; got value %q (ok=%v), want %q", got, ok, "marker")
 	}
 }
+
+// TestParseProviderArgs_BoolFlagEqualsForm locks in cycle 95: the
+// five BoolFlag forms urfave/cli accepts (bare, =true, =1, =false,
+// =0) must all be recognized by parseProviderArgs so they're stripped
+// before passthrough to the wrapped CLI. Previously only the bare
+// form matched, so `hams apt --json=true install foo` leaked
+// `--json=true` to apt-get which rejected it with "option --json=true
+// is not understood".
+func TestParseProviderArgs_BoolFlagEqualsForm(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name       string
+		input      []string
+		wantJSON   bool
+		wantDebug  bool
+		wantDryRun bool
+		wantPass   []string
+	}{
+		{
+			name:     "bare --json",
+			input:    []string{"--json", "install", "foo"},
+			wantJSON: true,
+			wantPass: []string{"install", "foo"},
+		},
+		{
+			name:     "--json=true",
+			input:    []string{"--json=true", "install", "foo"},
+			wantJSON: true,
+			wantPass: []string{"install", "foo"},
+		},
+		{
+			name:     "--json=1",
+			input:    []string{"--json=1", "install", "foo"},
+			wantJSON: true,
+			wantPass: []string{"install", "foo"},
+		},
+		{
+			name:     "--json=false is consumed, jsonMode stays false",
+			input:    []string{"--json=false", "install", "foo"},
+			wantJSON: false,
+			wantPass: []string{"install", "foo"},
+		},
+		{
+			name:      "--debug=true",
+			input:     []string{"--debug=true", "list"},
+			wantDebug: true,
+			wantPass:  []string{"list"},
+		},
+		{
+			name:       "--dry-run=true with other flags",
+			input:      []string{"--dry-run=true", "--json", "install", "foo"},
+			wantDryRun: true,
+			wantJSON:   true,
+			wantPass:   []string{"install", "foo"},
+		},
+		{
+			name:     "unknown --flag=value stays in passthrough",
+			input:    []string{"--custom=x", "install", "foo"},
+			wantPass: []string{"--custom=x", "install", "foo"},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			flags := &provider.GlobalFlags{}
+			_, pass := parseProviderArgs(tc.input, flags)
+			if flags.JSON != tc.wantJSON {
+				t.Errorf("JSON = %v, want %v", flags.JSON, tc.wantJSON)
+			}
+			if flags.Debug != tc.wantDebug {
+				t.Errorf("Debug = %v, want %v", flags.Debug, tc.wantDebug)
+			}
+			if flags.DryRun != tc.wantDryRun {
+				t.Errorf("DryRun = %v, want %v", flags.DryRun, tc.wantDryRun)
+			}
+			if len(pass) != len(tc.wantPass) {
+				t.Errorf("passthrough = %v (len %d), want %v", pass, len(pass), tc.wantPass)
+				return
+			}
+			for i, want := range tc.wantPass {
+				if pass[i] != want {
+					t.Errorf("passthrough[%d] = %q, want %q", i, pass[i], want)
+				}
+			}
+		})
+	}
+}
