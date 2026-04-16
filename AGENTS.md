@@ -181,6 +181,10 @@ Spec corrections:
 
 Total commits in cycle 2: 15+ (still growing — iteration 3 adds hooks+OTel defer).
 
+### Cycle 20 — Homebrew helper coverage (45.2% → 49.3%)
+
+- [x] **4 pure helpers uncovered**: `isTapFormat`, `parseInstallTag`, `packageArgs`, `hasCaskFlag`. Added table-driven tests with edge cases that document intended behavior (e.g., `isTapFormat("user/repo.git") = false`, `parseInstallTag("a,b") = "a"`). No production changes. (commit `03d1955`)
+
 ### Cycle 19 — Context propagation through every provider HandleCommand
 
 - [x] **Signal handling broken at provider boundary**: cycle 12 wired SIGINT/SIGTERM into the root context and forwarded it to provider `HandleCommand`, but every single provider dropped the context by calling `exec.CommandContext(context.Background(), …)` or `WrapExecPassthrough(context.Background(), …)`. Ctrl+C during a long `brew install` / `pnpm add` / etc. did nothing. Threaded `ctx` through all 12 v1 providers (ansible, cargo, defaults, duti, git-config, git-clone, goinstall, mas, npm, pnpm, uv, vscodeext). No production code references `context.Background()` anymore. (commit `10f2897`)
