@@ -86,10 +86,15 @@ hams 二进制里内置了 go-git，所以哪怕这机器连 git 命令都还没
 ### 从 store 仓库 apply
 
 ```bash
-hams apply --from-repo=<your-username>/hams-store
+# 机器上还没装 Homebrew / pnpm / ansible 之类的前置工具？加上 --bootstrap，
+# hams 会在你确认后自动装好。完整的 bootstrap 支持列表见 `apply` 命令页。
+hams apply --bootstrap --from-repo=<your-username>/hams-store
 ```
 
 把 `<your-username>/hams-store` 换成你自己的 GitHub 用户和 store 仓库名。
+交互终端下 `--bootstrap` 不是必传 —— hams 跑到前置工具缺失的 provider 时会主动
+弹 `[y/N/s]` 让你确认。CI / 脚本里记得显式传 `--bootstrap`（或 `--no-bootstrap`
+让它前置缺失时直接报错退出）。
 
 ### 回答两个小问题
 

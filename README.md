@@ -32,15 +32,15 @@ hams pnpm add serve
 # Set git config and record it
 hams git-config user.name "Your Name"
 
-# Restore everything on a new machine
-hams apply --from-repo=your-username/hams-store
+# Restore everything on a new machine (add --bootstrap if brew isn't installed yet)
+hams apply --bootstrap --from-repo=your-username/hams-store
 ```
 
 ### How It Works
 
 1. **Install via CLI**: `hams brew install git` runs `brew install git` AND records `git` in `Homebrew.hams.yaml`
 2. **Sync to Git**: Push your hams-store repo with all `*.hams.yaml` files
-3. **Restore anywhere**: `hams apply --from-repo=you/hams-store` replays all installations on a new machine
+3. **Restore anywhere**: `hams apply --bootstrap --from-repo=you/hams-store` replays all installations on a new machine (add `--bootstrap` if prerequisites like Homebrew aren't installed yet)
 
 ## Features
 

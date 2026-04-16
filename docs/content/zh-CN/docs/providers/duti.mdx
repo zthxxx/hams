@@ -86,7 +86,19 @@ mdls -name kMDItemCFBundleIdentifier /Applications/Visual\ Studio\ Code.app
 
 ## 前提条件
 
-先装 duti：
+新 Mac 没装 duti？可以让 hams 通过 Homebrew 帮你装。给 `apply` 加上 `--bootstrap`，
+hams 会在你确认后跑 `brew install duti`：
+
+```bash
+hams apply --bootstrap --from-repo=you/hams-store
+```
+
+交互终端不带这个 flag 时，hams 会把命令打出来让你 `[y/N/s]` 确认。详见
+[hams apply → 关于 bootstrap 提示](/docs/cli/apply#关于-bootstrap-提示)。
+brew 本身也是 opt-in consent，新 Mac 的 `brew → duti` 链一条 `hams apply --bootstrap`
+就能走完。
+
+或者按常规用 Homebrew 声明 duti：
 
 ```yaml
 # Homebrew.hams.yaml

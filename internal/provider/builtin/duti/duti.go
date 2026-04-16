@@ -14,29 +14,56 @@ import (
 	"github.com/zthxxx/hams/internal/state"
 )
 
+// cliName is the duti provider's manifest + CLI name.
+const cliName = "duti"
+
 // Provider implements the duti default-app association provider.
 type Provider struct{}
 
 // New creates a new duti provider.
 func New() *Provider { return &Provider{} }
 
+// dutiInstallScript is the consent-gated install command. brew is the
+// host (already on PATH if the user's fresh-Mac chain went brew →
+// duti). Extracted so unit tests can assert Script-matches-manifest.
+const dutiInstallScript = "brew install duti"
+
+// dutiBinaryLookup is the PATH-check seam Bootstrap uses.
+var dutiBinaryLookup = exec.LookPath
+
 // Manifest returns the duti provider metadata.
+//
+// Two DependsOn entries, each with a single purpose (see pnpm.go for
+// the full rationale): one DAG-only entry ordering brew before duti,
+// and one bash-hosted script entry whose install command `brew install
+// duti` calls into the (already-bootstrapped) brew provider at the
+// shell layer. Only `bash` implements provider.BashScriptRunner.
 func (p *Provider) Manifest() provider.Manifest {
 	return provider.Manifest{
-		Name:          "duti",
-		DisplayName:   "duti",
+		Name:          cliName,
+		DisplayName:   cliName,
 		Platforms:     []provider.Platform{provider.PlatformDarwin},
 		ResourceClass: provider.ClassKVConfig,
-		FilePrefix:    "duti",
+		DependsOn: []provider.DependOn{
+			{Provider: "brew", Platform: provider.PlatformDarwin},
+			{Provider: "bash", Script: dutiInstallScript, Platform: provider.PlatformDarwin},
+		},
+		FilePrefix: cliName,
 	}
 }
 
-// Bootstrap checks if duti is available.
+// Bootstrap reports whether duti is installed. A missing binary is
+// signaled via provider.BootstrapRequiredError so the CLI consent
+// flow can surface the install script + --bootstrap remedy.
 func (p *Provider) Bootstrap(_ context.Context) error {
-	if _, err := exec.LookPath("duti"); err != nil {
-		return fmt.Errorf("duti not found in PATH (macOS only; install via: brew install duti)")
+	if _, err := dutiBinaryLookup("duti"); err == nil {
+		return nil
 	}
-	return nil
+	return &provider.BootstrapRequiredError{
+		Provider: "duti",
+		Binary:   "duti",
+		Script:   dutiInstallScript,
+	}
 }
 
 // Probe checks the current default app for each tracked file extension.
@@ -120,10 +147,10 @@ func (p *Provider) HandleCommand(_ context.Context, args []string, _ map[string]
 }
 
 // Name returns the CLI name.
-func (p *Provider) Name() string { return "duti" }
+func (p *Provider) Name() string { return cliName }
 
 // DisplayName returns the display name.
-func (p *Provider) DisplayName() string { return "duti" }
+func (p *Provider) DisplayName() string { return cliName }
 
 // parseResourceID splits "<ext>=<bundle-id>" into its components.
 func parseResourceID(id string) (ext, bundleID string, err error) {

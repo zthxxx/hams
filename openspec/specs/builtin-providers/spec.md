@@ -372,10 +372,131 @@ THEN the Homebrew provider SHALL update state to `not-present` and, on next appl
 WHEN the user runs `hams brew remove visual-studio-code`
 THEN the Homebrew provider SHALL execute `brew uninstall --cask visual-studio-code` (detecting `cask: true` from Hamsfile), remove the entry from the Hamsfile, and mark state as `removed`.
 
-#### Scenario: Homebrew self-install bootstrap
+### Requirement: Homebrew self-install bootstrap (opt-in)
 
-WHEN the Homebrew provider is needed but `brew` is not found on `$PATH`
-THEN hams SHALL resolve the `depend-on: bash` declaration, locate the Bash provider, and execute the Homebrew install step (defined as a Bash step in the Bash Hamsfile or as an inline bootstrap script in the Homebrew provider manifest) before proceeding with any Homebrew operations.
+The Homebrew provider's `Bootstrap` step SHALL detect a missing `brew`
+binary on `$PATH` and, rather than silently executing the declared
+`DependsOn[].Script`, SHALL gate the bootstrap execution on **explicit
+user consent**. hams SHALL NEVER auto-execute a remote install script
+without consent, because:
+
+- Auto-executing `curl | bash` from `raw.githubusercontent.com`
+  changes the tool's security posture without the user's knowledge.
+- Corporate firewalls commonly block `raw.githubusercontent.com`; a
+  silent network failure would be indistinguishable from "brew is
+  broken" for the user.
+- Homebrew's `install.sh` on macOS can trigger the Xcode CLI Tools GUI
+  dialog, which blocks stdin — the installer appears hung while a
+  modal dialog waits behind the user's IDE. The user MUST be warned
+  about this explicitly before execution.
+
+Consent SHALL be expressible in three ways:
+
+1. **`--bootstrap` flag on `hams apply`** (non-interactive consent).
+2. **Affirmative answer to an interactive TTY prompt** shown when
+   `--bootstrap` is not set but stdin is a terminal.
+3. **`--no-bootstrap` flag** explicitly opts OUT of the prompt (used
+   in CI or by users who want fail-fast behavior).
+
+When consent is NOT given (default, non-TTY context, or explicit
+`--no-bootstrap`), hams SHALL emit a `UserFacingError` containing the
+missing binary name, the exact script that would run, and the
+copy-pasteable remedy (`hams apply --bootstrap ...`).
+
+When consent IS given, hams SHALL resolve the
+`DependsOn[].Provider` entry (typically `bash`), locate that provider
+via the provider registry, delegate execution via the Bash provider's
+`RunScript(ctx, script)` boundary (honoring the existing DI seam), and
+stream the script's stdout/stderr to the user's terminal. Interactive
+prompts from `install.sh` SHALL be forwarded unchanged to the TTY.
+
+Bootstrap failure SHALL be terminal: hams SHALL NOT retry, SHALL
+surface the script's exit code + last 50 lines of output, and SHALL
+abort the apply run with a non-zero exit code.
+
+#### Scenario: Bootstrap emits actionable error when `--bootstrap` is not set
+
+- **WHEN** the Homebrew provider is needed (after the two-stage filter includes it), `brew` is NOT on `$PATH`, AND the user did NOT pass `--bootstrap`
+- **AND** stdin is NOT a TTY (e.g., CI, pipe, script)
+- **THEN** hams SHALL emit a `UserFacingError` whose body names the missing binary (`brew`), the exact script text from `Manifest().DependsOn[0].Script`, and the remedy `hams apply --bootstrap <original-args>`
+- **AND** hams SHALL exit non-zero WITHOUT executing the script, without touching the network, and without modifying state files.
+
+#### Scenario: Bootstrap runs with `--bootstrap` flag
+
+- **WHEN** the Homebrew provider is needed, `brew` is NOT on `$PATH`, AND the user passed `--bootstrap`
+- **THEN** hams SHALL resolve the `DependsOn[0]` entry (`Provider: "bash"`)
+- **AND** hams SHALL locate the Bash provider in the registry, delegate the script via `BashScriptRunner.RunScript(ctx, script)`, and stream stdout/stderr to the user's terminal
+- **AND** after the script exits 0, hams SHALL re-check `exec.LookPath("brew")`; on success, Homebrew operations SHALL proceed as if brew had been present from the start.
+
+#### Scenario: Bootstrap prompts on TTY without `--bootstrap`
+
+- **WHEN** the Homebrew provider is needed, `brew` is NOT on `$PATH`, the user did NOT pass `--bootstrap`, stdin IS a TTY, AND the user did NOT pass `--no-bootstrap`
+- **THEN** hams SHALL display a prompt listing: the missing binary, the exact script to run, its documented side effects (sudo password prompt, Xcode Command Line Tools install, install location), and accept `[y/N/s]` input
+- **AND** on `y`, the bootstrap proceeds as in "Bootstrap runs with `--bootstrap` flag"
+- **AND** on `N` or EOF, hams SHALL emit the same UserFacingError as the no-TTY case and exit non-zero
+- **AND** on `s` (skip-this-provider), hams SHALL skip the Homebrew provider for this run (as if `--except=brew` were set) and continue with other providers.
+
+#### Scenario: Bootstrap failure is terminal
+
+- **WHEN** the bootstrap script exits non-zero OR `brew` is still not on `$PATH` after the script completes
+- **THEN** hams SHALL NOT retry
+- **AND** hams SHALL surface the script's exit code and the last 50 lines of its stderr
+- **AND** hams SHALL abort the apply run with a non-zero exit code
+- **AND** state files SHALL NOT be modified (no partial progress recorded)
+- **AND** the returned `UserFacingError.Suggestions` SHALL surface the exact script that was attempted plus the `--bootstrap` remedy (identical breadcrumb shape as the consent-denied path). Rationale: a user who sees "bootstrap failed for providers: brew" needs to know which install command just failed so they can investigate (e.g. proxy blocked curl, sudo wasn't granted); a generic error forces a scavenger hunt through the log output. The invariant SHALL hold across all three failure paths: consent denied, consent=Run + script non-zero exit, consent=Run + retry still finds binary missing.
+
+#### Scenario: `--no-bootstrap` disables the interactive prompt
+
+- **WHEN** the Homebrew provider is needed, `brew` is NOT on `$PATH`, stdin IS a TTY, AND the user passed `--no-bootstrap`
+- **THEN** hams SHALL skip the interactive prompt entirely
+- **AND** hams SHALL emit the same UserFacingError as the no-TTY case and exit non-zero.
+
+### Requirement: Provider framework executes DependOn.Script on explicit consent
+
+The provider framework SHALL expose a `RunBootstrap(ctx, p, registry)`
+function (in `internal/provider/bootstrap.go`) that:
+
+1. Iterates `p.Manifest().DependsOn`, skipping entries whose `Platform`
+   doesn't match the current OS.
+2. For each entry with a non-empty `Script`, looks up the target
+   `Provider` name in the registry.
+3. Type-asserts the looked-up provider to a `BashScriptRunner`
+   interface: `RunScript(ctx context.Context, script string) error`.
+4. Delegates the script execution to that runner, which encapsulates
+   the exec boundary (and is DI-injected in unit tests).
+
+The Bash builtin provider (`internal/provider/builtin/bash`) SHALL
+implement `BashScriptRunner` by shelling out to `/bin/bash -c <script>`
+via its existing command runner.
+
+The CLI layer SHALL thread user consent through
+`context.Context` via a `provider.WithBootstrapAllowed(ctx, bool)`
+helper, so that `Bootstrap` implementations can query consent without
+the CLI reaching into each provider's struct.
+
+#### Scenario: RunBootstrap delegates a registered script
+
+- **GIVEN** a provider manifest with `DependsOn: [{Provider: "bash", Script: "echo hi"}]`
+- **AND** the Bash provider is registered
+- **WHEN** `RunBootstrap(ctx, p, registry)` is called
+- **THEN** the registered Bash provider's `RunScript(ctx, "echo hi")` SHALL be invoked exactly once
+- **AND** its error (or nil) SHALL be returned.
+
+#### Scenario: RunBootstrap skips platform-gated entries
+
+- **GIVEN** a provider manifest with `DependsOn: [{Provider: "bash", Script: "...", Platform: "darwin"}]`
+- **AND** the current OS is `linux`
+- **WHEN** `RunBootstrap(ctx, p, registry)` is called
+- **THEN** the Bash runner SHALL NOT be invoked
+- **AND** the function SHALL return nil.
+
+#### Scenario: RunBootstrap errors on missing host provider
+
+- **GIVEN** a provider manifest with `DependsOn: [{Provider: "bash", Script: "..."}]`
+- **AND** the Bash provider is NOT registered
+- **WHEN** `RunBootstrap(ctx, p, registry)` is called
+- **THEN** the function SHALL return an error whose message names the missing provider
+- **AND** no script SHALL be executed.
 
 ---
 
@@ -2675,7 +2796,186 @@ Every builtin provider's `List()` method SHALL display a diff between desired (H
 Given a provider with Hamsfile entries [A, B, C] and state entries [B, C, D]
 When the user runs `hams <provider> list`
 Then the output SHALL show:
+
 - `+ A` (in Hamsfile, not in state)
 - `  B` (matched)
 - `  C` (matched)
 - `- D` (in state, not in Hamsfile)
+
+### Requirement: pnpm Bootstrap signals consent required when missing
+
+The pnpm provider's `Bootstrap(ctx)` SHALL return a
+`*provider.BootstrapRequiredError` (wrapping `provider.ErrBootstrapRequired`)
+when `pnpm` is not on `$PATH`. The error SHALL carry:
+
+- `Provider: "pnpm"`
+- `Binary: "pnpm"`
+- `Script: "npm install -g pnpm"`
+
+The pnpm manifest's `DependsOn` SHALL declare two entries with
+single-purpose semantics:
+
+- `{Provider: "npm", Package: "pnpm"}` — DAG ordering only (no
+  `Script`). Ensures npm is processed before pnpm in the apply
+  pipeline.
+- `{Provider: "bash", Script: "npm install -g pnpm"}` — script host.
+  `bash` is the only provider that implements
+  `provider.BashScriptRunner`, so any DependsOn entry with a `.Script`
+  MUST target bash; the script's own invocation is what calls into
+  npm.
+
+`provider.RunBootstrap` can then execute the script under user
+consent (via the `--bootstrap` flag or TTY `[y/N/s]` prompt) by
+delegating to the bash provider's `RunScript` boundary.
+
+When pnpm IS on PATH, `Bootstrap` SHALL return nil as before.
+
+#### Scenario: pnpm missing produces structured error
+
+- **WHEN** pnpm is not on `$PATH`
+- **THEN** `Bootstrap` SHALL return `*provider.BootstrapRequiredError` with `Binary: "pnpm"` and `Script: "npm install -g pnpm"`
+- **AND** the returned error SHALL unwrap to `provider.ErrBootstrapRequired`.
+
+#### Scenario: pnpm --bootstrap delegates via npm
+
+- **WHEN** the user runs `hams apply --bootstrap` on a machine with npm but no pnpm
+- **THEN** the pnpm provider's `Bootstrap` signals `BootstrapRequiredError`
+- **AND** apply delegates the script `npm install -g pnpm` via the bash provider
+- **AND** retries `pnpm.Bootstrap`, which now returns nil since pnpm is on PATH.
+
+### Requirement: duti Bootstrap signals consent required when missing
+
+The duti provider's `Bootstrap(ctx)` SHALL return a
+`*provider.BootstrapRequiredError` when `duti` is not on `$PATH`.
+The error SHALL carry:
+
+- `Provider: "duti"`
+- `Binary: "duti"`
+- `Script: "brew install duti"`
+
+The duti manifest's `DependsOn` SHALL declare two darwin-gated
+entries: `{Provider: "brew", Platform: darwin}` for DAG ordering
+(brew must be bootstrapped before duti) and `{Provider: "bash",
+Script: "brew install duti", Platform: darwin}` for the script host
+(bash is the only BashScriptRunner; the shell command itself calls
+into brew).
+
+#### Scenario: duti missing produces structured error
+
+- **WHEN** duti is not on `$PATH` (macOS)
+- **THEN** `Bootstrap` SHALL return `*provider.BootstrapRequiredError` with `Binary: "duti"` and `Script: "brew install duti"`.
+
+### Requirement: mas Bootstrap signals consent required when missing
+
+The mas provider's `Bootstrap(ctx)` SHALL return a
+`*provider.BootstrapRequiredError` when `mas` is not on `$PATH`.
+The error SHALL carry:
+
+- `Provider: "mas"`
+- `Binary: "mas"`
+- `Script: "brew install mas"`
+
+The mas manifest's `DependsOn` SHALL declare two darwin-gated
+entries: `{Provider: "brew", Platform: darwin}` for DAG ordering and
+`{Provider: "bash", Script: "brew install mas", Platform: darwin}`
+for the script host (same rationale as duti).
+
+#### Scenario: mas missing produces structured error
+
+- **WHEN** mas is not on `$PATH` (macOS)
+- **THEN** `Bootstrap` SHALL return `*provider.BootstrapRequiredError` with `Binary: "mas"` and `Script: "brew install mas"`.
+
+### Requirement: ansible Bootstrap signals consent required when missing
+
+The ansible provider's `Bootstrap(ctx)` SHALL return a
+`*provider.BootstrapRequiredError` when `ansible-playbook` is not on
+`$PATH`. The error SHALL carry:
+
+- `Provider: "ansible"`
+- `Binary: "ansible-playbook"`
+- `Script: "pipx install --include-deps ansible"`
+
+pipx is used over pip because PEP 668 flags system-pip installs on
+modern Python installations (Debian 12+, brew-python) with
+"externally-managed environment". pipx creates an isolated venv per
+app and is the Python community's accepted answer for installing
+tools from PyPI.
+
+The ansible manifest's `DependsOn` SHALL include
+`{Provider: "bash", Script: "pipx install --include-deps ansible"}`.
+
+Users without pipx will see the script fail with "pipx: command not
+found"; the surrounding bootstrap-failure error path surfaces that
+chain so users can `apt install pipx` (Debian) / `brew install pipx`
+(macOS) first.
+
+#### Scenario: ansible missing produces structured error with pipx
+
+- **WHEN** ansible-playbook is not on `$PATH`
+- **THEN** `Bootstrap` SHALL return `*provider.BootstrapRequiredError` with `Binary: "ansible-playbook"` and `Script: "pipx install --include-deps ansible"`.
+
+### Requirement: DependsOn Script entries must target the bash provider
+
+For every builtin provider manifest, any `DependsOn[i]` entry with a
+non-empty `.Script` field MUST have `.Provider == "bash"`. Rationale:
+`provider.RunBootstrap` looks up `dep.Provider` in the registry and
+type-asserts the looked-up provider to `provider.BashScriptRunner`.
+Only the `bash` builtin implements that interface. Targeting any
+other provider (e.g. `npm`, `brew`) makes RunBootstrap fail at
+`--bootstrap` time with "bootstrap host does not implement
+BashScriptRunner" — a runtime error surfaced exactly on the
+fresh-machine path the consent flow is meant to serve.
+
+DAG-only entries (empty `.Script`, present purely for topological
+ordering via `ResolveDAG`) can target any provider; this invariant
+applies only to scripted entries.
+
+This invariant is enforced by a unit test
+(`cli/bootstrap_invariant_test.go::TestBuiltinManifestScriptHostsAreBash`)
+that instantiates every builtin directly (bypassing the registry's
+platform filter) and fails the build if a Script entry targets a
+non-bash host. Direct instantiation matters: a mistargeted entry on
+a macOS-only provider (duti/mas/defaults) would escape Linux CI if
+the test iterated only registered providers, because
+`registry.Register` silently skips providers whose `Platforms` don't
+match the running OS.
+
+#### Scenario: framework invariant enforces bash host on all platforms
+
+- **WHEN** the test `TestBuiltinManifestScriptHostsAreBash` is run on any OS
+- **THEN** it SHALL instantiate every builtin provider directly (not via registry)
+- **AND** iterate each one's `Manifest().DependsOn`
+- **AND** for each entry with a non-empty `.Script`, assert `.Provider == "bash"`
+- **AND** fail the test on any non-bash host, naming the offending provider and index.
+
+### Requirement: Explicit skip-list for bootstrap-unsafe providers
+
+The following providers SHALL NOT adopt the `BootstrapRequiredError`
+pattern. Their `Bootstrap()` SHALL continue returning plain error
+strings. Rationale is recorded here so future maintainers inherit
+an auditable "here's why we didn't extend this one":
+
+- `npm`, `cargo`, `goinstall`, `uv`: language runtime install is a
+  user-owned decision (nvm/fnm/n/volta for node; rustup/distro for
+  Rust; official installer/distro for Go; pipx/pip for Python
+  tooling). hams does not have the right abstraction to pick a
+  runtime installer on behalf of the user.
+- `vscodeext`: requires a GUI app install (Visual Studio Code itself,
+  not the tunnel-CLI). No reliable one-liner; the integration test
+  already uses the Microsoft apt repo + root-safe wrapper.
+- `apt`: platform-gated (`runtime.GOOS == "linux"`). Converting the
+  error shape would mislead — it's not a missing-binary signal.
+- `defaults`: platform-gated (macOS-only). Same reasoning as apt.
+- `git`: git is pre-installed on any machine that ran the hams
+  curl-installer (the installer uses git itself).
+- `bash`: always present; `Bootstrap` is already a no-op.
+
+This skip-list is explicit scope; it SHALL be reconsidered only when
+a concrete user story or support incident demonstrates one of these
+providers as a blocker on a fresh-machine restore path.
+
+#### Scenario: skipped providers retain plain-string errors
+
+- **WHEN** an npm / cargo / goinstall / uv / vscodeext / apt / defaults / git provider is needed but its prerequisite binary is missing
+- **THEN** `Bootstrap` SHALL return a plain `fmt.Errorf` string as today
+- **AND** the CLI bootstrap loop SHALL surface that error via the existing "bootstrap failed for providers with hamsfiles" path (NOT the `BootstrapRequiredError` consent flow).

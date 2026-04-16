@@ -16,8 +16,16 @@ func TestManifest(t *testing.T) {
 	if len(m.Platforms) != 1 || m.Platforms[0] != provider.PlatformAll {
 		t.Errorf("Platforms = %v", m.Platforms)
 	}
-	if len(m.DependsOn) != 1 || m.DependsOn[0].Provider != "npm" {
-		t.Errorf("DependsOn = %v", m.DependsOn)
+	// Two DependsOn entries: DAG ordering (npm → pnpm) + script host (bash).
+	// See pnpm.go Manifest() for the full rationale.
+	if len(m.DependsOn) != 2 {
+		t.Fatalf("DependsOn len = %d, want 2; got %v", len(m.DependsOn), m.DependsOn)
+	}
+	if m.DependsOn[0].Provider != "npm" || m.DependsOn[0].Script != "" {
+		t.Errorf("DependsOn[0] expected DAG-only {Provider: npm}, got %+v", m.DependsOn[0])
+	}
+	if m.DependsOn[1].Provider != "bash" || m.DependsOn[1].Script == "" {
+		t.Errorf("DependsOn[1] expected scripted {Provider: bash, Script: ...}, got %+v", m.DependsOn[1])
 	}
 }
 

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"maps"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"slices"
@@ -21,8 +22,14 @@ import (
 	"github.com/zthxxx/hams/internal/state"
 )
 
-// tagCLI is the default hamsfile tag for CLI (non-cask, non-tap) brew formulas.
-const tagCLI = "cli"
+const (
+	// cliName is the Homebrew provider's manifest + CLI name.
+	cliName = "brew"
+	// brewDisplayName is the human-readable display name.
+	brewDisplayName = "Homebrew"
+	// tagCLI is the default hamsfile tag for CLI (non-cask, non-tap) brew formulas.
+	tagCLI = "cli"
+)
 
 // BrewResource holds provider-specific data for a Homebrew action.
 type BrewResource struct {
@@ -42,8 +49,8 @@ func New(cfg *config.Config) *Provider {
 // Manifest returns the Homebrew provider metadata.
 func (p *Provider) Manifest() provider.Manifest {
 	return provider.Manifest{
-		Name:          "brew",
-		DisplayName:   "Homebrew",
+		Name:          cliName,
+		DisplayName:   brewDisplayName,
 		Platforms:     []provider.Platform{provider.PlatformAll},
 		ResourceClass: provider.ClassPackage,
 		DependsOn: []provider.DependOn{
@@ -52,17 +59,79 @@ func (p *Provider) Manifest() provider.Manifest {
 				Script:   `/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"`,
 			},
 		},
-		FilePrefix: "Homebrew",
+		FilePrefix: brewDisplayName,
 	}
 }
 
-// Bootstrap checks if brew is available and installs it if not.
+// brewBinaryLookup is the PATH-check seam Bootstrap uses. Swapped in
+// tests to simulate "brew missing" / "brew present" without mutating the
+// host's real PATH. Production value is exec.LookPath.
+var brewBinaryLookup = exec.LookPath
+
+// brewInstallLocations are the canonical directories where the official
+// `install.sh` drops the brew binary. After a fresh install.sh, the
+// user's login shell would source `brew shellenv` and pick these up,
+// but the hams process's own $PATH won't have them — so we prepend them
+// here on the retry path. Order matches what `install.sh` itself checks.
+var brewInstallLocations = []string{
+	"/opt/homebrew/bin",              // macOS Apple Silicon
+	"/usr/local/bin",                 // macOS Intel (usually already on $PATH)
+	"/home/linuxbrew/.linuxbrew/bin", // Linuxbrew
+}
+
+// envPathAugment is the env-mutation seam Bootstrap uses to surface a
+// post-install-sh brew onto the process $PATH. Swapped in tests to
+// assert path augmentation without mutating the test harness's env.
+// Production value mutates the live process env via os.Setenv.
+var envPathAugment = func(additions []string) {
+	existing := os.Getenv("PATH")
+	for _, dir := range additions {
+		if strings.Contains(existing, dir) {
+			continue
+		}
+		existing = dir + string(os.PathListSeparator) + existing
+	}
+	if err := os.Setenv("PATH", existing); err != nil {
+		slog.Warn("failed to set PATH for brew lookup", "error", err)
+	}
+}
+
+// Bootstrap reports whether brew is installed. A missing binary is
+// signaled via provider.BootstrapRequiredError (which wraps
+// provider.ErrBootstrapRequired); the CLI orchestrator decides whether to
+// run the manifest-declared install script based on --bootstrap / TTY
+// prompt. Bootstrap itself NEVER executes a network install.
+//
+// On a retry after RunBootstrap succeeded, we proactively prepend the
+// canonical install locations to $PATH before the second LookPath —
+// otherwise users on a fresh Mac/Linux would hit "still unavailable
+// after bootstrap" because `install.sh` writes to /opt/homebrew/bin
+// (or linuxbrew equivalent), which the hams process never sourced.
 func (p *Provider) Bootstrap(_ context.Context) error {
-	if _, err := exec.LookPath("brew"); err == nil {
+	if _, err := brewBinaryLookup("brew"); err == nil {
 		return nil
 	}
-	slog.Info("Homebrew not found, bootstrapping via bash provider")
-	return fmt.Errorf("homebrew not installed; run the bootstrap script first")
+	// Fallback: maybe install.sh just ran and brew is sitting in one of
+	// the canonical locations but not on our $PATH. Augment and retry.
+	envPathAugment(brewInstallLocations)
+	if _, err := brewBinaryLookup("brew"); err == nil {
+		slog.Info("Homebrew found after PATH augmentation",
+			"paths", strings.Join(brewInstallLocations, ":"))
+		return nil
+	}
+
+	manifest := p.Manifest()
+	script := ""
+	if len(manifest.DependsOn) > 0 {
+		script = manifest.DependsOn[0].Script
+	}
+	slog.Info("Homebrew not found on PATH; bootstrap consent required",
+		"provider", manifest.Name, "binary", "brew")
+	return &provider.BootstrapRequiredError{
+		Provider: manifest.Name,
+		Binary:   "brew",
+		Script:   script,
+	}
 }
 
 // Probe queries brew for installed formulae, casks, and taps.
@@ -227,10 +296,10 @@ func (p *Provider) HandleCommand(ctx context.Context, args []string, hamsFlags m
 }
 
 // Name returns the CLI name.
-func (p *Provider) Name() string { return "brew" }
+func (p *Provider) Name() string { return cliName }
 
 // DisplayName returns the display name.
-func (p *Provider) DisplayName() string { return "Homebrew" }
+func (p *Provider) DisplayName() string { return brewDisplayName }
 
 func (p *Provider) handleList(hamsFlags map[string]string, flags *provider.GlobalFlags) error {
 	fmt.Println("Homebrew managed packages:")

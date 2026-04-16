@@ -17,6 +17,9 @@ import (
 // configProviderName is the manifest name and CLI verb for this provider.
 const configProviderName = "git-config"
 
+// configDisplayName is the human-readable display name for the git config provider.
+const configDisplayName = "git config"
+
 // ConfigProvider implements the git config KV provider.
 type ConfigProvider struct{}
 
@@ -27,7 +30,7 @@ func NewConfigProvider() *ConfigProvider { return &ConfigProvider{} }
 func (p *ConfigProvider) Manifest() provider.Manifest {
 	return provider.Manifest{
 		Name:          configProviderName,
-		DisplayName:   "git config",
+		DisplayName:   configDisplayName,
 		Platforms:     []provider.Platform{provider.PlatformAll},
 		ResourceClass: provider.ClassKVConfig,
 		FilePrefix:    configProviderName,
@@ -123,7 +126,7 @@ func (p *ConfigProvider) HandleCommand(_ context.Context, args []string, _ map[s
 func (p *ConfigProvider) Name() string { return configProviderName }
 
 // DisplayName returns the display name.
-func (p *ConfigProvider) DisplayName() string { return "git config" }
+func (p *ConfigProvider) DisplayName() string { return configDisplayName }
 
 func readGitConfig(ctx context.Context, resourceID string) (string, error) {
 	key := strings.SplitN(resourceID, "=", 2)[0]

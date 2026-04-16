@@ -19,6 +19,12 @@ const (
 	displayName = "Mac App Store"
 )
 
+// masInstallScript is the consent-gated install command.
+const masInstallScript = "brew install mas"
+
+// masBinaryLookup is the PATH-check seam Bootstrap uses.
+var masBinaryLookup = exec.LookPath
+
 // Provider implements the Mac App Store provider.
 type Provider struct{}
 
@@ -26,22 +32,38 @@ type Provider struct{}
 func New() *Provider { return &Provider{} }
 
 // Manifest returns the mas provider metadata.
+//
+// Two DependsOn entries, each with a single purpose (see pnpm.go for
+// the full rationale): DAG-only entry ordering brew before mas, and
+// a bash-hosted script entry whose install command `brew install mas`
+// calls into brew at the shell layer. Only `bash` implements
+// provider.BashScriptRunner.
 func (p *Provider) Manifest() provider.Manifest {
 	return provider.Manifest{
 		Name:          cliName,
 		DisplayName:   displayName,
 		Platforms:     []provider.Platform{provider.PlatformDarwin},
 		ResourceClass: provider.ClassPackage,
-		FilePrefix:    cliName,
+		DependsOn: []provider.DependOn{
+			{Provider: "brew", Platform: provider.PlatformDarwin},
+			{Provider: "bash", Script: masInstallScript, Platform: provider.PlatformDarwin},
+		},
+		FilePrefix: cliName,
 	}
 }
 
-// Bootstrap checks if mas is available.
+// Bootstrap reports whether mas is installed. A missing binary is
+// signaled via provider.BootstrapRequiredError so the CLI consent
+// flow can surface the install script + --bootstrap remedy.
 func (p *Provider) Bootstrap(_ context.Context) error {
-	if _, err := exec.LookPath(cliName); err != nil {
-		return fmt.Errorf("%s not found in PATH (macOS only; install via: brew install %s)", cliName, cliName)
+	if _, err := masBinaryLookup(cliName); err == nil {
+		return nil
 	}
-	return nil
+	return &provider.BootstrapRequiredError{
+		Provider: cliName,
+		Binary:   cliName,
+		Script:   masInstallScript,
+	}
 }
 
 // Probe queries mas for installed apps.

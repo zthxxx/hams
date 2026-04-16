@@ -42,9 +42,9 @@ You MUST simulate real scenarios (install, download, update, config read/write, 
 All tasks via [go-task](https://taskfile.dev/) — run `task --list` for full list.
 
 ```bash
-task setup    # Install dev tools       task build   # Build to bin/hams
-task test     # Tests with -race        task lint    # All linters
-task fmt      # gofmt + goimports       task check   # fmt → lint → test
+task setup    # Install dev tools
+task build   # Build to bin/hams
+task check   # fmt → lint → test
 ```
 
 Single test: `go test -race -run TestFuncName ./path/to/package/...`
@@ -134,47 +134,19 @@ This project uses [OpenSpec](https://openspec.dev) for spec-driven development.
 
 ## Current Task
 
-No active change. Four cycles archived this session:
+Ralph Loop: Full verification cycle (all shipped specs, user workflow, tests, architecture)
 
-1. `fix-apt-cli-state-write-and-htop-rename` (2026-04-15) — apt CLI state-write + bat→htop rename + two-stage scope gate + per-provider docker integration matrix.
-2. `clarify-apply-state-only-semantics` (2026-04-15) — `hams apply --prune-orphans` opt-in destructive reconciliation for state-only providers. Default skip preserved.
-3. `apt-cli-complex-invocations` (2026-04-15) — apt CLI now auto-records `nginx=1.24.0` and `nginx/bookworm-backports` as structured `{app, version, source}` hamsfile entries on the imperative install path; state carries symmetric `requested_version` / `requested_source` fields.
-4. `fix-apt-pin-apply-path` (2026-04-15) — closes cycle-3's three correctness gaps so pinning works on the **declarative + restore** paths too: Plan reads pins from the hamsfile via the new `(*File).AppFields(name)` helper; pinned actions carry the install token in `Action.Resource` (state stays keyed on the bare name); `AddAppWithFields` upgrades existing bare entries in place; executor populates `Action.StateOpts` so state records the pin after a successful install.
-
-Codex review fed each cycle's design (5 rounds total). Each round surfaced P2 findings → architect+user agent debate → in-session fix or new openspec proposal. Pattern: rounds 1-3 narrowed-then-extended the apt auto-record contract until grammar-aware recording was a deliberate spec extension; round 4 closed the apply-path gap that the cycle-3 spec scenarios promised but the implementation didn't deliver; round 5 found two more cycle-4 gaps (Skip-without-drift loses pin on hash-promotion; multi-arch package syntax `pkg:arch` rejected by parser) and both landed in-session as cycle-4-spec-mandated correctness. Net: the canonical hams workflow (hand-edit YAML + apply, fresh-machine restore) now actually honors apt pins on every documented path.
-
-A holistic outside code-review at session end (superpowers code-reviewer) confirmed: NO ship-blockers. The work is correct on every path the user will touch. Three NITs were noted around state-pin field residuals — all three landed in-session as commit `95bd349 fix(apt): clear pin fields on remove + unpin so audit trail stays truthful`:
-
-- `hams apt install nginx=1.24.0` then `hams apt remove nginx` now clears `requested_version` on the StateRemoved row (no more lying audit trail).
-- `hams apt remove nginx=1.24.0` (the symmetric install-token form) keys state on bare `nginx` (no orphan `nginx=1.24.0` row).
-- Hand-edit unpin (`{app: nginx, version: "1.24.0"}` → `{app: nginx}` + apply) now clears the stale `requested_version` from state via Plan's Skip branch stamping explicit clears that fire on hash-promotion.
-
-3 new unit tests (U36-U38) lock in the audit-truth invariant.
-
-Reviewer's architectural retrospective: cycle 3 was under-scoped (assumed declarative path was "just plumbing", missed the `AppFields` API extension needed by Plan). Cycle 4 framed itself as cycle 3's correctness fix, but the archive structure presents them as peer features. Future improvement: scope the next pinning-shaped change "end-to-end across imperative + declarative + restore" in one spec rather than across two cycles.
-
-Summary of the most recent (clarify-apply-state-only-semantics) cycle:
-
-- [x] Codex review on the prior cycle's branch surfaced 2 P2 findings; an autonomous architect+user agent debate decided per-finding. P2 #1 (apt CLI flag passthrough + multi-pkg atomicity) → fixed in-session at commit `fcc3415` (widened `CmdRunner.Install/Remove` to `args []string`, added U18 + U19 unit tests). P2 #2 → deferred to this new spec because the destructive default flip warrants explicit scenarios + an opt-in path.
-- [x] `/opsx:new` + `/opsx:continue` produced the full 4-artifact set (proposal, design, cli-architecture spec delta, tasks).
-- [x] `/opsx:apply` implemented `hams apply --prune-orphans`: new `hamsfile.NewEmpty(path)` helper, runApply branches into the prune path when stateOnly && pruneOrphans, stamps the synthesized empty-doc hash on observed.ConfigHash so ComputePlan generates remove-actions (the existing `lastConfigHash != ""` guard would otherwise suppress them since CLI install handlers never set ConfigHash).
-- [x] 4 unit tests (default skip, prune removes, no state file no-op, hamsfile-present no-op) + apt itest E6 (real apt-get install→delete hamsfile→apply with/without flag) all green.
-- [x] en + zh-CN docs updated with explicit "destructive; default off" warnings.
-- [x] `/opsx:verify` — 0 critical / 0 warning; all 7 scenarios mapped to code or tests.
-- [x] `/opsx:archive` — archived with `--skip-specs` (same auto-sync header bug as prior cycle); cli-architecture delta applied manually.
-
-Summary of the earlier (fix-apt-cli-state-write-and-htop-rename) cycle:
-
-- [x] `/opsx:new fix-apt-cli-state-write-and-htop-rename` + `/opsx:continue` (proposal → design → specs → tasks).
-- [x] `/opsx:apply` — implemented in atomic commits: apt CLI handler writes state directly (new DI: `statePath` + `loadOrCreateStateFile`), `bat`→`htop` rename across specs/examples/README/docs/E2E fixtures, two-stage scope gate (`provider.HasArtifacts` stage-1 before `--only`/`--except` stage-2) in both `runApply` and `runRefresh`, per-provider docker integration-test scaffolding (`hams-itest-base` + per-provider Dockerfile/integration.sh with SHA-keyed cache, shared `standard_cli_flow` helper, `task ci:itest:run PROVIDER=<name>`).
-- [x] All 11 linux-containerizable providers shipped their `integration/{Dockerfile, integration.sh}`: apt (canonical), ansible, bash, cargo, git (config + clone in shared container), goinstall, homebrew (non-root brew user workaround), npm, pnpm, uv, vscodeext.
-- [x] `/opsx:verify` — 0 critical, 0 warning; spec deltas mapped to code.
-- [x] Local docker verification of the full itest matrix on OrbStack (2026-04-16): all 11 providers green end-to-end. Three last-mile fixes surfaced and landed as atomic commits:
-  - `fix(mas)`: extract `cliName` const (pre-existing goconst regression).
-  - `fix(homebrew)`: `os.IsNotExist` doesn't traverse `%w`-wrapped errors; switched to `errors.Is(err, fs.ErrNotExist)`, matching apt.
-  - `fix(itest/homebrew)`: `bash -lc` is non-interactive, `.bashrc` early-returns and the linuxbrew shellenv never ran; replaced with `env -i` + explicit PATH; added `apply --only=brew` after each CLI mutation (brew doesn't write state from CLI like apt does); step 5 now uses hamsfile-delete + apply so removal runs once.
-  - `fix(itest/vscodeext)`: tunnel `code` CLI cannot install extensions; switched to Microsoft's apt repo with a root-safe `/usr/local/bin/code` wrapper.
-- [x] `/opsx:archive` — archived with `--skip-specs` (auto-sync hit the same internal header-matching bug as last cycle on tables inside MODIFIED blocks); deltas then applied to main specs manually (builtin-providers, cli-architecture, dev-sandbox, schema-design) and committed.
+- [x] Fix goconst lint errors across 7 provider files
+- [x] Fix Taskfile bug: `task check` was calling `task test` (includes integration/e2e via act) instead of `task test:unit`
+- [x] Fix markdown lint errors (MD032 blanks-around-lists)
+- [x] Run `task check` — verify build/lint/test all pass (PASSING)
+- [x] Verify all shipped specs match implementation via 4 parallel agents
+- [x] Verify user workflow scenarios end-to-end (Install+record, Bootstrap, Apply, Refresh, Version pin all working)
+- [x] Audit test design (uneven coverage; apt has 38 tests, cargo/npm have 2; no property-based in providers)
+- [x] Audit architecture extensibility (URN module, go-plugin deferred, DI consistent in core)
+- [x] Record findings as OpenSpec change with task breakdown (`openspec/changes/2026-04-16-verification-findings/`)
+- [x] Remove dead CLIHandler interface (unused dead code in provider.go) — zero Go references remain
+- [x] Final `task check` pass (verified 0 issues, all 28 test packages PASS)
 
 ## Rules
 

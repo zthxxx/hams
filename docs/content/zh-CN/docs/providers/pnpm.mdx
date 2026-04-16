@@ -53,8 +53,22 @@ groups:
 
 ## 前提条件
 
-你机器上得先有 pnpm。装 pnpm 本身**不归 pnpm provider 管** —— 先有鸡还是先有蛋嘛。
-推荐做法是在 `bash` provider 里放一条一次性步骤：
+新机器没装 pnpm？可以让 hams 帮你装。给 `apply` 加上 `--bootstrap`，hams 会在你确认后
+跑 `npm install -g pnpm`：
+
+```bash
+hams apply --bootstrap --from-repo=you/hams-store
+```
+
+交互终端不带这个 flag 时，hams 会把即将执行的命令打出来让你 `[y/N/s]` 确认。非交互终端
+（CI、管道）没传 flag 时，hams 直接报一条带二进制名 + 安装脚本 + `--bootstrap` 复读提示
+的错误退出。详细设计见 [hams apply → 关于 bootstrap 提示](/docs/cli/apply#关于-bootstrap-提示)。
+
+前提是机器上有 `npm` —— `npm install -g pnpm` 要跑起来得先有 node runtime，装 node 本身
+是你自己的选择（nvm / fnm / n / volta / 发行版包都行，hams 不替你决定）。
+
+想用别的 pnpm 安装方式（比如官方的 `curl -fsSL https://get.pnpm.io/install.sh | sh -`），
+可以走 bash provider 一次性步骤：
 
 ```yaml
 # bash.hams.yaml
@@ -63,8 +77,6 @@ groups:
   run: curl -fsSL https://get.pnpm.io/install.sh | sh -
   check: command -v pnpm
 ```
-
-然后在 `provider_priority` 里保证 `bash` 排在 `pnpm` 之前（默认配置已经是这样）。
 
 ## 跟 npm provider 的区别
 

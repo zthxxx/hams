@@ -113,7 +113,7 @@ func TestRunApply_UsesFilePrefixStatePathAndProviderPlan(t *testing.T) {
 	}
 
 	spy := &sudo.SpyAcquirer{}
-	if err := runApply(context.Background(), flags, registry, spy, "", true, "", "", false); err != nil {
+	if err := runApply(context.Background(), flags, registry, spy, "", true, "", "", false, bootstrapMode{}); err != nil {
 		t.Fatalf("runApply error: %v", err)
 	}
 
@@ -190,11 +190,11 @@ func TestRunApply_PersistsConfigHashAndRemovesOnNextRun(t *testing.T) {
 		t.Fatalf("Register provider: %v", err)
 	}
 
-	if err := runApply(context.Background(), flags, registry, sudo.NoopAcquirer{}, "", true, "", "", false); err != nil {
+	if err := runApply(context.Background(), flags, registry, sudo.NoopAcquirer{}, "", true, "", "", false, bootstrapMode{}); err != nil {
 		t.Fatalf("first runApply error: %v", err)
 	}
 	writeApplyTestFile(t, hamsfilePath, "packages: []\n")
-	if err := runApply(context.Background(), flags, registry, sudo.NoopAcquirer{}, "", true, "", "", false); err != nil {
+	if err := runApply(context.Background(), flags, registry, sudo.NoopAcquirer{}, "", true, "", "", false, bootstrapMode{}); err != nil {
 		t.Fatalf("second runApply error: %v", err)
 	}
 
@@ -268,7 +268,7 @@ func TestRunApply_BootstrapsProvidersInDAGOrderBeforePlanning(t *testing.T) {
 		}
 	}
 
-	if err := runApply(context.Background(), flags, registry, sudo.NoopAcquirer{}, "", true, "", "", false); err != nil {
+	if err := runApply(context.Background(), flags, registry, sudo.NoopAcquirer{}, "", true, "", "", false, bootstrapMode{}); err != nil {
 		t.Fatalf("runApply error: %v", err)
 	}
 
@@ -428,7 +428,7 @@ func TestApply_PruneOrphans_RemovesOrphanedStateResources(t *testing.T) {
 		t.Fatalf("Register: %v", err)
 	}
 
-	if err := runApply(context.Background(), flags, registry, sudo.NoopAcquirer{}, "", true, "", "", true); err != nil {
+	if err := runApply(context.Background(), flags, registry, sudo.NoopAcquirer{}, "", true, "", "", true, bootstrapMode{}); err != nil {
 		t.Fatalf("runApply: %v", err)
 	}
 
@@ -468,7 +468,7 @@ func TestApply_NoPruneOrphans_PreservesOrphanedStateResources(t *testing.T) {
 		t.Fatalf("Register: %v", err)
 	}
 
-	if err := runApply(context.Background(), flags, registry, sudo.NoopAcquirer{}, "", true, "", "", false); err != nil {
+	if err := runApply(context.Background(), flags, registry, sudo.NoopAcquirer{}, "", true, "", "", false, bootstrapMode{}); err != nil {
 		t.Fatalf("runApply: %v", err)
 	}
 
@@ -500,7 +500,7 @@ func TestApply_PruneOrphans_NoStateFile_IsNoOp(t *testing.T) {
 	// stage-1 filter excludes the provider entirely (no artifacts at all),
 	// so runApply prints "no providers match" and returns nil. Either way
 	// no Remove must occur.
-	if err := runApply(context.Background(), flags, registry, sudo.NoopAcquirer{}, "", true, "", "", true); err != nil {
+	if err := runApply(context.Background(), flags, registry, sudo.NoopAcquirer{}, "", true, "", "", true, bootstrapMode{}); err != nil {
 		t.Fatalf("runApply: %v", err)
 	}
 	if len(removed) != 0 {
@@ -523,7 +523,7 @@ func TestApply_PruneOrphans_HamsfilePresent_DoesNotPrune(t *testing.T) {
 		t.Fatalf("Register: %v", err)
 	}
 
-	if err := runApply(context.Background(), flags, registry, sudo.NoopAcquirer{}, "", true, "", "", true); err != nil {
+	if err := runApply(context.Background(), flags, registry, sudo.NoopAcquirer{}, "", true, "", "", true, bootstrapMode{}); err != nil {
 		t.Fatalf("runApply: %v", err)
 	}
 

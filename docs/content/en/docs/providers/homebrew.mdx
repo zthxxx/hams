@@ -72,6 +72,24 @@ the machine's actual installs against the Hamsfile:
 That second point matters: hams **won't** uninstall things you `brew install`ed outside of hams.
 Not unless you explicitly added and then removed them from a Hamsfile.
 
+## First-time setup on a fresh Mac
+
+On a brand-new machine that doesn't have Homebrew yet, `hams apply` needs your permission to
+install it. By default — on a non-TTY (CI, pipe) — hams exits with an actionable error; on an
+interactive terminal, hams shows you the exact `install.sh` command, warns about the Xcode CLT
+dialog gotcha, and asks `[y/N/s]`.
+
+To skip the prompt and just go:
+
+```bash
+# Bootstrap brew then apply everything
+hams apply --bootstrap --from-repo=zthxxx/hams-store
+```
+
+See [hams apply → About the bootstrap prompt](/docs/cli/apply#about-the-bootstrap-prompt) for the
+full rationale. Short version: hams never runs `curl | bash` from the internet without your
+explicit consent.
+
 ## Importing an existing machine's brew state
 
 Moving your current brew setup into hams? Two options:

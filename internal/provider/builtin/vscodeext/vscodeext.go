@@ -14,6 +14,13 @@ import (
 	"github.com/zthxxx/hams/internal/state"
 )
 
+const (
+	// cliName is the vscodeext provider's manifest + CLI name.
+	cliName = "code-ext"
+	// displayName is the human-readable display name.
+	displayName = "VS Code Extensions"
+)
+
 // Provider implements the VS Code extension provider.
 type Provider struct{}
 
@@ -23,8 +30,8 @@ func New() *Provider { return &Provider{} }
 // Manifest returns the vscodeext provider metadata.
 func (p *Provider) Manifest() provider.Manifest {
 	return provider.Manifest{
-		Name:          "code-ext",
-		DisplayName:   "VS Code Extensions",
+		Name:          cliName,
+		DisplayName:   displayName,
 		Platforms:     []provider.Platform{provider.PlatformAll},
 		ResourceClass: provider.ClassPackage,
 		DependsOn: []provider.DependOn{
@@ -132,10 +139,10 @@ func (p *Provider) HandleCommand(_ context.Context, args []string, _ map[string]
 }
 
 // Name returns the CLI name.
-func (p *Provider) Name() string { return "code-ext" }
+func (p *Provider) Name() string { return cliName }
 
 // DisplayName returns the display name.
-func (p *Provider) DisplayName() string { return "VS Code Extensions" }
+func (p *Provider) DisplayName() string { return displayName }
 
 // parseExtensionList parses `code --list-extensions --show-versions` output.
 // Each line has the form "publisher.extension@version".

@@ -67,7 +67,25 @@ Ansible 模块本身设计上就是幂等的 —— "状态已经对了就不做
 
 ## 前提条件
 
-得先装 Ansible：
+新机器没装 Ansible？可以让 hams 通过 `pipx` 帮你装。给 `apply` 加上 `--bootstrap`，
+hams 会在你确认后跑 `pipx install --include-deps ansible`：
+
+```bash
+hams apply --bootstrap --from-repo=you/hams-store
+```
+
+为什么是 pipx 不是 pip？PEP 668 拒绝在现代 Python（Debian 12+、brew-python）的系统
+site-packages 里 pip install，会报 "externally-managed environment"。pipx 会为每个
+App 建独立 venv，是 Python 社区目前公认安装 CLI 工具的办法。
+
+**前置依赖**：机器上得先有 pipx。Debian/Ubuntu：`apt install pipx`。macOS：`brew install pipx`。
+如果 pipx 没装，`--bootstrap` 跑的安装脚本会报 "pipx: command not found"，hams 会把
+这个依赖链反馈到错误信息里。
+
+交互终端不带 flag 时，hams 会把命令打出来让你 `[y/N/s]` 确认。详见
+[hams apply → 关于 bootstrap 提示](/docs/cli/apply#关于-bootstrap-提示)。
+
+或者按常规用 Homebrew（macOS）声明 ansible：
 
 ```yaml
 # Homebrew.hams.yaml

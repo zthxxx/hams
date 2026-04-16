@@ -15,6 +15,9 @@ import (
 	"github.com/zthxxx/hams/internal/state"
 )
 
+// cliName is the pnpm provider's manifest + CLI name.
+const cliName = "pnpm"
+
 // AutoInjectFlags are flags automatically added if not present.
 var AutoInjectFlags = map[string]string{"--global": ""}
 
@@ -24,26 +27,58 @@ type Provider struct{}
 // New creates a new pnpm provider.
 func New() *Provider { return &Provider{} }
 
+// pnpmInstallScript is the consent-gated install command. npm is the
+// host (already on PATH by the time this runs, since pnpm depends on
+// npm in the DAG). Extracted so unit tests can assert Script-matches-
+// manifest invariants without duplicating the string.
+const pnpmInstallScript = "npm install -g pnpm"
+
+// pnpmBinaryLookup is the PATH-check seam Bootstrap uses. Swapped in
+// tests to simulate "pnpm missing" / "pnpm present" without mutating
+// the host's real PATH. Production value is exec.LookPath.
+var pnpmBinaryLookup = exec.LookPath
+
 // Manifest returns the pnpm provider metadata.
+//
+// Two DependsOn entries, each with a single purpose:
+//
+//   - `{Provider: "npm"}` — DAG ordering only (no Script). Ensures
+//     npm is processed before pnpm across the apply pipeline.
+//   - `{Provider: "bash", Script: ...}` — script host. `bash` is the
+//     only provider that implements `provider.BashScriptRunner`, so
+//     any DependsOn entry with a `.Script` MUST target bash; the
+//     script's own invocation (here `npm install -g pnpm`) is what
+//     calls into npm. Separating these avoids the conflation that
+//     would otherwise make RunBootstrap type-assert an npm provider
+//     to BashScriptRunner and fail.
 func (p *Provider) Manifest() provider.Manifest {
 	return provider.Manifest{
-		Name:          "pnpm",
-		DisplayName:   "pnpm",
+		Name:          cliName,
+		DisplayName:   cliName,
 		Platforms:     []provider.Platform{provider.PlatformAll},
 		ResourceClass: provider.ClassPackage,
 		DependsOn: []provider.DependOn{
-			{Provider: "npm", Package: "pnpm"},
+			{Provider: "npm", Package: cliName},
+			{Provider: "bash", Script: pnpmInstallScript},
 		},
-		FilePrefix: "pnpm",
+		FilePrefix: cliName,
 	}
 }
 
-// Bootstrap checks if pnpm is available.
+// Bootstrap reports whether pnpm is installed. A missing binary is
+// signaled via provider.BootstrapRequiredError (which wraps
+// provider.ErrBootstrapRequired); the CLI orchestrator decides whether
+// to run the manifest-declared install script based on --bootstrap /
+// TTY prompt. Bootstrap itself NEVER executes a network install.
 func (p *Provider) Bootstrap(_ context.Context) error {
-	if _, err := exec.LookPath("pnpm"); err != nil {
-		return fmt.Errorf("pnpm not found in PATH; install via: npm install -g pnpm")
+	if _, err := pnpmBinaryLookup("pnpm"); err == nil {
+		return nil
 	}
-	return nil
+	return &provider.BootstrapRequiredError{
+		Provider: "pnpm",
+		Binary:   "pnpm",
+		Script:   pnpmInstallScript,
+	}
 }
 
 // Probe queries pnpm for globally installed packages.
@@ -122,10 +157,10 @@ func (p *Provider) HandleCommand(_ context.Context, args []string, _ map[string]
 }
 
 // Name returns the CLI name.
-func (p *Provider) Name() string { return "pnpm" }
+func (p *Provider) Name() string { return cliName }
 
 // DisplayName returns the display name.
-func (p *Provider) DisplayName() string { return "pnpm" }
+func (p *Provider) DisplayName() string { return cliName }
 
 func parsePnpmList(output string) map[string]string {
 	result := make(map[string]string)

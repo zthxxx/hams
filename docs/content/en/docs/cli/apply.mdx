@@ -23,8 +23,10 @@ No flags? It applies everything in the current store to this machine.
 # The everyday case: apply everything in the current store
 hams apply
 
-# Fresh machine: clone the store from GitHub and apply in one go
-hams apply --from-repo=zthxxx/hams-store
+# Fresh machine: clone the store from GitHub and apply in one go.
+# Add --bootstrap if the machine doesn't have Homebrew installed yet —
+# hams will run the official install.sh for you (asks first on a TTY).
+hams apply --bootstrap --from-repo=zthxxx/hams-store
 
 # Not sure what's about to happen? Dry-run first
 hams apply --dry-run
@@ -44,6 +46,8 @@ hams apply --except=ansible
 | `--only` | string | Comma-separated providers to run. Everything else is skipped |
 | `--except` | string | Comma-separated providers to skip. Everything else runs |
 | `--prune-orphans` | bool | Process providers that have a state file but no hamsfile by removing every state-tracked resource. **Destructive; default off.** Useful when you've stopped tracking a tool and want hams to clean up. Be sure your hamsfiles are present (not in a half-pulled worktree) before using this — on a partial checkout this would mass-uninstall |
+| `--bootstrap` | bool | Auto-run a missing provider's bootstrap script (e.g. Homebrew's `install.sh`). **Runs remote bash from the internet** — opt in explicitly. Default off; interactive shells get a `[y/N/s]` prompt instead |
+| `--no-bootstrap` | bool | Skip the interactive bootstrap prompt that would otherwise appear on a TTY. Useful in CI when you want fail-fast behavior and don't want hams to ever auto-install anything |
 | `--dry-run` | bool | Print the plan, don't execute it |
 
 ## What actually happens
@@ -61,6 +65,48 @@ Under the hood, an apply goes through these stages:
 
 Ctrl+C in the middle? Fine. The next apply picks up where this one left off — finished resources
 aren't repeated.
+
+## About the bootstrap prompt
+
+On a fresh machine, a provider's prerequisite may be missing. Several providers now opt into the
+bootstrap consent flow — each with its own install script declared in the provider's manifest:
+
+| Provider | Install script | Host |
+|----------|----------------|------|
+| `brew` (Homebrew) | `curl -fsSL .../install.sh` | macOS / Linuxbrew |
+| `pnpm` | `npm install -g pnpm` | requires npm already on PATH |
+| `duti` | `brew install duti` | macOS; chains through brew |
+| `mas` | `brew install mas` | macOS; chains through brew |
+| `ansible` | `pipx install --include-deps ansible` | requires pipx (apt install pipx / brew install pipx) |
+
+Other providers (`npm`, `cargo`, `go`, `uv`, `vscodeext`, `apt`, `defaults`, `git`) intentionally
+DO NOT adopt `--bootstrap` — language runtime installation is user-owned (nvm / fnm / rustup /
+distro), `vscodeext` needs a GUI app, `apt`/`defaults` are platform-gated, `git` is pre-present
+on any machine that ran hams's installer. For these, hams emits a plain "not found in PATH" error
+with the install hint.
+
+When hams reaches a provider whose prerequisite is absent, it stops and does one of three things:
+
+1. If you passed `--bootstrap`, it runs the provider's declared install script through the
+   bash provider and retries.
+2. If stdin is a terminal and you didn't pass `--no-bootstrap`, it shows the exact script
+   about to run, warns about expected side effects (sudo, Xcode CLT on macOS, corporate
+   proxies), and asks `[y/N/s]` (yes / no / skip-this-provider).
+3. Otherwise (CI, pipe, `--no-bootstrap`), hams surfaces an actionable error and exits — no
+   network traffic, no side effects. The error includes the binary name, the exact script,
+   and the `--bootstrap` remedy so you can copy-paste.
+
+hams NEVER auto-executes a remote install script without an explicit opt-in. This is the same
+pattern as `--prune-orphans`: destructive or remote-executing defaults are always behind a flag.
+
+The brew → {duti, mas} chain resolves in one `hams apply --bootstrap` run because the DAG
+orders brew first; once brew is installed, `brew install duti` works seamlessly.
+
+<Callout type="warning">
+  On macOS, Homebrew's `install.sh` may trigger the Xcode Command Line Tools GUI installer
+  which **blocks stdin**. If your terminal appears to hang for minutes, switch to your desktop
+  and look for a modal dialog waiting behind your IDE.
+</Callout>
 
 ## About sudo
 

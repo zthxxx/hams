@@ -21,6 +21,19 @@ type Provider struct{}
 // New creates a new Ansible provider.
 func New() *Provider { return &Provider{} }
 
+// ansibleInstallScript is the consent-gated install command. pipx is
+// chosen over pip because PEP 668 flags system-pip installs on modern
+// Python installations (Debian 12+, brew-python) with
+// "externally-managed environment". pipx creates an isolated venv per
+// app and is the Python community's accepted answer for installing
+// tools from PyPI. Users without pipx see the chained prerequisite
+// (`apt install pipx` on Debian / `brew install pipx` on macOS) in
+// the error body's suggestions.
+const ansibleInstallScript = "pipx install --include-deps ansible"
+
+// ansibleBinaryLookup is the PATH-check seam Bootstrap uses.
+var ansibleBinaryLookup = exec.LookPath
+
 // Manifest returns the Ansible provider metadata.
 func (p *Provider) Manifest() provider.Manifest {
 	return provider.Manifest{
@@ -28,16 +41,28 @@ func (p *Provider) Manifest() provider.Manifest {
 		DisplayName:   "Ansible",
 		Platforms:     []provider.Platform{provider.PlatformAll},
 		ResourceClass: provider.ClassCheckBased,
-		FilePrefix:    "ansible",
+		DependsOn: []provider.DependOn{
+			{Provider: "bash", Script: ansibleInstallScript},
+		},
+		FilePrefix: "ansible",
 	}
 }
 
-// Bootstrap checks if ansible-playbook is available.
+// Bootstrap reports whether ansible-playbook is installed. A missing
+// binary is signaled via provider.BootstrapRequiredError so the CLI
+// consent flow can surface the pipx install script + --bootstrap
+// remedy. If pipx itself is missing, the bash-provider RunScript
+// invocation will fail with "pipx: command not found" and the
+// surrounding bootstrap-failure path surfaces the chain.
 func (p *Provider) Bootstrap(_ context.Context) error {
-	if _, err := exec.LookPath("ansible-playbook"); err != nil {
-		return fmt.Errorf("ansible-playbook not found in PATH; install via: pip install ansible")
+	if _, err := ansibleBinaryLookup("ansible-playbook"); err == nil {
+		return nil
 	}
-	return nil
+	return &provider.BootstrapRequiredError{
+		Provider: "ansible",
+		Binary:   "ansible-playbook",
+		Script:   ansibleInstallScript,
+	}
 }
 
 // Probe checks playbook status from state.

@@ -14,6 +14,13 @@ import (
 	"github.com/zthxxx/hams/internal/state"
 )
 
+const (
+	// cliName is the goinstall provider's manifest + CLI name.
+	cliName = "goinstall"
+	// displayName is the human-readable display name.
+	displayName = "go install"
+)
+
 // Provider implements the go install provider.
 type Provider struct{}
 
@@ -23,11 +30,11 @@ func New() *Provider { return &Provider{} }
 // Manifest returns the go install provider metadata.
 func (p *Provider) Manifest() provider.Manifest {
 	return provider.Manifest{
-		Name:          "goinstall",
-		DisplayName:   "go install",
+		Name:          cliName,
+		DisplayName:   displayName,
 		Platforms:     []provider.Platform{provider.PlatformAll},
 		ResourceClass: provider.ClassPackage,
-		FilePrefix:    "goinstall",
+		FilePrefix:    cliName,
 	}
 }
 
@@ -133,7 +140,7 @@ func (p *Provider) HandleCommand(_ context.Context, args []string, _ map[string]
 }
 
 // Name returns the CLI name.
-func (p *Provider) Name() string { return "goinstall" }
+func (p *Provider) Name() string { return cliName }
 
 // DisplayName returns the display name.
-func (p *Provider) DisplayName() string { return "go install" }
+func (p *Provider) DisplayName() string { return displayName }

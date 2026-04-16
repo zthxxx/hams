@@ -15,6 +15,9 @@ import (
 	"github.com/zthxxx/hams/internal/state"
 )
 
+// cliName is the npm provider's manifest + CLI name.
+const cliName = "npm"
+
 // AutoInjectFlags are flags automatically added if not present.
 var AutoInjectFlags = map[string]string{"--global": ""}
 
@@ -27,11 +30,11 @@ func New() *Provider { return &Provider{} }
 // Manifest returns the npm provider metadata.
 func (p *Provider) Manifest() provider.Manifest {
 	return provider.Manifest{
-		Name:          "npm",
-		DisplayName:   "npm",
+		Name:          cliName,
+		DisplayName:   cliName,
 		Platforms:     []provider.Platform{provider.PlatformAll},
 		ResourceClass: provider.ClassPackage,
-		FilePrefix:    "npm",
+		FilePrefix:    cliName,
 	}
 }
 
@@ -119,10 +122,10 @@ func (p *Provider) HandleCommand(_ context.Context, args []string, _ map[string]
 }
 
 // Name returns the CLI name.
-func (p *Provider) Name() string { return "npm" }
+func (p *Provider) Name() string { return cliName }
 
 // DisplayName returns the display name.
-func (p *Provider) DisplayName() string { return "npm" }
+func (p *Provider) DisplayName() string { return cliName }
 
 func parseNpmList(output string) map[string]string {
 	result := make(map[string]string)

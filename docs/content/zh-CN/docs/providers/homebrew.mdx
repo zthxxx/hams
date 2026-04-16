@@ -70,6 +70,22 @@ groups:
 
 也就是说，hams 不会替你卸掉那些你手动 `brew install` 没走 hams 的包 —— 除非你也把它写进了 Hamsfile 再删掉。
 
+## 新 Mac 首次安装
+
+全新机器上还没装 Homebrew 的时候，`hams apply` 需要你授权才能帮你装。默认行为：非交互终端（CI、
+管道）会直接报错退出，给一条可以复制粘贴的提示；交互终端上，hams 会把完整的 `install.sh` 命令
+打出来，提示 Xcode CLT 对话框会卡住 stdin 的坑，然后问你 `[y/N/s]`。
+
+想跳过提示直接开干：
+
+```bash
+# 一键装 brew + 应用整个 store
+hams apply --bootstrap --from-repo=zthxxx/hams-store
+```
+
+完整设计和理由见 [hams apply → 关于 bootstrap 提示](/docs/cli/apply#关于-bootstrap-提示)。
+简而言之：hams 绝不会在未经你明确同意的情况下，从网上跑 `curl | bash`。
+
 ## 记录别人机器上的包到自己的 store
 
 换了新机器想一键还原旧机器上的 brew 环境？两种办法：

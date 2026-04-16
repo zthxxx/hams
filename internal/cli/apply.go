@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -38,6 +39,8 @@ Use --no-refresh to skip probing and apply based on state alone.`,
 			&cli.StringFlag{Name: "only", Usage: "Only apply these providers (comma-separated)"},
 			&cli.StringFlag{Name: "except", Usage: "Skip these providers (comma-separated)"},
 			&cli.BoolFlag{Name: "prune-orphans", Usage: "Process providers that have a state file but no hamsfile by removing every state-tracked resource. Destructive; default off."},
+			&cli.BoolFlag{Name: "bootstrap", Usage: "Auto-run provider bootstrap scripts (e.g., Homebrew install.sh) when a prerequisite is missing. Runs remote scripts — opt in explicitly."},
+			&cli.BoolFlag{Name: "no-bootstrap", Usage: "Fail fast when a provider prerequisite is missing. Skip the interactive consent prompt that would otherwise show on a TTY."},
 		},
 		Action: func(ctx context.Context, cmd *cli.Command) error {
 			flags := globalFlags(cmd)
@@ -47,12 +50,26 @@ Use --no-refresh to skip probing and apply based on state alone.`,
 				cmd.String("only"),
 				cmd.String("except"),
 				cmd.Bool("prune-orphans"),
+				bootstrapMode{Allow: cmd.Bool("bootstrap"), Deny: cmd.Bool("no-bootstrap")},
 			)
 		},
 	}
 }
 
-func runApply(ctx context.Context, flags *provider.GlobalFlags, registry *provider.Registry, sudoAcq sudo.Acquirer, fromRepo string, noRefresh bool, only, except string, pruneOrphans bool) error {
+// bootstrapMode carries the user's stated consent for auto-running
+// provider bootstrap scripts. Both false = ask on TTY, error off TTY.
+type bootstrapMode struct {
+	Allow bool // --bootstrap: always run without prompting
+	Deny  bool // --no-bootstrap: never run, even on TTY
+}
+
+func runApply(ctx context.Context, flags *provider.GlobalFlags, registry *provider.Registry, sudoAcq sudo.Acquirer, fromRepo string, noRefresh bool, only, except string, pruneOrphans bool, boot bootstrapMode) error {
+	if boot.Allow && boot.Deny {
+		return hamserr.NewUserError(hamserr.ExitUsageError,
+			"--bootstrap and --no-bootstrap are mutually exclusive",
+			"Pick one: --bootstrap to auto-run, --no-bootstrap to fail fast",
+		)
+	}
 	if flags.DryRun {
 		fmt.Println("[dry-run] Would apply configurations. No changes will be made.")
 	}
@@ -182,34 +199,125 @@ func runApply(ctx context.Context, flags *provider.GlobalFlags, registry *provid
 
 	// Bootstrap providers. Stage 1 guarantees each `sorted` provider has at
 	// least a hamsfile OR a state file. Bootstrap failure policy:
-	//   - hamsfile present → fatal (user actively declared resources).
+	//   - hamsfile present + BootstrapRequiredError → run consent flow (flag
+	//     or TTY prompt). Consent-granted → delegate to RunBootstrap, retry.
+	//   - hamsfile present + other error → fatal.
 	//   - only state present (hamsfile since deleted) → debug log, continue;
 	//     subsequent Probe/Plan will simply observe no desired state.
-	var bootstrapFailed []string
+	var (
+		bootstrapFailed         []string
+		bootstrapRequiredDenied []*provider.BootstrapRequiredError
+		skipProviders           = map[string]bool{}
+	)
 	for _, p := range sorted {
 		bootstrapErr := p.Bootstrap(ctx)
 		if bootstrapErr == nil {
 			continue
 		}
 		manifest := p.Manifest()
-		filePrefix := provider.ManifestFilePrefix(manifest)
-		mainPath := filepath.Join(profileDir, filePrefix+".hams.yaml")
-		localPath := filepath.Join(profileDir, filePrefix+".hams.local.yaml")
-		_, mainErr := os.Stat(mainPath)
-		_, localErr := os.Stat(localPath)
-		if mainErr == nil || localErr == nil {
+		hasHamsfile := hamsfilePresent(profileDir, &manifest)
+
+		var brerr *provider.BootstrapRequiredError
+		if errors.As(bootstrapErr, &brerr) && hasHamsfile {
+			switch resolveBootstrapConsent(boot, brerr) {
+			case bootDecisionRun:
+				// Dry-run preserves --bootstrap's INTENT (user consented)
+				// without the side effect: print what WOULD run and
+				// leave the host untouched. The surrounding printDryRunPlan
+				// step still fires to show the rest of the plan.
+				if flags.DryRun {
+					fmt.Printf("[dry-run] Would bootstrap %s via: %s\n",
+						manifest.Name, brerr.Script)
+					continue
+				}
+				if runErr := provider.RunBootstrap(ctx, p, registry); runErr != nil {
+					slog.Error("provider bootstrap script failed",
+						"provider", manifest.Name, "error", runErr)
+					// Capture the structured context so the final
+					// UserFacingError surfaces which script was attempted
+					// even when the RunBootstrap path failed — otherwise
+					// users see a generic error with no breadcrumb back
+					// to the install command that just broke.
+					bootstrapRequiredDenied = append(bootstrapRequiredDenied, brerr)
+					bootstrapFailed = append(bootstrapFailed, manifest.Name)
+					continue
+				}
+				if retryErr := p.Bootstrap(ctx); retryErr != nil {
+					slog.Error("provider still unavailable after bootstrap",
+						"provider", manifest.Name, "error", retryErr)
+					// Same rationale: capture the script context so the
+					// final UserFacingError explains what ran (and
+					// apparently succeeded per exit code) yet still left
+					// the binary missing — typically a PATH-hydration
+					// edge case or a non-standard install location.
+					bootstrapRequiredDenied = append(bootstrapRequiredDenied, brerr)
+					bootstrapFailed = append(bootstrapFailed, manifest.Name)
+				}
+				continue
+			case bootDecisionSkipProvider:
+				slog.Info("user opted to skip provider for this run",
+					"provider", manifest.Name)
+				skipProviders[manifest.Name] = true
+				continue
+			case bootDecisionDeny:
+				// Capture the structured error so the final UserFacingError
+				// can surface the binary name + exact install script + the
+				// --bootstrap remedy (per builtin-providers spec scenario
+				// "Bootstrap emits actionable error when --bootstrap is not
+				// set"). Then fall through to the regular-failure path.
+				bootstrapRequiredDenied = append(bootstrapRequiredDenied, brerr)
+			}
+		}
+
+		if hasHamsfile {
 			slog.Error("provider bootstrap failed (hamsfile exists, cannot proceed)",
 				"provider", manifest.Name, "error", bootstrapErr)
 			bootstrapFailed = append(bootstrapFailed, manifest.Name)
 		} else {
-			slog.Debug("provider bootstrap skipped (no hamsfile)", "provider", manifest.Name, "error", bootstrapErr)
+			slog.Debug("provider bootstrap skipped (no hamsfile)",
+				"provider", manifest.Name, "error", bootstrapErr)
 		}
 	}
+	// Transitively propagate skip-provider to any DAG dependents so we
+	// don't silently run a provider whose declared prerequisite was just
+	// removed from the run. Fixed-point because dependents of dependents
+	// must also skip.
+	if len(skipProviders) > 0 {
+		for {
+			added := false
+			for _, p := range sorted {
+				name := p.Manifest().Name
+				if skipProviders[name] {
+					continue
+				}
+				for _, dep := range p.Manifest().DependsOn {
+					if skipProviders[dep.Provider] {
+						slog.Info("cascading skip to dependent provider",
+							"provider", name, "depends_on", dep.Provider)
+						skipProviders[name] = true
+						added = true
+						break
+					}
+				}
+			}
+			if !added {
+				break
+			}
+		}
+		filtered := make([]provider.Provider, 0, len(sorted))
+		for _, p := range sorted {
+			if skipProviders[p.Manifest().Name] {
+				continue
+			}
+			filtered = append(filtered, p)
+		}
+		sorted = filtered
+	}
 	if len(bootstrapFailed) > 0 {
+		suggestions := buildBootstrapFailureSuggestions(bootstrapRequiredDenied)
 		return hamserr.NewUserError(hamserr.ExitPartialFailure,
 			fmt.Sprintf("bootstrap failed for providers with hamsfiles: %s", strings.Join(bootstrapFailed, ", ")),
-			"Ensure required tools are installed or remove the hamsfile entries",
-			"Use '--only' / '--except' to skip specific providers",
+			suggestions...,
 		)
 	}
 
@@ -225,12 +333,19 @@ func runApply(ctx context.Context, flags *provider.GlobalFlags, registry *provid
 	}
 
 	if flags.DryRun {
-		return printDryRunPlan(sorted, cfg)
+		fmt.Println("[dry-run] Provider execution order:")
+		for i, p := range sorted {
+			fmt.Printf("  %d. %s (%s)\n", i+1, p.Manifest().DisplayName, p.Manifest().Name)
+		}
+		fmt.Println()
 	}
 
 	// Acquire sudo credentials once before any provider operations (after dry-run check).
-	if sudoErr := sudoAcq.Acquire(ctx); sudoErr != nil {
-		slog.Warn("sudo acquisition failed; some providers may fail", "error", sudoErr)
+	// Dry-run skips sudo acquisition — no commands will actually run.
+	if !flags.DryRun {
+		if sudoErr := sudoAcq.Acquire(ctx); sudoErr != nil {
+			slog.Warn("sudo acquisition failed; some providers may fail", "error", sudoErr)
+		}
 	}
 
 	var allResults []provider.ExecuteResult
@@ -318,6 +433,14 @@ func runApply(ctx context.Context, flags *provider.GlobalFlags, registry *provid
 			}
 		}
 
+		// Dry-run: print the planned actions per provider and skip
+		// execution. The user sees exactly which resources would be
+		// installed / updated / removed before committing to the real run.
+		if flags.DryRun {
+			printDryRunActions(name, manifest.DisplayName, actions)
+			continue
+		}
+
 		result := provider.Execute(ctx, p, actions, sf)
 		allResults = append(allResults, result)
 
@@ -331,6 +454,13 @@ func runApply(ctx context.Context, flags *provider.GlobalFlags, registry *provid
 
 		slog.Info("provider complete", "provider", name,
 			"installed", result.Installed, "failed", result.Failed, "skipped", result.Skipped)
+	}
+
+	// Dry-run: all providers have been planned and printed; skip
+	// enrichment and the execute-phase summary.
+	if flags.DryRun {
+		fmt.Println("[dry-run] No changes made.")
+		return nil
 	}
 
 	// Run async enrichment for providers that support it, non-blocking.
@@ -475,13 +605,46 @@ func parseCSV(s string) map[string]bool {
 	return m
 }
 
-func printDryRunPlan(providers []provider.Provider, _ *config.Config) error { //nolint:unparam // will return errors when plan details are computed
-	fmt.Println("[dry-run] Provider execution order:")
-	for i, p := range providers {
-		fmt.Printf("  %d. %s (%s)\n", i+1, p.Manifest().DisplayName, p.Manifest().Name)
+// printDryRunActions prints the list of planned actions for one
+// provider in dry-run mode. Groups by action type so the user can
+// quickly scan what install / update / remove operations would run.
+func printDryRunActions(name, displayName string, actions []provider.Action) {
+	var installs, updates, removes, skips []string
+	for _, a := range actions {
+		id := a.ID
+		if a.Resource != nil {
+			if token, ok := a.Resource.(string); ok && token != "" {
+				id = token
+			}
+		}
+		switch a.Type {
+		case provider.ActionInstall:
+			installs = append(installs, id)
+		case provider.ActionUpdate:
+			updates = append(updates, id)
+		case provider.ActionRemove:
+			removes = append(removes, id)
+		case provider.ActionSkip:
+			skips = append(skips, id)
+		}
 	}
-	fmt.Println("\n[dry-run] No changes made.")
-	return nil
+	fmt.Printf("[dry-run] %s (%s):\n", displayName, name)
+	if len(installs) == 0 && len(updates) == 0 && len(removes) == 0 {
+		fmt.Printf("  no changes (%d resources already at desired state)\n", len(skips))
+		return
+	}
+	for _, id := range installs {
+		fmt.Printf("  + install %s\n", id)
+	}
+	for _, id := range updates {
+		fmt.Printf("  ~ update  %s\n", id)
+	}
+	for _, id := range removes {
+		fmt.Printf("  - remove  %s\n", id)
+	}
+	if len(skips) > 0 {
+		fmt.Printf("  (%d resources unchanged)\n", len(skips))
+	}
 }
 
 // SetupLogging initializes logging from global flags and returns the cleanup function.
