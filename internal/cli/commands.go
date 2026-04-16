@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"github.com/urfave/cli/v3"
-	"gopkg.in/yaml.v3"
 
 	"github.com/zthxxx/hams/internal/config"
 	hamserr "github.com/zthxxx/hams/internal/error"
@@ -426,24 +425,41 @@ func storeCmd() *cli.Command {
 					}
 
 					// Create initial hams.config.yaml if it does not exist.
+					// Store-level config MUST NOT contain machine-scoped
+					// fields (profile_tag, machine_id) — the caller's
+					// Config carries these from the global layer, but
+					// writing them into the store file would fail
+					// validateStoreScope on the next load. Write a
+					// minimal placeholder and let the user populate it.
 					storeConfigPath := filepath.Join(storePath, "hams.config.yaml")
 					if _, statErr := os.Stat(storeConfigPath); os.IsNotExist(statErr) {
-						initial := config.Config{
-							ProfileTag: cfg.ProfileTag,
-							MachineID:  cfg.MachineID,
-						}
-						data, marshalErr := yaml.Marshal(&initial)
-						if marshalErr != nil {
-							return fmt.Errorf("marshaling initial config: %w", marshalErr)
-						}
-						if writeErr := os.WriteFile(storeConfigPath, data, 0o600); writeErr != nil {
+						const initialYAML = "# hams store project-level config\n" +
+							"# Machine-scoped fields (profile_tag, machine_id) MUST NOT appear here.\n" +
+							"# Set them via 'hams config set' in the global config instead.\n" +
+							"# See openspec/specs/schema-design/spec.md §Project-Level Config Schema.\n"
+						if writeErr := os.WriteFile(storeConfigPath, []byte(initialYAML), 0o600); writeErr != nil {
 							return fmt.Errorf("writing initial config: %w", writeErr)
+						}
+					}
+
+					// Create .gitignore per schema-design spec: hide state
+					// files and *.local.* overrides from git. Idempotent —
+					// skip if user already has one.
+					gitignorePath := filepath.Join(storePath, ".gitignore")
+					if _, statErr := os.Stat(gitignorePath); os.IsNotExist(statErr) {
+						const gi = "# hams store .gitignore — keep private state + local overrides out of the repo\n" +
+							".state/\n" +
+							"*.local.yaml\n" +
+							"*.local.*\n"
+						if writeErr := os.WriteFile(gitignorePath, []byte(gi), 0o600); writeErr != nil {
+							return fmt.Errorf("writing .gitignore: %w", writeErr)
 						}
 					}
 
 					fmt.Printf("Store initialized at %s\n", logging.TildePath(storePath))
 					fmt.Printf("  Profile dir: %s\n", logging.TildePath(profileDir))
 					fmt.Printf("  State dir:   %s\n", logging.TildePath(stateDir))
+					fmt.Printf("  .gitignore:  %s\n", logging.TildePath(gitignorePath))
 					return nil
 				},
 			},
