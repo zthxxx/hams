@@ -7,11 +7,53 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	hamserr "github.com/zthxxx/hams/internal/error"
 	"github.com/zthxxx/hams/internal/provider"
 	"github.com/zthxxx/hams/internal/state"
 )
+
+// TestRunRefresh_CreatesSessionLogFile locks in the cycle-65 fix:
+// `SetupLogging` is now wired into runRefresh, so a rolling log file
+// appears at `${HAMS_DATA_HOME}/<YYYY-MM>/hams.<YYYYMM>.log`.
+func TestRunRefresh_CreatesSessionLogFile(t *testing.T) {
+	_, _, _, flags := setupApplyTestEnv(t, []string{"apt"})
+	dataHome := os.Getenv("HAMS_DATA_HOME")
+	if dataHome == "" {
+		t.Fatal("setupApplyTestEnv should have set HAMS_DATA_HOME")
+	}
+
+	registry := provider.NewRegistry()
+	p := &applyTestProvider{
+		manifest: provider.Manifest{
+			Name: "apt", DisplayName: "apt", FilePrefix: "apt",
+			Platforms: []provider.Platform{provider.PlatformAll},
+		},
+	}
+	if err := registry.Register(p); err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+
+	// Run refresh — no providers have artifacts so it early-returns
+	// the "no providers match" message, BUT SetupLogging runs first.
+	if err := runRefresh(context.Background(), flags, registry, "", ""); err != nil {
+		t.Fatalf("runRefresh: %v", err)
+	}
+
+	// Assert the data-home contains the month-bucket dir with a
+	// hams.YYYYMM.log file.
+	now := time.Now()
+	monthDir := filepath.Join(dataHome, now.Format("2006-01"))
+	wantLog := filepath.Join(monthDir, "hams."+now.Format("200601")+".log")
+	info, err := os.Stat(wantLog)
+	if err != nil {
+		t.Fatalf("expected log file at %s; got: %v", wantLog, err)
+	}
+	if info.Size() == 0 {
+		t.Errorf("log file exists but is empty at %s", wantLog)
+	}
+}
 
 // TestRunRefresh_MutuallyExclusiveFlags asserts cycle 38's flag check
 // runs before config load for the refresh command too.
