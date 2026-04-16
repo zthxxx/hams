@@ -296,6 +296,78 @@ func TestRunApply_BootstrapScriptFailureIsFatal(t *testing.T) {
 	if !strings.Contains(err.Error(), "bootstrap failed") || !strings.Contains(err.Error(), "brew") {
 		t.Errorf("expected 'bootstrap failed' + brew in error, got %q", err.Error())
 	}
+
+	// When consent was `Run` but the install script failed, the
+	// UserFacingError suggestions MUST still surface the script that
+	// was attempted — otherwise users see a generic error with no
+	// breadcrumb back to the command that just broke.
+	var ufe *hamserr.UserFacingError
+	if !errors.As(err, &ufe) {
+		t.Fatalf("expected *UserFacingError, got %T (%v)", err, err)
+	}
+	allSuggestions := strings.Join(ufe.Suggestions, "\n")
+	if !strings.Contains(allSuggestions, "install.sh") {
+		t.Errorf("suggestions should surface the attempted script 'install.sh' even when --bootstrap failed; got %q", allSuggestions)
+	}
+	if !strings.Contains(allSuggestions, "brew") {
+		t.Errorf("suggestions should name the missing binary 'brew'; got %q", allSuggestions)
+	}
+}
+
+// When --bootstrap script succeeds but the binary is still missing on
+// retry (PATH hydration edge case), the UserFacingError should still
+// surface which script was attempted so users can investigate where
+// the binary landed.
+func TestRunApply_BootstrapRetryStillMissingSurfacesScript(t *testing.T) {
+	_, profileDir, _, flags := setupApplyTestEnv(t, []string{"bash", "brew"})
+	writeApplyTestFile(t, filepath.Join(profileDir, "Homebrew.hams.yaml"), "packages: []\n")
+	writeApplyTestFile(t, filepath.Join(profileDir, "bash.hams.yaml"), "packages: []\n")
+
+	bash := &bashRunnerFake{
+		applyTestProvider: applyTestProvider{
+			manifest: provider.Manifest{
+				Name: "bash", DisplayName: "bash", FilePrefix: "bash",
+				Platforms: []provider.Platform{provider.PlatformAll},
+			},
+		},
+		runScript: func(context.Context, string) error { return nil }, // script succeeds
+	}
+
+	// Brew provider: both Bootstrap calls signal missing, simulating the
+	// PATH-hydration miss case (install.sh exited 0 but brew still
+	// unreachable on the process PATH).
+	const script = "my-install.sh"
+	brew := &applyTestProvider{
+		manifest: provider.Manifest{
+			Name: "brew", DisplayName: "Homebrew", FilePrefix: "Homebrew",
+			Platforms: []provider.Platform{provider.PlatformAll},
+			DependsOn: []provider.DependOn{{Provider: "bash", Script: script}},
+		},
+		bootstrapFn: func(context.Context) error {
+			return &provider.BootstrapRequiredError{Provider: "brew", Binary: "brew", Script: script}
+		},
+	}
+
+	registry := provider.NewRegistry()
+	if err := registry.Register(bash); err != nil {
+		t.Fatalf("register bash: %v", err)
+	}
+	if err := registry.Register(brew); err != nil {
+		t.Fatalf("register brew: %v", err)
+	}
+
+	err := runApply(context.Background(), flags, registry, sudo.NoopAcquirer{}, "", true, "", "", false, bootstrapMode{Allow: true})
+	if err == nil {
+		t.Fatalf("expected error, got nil")
+	}
+	var ufe *hamserr.UserFacingError
+	if !errors.As(err, &ufe) {
+		t.Fatalf("expected *UserFacingError, got %T (%v)", err, err)
+	}
+	allSuggestions := strings.Join(ufe.Suggestions, "\n")
+	if !strings.Contains(allSuggestions, script) {
+		t.Errorf("suggestions should surface the attempted script %q even when retry-still-missing; got %q", script, allSuggestions)
+	}
 }
 
 // TTY skip ('s' answer) must cascade to DAG-dependent providers so

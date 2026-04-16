@@ -224,12 +224,24 @@ func runApply(ctx context.Context, flags *provider.GlobalFlags, registry *provid
 				if runErr := provider.RunBootstrap(ctx, p, registry); runErr != nil {
 					slog.Error("provider bootstrap script failed",
 						"provider", manifest.Name, "error", runErr)
+					// Capture the structured context so the final
+					// UserFacingError surfaces which script was attempted
+					// even when the RunBootstrap path failed — otherwise
+					// users see a generic error with no breadcrumb back
+					// to the install command that just broke.
+					bootstrapRequiredDenied = append(bootstrapRequiredDenied, brerr)
 					bootstrapFailed = append(bootstrapFailed, manifest.Name)
 					continue
 				}
 				if retryErr := p.Bootstrap(ctx); retryErr != nil {
 					slog.Error("provider still unavailable after bootstrap",
 						"provider", manifest.Name, "error", retryErr)
+					// Same rationale: capture the script context so the
+					// final UserFacingError explains what ran (and
+					// apparently succeeded per exit code) yet still left
+					// the binary missing — typically a PATH-hydration
+					// edge case or a non-standard install location.
+					bootstrapRequiredDenied = append(bootstrapRequiredDenied, brerr)
 					bootstrapFailed = append(bootstrapFailed, manifest.Name)
 				}
 				continue
