@@ -187,6 +187,10 @@ Spec corrections:
 
 Total commits in cycle 2: 15+ (still growing — iteration 3 adds hooks+OTel defer).
 
+### Cycle 64 — notify Channel.Name() contracts (52% → 60%)
+
+- [x] Added `TestDesktopNotifier_Name` and `TestBarkChannel_Name` covering the previously 0%-covered `.Name()` methods (used by Manager.Notify's per-channel slog.Info). `Bark.Send()` intentionally left uncovered — DI'ing the hardcoded https URL now would lock an API shape before v1.1 un-defers the notification wiring. Added a clear comment pointing to the deferral. (commit `18dc477`)
+
 ### Cycle 63 — state ResourceOptions + FormatPID tests (72.6% → 84.1%)
 
 - [x] `WithValue`, `WithCheckCmd`, `WithCheckStdout`, `FormatPID` were all at 0%. Added table-driven `TestResourceOptions_Values` covering all three setters, and `TestFormatPID` covering both the bare-int fallback (negative PID) and the `/proc/<pid>/cmdline` happy path via `os.Getpid()`. (commit `7eb825f`)
