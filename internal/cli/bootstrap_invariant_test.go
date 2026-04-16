@@ -57,7 +57,7 @@ func TestBuiltinManifestScriptHostsAreBash(t *testing.T) {
 		duti.New(duti.NewFakeCmdRunner()),
 		mas.New(mas.NewFakeCmdRunner()),
 		vscodeext.New(vscodeext.NewFakeCmdRunner()),
-		ansible.New(),
+		ansible.New(ansible.NewFakeCmdRunner()),
 		bash.New(),
 	}
 

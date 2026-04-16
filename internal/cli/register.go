@@ -50,7 +50,7 @@ func registerBuiltins(registry *provider.Registry, sudoCmd sudo.CmdBuilder) {
 		duti.New(duti.NewRealCmdRunner()),
 		mas.New(mas.NewRealCmdRunner()),
 		vscodeext.New(vscodeext.NewRealCmdRunner()),
-		ansible.New(),
+		ansible.New(ansible.NewRealCmdRunner()),
 	}
 
 	// Providers that only implement Provider (no CLI handler).

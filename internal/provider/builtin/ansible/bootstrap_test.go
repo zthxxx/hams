@@ -10,7 +10,7 @@ import (
 )
 
 func TestBootstrap_AnsiblePresentReturnsNil(t *testing.T) {
-	p := New()
+	p := New(NewRealCmdRunner())
 	original := ansibleBinaryLookup
 	defer func() { ansibleBinaryLookup = original }()
 
@@ -22,7 +22,7 @@ func TestBootstrap_AnsiblePresentReturnsNil(t *testing.T) {
 }
 
 func TestBootstrap_AnsibleMissingReturnsStructuredError(t *testing.T) {
-	p := New()
+	p := New(NewRealCmdRunner())
 	original := ansibleBinaryLookup
 	defer func() { ansibleBinaryLookup = original }()
 
@@ -48,7 +48,7 @@ func TestBootstrap_ScriptUsesPipxNotPip(t *testing.T) {
 	// PEP 668 rejects `pip install` on modern Python installations
 	// (Debian 12+, brew-python) with "externally-managed environment".
 	// Ansible's install script MUST use pipx to avoid that failure.
-	p := New()
+	p := New(NewRealCmdRunner())
 	original := ansibleBinaryLookup
 	defer func() { ansibleBinaryLookup = original }()
 	ansibleBinaryLookup = func(string) (string, error) { return "", exec.ErrNotFound }
@@ -70,7 +70,7 @@ func TestBootstrap_ScriptMatchesManifest(t *testing.T) {
 	// The scripted DependsOn entry's host must be bash (only provider
 	// implementing BashScriptRunner). ansible's install invokes pipx
 	// via the shell, so bash is the correct host.
-	p := New()
+	p := New(NewRealCmdRunner())
 	original := ansibleBinaryLookup
 	defer func() { ansibleBinaryLookup = original }()
 	ansibleBinaryLookup = func(string) (string, error) { return "", exec.ErrNotFound }
