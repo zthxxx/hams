@@ -22,13 +22,25 @@ func ProbeAll(ctx context.Context, providers []Provider, stateDir, machineID str
 	g, ctx := errgroup.WithContext(ctx)
 
 	for _, p := range providers {
-		g.Go(func() error {
+		g.Go(func() (err error) {
 			manifest := p.Manifest()
 			name := manifest.Name
 			filePrefix := manifest.FilePrefix
 			if filePrefix == "" {
 				filePrefix = name
 			}
+
+			// Recover from a panicking Probe — a buggy provider must
+			// not crash the whole refresh and take down parallel probes
+			// for healthy providers. Log and omit from results so
+			// runRefresh reports the probed/planned mismatch.
+			defer func() {
+				if r := recover(); r != nil {
+					slog.Error("probe panicked; provider omitted from results",
+						"provider", name, "panic", r)
+				}
+			}()
+
 			sf, loadErr := loadOrCreateState(stateDir, filePrefix, name, machineID)
 			if loadErr != nil {
 				// Corrupted state file (not just missing). Skip this
