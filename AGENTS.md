@@ -187,6 +187,10 @@ Spec corrections:
 
 Total commits in cycle 2: 15+ (still growing — iteration 3 adds hooks+OTel defer).
 
+### Cycle 31 — Plan coverage for remaining 6 providers (batch)
+
+- [x] cargo/goinstall/npm/pnpm/uv/vscodeext all had Plan at 0% despite being called on every apply. Added a uniform `TestPlan_WrapsComputePlanWithHooks` to each (dedicated `plan_test.go` for 5, U10 in cargo's lifecycle file). Coverage gains: cargo 68→71, goinstall 62→64, npm 67→70, pnpm 71→73, uv 70→72, vscodeext 67→69. Every v1 provider's Plan wrapper is now regression-guarded. (commit `97a0be3`)
+
 ### Cycle 30 — duti Plan coverage (79.5% → 82.1%)
 
 - [x] TestU11_Plan for duti, matching the mas/ansible/defaults pattern. All 4 macOS-scoped Plan wrappers now covered. (commit `185f760`)
