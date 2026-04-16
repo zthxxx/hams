@@ -153,10 +153,14 @@ Ralph Loop: Verification cycle 2 — execute deferred follow-ups from `2026-04-1
 
 ### Cycle 2: deferred follow-ups
 
-- [ ] **spec-reconciliation/naming**: Update `openspec/specs/builtin-providers/spec.md` to use `goinstall`/`code-ext`. Grep for stale references.
-- [ ] **lucky-enrichment**: Architect investigation — Enricher interface has zero implementers; `--hams-lucky` is a no-op flag. Decide: build the enrichment chain, or defer the spec to v1.1.
-- [ ] **provider-test-coverage**: Add property-based parser tests using `rapid` for all `ParseXxxList` parsers. Add Tier 1 lifecycle tests.
-- [ ] Verify `task check` passes after each change. Atomic commit per fix.
+- [x] **spec-reconciliation/naming**: Update `openspec/specs/builtin-providers/spec.md` to use `goinstall`/`code-ext`. Grep for stale references. (commit `6f9e533`)
+- [x] **lucky-enrichment**: Architect investigation found Enricher has zero implementers; `--hams-lucky` is a silent no-op flag. **Decision: defer entire feature to v1.1**, document gap honestly in spec, keep scaffolding. (commit `f4c0f20`)
+- [x] **property-based parser tests**: Add via `rapid` for cargo, npm, pnpm, uv, mas, vscodeext. (commit `3467967`)
+  - **Real bug found and fixed**: `parseExtensionList` silently emitted empty/whitespace keys on malformed input — would corrupt the desired-vs-observed diff.
+- [x] **Tier 3 tempdir-isolated tests**: git-config + git-clone apply/probe/remove via HOME redirect (no FakeCmdRunner refactor needed). (commits `703f66c`, `588b86e`)
+- [ ] **Tier 1 lifecycle tests** (cargo, npm, pnpm, uv, goinstall): defer to a future cycle — requires per-provider DI refactor (CmdRunner interface + FakeCmdRunner stub + `New(cfg, runner)` constructor change). See `openspec/changes/2026-04-16-verification-findings/tasks/provider-test-coverage.task.md`.
+- [ ] **Tier 2 apply/probe DI tests** (defaults, duti, mas): same DI-refactor scope as Tier 1, defer.
+- [x] Verify `task check` passes after each change. Atomic commit per fix.
 
 ## Rules
 
