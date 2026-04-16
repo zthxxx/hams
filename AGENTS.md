@@ -187,6 +187,10 @@ Spec corrections:
 
 Total commits in cycle 2: 15+ (still growing — iteration 3 adds hooks+OTel defer).
 
+### Cycle 30 — duti Plan coverage (79.5% → 82.1%)
+
+- [x] TestU11_Plan for duti, matching the mas/ansible/defaults pattern. All 4 macOS-scoped Plan wrappers now covered. (commit `185f760`)
+
 ### Cycle 29 — mas Plan coverage (72% → 74%)
 
 - [x] Added `TestU11_Plan_WrapsComputePlanWithHooks` following the cycle 22 pattern for ansible/defaults. Guards against accidental short-circuiting of ComputePlan/PopulateActionHooks in mas's Plan wrapper. (commit `01bdaad`)
