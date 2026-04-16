@@ -8,7 +8,7 @@ import (
 
 func TestManifest(t *testing.T) {
 	t.Parallel()
-	p := New()
+	p := New(NewFakeCmdRunner())
 	m := p.Manifest()
 	if m.Name != "cargo" {
 		t.Errorf("Name = %q", m.Name)
@@ -72,7 +72,7 @@ fd-find v10.1.0:
 
 func TestNameDisplayName(t *testing.T) {
 	t.Parallel()
-	p := New()
+	p := New(NewFakeCmdRunner())
 	if p.Name() != "cargo" || p.DisplayName() != "cargo" {
 		t.Errorf("Name()=%q DisplayName()=%q", p.Name(), p.DisplayName())
 	}
