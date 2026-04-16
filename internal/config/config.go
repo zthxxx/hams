@@ -87,10 +87,23 @@ func (p Paths) GlobalConfigPath() string {
 // 2. Global config (~/.config/hams/hams.config.yaml)
 // 3. Project-level config (<store>/hams.config.yaml)
 // 4. Local overrides (<store>/hams.config.local.yaml).
+//
+// Precedence for the resolved store path:
+//  1. A non-empty `storePath` argument (CLI `--store` flag) ALWAYS wins.
+//  2. Otherwise, the global config's `store_path:` is used.
+//  3. Otherwise, cfg.StorePath stays empty and the caller surfaces
+//     "no store directory configured".
 func Load(paths Paths, storePath string) (*Config, error) {
 	cfg := &Config{
 		ProviderPriority: DefaultProviderPriority,
 	}
+
+	// Preserve the caller's explicit --store override so it wins over
+	// anything the config files say. Without this capture, a global
+	// config with `store_path: /configured` silently beat
+	// `hams --store=/alt refresh` — the CLI flag was ignored for
+	// every command that read cfg.StorePath instead of flags.Store.
+	explicitStoreOverride := storePath
 
 	// Level 1: built-in defaults (already set above).
 
@@ -125,8 +138,13 @@ func Load(paths Paths, storePath string) (*Config, error) {
 		}
 	}
 
-	// Resolve store path.
-	if cfg.StorePath == "" && storePath != "" {
+	// Resolve final store path. An explicit --store override always
+	// wins; otherwise fall back to whatever the merged config has,
+	// or to the derived storePath if the config left it blank.
+	switch {
+	case explicitStoreOverride != "":
+		cfg.StorePath = explicitStoreOverride
+	case cfg.StorePath == "" && storePath != "":
 		cfg.StorePath = storePath
 	}
 

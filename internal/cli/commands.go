@@ -80,17 +80,11 @@ func runRefresh(ctx context.Context, flags *provider.GlobalFlags, registry *prov
 	if flags.Profile != "" {
 		cfg.ProfileTag = flags.Profile
 	}
-	// --store takes precedence over store_path in the merged config.
-	// config.Load only honors storePath for *finding* level-3 / level-4
-	// store-local configs; cfg.StorePath is set from the global config's
-	// `store_path:` and is NOT overridden from the storePath arg when
-	// the global config already has one. Without this explicit override,
-	// `hams --store=/alt refresh` silently refreshed the config-derived
-	// store instead of /alt. Symmetric with runApply which uses
-	// `flags.Store` directly from line 100.
-	if flags.Store != "" {
-		cfg.StorePath = flags.Store
-	}
+	// NOTE: cycle 90 originally patched `cfg.StorePath = flags.Store`
+	// here; cycle 91 promoted that guarantee into `config.Load` itself
+	// (explicitStoreOverride), so the override now fires for every
+	// config.Load caller (apply / refresh / list / store-status /
+	// config-* / register) without duplication.
 
 	// Validate the configured/supplied store path exists as a directory.
 	// Without this, refresh against a typo'd store_path silently reported
