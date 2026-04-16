@@ -411,24 +411,52 @@ func storeCmd() *cli.Command {
 			)
 		}
 
+		// Per cli-architecture spec §"Store command", status SHALL
+		// display store path, active profile tag, machine-id, and any
+		// uncommitted changes to Hamsfiles. Print profile tag and
+		// machine ID explicitly (not just derived paths) and attempt
+		// a `git status --short` for the changes column.
 		fmt.Printf("Store path:    %s\n", logging.TildePath(storePath))
+		fmt.Printf("Profile tag:   %s\n", cfg.ProfileTag)
+		fmt.Printf("Machine ID:    %s\n", cfg.MachineID)
 		fmt.Printf("Profile dir:   %s\n", logging.TildePath(cfg.ProfileDir()))
 		fmt.Printf("State dir:     %s\n", logging.TildePath(cfg.StateDir()))
 
 		profileDir := cfg.ProfileDir()
 		entries, readErr := os.ReadDir(profileDir)
 		if readErr != nil {
-			fmt.Printf("Profile dir:   (not found)\n")
-			return nil //nolint:nilerr // intentional: missing profile dir is not an error
+			fmt.Printf("Hamsfiles:     (profile dir not found)\n")
+			// Still try git status below — the store dir itself may
+			// be initialized even without a profile subdir.
+		} else {
+			hamsfiles := 0
+			for _, e := range entries {
+				if !e.IsDir() && filepath.Ext(e.Name()) == ".yaml" {
+					hamsfiles++
+				}
+			}
+			fmt.Printf("Hamsfiles:     %d\n", hamsfiles)
 		}
 
-		hamsfiles := 0
-		for _, e := range entries {
-			if !e.IsDir() && filepath.Ext(e.Name()) == ".yaml" {
-				hamsfiles++
+		// Git status: show uncommitted changes if the store is a git
+		// repo. Non-git stores or `git` unavailable just omit the line
+		// — not everyone tracks their store in git, and `hams store
+		// status` shouldn't fail for them.
+		if _, err := os.Stat(filepath.Join(storePath, ".git")); err == nil {
+			cmdCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			gs := exec.CommandContext(cmdCtx, "git", "-C", storePath, "status", "--short") //nolint:gosec // storePath is user-configured
+			out, gsErr := gs.Output()
+			switch {
+			case gsErr != nil:
+				fmt.Printf("Git status:    (command failed: %v)\n", gsErr)
+			case len(out) == 0:
+				fmt.Printf("Git status:    clean\n")
+			default:
+				lines := strings.Count(string(out), "\n")
+				fmt.Printf("Git status:    %d uncommitted change(s)\n", lines)
 			}
 		}
-		fmt.Printf("Hamsfiles:     %d\n", hamsfiles)
 
 		return nil
 	}
