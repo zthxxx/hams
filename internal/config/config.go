@@ -230,6 +230,43 @@ func IsValidConfigKey(key string) bool {
 	return slices.Contains(ValidConfigKeys, key)
 }
 
+// ReadRawConfigKey reads a single key from the appropriate config file
+// using the same routing as WriteConfigKey: sensitive keys from
+// hams.config.local.yaml (store-local or global fallback), non-sensitive
+// from the global hams.config.yaml. Returns the value + found=true when
+// the key is present, "" + found=false when not. Used by `hams config
+// get` to support arbitrary sensitive keys (e.g., notification.bark_token)
+// that are not fields on the typed Config struct.
+func ReadRawConfigKey(paths Paths, storePath, key string) (value string, found bool, err error) {
+	targetPath := paths.GlobalConfigPath()
+	if IsSensitiveKey(key) {
+		if storePath == "" {
+			targetPath = filepath.Join(paths.ConfigHome, "hams.config.local.yaml")
+		} else {
+			targetPath = filepath.Join(storePath, "hams.config.local.yaml")
+		}
+	}
+
+	data, err := os.ReadFile(targetPath) //nolint:gosec // config paths are user-specified
+	if err != nil {
+		if os.IsNotExist(err) {
+			return "", false, nil
+		}
+		return "", false, fmt.Errorf("reading config %s: %w", targetPath, err)
+	}
+
+	var m map[string]any
+	if err := yaml.Unmarshal(data, &m); err != nil {
+		return "", false, fmt.Errorf("parsing config %s: %w", targetPath, err)
+	}
+
+	raw, ok := m[key]
+	if !ok {
+		return "", false, nil
+	}
+	return fmt.Sprint(raw), true, nil
+}
+
 // WriteConfigKey reads the appropriate config file, updates a single key, and writes it back atomically.
 // Sensitive keys are written to the store's local config; other keys go to the global config file.
 func WriteConfigKey(paths Paths, storePath, key, value string) error {

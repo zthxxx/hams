@@ -179,7 +179,7 @@ func configCmd() *cli.Command {
 					if loadErr != nil {
 						return fmt.Errorf("loading config: %w", loadErr)
 					}
-					return printConfigKey(cfg, paths, cmd.Args().First())
+					return printConfigKey(cfg, paths, flags.Store, cmd.Args().First())
 				},
 			},
 			{
@@ -261,29 +261,51 @@ func configCmd() *cli.Command {
 	}
 }
 
-func printConfigKey(cfg *config.Config, paths config.Paths, key string) error {
+func printConfigKey(cfg *config.Config, paths config.Paths, storePath, key string) error {
 	switch key {
 	case "profile_tag":
 		fmt.Println(cfg.ProfileTag)
+		return nil
 	case "machine_id":
 		fmt.Println(cfg.MachineID)
+		return nil
 	case "store_path":
 		fmt.Println(logging.TildePath(cfg.StorePath))
+		return nil
 	case "store_repo":
 		fmt.Println(cfg.StoreRepo)
+		return nil
 	case "llm_cli":
 		fmt.Println(cfg.LLMCLI)
+		return nil
 	case "config_home":
 		fmt.Println(logging.TildePath(paths.ConfigHome))
+		return nil
 	case "data_home":
 		fmt.Println(logging.TildePath(paths.DataHome))
-	default:
-		return hamserr.NewUserError(hamserr.ExitUsageError,
-			fmt.Sprintf("unknown config key %q", key),
-			"Valid keys: profile_tag, machine_id, store_path, store_repo, llm_cli, config_home, data_home",
-		)
+		return nil
 	}
-	return nil
+
+	// Arbitrary sensitive keys (e.g., notification.bark_token) aren't
+	// struct fields — read them directly from the routed file so `get`
+	// symmetrically retrieves whatever `set` wrote.
+	if config.IsSensitiveKey(key) {
+		value, ok, err := config.ReadRawConfigKey(paths, storePath, key)
+		if err != nil {
+			return err
+		}
+		if !ok {
+			return nil // key unset → empty output, exit 0 (scripting-friendly)
+		}
+		fmt.Println(value)
+		return nil
+	}
+
+	return hamserr.NewUserError(hamserr.ExitUsageError,
+		fmt.Sprintf("unknown config key %q", key),
+		"Valid keys: profile_tag, machine_id, store_path, store_repo, llm_cli, config_home, data_home",
+		"Or use a key containing token/key/secret/password/credential (reads from .local.yaml)",
+	)
 }
 
 func storeCmd() *cli.Command {

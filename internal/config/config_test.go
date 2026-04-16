@@ -296,6 +296,46 @@ func TestLoad_C5_StoreWithoutMachineScopedOk(t *testing.T) {
 	}
 }
 
+// TestReadRawConfigKey_SensitiveFromStoreLocal asserts that sensitive
+// keys (e.g., notification.bark_token) are read from the store-level
+// `hams.config.local.yaml` — matching where `WriteConfigKey` puts them.
+func TestReadRawConfigKey_SensitiveFromStoreLocal(t *testing.T) {
+	configHome := t.TempDir()
+	storeDir := t.TempDir()
+	paths := Paths{ConfigHome: configHome, DataHome: t.TempDir()}
+
+	localPath := filepath.Join(storeDir, "hams.config.local.yaml")
+	writeYAML(t, localPath, "notification.bark_token: mytoken\napi_key: sk-xxx\n")
+
+	value, ok, err := ReadRawConfigKey(paths, storeDir, "notification.bark_token")
+	if err != nil {
+		t.Fatalf("ReadRawConfigKey: %v", err)
+	}
+	if !ok {
+		t.Fatal("expected key to be found")
+	}
+	if value != "mytoken" {
+		t.Errorf("value = %q, want %q", value, "mytoken")
+	}
+}
+
+// TestReadRawConfigKey_UnsetReturnsFalse asserts missing keys return
+// ("", false, nil) — no error, just absence. Enables scripting-friendly
+// `hams config get <unset>` behavior (empty output, exit 0).
+func TestReadRawConfigKey_UnsetReturnsFalse(t *testing.T) {
+	paths := Paths{ConfigHome: t.TempDir(), DataHome: t.TempDir()}
+	value, ok, err := ReadRawConfigKey(paths, t.TempDir(), "notification.bark_token")
+	if err != nil {
+		t.Fatalf("ReadRawConfigKey on missing file: %v", err)
+	}
+	if ok {
+		t.Error("expected ok=false for unset key")
+	}
+	if value != "" {
+		t.Errorf("value = %q, want empty string", value)
+	}
+}
+
 // TestLoad_MalformedGlobalYAMLSurfaces asserts that a malformed global
 // config file returns an error containing the file path, so users can
 // fix the broken file. Previously the error was silently ignored by
