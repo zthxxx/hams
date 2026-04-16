@@ -187,6 +187,10 @@ Spec corrections:
 
 Total commits in cycle 2: 15+ (still growing — iteration 3 adds hooks+OTel defer).
 
+### Cycle 74 — Coverage tests for config set gating and routing
+
+- [x] Two new tests in `internal/config/config_test.go`: `TestIsValidConfigKey` covers the whitelist used by `hams config set` (profile_tag, machine_id, store_path, store_repo, llm_cli — plus negative cases: typos, sensitive-pattern leaks, empty); `TestWriteConfigKey_GlobalVsLocal` covers the sensitive-vs-nonsensitive routing (non-sensitive → global YAML, sensitive like `notification.bark_token` → local YAML, with cross-file leak checks). Both functions were 0% covered despite being the core of `hams config set`. `internal/config` coverage: 77.4% → 88.3%. No behavior change — coverage only. (commit `4db29d5`)
+
 ### Cycle 73 — Regression tests for cycle 72 error-transform + refactor
 
 - [x] Lifted the cycle-72 inline transform into a pure `transformCloneError(repoURL, err)` helper (was untestable inside cloneRemoteRepo because it shells out to a real git remote). Two unit tests: "Repository not found" gets *UserFacingError with 3 suggestions and no "authentication" leak; other errors (e.g. "dial tcp: connection refused") propagate verbatim with the url-prefix wrap. No behavior change — coverage only. (commit `e97b3f4`)
