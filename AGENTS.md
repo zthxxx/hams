@@ -187,6 +187,10 @@ Spec corrections:
 
 Total commits in cycle 2: 15+ (still growing — iteration 3 adds hooks+OTel defer).
 
+### Cycle 119 — `hams list` text output shows LastError for failed resources
+
+- [x] Third in the cycles 116-119 list UX sweep. Text output previously showed `htop  failed` with no indication of WHY — user had to run `--json` or read the state YAML to see the last_error text. Now: `htop  failed (error: package not found in repository)`. The `(error: ...)` suffix is distinctive (grep/sed friendly) and only emits when LastError is non-empty so healthy rows stay compact. Regression test seeds a failed apt resource with last_error text and asserts the suffix appears. cli coverage: 64.5% → 64.6%. (commit `f4208fa`)
+
 ### Cycle 118 — self-upgrade dry-run branch regression gate
 
 - [x] `runHomebrewUpgrade`'s dry-run branch had zero tests — a future refactor dropping the branch would silently run `brew upgrade` on a user who only asked for a preview. Same "dry-run has side effects" anti-pattern that cycles 39, 41, 84, 86 fixed in apply. Added `TestRunHomebrewUpgrade_DryRun`: asserts dry-run returns nil, stdout contains `"[dry-run] Would run: brew upgrade"`, AND stdout does NOT contain the live-run text "Detected Homebrew install" — if the dry-run branch accidentally falls through to the real exec path, the assertion fails. cli coverage: 64.2% → 64.5%. (commit `41c5ddb`)
