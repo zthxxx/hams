@@ -187,6 +187,10 @@ Spec corrections:
 
 Total commits in cycle 2: 15+ (still growing — iteration 3 adds hooks+OTel defer).
 
+### Cycle 67 — Dual-sink slog: stderr AND file (fix for cycle 65 regression)
+
+- [x] **Caught my own bug**: `logging.Setup` replaced the default slog handler with one writing ONLY to the file. After cycle 65 wired this into apply/refresh, users saw no live progress — `hams apply` appeared to hang while silently writing to the log file. Swapped the handler's writer for `io.MultiWriter(os.Stderr, logFile)` so both destinations receive the same output. Live feedback restored, file capture preserved. (commit `68e66ab`)
+
 ### Cycle 66 — Regression test for cycle 65 log-file wiring
 
 - [x] `TestRunRefresh_CreatesSessionLogFile` asserts runRefresh creates the month-bucket log file at `${HAMS_DATA_HOME}/<YYYY-MM>/hams.<YYYYMM>.log` with non-zero content. Even the no-providers-match early-return path triggers SetupLogging first, so the regression guard covers the common case. (commit `4dd1338`)
