@@ -3,6 +3,7 @@ package cli
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/zthxxx/hams/internal/config"
@@ -120,5 +121,33 @@ func TestBootstrapFromRepo_LocalPathPriority(t *testing.T) {
 	// Should resolve to local path, NOT try to clone from GitHub.
 	if storePath != localDir {
 		t.Errorf("storePath = %q, want %q", storePath, localDir)
+	}
+}
+
+// TestBootstrapFromRepo_LocalAttemptSurfacesError asserts that when the
+// user passes a clearly-local-looking path (`/tmp/foo`, `./foo`, `~/foo`)
+// that doesn't exist or isn't a git repo, the error message names the
+// local path — NOT a confusing "https://github.com//<path> not found".
+// Regression for cycle 35.
+func TestBootstrapFromRepo_LocalAttemptSurfacesError(t *testing.T) {
+	cases := []struct {
+		name  string
+		input string
+	}{
+		{"absolute nonexistent", "/nonexistent-path-12345"},
+		{"absolute dir without .git", "/tmp"}, // /tmp exists but no .git
+		{"tilde nonexistent", "~/nonexistent-hams-path-xyz"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			paths := config.Paths{DataHome: t.TempDir()}
+			_, err := bootstrapFromRepo(tc.input, paths)
+			if err == nil {
+				t.Fatalf("expected error for %q", tc.input)
+			}
+			if strings.Contains(err.Error(), "github.com") {
+				t.Errorf("local-looking input %q should not mention github.com in error; got %q", tc.input, err.Error())
+			}
+		})
 	}
 }
