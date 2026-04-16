@@ -187,6 +187,10 @@ Spec corrections:
 
 Total commits in cycle 2: 15+ (still growing — iteration 3 adds hooks+OTel defer).
 
+### Cycle 112 — Lock corruption + missing-file error-shape tests
+
+- [x] Small test-design cycle. `Lock.Acquire`'s corrupt-lock branch and `Lock.Read`'s missing-file + malformed-YAML branches were both untested. These are load-bearing error paths: Acquire's corruption branch keeps hams from silently overwriting a lock whose YAML is corrupt (the user needs to inspect/remove it manually), and Read's corruption branch distinguishes "stale from crash" vs "genuinely corrupt" for upstream callers that handle each differently. Added 3 regression tests: `TestLock_UnreadableLockFileErrors` (Acquire against corrupt YAML errors AND names the lock path), `TestLock_Read_MissingFile` (returns os.IsNotExist-wrapped for errors.Is), `TestLock_Read_MalformedYAMLSurfacesParseError` (mentions "parsing" in the error text). state coverage: 84.1% → 86.7%. (commit `9286de0`)
+
 ### Cycle 111 — `ComputePlan` now dedups duplicate desired entries
 
 - [x] Real user-workflow bug. `ComputePlan` iterated the raw desired slice without a dedup guard. A common drift case — the same app listed under two hamsfile tags after a move-between-tags edit (e.g. moved `htop` from `cli:` to `dev:` but forgot to delete the old entry) — made `ListApps` return `[htop, htop]`, so ComputePlan emitted two `Install` actions for the same ID. Apply then ran `apt install htop` twice (idempotent but wasteful) AND the final summary showed `installed=2` instead of 1. Fix: add a `seen` set guard in the install-path loop; first-occurrence order is preserved so hooks and dry-run preview stay deterministic. The removal-path was already dedup-safe (iterates `desiredSet`, a map). 2 regression tests (exact-count + first-occurrence order). provider coverage: 74.2% → 74.4%. (commit `4a1b3dd`)
