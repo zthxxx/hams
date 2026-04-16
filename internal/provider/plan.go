@@ -5,7 +5,11 @@ import (
 )
 
 // ComputePlan diffs desired resources (from hamsfile) against observed state.
-// Returns a list of actions to execute.
+// Returns a list of actions to execute. Duplicate entries in `desired`
+// (e.g. the same app listed under two tags after a move-between-tags
+// edit) are folded into a single action in first-occurrence order —
+// emitting two actions for the same ID would cause the apply loop to
+// install twice and the summary to double-count.
 func ComputePlan(desired []string, observed *state.File, lastConfigHash string) []Action {
 	var actions []Action
 
@@ -15,7 +19,16 @@ func ComputePlan(desired []string, observed *state.File, lastConfigHash string) 
 	}
 
 	// Resources in desired but not in state (or failed/pending) → install.
+	// Iterate the raw slice (preserves first-occurrence order) but skip
+	// any ID we've already emitted an action for — hamsfile drift can
+	// produce the same app under two tags, and the apply loop must
+	// process each resource once.
+	seen := make(map[string]bool, len(desired))
 	for _, id := range desired {
+		if seen[id] {
+			continue
+		}
+		seen[id] = true
 		r, exists := observed.Resources[id]
 		if !exists {
 			actions = append(actions, Action{ID: id, Type: ActionInstall})

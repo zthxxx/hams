@@ -100,6 +100,53 @@ func TestCountActions(t *testing.T) {
 	}
 }
 
+// TestComputePlan_DedupsDuplicateDesired asserts that when the same
+// app ID appears twice in the desired list (e.g. a user accidentally
+// left htop under both `cli:` and `dev:` tags after a move), the
+// resulting plan has exactly ONE action for that ID — not two.
+// Without dedup, the apply loop would run `apt install htop` twice
+// (idempotent but wasteful) and the final summary would show
+// `installed=2` instead of 1.
+func TestComputePlan_DedupsDuplicateDesired(t *testing.T) {
+	observed := state.New("apt", "test")
+	actions := ComputePlan([]string{"htop", "htop", "jq", "htop"}, observed, "")
+
+	// Expect 2 actions total: one for htop, one for jq.
+	if len(actions) != 2 {
+		t.Errorf("len(actions) = %d, want 2 (one per unique ID)", len(actions))
+	}
+
+	seen := map[string]int{}
+	for _, a := range actions {
+		seen[a.ID]++
+	}
+	if seen["htop"] != 1 {
+		t.Errorf("htop appeared %d times, want 1", seen["htop"])
+	}
+	if seen["jq"] != 1 {
+		t.Errorf("jq appeared %d times, want 1", seen["jq"])
+	}
+}
+
+// TestComputePlan_DedupsPreservesFirstOccurrenceOrder asserts the
+// iteration order of the returned actions matches the order of the
+// FIRST occurrence of each ID in the desired slice. Users rely on
+// provider-level ordering for hook ordering + preview output.
+func TestComputePlan_DedupsPreservesFirstOccurrenceOrder(t *testing.T) {
+	observed := state.New("apt", "test")
+	actions := ComputePlan([]string{"c", "a", "b", "a", "c"}, observed, "")
+
+	if len(actions) != 3 {
+		t.Fatalf("len(actions) = %d, want 3", len(actions))
+	}
+	want := []string{"c", "a", "b"}
+	for i, a := range actions {
+		if a.ID != want[i] {
+			t.Errorf("actions[%d].ID = %q, want %q (first-occurrence order)", i, a.ID, want[i])
+		}
+	}
+}
+
 // Property: every desired resource appears in the action list exactly once.
 func TestProperty_PlanCoversAllDesired(t *testing.T) {
 	rapid.Check(t, func(t *rapid.T) {
