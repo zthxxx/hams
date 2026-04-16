@@ -72,7 +72,28 @@ already done," there's no point even starting `ansible-playbook`.
 
 ## Bootstrap
 
-Install Ansible first:
+Fresh machine without Ansible? hams can install it via `pipx`. Pass `--bootstrap`
+to `apply` and hams runs `pipx install --include-deps ansible` under your consent:
+
+```bash
+hams apply --bootstrap --from-repo=you/hams-store
+```
+
+pipx is chosen over bare `pip install` because PEP 668 rejects system-pip
+installs on modern Python (Debian 12+, brew-python) with "externally-managed
+environment". pipx creates an isolated venv per app and is the Python
+community's accepted answer for installing tools from PyPI.
+
+**Prerequisite**: pipx itself must be installed. On Debian/Ubuntu: `apt install pipx`.
+On macOS: `brew install pipx`. If pipx is missing when `--bootstrap` runs, the
+install script fails with "pipx: command not found" and hams surfaces that
+chain in its error output.
+
+On an interactive terminal without the flag, hams shows the exact command and
+asks `[y/N/s]`. See [hams apply → About the bootstrap prompt](/docs/cli/apply#about-the-bootstrap-prompt)
+for details.
+
+Or declare ansible under Homebrew (macOS) the usual way:
 
 ```yaml
 # Homebrew.hams.yaml

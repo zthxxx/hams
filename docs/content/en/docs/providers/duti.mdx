@@ -88,7 +88,19 @@ associates with that type, and compares against the Hamsfile's `bundle_id`.
 
 ## Bootstrap
 
-Install duti first:
+Fresh Mac without duti? hams can install it for you via Homebrew. Pass `--bootstrap`
+to `apply` and hams runs `brew install duti` under your consent:
+
+```bash
+hams apply --bootstrap --from-repo=you/hams-store
+```
+
+On an interactive terminal without the flag, hams shows the exact command and asks
+`[y/N/s]`. See [hams apply → About the bootstrap prompt](/docs/cli/apply#about-the-bootstrap-prompt)
+for details. brew itself is also consent-gated — the fresh-Mac chain `brew → duti`
+can resolve in one `hams apply --bootstrap` call.
+
+Or declare duti under Homebrew in the usual way:
 
 ```yaml
 # Homebrew.hams.yaml

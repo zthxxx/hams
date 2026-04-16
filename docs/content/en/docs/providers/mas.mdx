@@ -66,7 +66,19 @@ Hamsfile.
 
 ## Bootstrap
 
-Install mas first. One Homebrew entry:
+Fresh Mac without mas? hams can install it via Homebrew. Pass `--bootstrap` to `apply`
+and hams runs `brew install mas` under your consent:
+
+```bash
+hams apply --bootstrap --from-repo=you/hams-store
+```
+
+On an interactive terminal without the flag, hams shows the exact command and asks
+`[y/N/s]`. See [hams apply → About the bootstrap prompt](/docs/cli/apply#about-the-bootstrap-prompt)
+for details. brew itself is consent-gated too — a fresh-Mac `brew → mas` chain
+resolves in one `hams apply --bootstrap` call.
+
+Or declare mas under Homebrew in the usual way:
 
 ```yaml
 # Homebrew.hams.yaml
