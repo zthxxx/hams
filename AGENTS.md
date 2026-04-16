@@ -181,6 +181,11 @@ Spec corrections:
 
 Total commits in cycle 2: 15+ (still growing — iteration 3 adds hooks+OTel defer).
 
+### Cycle 22 — Plan coverage for ansible + defaults
+
+- [x] Ansible `TestU9_Plan_AttachesPlaybookPathAsResource` (70.5% → 76.9%) — verifies Plan decorates each action.Resource with the URN (string), required by Apply's type assertion.
+- [x] Defaults `TestU10_Plan_WrapsComputePlanWithHooks` (58.6% → 60.4%) — populated + empty subtests. Both previously 0%-covered Plan functions now exercised end-to-end. (commit `b156196`)
+
 ### Cycle 21 — Bash Plan + bashParseResources coverage (51% → 86.5%)
 
 - [x] Added `TestPlan_ParsesAndEnrichesActions` — drives the bash provider's Plan → bashParseResources flow with a YAML hamsfile containing two URNs (one with check, one with sudo+remove). Asserts actions enriched with parsed Resource, including sudo-prefix on cached remove command. Biggest v1 coverage jump so far. (commit `413bd6e`)
