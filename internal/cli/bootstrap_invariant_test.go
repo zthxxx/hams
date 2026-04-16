@@ -3,7 +3,22 @@ package cli
 import (
 	"testing"
 
+	"github.com/zthxxx/hams/internal/config"
 	"github.com/zthxxx/hams/internal/provider"
+	"github.com/zthxxx/hams/internal/provider/builtin/ansible"
+	"github.com/zthxxx/hams/internal/provider/builtin/apt"
+	"github.com/zthxxx/hams/internal/provider/builtin/bash"
+	"github.com/zthxxx/hams/internal/provider/builtin/cargo"
+	"github.com/zthxxx/hams/internal/provider/builtin/defaults"
+	"github.com/zthxxx/hams/internal/provider/builtin/duti"
+	"github.com/zthxxx/hams/internal/provider/builtin/git"
+	"github.com/zthxxx/hams/internal/provider/builtin/goinstall"
+	"github.com/zthxxx/hams/internal/provider/builtin/homebrew"
+	"github.com/zthxxx/hams/internal/provider/builtin/mas"
+	"github.com/zthxxx/hams/internal/provider/builtin/npm"
+	"github.com/zthxxx/hams/internal/provider/builtin/pnpm"
+	"github.com/zthxxx/hams/internal/provider/builtin/uv"
+	"github.com/zthxxx/hams/internal/provider/builtin/vscodeext"
 	"github.com/zthxxx/hams/internal/sudo"
 )
 
@@ -20,14 +35,33 @@ import (
 // DAG-only entries (empty `.Script`, present purely for topological
 // ordering) can target any provider.
 //
-// This invariant is load-bearing for every --bootstrap code path. It
-// should be impossible to add a new scripted DependsOn entry without
-// this test catching a mistargeted host.
+// This invariant must hold on EVERY platform: a mistargeted script
+// entry on a macOS-only provider (duti, mas, defaults) would escape
+// Linux CI if we iterated only registered providers, because
+// `registry.Register` silently skips providers whose Platforms
+// don't match `runtime.GOOS`. Instead we instantiate every builtin
+// directly so the invariant is enforced unconditionally.
 func TestBuiltinManifestScriptHostsAreBash(t *testing.T) {
-	registry := provider.NewRegistry()
-	registerBuiltins(registry, sudo.DirectBuilder{})
+	cfg := &config.Config{}
+	all := []provider.Provider{
+		homebrew.New(cfg),
+		apt.New(cfg, apt.NewRealCmdRunner(sudo.DirectBuilder{})),
+		npm.New(),
+		pnpm.New(),
+		uv.New(),
+		goinstall.New(),
+		cargo.New(),
+		git.NewConfigProvider(),
+		git.NewCloneProvider(cfg),
+		defaults.New(cfg),
+		duti.New(),
+		mas.New(),
+		vscodeext.New(),
+		ansible.New(),
+		bash.New(),
+	}
 
-	for _, p := range registry.All() {
+	for _, p := range all {
 		manifest := p.Manifest()
 		for i, dep := range manifest.DependsOn {
 			if dep.Script == "" {

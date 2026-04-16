@@ -2931,13 +2931,19 @@ applies only to scripted entries.
 
 This invariant is enforced by a unit test
 (`cli/bootstrap_invariant_test.go::TestBuiltinManifestScriptHostsAreBash`)
-that iterates every registered builtin's manifest and fails the build
-if a Script entry targets a non-bash host.
+that instantiates every builtin directly (bypassing the registry's
+platform filter) and fails the build if a Script entry targets a
+non-bash host. Direct instantiation matters: a mistargeted entry on
+a macOS-only provider (duti/mas/defaults) would escape Linux CI if
+the test iterated only registered providers, because
+`registry.Register` silently skips providers whose `Platforms` don't
+match the running OS.
 
-#### Scenario: framework invariant enforces bash host
+#### Scenario: framework invariant enforces bash host on all platforms
 
-- **WHEN** the test `TestBuiltinManifestScriptHostsAreBash` is run
-- **THEN** it SHALL iterate every registered builtin provider's `Manifest().DependsOn`
+- **WHEN** the test `TestBuiltinManifestScriptHostsAreBash` is run on any OS
+- **THEN** it SHALL instantiate every builtin provider directly (not via registry)
+- **AND** iterate each one's `Manifest().DependsOn`
 - **AND** for each entry with a non-empty `.Script`, assert `.Provider == "bash"`
 - **AND** fail the test on any non-bash host, naming the offending provider and index.
 
