@@ -178,7 +178,7 @@ THEN a table or card layout SHALL list all builtin providers with:
 - Wrapped tool (e.g., "Homebrew" wraps `brew`)
 - Supported platforms (macOS, Linux, or both)
 - Brief one-line description
-AND the list SHALL include at minimum: Bash, Homebrew, apt, pnpm, npm, uv, go, cargo, VSCode Extension, git (config + clone), defaults, duti, mas.
+AND the list SHALL include at minimum: Bash, Homebrew, apt, pnpm, npm, uv, goinstall, cargo, VS Code Extensions, git (config + clone), defaults, duti, mas, ansible.
 
 ### Requirement: Chapter Structure -- Schema Reference
 

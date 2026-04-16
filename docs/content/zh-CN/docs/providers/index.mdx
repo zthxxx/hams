@@ -14,9 +14,9 @@ hams 自带 15 个 provider，把工作站上常见的"东西"都覆盖了。
 | [pnpm](./pnpm) | `pnpm` | macOS、Linux | 全局 Node.js 包 |
 | [npm](./npm) | `npm` | macOS、Linux | 全局 Node.js 包 |
 | [uv](./uv) | `uv` | macOS、Linux | Python 命令行工具 |
-| [go](./go) | `go install` | macOS、Linux | Go 二进制 |
+| [goinstall](./goinstall) | `go install` | macOS、Linux | Go 二进制 |
 | [cargo](./cargo) | `cargo install` | macOS、Linux | Rust 二进制 |
-| [vscode-ext](./vscode-ext) | `code` | macOS、Linux | VS Code 扩展 |
+| [code-ext](./code-ext) | `code` | macOS、Linux | VS Code 扩展 |
 | [mas](./mas) | `mas` | 仅 macOS | Mac App Store 应用 |
 | [git-config](./git-config) | `git config` | macOS、Linux | git 全局配置 |
 | [git-clone](./git-clone) | `git clone` | macOS、Linux | 克隆仓库到固定路径 |
@@ -31,7 +31,7 @@ hams 自带 15 个 provider，把工作站上常见的"东西"都覆盖了。
 
 ### Package —— 问原生列表
 
-**涉及 provider**：Homebrew、apt、pnpm、npm、uv、go、cargo、mas、vscode-ext
+**涉及 provider**：Homebrew、apt、pnpm、npm、uv、goinstall、cargo、mas、code-ext
 
 **探测办法**：跑一下原生的 `list` 命令（`brew list --formula`、`npm list -g` 等），看包名在不在输出里，顺手把版本记下来。
 
@@ -98,9 +98,9 @@ provider_priority:
   - pnpm
   - npm
   - uv
-  - go
+  - goinstall
   - cargo
-  - vscode-ext
+  - code-ext
   - mas
   - git-config
   - git-clone

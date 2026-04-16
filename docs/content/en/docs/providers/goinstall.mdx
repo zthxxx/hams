@@ -12,13 +12,13 @@ so you can reproduce it later.
 
 ```bash
 # Install (full import path)
-hams go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest
+hams goinstall install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest
 
 # No version? hams defaults to @latest
-hams go install github.com/goreleaser/goreleaser
+hams goinstall install github.com/goreleaser/goreleaser
 
 # See what hams is managing
-hams go list
+hams goinstall list
 ```
 
 `go install` doesn't have a native "uninstall" — to remove, hams deletes the matching binary from
@@ -27,9 +27,9 @@ hams go list
 ## Hamsfile example
 
 ```yaml
-# macOS/go.hams.yaml
+# macOS/goinstall.hams.yaml
 schema_version: 1
-provider: go
+provider: goinstall
 
 groups:
   - tag: go-tools
@@ -69,7 +69,7 @@ You need `go` itself. Easiest path is Homebrew or apt:
   intro: Go programming language.
 ```
 
-Then make sure `Homebrew` (or `apt`) comes before `go` in `provider_priority`.
+Then make sure `Homebrew` (or `apt`) comes before `goinstall` in `provider_priority`.
 
 ## `@latest` and versioning
 
@@ -80,6 +80,6 @@ run `hams refresh --force` or install `x@latest` again to pull a newer version.
 
 <Callout type="tip">
   Unlike Homebrew or apt, tools installed via `go install` don't get an automatic upgrade path.
-  To update, re-run `hams go install x@latest` — hams will compare recorded versions and reinstall
+  To update, re-run `hams goinstall install x@latest` — hams will compare recorded versions and reinstall
   if there's genuinely something new.
 </Callout>

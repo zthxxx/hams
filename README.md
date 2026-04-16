@@ -44,7 +44,7 @@ hams apply --bootstrap --from-repo=your-username/hams-store
 
 ## Features
 
-- **15 builtin providers**: Homebrew, apt, pnpm, npm, uv, go, cargo, VS Code extensions, mas (App Store), git config/clone, macOS defaults, duti, Ansible
+- **15 builtin providers**: Homebrew, apt, pnpm, npm, uv, goinstall, cargo, VS Code Extensions (`code-ext`), mas (App Store), git config/clone, macOS defaults, duti, Ansible
 - **Terraform-style state**: tracks what's installed, retries failures, detects drift
 - **Comment-preserving YAML**: your Hamsfile comments survive round-trips
 - **Multi-machine profiles**: one git repo, multiple machine configs (macOS, Linux, OpenWrt)

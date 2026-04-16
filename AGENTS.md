@@ -68,7 +68,7 @@ Single test: `go test -race -run TestFuncName ./path/to/package/...`
 - **OTel**: trace + metrics, local file exporter at `${HAMS_DATA_HOME}/otel/`.
 - **Docs**: Nextra on GitHub Pages at `hams.zthxxx.me`.
 
-15 builtin providers: Bash, Homebrew, apt, pnpm, npm, uv, go, cargo, VSCode Extension, git (config/clone), defaults, duti, mas, Ansible.
+15 builtin providers: Bash, Homebrew, apt, pnpm, npm, uv, goinstall, cargo, VS Code Extensions (`code-ext`), git (config/clone), defaults, duti, mas, Ansible.
 
 ## Directory Conventions
 
@@ -134,7 +134,9 @@ This project uses [OpenSpec](https://openspec.dev) for spec-driven development.
 
 ## Current Task
 
-Ralph Loop: Full verification cycle (all shipped specs, user workflow, tests, architecture)
+Ralph Loop: Verification cycle 2 — execute deferred follow-ups from `2026-04-16-verification-findings`
+
+### Completed in cycle 1
 
 - [x] Fix goconst lint errors across 7 provider files
 - [x] Fix Taskfile bug: `task check` was calling `task test` (includes integration/e2e via act) instead of `task test:unit`
@@ -147,6 +149,14 @@ Ralph Loop: Full verification cycle (all shipped specs, user workflow, tests, ar
 - [x] Record findings as OpenSpec change with task breakdown (`openspec/changes/2026-04-16-verification-findings/`)
 - [x] Remove dead CLIHandler interface (unused dead code in provider.go) — zero Go references remain
 - [x] Final `task check` pass (verified 0 issues, all 28 test packages PASS)
+- [x] Commit cycle-1 verification findings (10de4bd)
+
+### Cycle 2: deferred follow-ups
+
+- [ ] **spec-reconciliation/naming**: Update `openspec/specs/builtin-providers/spec.md` to use `goinstall`/`code-ext`. Grep for stale references.
+- [ ] **lucky-enrichment**: Architect investigation — Enricher interface has zero implementers; `--hams-lucky` is a no-op flag. Decide: build the enrichment chain, or defer the spec to v1.1.
+- [ ] **provider-test-coverage**: Add property-based parser tests using `rapid` for all `ParseXxxList` parsers. Add Tier 1 lifecycle tests.
+- [ ] Verify `task check` passes after each change. Atomic commit per fix.
 
 ## Rules
 

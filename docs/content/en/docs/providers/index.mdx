@@ -15,9 +15,9 @@ on top.
 | [pnpm](./pnpm) | `pnpm` | macOS, Linux | Global Node.js packages |
 | [npm](./npm) | `npm` | macOS, Linux | Global Node.js packages |
 | [uv](./uv) | `uv` | macOS, Linux | Python command-line tools |
-| [go](./go) | `go install` | macOS, Linux | Go binaries |
+| [goinstall](./goinstall) | `go install` | macOS, Linux | Go binaries |
 | [cargo](./cargo) | `cargo install` | macOS, Linux | Rust binaries |
-| [vscode-ext](./vscode-ext) | `code` | macOS, Linux | VS Code extensions |
+| [code-ext](./code-ext) | `code` | macOS, Linux | VS Code extensions |
 | [mas](./mas) | `mas` | macOS only | Mac App Store apps |
 | [git-config](./git-config) | `git config` | macOS, Linux | Git global configuration |
 | [git-clone](./git-clone) | `git clone` | macOS, Linux | Repositories cloned to fixed paths |
@@ -33,7 +33,7 @@ Every provider's resources fit one of four classes. Each class has its own way o
 
 ### Package — ask the native list command
 
-**Providers:** Homebrew, apt, pnpm, npm, uv, go, cargo, mas, vscode-ext
+**Providers:** Homebrew, apt, pnpm, npm, uv, goinstall, cargo, mas, code-ext
 
 **How it probes:** Run the native `list` command (`brew list --formula`, `npm list -g`, etc.),
 check whether the package shows up, grab the version from the output.
@@ -102,9 +102,9 @@ provider_priority:
   - pnpm
   - npm
   - uv
-  - go
+  - goinstall
   - cargo
-  - vscode-ext
+  - code-ext
   - mas
   - git-config
   - git-clone

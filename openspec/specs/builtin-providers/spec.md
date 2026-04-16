@@ -20,9 +20,9 @@ All providers implement the Provider interface defined in the Provider System sp
 | 4 | pnpm | pnpm | Package | natural name | both |
 | 5 | npm | npm | Package | natural name | both |
 | 6 | uv | uv | Package | natural name | both |
-| 7 | go | Go | Package | natural name (module path) | both |
+| 7 | goinstall | go install | Package | natural name (module path) | both |
 | 8 | cargo | Cargo | Package | natural name | both |
-| 9 | vscode-ext | VSCode Extension | Package | extension ID | both |
+| 9 | code-ext | VS Code Extensions | Package | extension ID | both |
 | 10 | git-config | git config | KV Config | URN | both |
 | 11 | git-clone | git clone | Filesystem | URN | both |
 | 12 | defaults | defaults | KV Config | URN | macOS |
@@ -38,7 +38,7 @@ The following patterns apply across multiple providers. Individual provider sect
 
 ### CP-1: Package Provider Common Pattern
 
-All Package-class providers (homebrew, apt, pnpm, npm, uv, go, cargo, vscode-ext, mas) share these behaviors:
+All Package-class providers (homebrew, apt, pnpm, npm, uv, goinstall, cargo, code-ext, mas) share these behaviors:
 
 **Hamsfile entry structure:**
 
@@ -1440,17 +1440,17 @@ THEN it SHALL execute `uv tool list`, parse each line for tool name and version,
 
 ---
 
-### Requirement: Go Provider
+### Requirement: Go Install Provider
 
-The Go provider SHALL wrap `go install` for Go binaries. It requires a version suffix and auto-injects `@latest` if missing.
+The goinstall provider SHALL wrap `go install` for Go binaries. It requires a version suffix and auto-injects `@latest` if missing.
 
 **Provider metadata:**
 
 | Field | Value |
 |-------|-------|
-| Name | `go` |
-| Display name | `Go` |
-| File | `Go.hams.yaml` |
+| Name | `goinstall` |
+| Display name | `go install` |
+| File | `goinstall.hams.yaml` |
 | Resource class | Package |
 | Platform | both |
 | depend-on | none (Go must be installed via Homebrew/apt or manually) |
@@ -1493,9 +1493,9 @@ The `app` field SHALL contain the full Go module path (as used by `go install`).
 
 | Subcommand | Behavior |
 |------------|----------|
-| `hams go install <module>` | Install + record. Auto-inject `@latest`. |
-| `hams go remove <module>` | Remove binary + delete from Hamsfile. |
-| `hams go list` | Diff view. |
+| `hams goinstall install <module>` | Install + record. Auto-inject `@latest`. |
+| `hams goinstall remove <module>` | Remove binary + delete from Hamsfile. |
+| `hams goinstall list` | Diff view. |
 | Any other | Passthrough to `go <subcommand>`. |
 
 **LLM enrichment:**
@@ -1504,18 +1504,18 @@ The `app` field SHALL contain the full Go module path (as used by `go install`).
 
 #### Scenario: Install with auto-inject @latest
 
-WHEN the user runs `hams go install github.com/golangci/golangci-lint/cmd/golangci-lint`
-THEN the Go provider SHALL execute `go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest` and record the entry.
+WHEN the user runs `hams goinstall install github.com/golangci/golangci-lint/cmd/golangci-lint`
+THEN the goinstall provider SHALL execute `go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest` and record the entry.
 
 #### Scenario: Install with explicit version
 
-WHEN the user runs `hams go install github.com/foo/bar@v1.2.3`
-THEN the Go provider SHALL execute `go install github.com/foo/bar@v1.2.3` preserving the explicit version and record `app: github.com/foo/bar` with the version in state.
+WHEN the user runs `hams goinstall install github.com/foo/bar@v1.2.3`
+THEN the goinstall provider SHALL execute `go install github.com/foo/bar@v1.2.3` preserving the explicit version and record `app: github.com/foo/bar` with the version in state.
 
 #### Scenario: Remove a go binary
 
-WHEN the user runs `hams go remove github.com/golangci/golangci-lint/cmd/golangci-lint`
-THEN the Go provider SHALL delete `$GOBIN/golangci-lint`, remove the entry from the Hamsfile, mark state as `removed`, and log a warning: "Only the binary was removed. Source cache may remain in module cache."
+WHEN the user runs `hams goinstall remove github.com/golangci/golangci-lint/cmd/golangci-lint`
+THEN the goinstall provider SHALL delete `$GOBIN/golangci-lint`, remove the entry from the Hamsfile, mark state as `removed`, and log a warning: "Only the binary was removed. Source cache may remain in module cache."
 
 ---
 
@@ -1577,17 +1577,17 @@ THEN it SHALL execute `cargo install --list`, parse each `<name> v<version>:` he
 
 ---
 
-### Requirement: VSCode Extension Provider
+### Requirement: VS Code Extensions Provider
 
-The VSCode Extension provider SHALL wrap `code --install-extension` and `code --uninstall-extension`. It depends on Homebrew for VSCode installation (the `visual-studio-code` cask).
+The VS Code Extensions provider (`code-ext`) SHALL wrap `code --install-extension` and `code --uninstall-extension`. It depends on Homebrew for VSCode installation (the `visual-studio-code` cask).
 
 **Provider metadata:**
 
 | Field | Value |
 |-------|-------|
-| Name | `vscode-ext` |
-| Display name | `VSCode Extension` |
-| File | `VSCode Extension.hams.yaml` |
+| Name | `code-ext` |
+| Display name | `VS Code Extensions` |
+| File | `code-ext.hams.yaml` |
 | Resource class | Package |
 | Platform | both |
 | depend-on | `homebrew` (for `visual-studio-code` cask on macOS) |
@@ -1626,10 +1626,10 @@ The `app` field SHALL contain the extension ID in `<publisher>.<extension>` form
 
 | Subcommand | Behavior |
 |------------|----------|
-| `hams vscode-ext install <id>` | Install + record. |
-| `hams vscode-ext remove <id>` | Uninstall + delete from Hamsfile. |
-| `hams vscode-ext list` | Diff view. |
-| Any other | Not passthrough (vscode-ext is not a full CLI). |
+| `hams code-ext install <id>` | Install + record. |
+| `hams code-ext remove <id>` | Uninstall + delete from Hamsfile. |
+| `hams code-ext list` | Diff view. |
+| Any other | Not passthrough (code-ext is not a full CLI). |
 
 **LLM enrichment:**
 
@@ -1637,17 +1637,17 @@ The `app` field SHALL contain the extension ID in `<publisher>.<extension>` form
 
 #### Scenario: Install a VSCode extension
 
-WHEN the user runs `hams vscode-ext install ms-python.python`
+WHEN the user runs `hams code-ext install ms-python.python`
 THEN the provider SHALL execute `code --install-extension ms-python.python`, record it in the Hamsfile, and update state.
 
 #### Scenario: VSCode not installed
 
-WHEN the VSCode Extension provider is needed but `code` is not on `$PATH`
+WHEN the VS Code Extensions provider is needed but `code` is not on `$PATH`
 THEN on macOS, hams SHALL resolve `depend-on: homebrew` and check if `visual-studio-code` is in the Homebrew Hamsfile. If not, the provider SHALL report an error: "VSCode (visual-studio-code cask) must be installed via Homebrew before managing extensions."
 
 #### Scenario: Probe extensions
 
-WHEN the VSCode Extension provider probes
+WHEN the VS Code Extensions provider probes
 THEN it SHALL execute `code --list-extensions --show-versions`, parse `<publisher>.<name>@<version>` lines, and update state.
 
 ---
@@ -2459,9 +2459,9 @@ Each provider SHALL declare its `depend-on` chain in its manifest. The dependenc
 | pnpm | npm | `npm install -g pnpm` |
 | npm | (none) | Requires Node.js (user responsibility) |
 | uv | (none) | -- |
-| go | (none) | Requires Go (user responsibility) |
+| goinstall | (none) | Requires Go (user responsibility) |
 | cargo | (none) | Requires Rust/Cargo (user responsibility) |
-| vscode-ext | homebrew (macOS) | Requires `visual-studio-code` cask |
+| code-ext | homebrew (macOS) | Requires `visual-studio-code` cask |
 | git-config | (none) | -- |
 | git-clone | (none) | -- |
 | defaults | (none) | -- |
@@ -2471,8 +2471,8 @@ Each provider SHALL declare its `depend-on` chain in its manifest. The dependenc
 
 #### Scenario: Bootstrap chain resolution
 
-WHEN `hams apply` encounters the VSCode Extension provider on macOS and `code` is not on `$PATH`
-THEN hams SHALL resolve: vscode-ext depends on homebrew, homebrew depends on bash. It SHALL execute: (1) Bash provider bootstrap (no-op if bash is available), (2) Homebrew provider bootstrap (install Homebrew if missing), (3) check if `visual-studio-code` cask is installed, and THEN proceed with VSCode extension operations.
+WHEN `hams apply` encounters the VS Code Extensions provider on macOS and `code` is not on `$PATH`
+THEN hams SHALL resolve: code-ext depends on homebrew, homebrew depends on bash. It SHALL execute: (1) Bash provider bootstrap (no-op if bash is available), (2) Homebrew provider bootstrap (install Homebrew if missing), (3) check if `visual-studio-code` cask is installed, and THEN proceed with VS Code Extensions operations.
 
 #### Scenario: Circular dependency detection
 
@@ -2505,9 +2505,9 @@ Each provider's Hamsfile SHALL follow the naming convention `<Display Name>.hams
 | pnpm | `pnpm.hams.yaml` |
 | npm | `npm.hams.yaml` |
 | uv | `uv.hams.yaml` |
-| go | `Go.hams.yaml` |
+| goinstall | `goinstall.hams.yaml` |
 | cargo | `Cargo.hams.yaml` |
-| vscode-ext | `VSCode Extension.hams.yaml` |
+| code-ext | `code-ext.hams.yaml` |
 | git-config | `git config.hams.yaml` |
 | git-clone | `git clone.hams.yaml` |
 | defaults | `defaults.hams.yaml` |
@@ -2540,9 +2540,9 @@ All providers SHALL support the `enrich` operation, which uses LLM to generate o
 | pnpm | `pnpm info <pkg>` (description) |
 | npm | `npm info <pkg> --json` (description) |
 | uv | `uv pip show <pkg>` or PyPI API |
-| go | pkg.go.dev page or `go doc` |
+| goinstall | pkg.go.dev page or `go doc` |
 | cargo | `cargo info <crate>` or crates.io API |
-| vscode-ext | VS Marketplace API |
+| code-ext | VS Marketplace API |
 | mas | `mas info <id>` |
 | bash | User-provided `description` field (no external source) |
 | git-config | Inferred from key name |
