@@ -519,25 +519,45 @@ func runApply(ctx context.Context, flags *provider.GlobalFlags, registry *provid
 			continue
 		}
 
-		result := provider.Execute(ctx, p, actions, sf, otelSess.Session())
-		allResults = append(allResults, result)
+		// Execute + save state for this provider in an IIFE so a panic
+		// during provider.Execute (buggy provider, OOM in runner, etc.)
+		// still flushes the partially-updated state.File to disk before
+		// re-panicking. Without this, a panic after installing N of M
+		// actions would lose the in-memory tracking — next apply would
+		// re-attempt the already-installed actions.
+		func() {
+			defer func() {
+				if r := recover(); r != nil {
+					slog.Error("provider panicked during Execute; flushing state before unwinding",
+						"provider", name, "panic", r, "path", statePath)
+					if saveErr := sf.Save(statePath); saveErr != nil {
+						slog.Error("failed to save state after provider panic",
+							"provider", name, "path", statePath, "error", saveErr)
+					}
+					panic(r) // re-throw after best-effort flush
+				}
+			}()
 
-		if result.Failed == 0 {
-			sf.ConfigHash = currentHash
-		}
+			result := provider.Execute(ctx, p, actions, sf, otelSess.Session())
+			allResults = append(allResults, result)
 
-		if saveErr := sf.Save(statePath); saveErr != nil {
-			// State save failure is non-fatal to the install (the install
-			// succeeded) but DOES invalidate drift tracking until a
-			// successful save. Track it so the final summary surfaces the
-			// inconsistency to the user — previously these failures were
-			// only logged and scripts couldn't detect them.
-			slog.Error("failed to save state", "provider", name, "path", statePath, "error", saveErr)
-			stateSaveFailures = append(stateSaveFailures, name)
-		}
+			if result.Failed == 0 {
+				sf.ConfigHash = currentHash
+			}
 
-		slog.Info("provider complete", "provider", name,
-			"installed", result.Installed, "failed", result.Failed, "skipped", result.Skipped)
+			if saveErr := sf.Save(statePath); saveErr != nil {
+				// State save failure is non-fatal to the install (the install
+				// succeeded) but DOES invalidate drift tracking until a
+				// successful save. Track it so the final summary surfaces the
+				// inconsistency to the user — previously these failures were
+				// only logged and scripts couldn't detect them.
+				slog.Error("failed to save state", "provider", name, "path", statePath, "error", saveErr)
+				stateSaveFailures = append(stateSaveFailures, name)
+			}
+
+			slog.Info("provider complete", "provider", name,
+				"installed", result.Installed, "failed", result.Failed, "skipped", result.Skipped)
+		}()
 	}
 
 	// Dry-run: all providers have been planned and printed; skip

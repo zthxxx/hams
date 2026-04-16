@@ -542,6 +542,73 @@ func TestApply_PruneOrphans_HamsfilePresent_DoesNotPrune(t *testing.T) {
 	}
 }
 
+// TestApply_ProviderPanic_FlushesStateBeforeUnwinding asserts cycle-51:
+// if a provider's Apply method panics mid-loop (buggy provider, OOM in
+// runner, etc.), any in-memory state changes from actions that DID
+// complete before the panic are flushed to disk before the process
+// unwinds. Without the recover-and-save guard, a panic after installing
+// N of M actions would lose the state updates, causing next apply to
+// re-attempt already-installed resources.
+func TestApply_ProviderPanic_FlushesStateBeforeUnwinding(t *testing.T) {
+	_, profileDir, stateDir, flags := setupApplyTestEnv(t, []string{"apt"})
+	hamsfilePath := filepath.Join(profileDir, "apt.hams.yaml")
+	writeApplyTestFile(t, hamsfilePath, "packages:\n  - app: first\n  - app: second\n")
+
+	// Provider returns two Install actions; Apply succeeds for "first"
+	// (updates in-memory state) and panics on "second".
+	applyCount := 0
+	p := &applyTestProvider{
+		manifest: provider.Manifest{
+			Name: "apt", DisplayName: "apt", FilePrefix: "apt",
+			Platforms: []provider.Platform{provider.PlatformAll},
+		},
+		planFn: func(_ context.Context, _ *hamsfile.File, _ *state.File) ([]provider.Action, error) {
+			return []provider.Action{
+				{ID: "first", Type: provider.ActionInstall},
+				{ID: "second", Type: provider.ActionInstall},
+			}, nil
+		},
+		applyFn: func(_ context.Context, a provider.Action) error {
+			applyCount++
+			if a.ID == "second" {
+				panic("synthesized provider panic")
+			}
+			return nil
+		},
+	}
+	registry := provider.NewRegistry()
+	if err := registry.Register(p); err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+
+	// The panic must propagate (we re-throw after saving), so catch it
+	// in the test and assert both the recovery and state-on-disk.
+	defer func() {
+		r := recover()
+		if r == nil {
+			t.Fatal("expected panic to propagate after state flush")
+		}
+
+		// State must have been flushed to disk with the successful
+		// "first" entry — otherwise the next apply would re-install it.
+		statePath := filepath.Join(stateDir, "apt.state.yaml")
+		sf, loadErr := state.Load(statePath)
+		if loadErr != nil {
+			t.Fatalf("state file not written after panic: %v", loadErr)
+		}
+		if _, ok := sf.Resources["first"]; !ok {
+			t.Errorf("state should contain successfully-installed 'first'; got %v", sf.Resources)
+		}
+		if applyCount != 2 {
+			t.Errorf("Apply should have run twice (success + panic); got %d", applyCount)
+		}
+	}()
+
+	//nolint:errcheck // we expect runApply to panic before returning; the deferred recover verifies
+	runApply(context.Background(), flags, registry, sudo.NoopAcquirer{}, "", true, "", "", false, bootstrapMode{})
+	t.Fatal("runApply should have panicked; reached unreachable line")
+}
+
 // TestApply_CorruptedStateFile_SkipsProviderNotSilentReset locks in
 // the cycle-43 data-integrity fix: when the state file exists but
 // is unparseable (corruption, merge conflict, editor crash), apply
