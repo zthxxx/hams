@@ -44,7 +44,7 @@ import (
 func TestBuiltinManifestScriptHostsAreBash(t *testing.T) {
 	cfg := &config.Config{}
 	all := []provider.Provider{
-		homebrew.New(cfg),
+		homebrew.New(cfg, homebrew.NewFakeCmdRunner()),
 		apt.New(cfg, apt.NewRealCmdRunner(sudo.DirectBuilder{})),
 		npm.New(npm.NewFakeCmdRunner()),
 		pnpm.New(pnpm.NewFakeCmdRunner()),

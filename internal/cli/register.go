@@ -37,7 +37,7 @@ func registerBuiltins(registry *provider.Registry, sudoCmd sudo.CmdBuilder) {
 
 	// Providers that implement both Provider and ProviderHandler.
 	cliProviders := []cliProvider{
-		homebrew.New(builtinCfg),
+		homebrew.New(builtinCfg, homebrew.NewRealCmdRunner()),
 		apt.New(builtinCfg, apt.NewRealCmdRunner(sudoCmd)),
 		npm.New(npm.NewRealCmdRunner()),
 		pnpm.New(pnpm.NewRealCmdRunner()),
