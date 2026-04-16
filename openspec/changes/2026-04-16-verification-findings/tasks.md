@@ -21,9 +21,14 @@
 
 - [x] [spec-reconciliation: naming] — align `openspec/specs/builtin-providers/spec.md` to use `goinstall` (not `go`) and `code-ext` (not `vscode-ext`); grep specs + docs for stale references. **Done in commit `6f9e533`** + change `2026-04-16-spec-impl-reconciliation`.
 - [x] [lucky-enrichment] — wire `--hams-lucky` through enrichment flow: **architect call in commit `f4c0f20` was to defer to v1.1.** Spec updated to mark scenarios as deferred; scaffolding kept (Enricher interface, RunTagPicker, EnrichAsync, Recommend, llm.Config field) so v1.1 has the foundation.
-- [~] [provider-test-coverage] — extend apt-style lifecycle tests and property-based parser tests to remaining providers: `tasks/provider-test-coverage.task.md`. **Partially done:**
+- [x] [provider-test-coverage] — extend apt-style lifecycle tests and property-based parser tests to remaining providers: `tasks/provider-test-coverage.task.md`. **Tier 1 complete; Tier 2/3 partial:**
   - [x] Property-based parser tests for cargo, npm, pnpm, uv, mas, vscodeext (commit `3467967`). Caught + fixed real bug in `parseExtensionList` (silent corruption on `@version` and tab-containing inputs).
-  - [x] Tempdir-isolated apply/probe/remove tests for git-config (commit `703f66c`). Lifts coverage from 1.8% → 14.0%.
-  - [x] Probe + property + safety tests for git-clone (commit `588b86e`). Lifts coverage from 14.0% → 23.0%.
-  - [ ] **Still deferred to a future change**: apt-style lifecycle tests (FakeCmdRunner-based) for cargo, npm, pnpm, uv, goinstall (Tier 1). Each requires adding a `command.go` interface + `command_fake.go` stub + refactoring `Provider.New(...)` to inject the runner — significant per-provider refactoring.
-  - [ ] **Still deferred**: apply/probe DI tests for defaults, duti, mas (Tier 2 — same DI-refactor scope).
+  - [x] Tempdir-isolated apply/probe/remove tests for git-config (commit `703f66c`). Coverage 1.8% → 14.0%.
+  - [x] Probe + property + safety tests for git-clone (commit `588b86e`). Coverage 14.0% → 23.0%.
+  - [x] **Tier 1 closure** — DI refactor + apt-style lifecycle tests for all 5 package-like providers:
+    - cargo (commit `f3dde9a`): 28.8% → 68.8%
+    - npm (commit `a972bd4`): 23.4% → 67.7%
+    - pnpm (commit `5bad9cd`): 29.8% → 71.4%
+    - uv (commit `682f22b`): 31.5% → 70.0%
+    - goinstall (commit `682f22b`): 13.7% → 62.0%
+  - [ ] **Still deferred**: apply/probe DI tests for defaults, duti, mas (Tier 2 — same DI-refactor scope as Tier 1; follow-up cycle).
