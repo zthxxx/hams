@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io/fs"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -437,8 +438,22 @@ func runApply(ctx context.Context, flags *provider.GlobalFlags, registry *provid
 			continue
 		}
 
+		// state.Load returns a wrapped error for any read/parse failure.
+		// Missing file (os.ErrNotExist) is the common first-run case —
+		// fall back to an empty state. Any OTHER failure (YAML corruption,
+		// permission denied) is destructive to swallow: silently resetting
+		// to empty state would (1) lose drift detection for every tracked
+		// resource and (2) could re-trigger installs the user already
+		// performed. Skip the provider and report it instead so the user
+		// can inspect or delete the state file manually.
 		sf, loadErr := state.Load(statePath)
 		if loadErr != nil {
+			if !errors.Is(loadErr, fs.ErrNotExist) {
+				slog.Error("failed to load state file (corrupted?)",
+					"provider", name, "path", statePath, "error", loadErr)
+				skippedProviders = append(skippedProviders, name)
+				continue
+			}
 			sf = state.New(name, cfg.MachineID)
 		}
 

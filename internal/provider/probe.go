@@ -2,6 +2,8 @@ package provider
 
 import (
 	"context"
+	"errors"
+	"io/fs"
 	"log/slog"
 	"path/filepath"
 	"sync"
@@ -27,7 +29,17 @@ func ProbeAll(ctx context.Context, providers []Provider, stateDir, machineID str
 			if filePrefix == "" {
 				filePrefix = name
 			}
-			sf := loadOrCreateState(stateDir, filePrefix, name, machineID)
+			sf, loadErr := loadOrCreateState(stateDir, filePrefix, name, machineID)
+			if loadErr != nil {
+				// Corrupted state file (not just missing). Skip this
+				// provider rather than probe against an empty synthesized
+				// state that would mark every real resource as "pending
+				// install". Surface to runRefresh via the results-map
+				// absence (runRefresh reports probed/planned mismatch).
+				slog.Error("skipping probe — state file unreadable",
+					"provider", name, "error", loadErr)
+				return nil
+			}
 
 			probeResults, err := p.Probe(ctx, sf)
 			if err != nil {
@@ -68,11 +80,20 @@ func ProbeAll(ctx context.Context, providers []Provider, stateDir, machineID str
 	return results
 }
 
-func loadOrCreateState(stateDir, filePrefix, providerName, machineID string) *state.File {
+// loadOrCreateState returns the loaded state file, or a fresh empty
+// one if the file does not exist. A non-ErrNotExist error (parse
+// failure, permission denied) is propagated so the caller can skip
+// the provider instead of silently resetting its state. Ambiguous
+// "fail silently" behavior lost drift-tracked resources on the first
+// apply after a merge conflict or editor crash corrupted the YAML.
+func loadOrCreateState(stateDir, filePrefix, providerName, machineID string) (*state.File, error) {
 	path := filepath.Join(stateDir, filePrefix+".state.yaml")
 	sf, err := state.Load(path)
-	if err != nil {
-		sf = state.New(providerName, machineID)
+	if err == nil {
+		return sf, nil
 	}
-	return sf
+	if errors.Is(err, fs.ErrNotExist) {
+		return state.New(providerName, machineID), nil
+	}
+	return nil, err
 }
