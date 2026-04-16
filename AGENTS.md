@@ -187,6 +187,10 @@ Spec corrections:
 
 Total commits in cycle 2: 15+ (still growing — iteration 3 adds hooks+OTel defer).
 
+### Cycle 109 — Direct tests for IsPlatformsMatch + HookSet.HasAny
+
+- [x] Small coverage cycle. Both functions sat at 66.7% with no direct tests — only indirectly exercised through provider dispatch and hook execution. Added explicit branch coverage for `IsPlatformsMatch` (empty/nil is wildcard, `PlatformAll` is wildcard, empty-string Platform is wildcard, non-matching platform returns false) and `HookSet.HasAny` (nil pointer safe, empty set false, PreInstall-only true, PostUpdate-only true). These test-gate subtle contracts — e.g., a future change that inverts the "empty platforms = all" default would silently hide every no-platform-filter provider from dispatch, but now fails the test suite instead. provider coverage: 73.6% → 74.2%. (commit `f217b18`)
+
 ### Cycle 108 — `hams store push` UX: empty-commit skip + `-m` flag
 
 - [x] Real user-workflow bug, two-in-one. (1) Running `hams store push` right after `hams refresh` (which only touches `.state/` files, all gitignored) failed with git's `"nothing to commit, working tree clean"` bubbling through as an exec-exit-1 error — the happy path was an error. (2) Every commit was hardcoded to `"hams: update store"` — zero audit value. Fix: a `storePushRunner` DI seam routes all four git steps through an interface (`Status`, `AddAll`, `Commit`, `Push`). Before adding, `runStorePush` checks `git status --porcelain`; empty output short-circuits to a friendly "Nothing to commit — the store is clean. Skipping commit+push." and exits zero. `-m` / `--message` flag lets the user pass a real commit message (defaults to the old `"hams: update store"` for backward compat). 6 unit tests cover clean-tree skip, dirty-tree happy path + message forwarding, and each of the 4 error branches short-circuiting later steps. Previously 0% unit coverage on store-push because every path shelled out to real git; now fully DI-testable. cli coverage: 60.3% → 60.6%. (commit `6841eb7`)
