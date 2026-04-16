@@ -253,6 +253,7 @@ func configCmd() *cli.Command {
 							"profile_tag":       cfg.ProfileTag,
 							"machine_id":        cfg.MachineID,
 							"store_path":        cfg.StorePath,
+							"store_repo":        cfg.StoreRepo,
 							"llm_cli":           cfg.LLMCLI,
 							"provider_priority": cfg.ProviderPriority,
 						}
@@ -273,6 +274,9 @@ func configCmd() *cli.Command {
 					fmt.Printf("Profile tag:       %s\n", cfg.ProfileTag)
 					fmt.Printf("Machine ID:        %s\n", cfg.MachineID)
 					fmt.Printf("Store path:        %s\n", logging.TildePath(cfg.StorePath))
+					if cfg.StoreRepo != "" {
+						fmt.Printf("Store repo:        %s\n", cfg.StoreRepo)
+					}
 					fmt.Printf("LLM CLI:           %s\n", cfg.LLMCLI)
 					fmt.Printf("Provider priority: %v\n", cfg.ProviderPriority)
 					return nil

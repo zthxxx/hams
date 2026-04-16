@@ -153,6 +153,42 @@ resources:
 	}
 }
 
+// TestConfigList_IncludesStoreRepo locks in cycle 124: both the
+// text and JSON outputs of `hams config list` include store_repo.
+// Previously store_repo was omitted — users who set it via
+// `hams config set store_repo ...` couldn't see it in `list`
+// (only via `config get store_repo`).
+func TestConfigList_IncludesStoreRepo(t *testing.T) {
+	configHome := t.TempDir()
+	t.Setenv("HAMS_CONFIG_HOME", configHome)
+	t.Setenv("HAMS_DATA_HOME", t.TempDir())
+	// Seed a global config with store_repo set.
+	writeApplyTestFile(t, filepath.Join(configHome, "hams.config.yaml"),
+		"profile_tag: t\nmachine_id: m\nstore_repo: github.com/zthxxx/hams-store\n")
+
+	// Text output should include the Store repo line.
+	textOut := captureStdout(t, func() {
+		app := NewApp(provider.NewRegistry(), sudo.NoopAcquirer{})
+		if err := app.Run(context.Background(), []string{"hams", "config", "list"}); err != nil {
+			t.Fatalf("config list text: %v", err)
+		}
+	})
+	if !strings.Contains(textOut, "Store repo:") || !strings.Contains(textOut, "github.com/zthxxx/hams-store") {
+		t.Errorf("text output missing store_repo; got:\n%s", textOut)
+	}
+
+	// JSON output should have the store_repo key.
+	jsonOut := captureStdout(t, func() {
+		app := NewApp(provider.NewRegistry(), sudo.NoopAcquirer{})
+		if err := app.Run(context.Background(), []string{"hams", "--json", "config", "list"}); err != nil {
+			t.Fatalf("config list json: %v", err)
+		}
+	})
+	if !strings.Contains(jsonOut, `"store_repo": "github.com/zthxxx/hams-store"`) {
+		t.Errorf("JSON output missing store_repo; got:\n%s", jsonOut)
+	}
+}
+
 // TestList_TextOutput_ShowsLastErrorForFailed locks in cycle 119:
 // failed / hook-failed resources emit the LastError text inline so
 // debugging doesn't require `--json` or reading state YAML.
