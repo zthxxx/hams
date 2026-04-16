@@ -187,6 +187,10 @@ Spec corrections:
 
 Total commits in cycle 2: 15+ (still growing — iteration 3 adds hooks+OTel defer).
 
+### Cycle 41 — regression test for cycle 39 dry-run exit semantics
+
+- [x] Added `TestApply_DryRun_SkippedProvider_ReturnsPartialFailure` — simulates a provider whose Plan returns an error and asserts runApply returns `*UserFacingError{Code: ExitPartialFailure}` whose message mentions "dry-run". Locks in the cycle 39 fix from the test side. (commit `fbc23e2`)
+
 ### Cycle 40 — `refresh` returns non-zero when probes fail
 
 - [x] **Twin of cycle 39** — `hams refresh` printed "(1 probe error(s); see log for details)" but returned nil (exit 0). Scripts couldn't detect probe failures. Now returns ExitPartialFailure with a slog-pointer suggestion. Happy-path unchanged. (commit `795aca1`)
