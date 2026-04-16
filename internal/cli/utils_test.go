@@ -141,6 +141,94 @@ func TestPrintError_PlainErrorIsWrapped(t *testing.T) {
 	}
 }
 
+// TestPrintConfigKey_TypedFields asserts each whitelisted typed
+// field prints the expected Config field; previously 0% coverage.
+func TestPrintConfigKey_TypedFields(t *testing.T) {
+	cfg := &config.Config{
+		ProfileTag: "macOS",
+		MachineID:  "MyMac",
+		StoreRepo:  "user/repo",
+		LLMCLI:     "claude",
+	}
+	paths := config.Paths{ConfigHome: "/x/cfg", DataHome: "/x/data"}
+
+	cases := []struct {
+		key      string
+		contains string
+	}{
+		{"profile_tag", "macOS"},
+		{"machine_id", "MyMac"},
+		{"store_repo", "user/repo"},
+		{"llm_cli", "claude"},
+		{"config_home", "/x/cfg"},
+		{"data_home", "/x/data"},
+	}
+	for _, tc := range cases {
+		got := captureStdout(t, func() {
+			if err := printConfigKey(cfg, paths, "", tc.key); err != nil {
+				t.Fatalf("printConfigKey(%q): %v", tc.key, err)
+			}
+		})
+		if !strings.Contains(got, tc.contains) {
+			t.Errorf("%s: got %q, want to contain %q", tc.key, got, tc.contains)
+		}
+	}
+}
+
+// TestPrintConfigKey_UnknownKeyReturnsUserError asserts typos are
+// rejected with both the whitelist and the sensitive-pattern hint.
+func TestPrintConfigKey_UnknownKeyReturnsUserError(t *testing.T) {
+	t.Parallel()
+	err := printConfigKey(&config.Config{}, config.Paths{}, "", "profile_tg")
+	if err == nil {
+		t.Fatal("expected error for typo key")
+	}
+	var ufe *hamserr.UserFacingError
+	if !errors.As(err, &ufe) {
+		t.Fatalf("expected *UserFacingError, got %T", err)
+	}
+	if len(ufe.Suggestions) != 2 {
+		t.Errorf("want 2 suggestions (whitelist + pattern hint), got %d", len(ufe.Suggestions))
+	}
+}
+
+// TestPrintConfigKey_SensitiveKey_NoFile asserts a sensitive key
+// with no .local.yaml on disk prints nothing (scripting-friendly)
+// and returns nil error.
+func TestPrintConfigKey_SensitiveKey_NoFile(t *testing.T) {
+	t.Parallel()
+	paths := config.Paths{ConfigHome: t.TempDir(), DataHome: t.TempDir()}
+	got := captureStdout(t, func() {
+		if err := printConfigKey(&config.Config{}, paths, "", "notification.bark_token"); err != nil {
+			t.Errorf("unset sensitive key should be silent, got %v", err)
+		}
+	})
+	if got != "" {
+		t.Errorf("output should be empty for unset sensitive key, got %q", got)
+	}
+}
+
+// captureStdout is the stdout twin of captureStderr.
+func captureStdout(t *testing.T, fn func()) string {
+	t.Helper()
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("os.Pipe: %v", err)
+	}
+	original := os.Stdout
+	os.Stdout = w
+	t.Cleanup(func() { os.Stdout = original })
+	fn()
+	if closeErr := w.Close(); closeErr != nil {
+		t.Fatalf("close pipe: %v", closeErr)
+	}
+	var buf bytes.Buffer
+	if _, err := io.Copy(&buf, r); err != nil {
+		t.Fatalf("read pipe: %v", err)
+	}
+	return buf.String()
+}
+
 // TestEnsureStoreIsGitRepo covers the three gates added in cycle 27:
 // a real .git directory passes, a bare-repo HEAD file passes, and
 // anything else returns a UserFacingError with both suggestions.
