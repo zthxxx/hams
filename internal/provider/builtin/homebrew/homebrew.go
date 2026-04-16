@@ -30,6 +30,8 @@ const (
 	brewDisplayName = "Homebrew"
 	// tagCLI is the default hamsfile tag for CLI (non-cask, non-tap) brew formulas.
 	tagCLI = "cli"
+	// tagCask is the hamsfile tag for GUI apps installed via `brew install --cask`.
+	tagCask = "cask"
 )
 
 // BrewResource holds provider-specific data for a Homebrew action.
@@ -245,7 +247,7 @@ func caskApps(f *hamsfile.File) map[string]bool {
 
 	for i := 0; i < len(doc.Content)-1; i += 2 {
 		tagName := doc.Content[i].Value
-		if tagName != "cask" {
+		if tagName != tagCask {
 			continue
 		}
 		seq := doc.Content[i+1]
@@ -388,7 +390,7 @@ func (p *Provider) handleInstall(ctx context.Context, args []string, hamsFlags m
 	tag := parseInstallTag(hamsFlags)
 	// If --cask is present in args and no explicit tag was set, use "cask" as the tag.
 	if tag == tagCLI && hasCaskFlag(args) {
-		tag = "cask"
+		tag = tagCask
 	}
 	// Auto-detect tap format (user/repo with exactly one slash, no formula suffix).
 	if tag == tagCLI && len(packages) > 0 && isTapFormat(packages[0]) {
@@ -406,8 +408,16 @@ func (p *Provider) handleInstall(ctx context.Context, args []string, hamsFlags m
 		return nil
 	}
 
-	if err := provider.WrapExecPassthrough(ctx, "brew", append([]string{"install"}, args...), nil); err != nil {
-		return err
+	isCask := hasCaskFlag(args)
+	// Drive the runner per-package so the flow is DI-testable
+	// (previously `provider.WrapExecPassthrough` shelled out directly,
+	// so unit tests couldn't cover handleInstall without a real brew).
+	// Fail fast on first error to preserve apt-style atomic semantics:
+	// partial install → no recording.
+	for _, pkg := range packages {
+		if err := p.runner.Install(ctx, pkg, isCask); err != nil {
+			return err
+		}
 	}
 
 	hf, err := p.loadOrCreateHamsfile(hamsFlags, flags)
@@ -456,8 +466,10 @@ func (p *Provider) handleRemove(ctx context.Context, args []string, hamsFlags ma
 		return nil
 	}
 
-	if err := provider.WrapExecPassthrough(ctx, "brew", append([]string{"uninstall"}, args...), nil); err != nil {
-		return err
+	for _, pkg := range packages {
+		if err := p.runner.Uninstall(ctx, pkg); err != nil {
+			return err
+		}
 	}
 
 	hf, err := p.loadOrCreateHamsfile(hamsFlags, flags)
