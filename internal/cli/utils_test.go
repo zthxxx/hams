@@ -5,9 +5,11 @@ import (
 	"errors"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/zthxxx/hams/internal/config"
 	hamserr "github.com/zthxxx/hams/internal/error"
 )
 
@@ -136,6 +138,61 @@ func TestPrintError_PlainErrorIsWrapped(t *testing.T) {
 	})
 	if !strings.Contains(got, "Error: something broke") {
 		t.Errorf("plain errors should still produce 'Error: ...' line; got %q", got)
+	}
+}
+
+// TestEnsureStoreIsGitRepo covers the three gates added in cycle 27:
+// a real .git directory passes, a bare-repo HEAD file passes, and
+// anything else returns a UserFacingError with both suggestions.
+func TestEnsureStoreIsGitRepo(t *testing.T) {
+	t.Run("non-bare repo passes", func(t *testing.T) {
+		dir := t.TempDir()
+		if err := os.MkdirAll(filepath.Join(dir, ".git"), 0o750); err != nil {
+			t.Fatalf("mkdir .git: %v", err)
+		}
+		if err := ensureStoreIsGitRepo(dir); err != nil {
+			t.Errorf("expected nil, got %v", err)
+		}
+	})
+	t.Run("bare repo passes", func(t *testing.T) {
+		dir := t.TempDir()
+		if err := os.WriteFile(filepath.Join(dir, "HEAD"), []byte("ref: refs/heads/main\n"), 0o600); err != nil {
+			t.Fatalf("write HEAD: %v", err)
+		}
+		if err := ensureStoreIsGitRepo(dir); err != nil {
+			t.Errorf("expected nil, got %v", err)
+		}
+	})
+	t.Run("plain directory returns UserFacingError", func(t *testing.T) {
+		dir := t.TempDir()
+		err := ensureStoreIsGitRepo(dir)
+		if err == nil {
+			t.Fatal("expected error for non-git dir")
+		}
+		var ufe *hamserr.UserFacingError
+		if !errors.As(err, &ufe) {
+			t.Fatalf("expected *UserFacingError, got %T", err)
+		}
+		if ufe.Code != hamserr.ExitUsageError {
+			t.Errorf("Code = %d, want ExitUsageError", ufe.Code)
+		}
+		if len(ufe.Suggestions) != 2 {
+			t.Errorf("want 2 suggestions (git init, --from-repo), got %d", len(ufe.Suggestions))
+		}
+	})
+}
+
+// TestLocalConfigPath covers the routing helper that cycle 18 added:
+// when storePath is empty, the local config sits under ConfigHome;
+// otherwise it sits in the store.
+func TestLocalConfigPath(t *testing.T) {
+	paths := config.Paths{ConfigHome: "/home/u/.config/hams"}
+
+	if got := localConfigPath(paths, ""); got != "/home/u/.config/hams/hams.config.local.yaml" {
+		t.Errorf("no-store fallback = %q, want the global path", got)
+	}
+	if got := localConfigPath(paths, "/store"); got != "/store/hams.config.local.yaml" {
+		t.Errorf("store-scoped = %q, want '/store/hams.config.local.yaml'", got)
 	}
 }
 
