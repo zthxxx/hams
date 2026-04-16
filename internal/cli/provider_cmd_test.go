@@ -44,6 +44,7 @@ func TestStripGlobalFlags_ConfigEquals(t *testing.T) {
 type mockProvider struct {
 	name          string
 	displayName   string
+	lastCtx       context.Context
 	lastArgs      []string
 	lastHamsFlags map[string]string
 	lastFlags     *provider.GlobalFlags
@@ -51,7 +52,8 @@ type mockProvider struct {
 
 func (m *mockProvider) Name() string        { return m.name }
 func (m *mockProvider) DisplayName() string { return m.displayName }
-func (m *mockProvider) HandleCommand(_ context.Context, args []string, hamsFlags map[string]string, flags *provider.GlobalFlags) error {
+func (m *mockProvider) HandleCommand(ctx context.Context, args []string, hamsFlags map[string]string, flags *provider.GlobalFlags) error {
+	m.lastCtx = ctx
 	m.lastArgs = args
 	m.lastHamsFlags = hamsFlags
 	m.lastFlags = flags
@@ -95,12 +97,34 @@ func TestParseProviderArgs_HamsFlagsBeforeSeparator(t *testing.T) {
 func TestRouteToProvider_HelpIntercept(t *testing.T) {
 	mock := &mockProvider{name: "brew", displayName: "Homebrew"}
 
-	err := routeToProvider(mock, []string{"install", "--help"}, &provider.GlobalFlags{})
+	err := routeToProvider(context.Background(), mock, []string{"install", "--help"}, &provider.GlobalFlags{})
 	if err != nil {
 		t.Fatalf("routeToProvider --help error: %v", err)
 	}
 
 	if mock.lastArgs != nil {
 		t.Error("provider should not receive args when --help is present")
+	}
+}
+
+// TestRouteToProvider_ContextForwarded asserts the caller's context.Context
+// (carrying signal cancellation from urfave/cli) reaches the provider
+// handler. Previously routeToProvider dropped it in favor of context.TODO(),
+// breaking Ctrl+C propagation to long-running provider commands.
+func TestRouteToProvider_ContextForwarded(t *testing.T) {
+	mock := &mockProvider{name: "brew", displayName: "Homebrew"}
+	type ctxKey string
+	const sentinelKey ctxKey = "sentinel"
+	ctx := context.WithValue(context.Background(), sentinelKey, "marker")
+
+	if err := routeToProvider(ctx, mock, []string{"install", "htop"}, &provider.GlobalFlags{}); err != nil {
+		t.Fatalf("routeToProvider: %v", err)
+	}
+	if mock.lastCtx == nil {
+		t.Fatal("provider did not receive a context")
+	}
+	got, ok := mock.lastCtx.Value(sentinelKey).(string)
+	if !ok || got != "marker" {
+		t.Errorf("context not forwarded; got value %q (ok=%v), want %q", got, ok, "marker")
 	}
 }

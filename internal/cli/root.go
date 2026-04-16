@@ -6,7 +6,10 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/signal"
 	"path/filepath"
+	"sort"
+	"syscall"
 
 	"github.com/urfave/cli/v3"
 
@@ -69,15 +72,24 @@ Use 'hams apply' to replay all installations from config.`,
 		},
 	}
 
-	// Add provider commands dynamically.
-	for _, handler := range providerRegistry {
-		h := handler // capture
+	// Add provider commands dynamically, sorted alphabetically so
+	// `hams --help` lists providers in a stable order across runs
+	// (Go map iteration is randomized, which produced a different
+	// provider order every invocation — confusing for users and
+	// breaks reproducible help snapshots in tests/docs).
+	names := make([]string, 0, len(providerRegistry))
+	for n := range providerRegistry {
+		names = append(names, n)
+	}
+	sort.Strings(names)
+	for _, n := range names {
+		h := providerRegistry[n] // capture
 		app.Commands = append(app.Commands, &cli.Command{
 			Name:            h.Name(),
 			Usage:           providerUsageDescription(h.Name(), h.DisplayName()),
 			SkipFlagParsing: true,
-			Action: func(_ context.Context, cmd *cli.Command) error {
-				return routeToProvider(h, cmd.Args().Slice(), globalFlags(cmd))
+			Action: func(ctx context.Context, cmd *cli.Command) error {
+				return routeToProvider(ctx, h, cmd.Args().Slice(), globalFlags(cmd))
 			},
 		})
 	}
@@ -126,7 +138,15 @@ func Execute() {
 
 	app := NewApp(registry, sudo.NewManager())
 
-	if err := app.Run(context.Background(), os.Args); err != nil {
+	// Root context cancels on SIGINT/SIGTERM so long-running providers
+	// (brew install, apt-get upgrade, etc.) can observe Ctrl+C and
+	// unwind cleanly. stop() must run before os.Exit — defer would not
+	// fire after os.Exit, so we call it explicitly.
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	err := app.Run(ctx, os.Args)
+	stop()
+
+	if err != nil {
 		flags := &provider.GlobalFlags{}
 		// Check if --json was passed.
 		for _, arg := range os.Args {
