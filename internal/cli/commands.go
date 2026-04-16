@@ -725,27 +725,31 @@ func selfUpgradeCmd() *cli.Command {
 		Description: `Detects how hams was installed and upgrades accordingly:
 - Binary download: fetches latest from GitHub Releases
 - Homebrew: runs 'brew upgrade hams'`,
-		Action: func(ctx context.Context, _ *cli.Command) error {
-			return runSelfUpgrade(ctx)
+		Action: func(ctx context.Context, cmd *cli.Command) error {
+			return runSelfUpgrade(ctx, globalFlags(cmd))
 		},
 	}
 }
 
-func runSelfUpgrade(ctx context.Context) error {
+func runSelfUpgrade(ctx context.Context, flags *provider.GlobalFlags) error {
 	paths := config.ResolvePaths()
 	channel := selfupdate.DetectChannel(paths)
 
 	switch channel {
 	case selfupdate.ChannelHomebrew:
-		return runHomebrewUpgrade(ctx)
+		return runHomebrewUpgrade(ctx, flags)
 	case selfupdate.ChannelBinary:
-		return runBinaryUpgrade(ctx)
+		return runBinaryUpgrade(ctx, flags)
 	default:
 		return fmt.Errorf("unknown install channel %q", channel)
 	}
 }
 
-func runHomebrewUpgrade(ctx context.Context) error {
+func runHomebrewUpgrade(ctx context.Context, flags *provider.GlobalFlags) error {
+	if flags.DryRun {
+		fmt.Println("[dry-run] Would run: brew upgrade zthxxx/tap/hams")
+		return nil
+	}
 	fmt.Println("Detected Homebrew install, running brew upgrade...")
 	cmd := exec.CommandContext(ctx, "brew", "upgrade", "zthxxx/tap/hams")
 	cmd.Stdin = os.Stdin
@@ -757,7 +761,7 @@ func runHomebrewUpgrade(ctx context.Context) error {
 	return nil
 }
 
-func runBinaryUpgrade(ctx context.Context) error {
+func runBinaryUpgrade(ctx context.Context, flags *provider.GlobalFlags) error {
 	updater := selfupdate.NewUpdater()
 	current := selfupdate.CurrentVersion()
 
@@ -784,6 +788,12 @@ func runBinaryUpgrade(ctx context.Context) error {
 			fmt.Sprintf("no release asset found for %s", wantName),
 			"Download manually from https://github.com/zthxxx/hams/releases",
 		)
+	}
+
+	if flags.DryRun {
+		fmt.Printf("[dry-run] Would download %s and upgrade hams from v%s to v%s\n", wantName, current, release.Version)
+		fmt.Printf("[dry-run]   asset URL: %s\n", downloadURL)
+		return nil
 	}
 
 	fmt.Printf("Downloading %s (v%s -> v%s)...\n", wantName, current, release.Version)
