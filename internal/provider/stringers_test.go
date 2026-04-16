@@ -2,6 +2,7 @@ package provider
 
 import (
 	"errors"
+	"runtime"
 	"testing"
 )
 
@@ -178,5 +179,41 @@ func TestHasAny_PostUpdateOnly(t *testing.T) {
 	hs := &HookSet{PostUpdate: []Hook{{Command: "echo post"}}}
 	if !hs.HasAny() {
 		t.Error("HookSet with PostUpdate.HasAny() = false, want true")
+	}
+}
+
+// TestMatchesPlatform_Wildcards asserts the two wildcard cases
+// (empty string and PlatformAll) both return true regardless of
+// runtime.GOOS. These power the `DependOn` spec semantic: "dep
+// applies to all platforms". A regression that inverts this would
+// silently drop every unfiltered dep from bootstrap.
+func TestMatchesPlatform_Wildcards(t *testing.T) {
+	t.Parallel()
+	if !matchesPlatform(Platform("")) {
+		t.Error(`matchesPlatform("") = false, want true (empty = all)`)
+	}
+	if !matchesPlatform(PlatformAll) {
+		t.Error(`matchesPlatform(PlatformAll) = false, want true`)
+	}
+}
+
+// TestMatchesPlatform_CurrentGOOS asserts the runtime.GOOS match
+// branch. Uses the actual runtime.GOOS so the test passes on any
+// supported host.
+func TestMatchesPlatform_CurrentGOOS(t *testing.T) {
+	t.Parallel()
+	if !matchesPlatform(Platform(runtime.GOOS)) {
+		t.Errorf("matchesPlatform(%q) = false, want true (current GOOS)", runtime.GOOS)
+	}
+}
+
+// TestMatchesPlatform_OtherGOOSFalse asserts a platform string that
+// can never match the current host (a bogus name) returns false.
+// Guards the fall-through branch that power the "skip deps for
+// wrong platform" path in ResolveDAG + RunBootstrap.
+func TestMatchesPlatform_OtherGOOSFalse(t *testing.T) {
+	t.Parallel()
+	if matchesPlatform(Platform("plan9-inferno")) {
+		t.Error(`matchesPlatform("plan9-inferno") = true, want false (bogus GOOS)`)
 	}
 }
