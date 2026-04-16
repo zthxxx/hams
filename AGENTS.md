@@ -187,6 +187,10 @@ Spec corrections:
 
 Total commits in cycle 2: 15+ (still growing — iteration 3 adds hooks+OTel defer).
 
+### Cycle 88 — `hams refresh` also validates store_path (symmetric to apply)
+
+- [x] Follow-up to cycle 87. The same "store_path doesn't exist → silent failure" issue affected `hams refresh` too: it printed `"No providers match: no hamsfile or state file present for any registered provider."` and exited 0, giving the user no hint that their `store_path` was misaimed. Fix: after `config.Load` in `runRefresh`, stat `cfg.StorePath`; if missing or not a directory, return the same `UserFacingError{Code: ExitUsageError}` that apply now produces. The invariant is now "any command that needs a valid store_path complains immediately when one is missing, not via a downstream symptom." Regression test `TestRunRefresh_NonexistentStorePathEmitsUserError`. (commit `8823aff`)
+
 ### Cycle 87 — store_path validation: clear error instead of misleading ".lock" wording
 
 - [x] Real user-workflow bug found by manual end-to-end test. When `cfg.StorePath` or `--store` names a directory that doesn't exist, `runApply` propagated a confusing `"creating lock directory: mkdir /nonexistent: permission denied"` error from `state.NewLock.Acquire`. The attached suggestion was `"Remove /nonexistent/.state/m1/.lock if the previous run crashed"` — completely wrong: the user's real problem was that `store_path` itself was pointing at nothing, but the surface blamed the `.state/<machine-id>/.lock` subpath (a symptom, not the cause). Users would chase a stale-lock hypothesis that didn't exist. Fix: after resolving `storePath` and BEFORE lock acquisition, `os.Stat` the path. If missing OR not a directory, return `UserFacingError{Code: ExitUsageError}` naming the bad path verbatim with three recovery suggestions (fix config / clone-from-repo / `hams store init`). Two regression tests (`TestRunApply_NonexistentStorePathEmitsUserError` and `TestRunApply_StorePathIsFileNotDir`) assert the error shape + exit code + that the downstream `".lock"` wording never appears. (commit `98e51f2`)
