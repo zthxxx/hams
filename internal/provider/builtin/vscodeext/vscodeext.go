@@ -145,7 +145,11 @@ func (p *Provider) Name() string { return cliName }
 func (p *Provider) DisplayName() string { return displayName }
 
 // parseExtensionList parses `code --list-extensions --show-versions` output.
-// Each line has the form "publisher.extension@version".
+// Each line has the form "publisher.extension@version". Lines whose name
+// is empty or contains internal whitespace are skipped — extension IDs
+// cannot contain whitespace per VS Code's marketplace identity rules,
+// so any such line is malformed (likely an ANSI-escape leak from CI or
+// a paginator splash) and including it would corrupt the diff.
 func parseExtensionList(output string) map[string]string {
 	result := make(map[string]string)
 	for line := range strings.SplitSeq(output, "\n") {
@@ -155,6 +159,9 @@ func parseExtensionList(output string) map[string]string {
 		}
 		parts := strings.SplitN(line, "@", 2)
 		name := strings.ToLower(parts[0])
+		if name == "" || strings.ContainsAny(name, " \t\n\r") {
+			continue
+		}
 		ver := ""
 		if len(parts) == 2 {
 			ver = parts[1]
