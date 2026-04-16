@@ -27,7 +27,7 @@ packages:
 	}
 	hf := &hamsfile.File{Path: "test.yaml", Root: &root}
 
-	p := New(NewFakeCmdRunner())
+	p := New(nil, NewFakeCmdRunner())
 	observed := state.New("npm", "test")
 	actions, err := p.Plan(context.Background(), hf, observed)
 	if err != nil {
