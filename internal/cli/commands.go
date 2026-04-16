@@ -304,6 +304,11 @@ func storeCmd() *cli.Command {
 		Action: storeStatusAction,
 		Commands: []*cli.Command{
 			{
+				Name:   "status",
+				Usage:  "Show the current store path, profile, and hamsfile count",
+				Action: storeStatusAction,
+			},
+			{
 				Name:  "init",
 				Usage: "Initialize a new store directory structure",
 				Action: func(_ context.Context, cmd *cli.Command) error {
