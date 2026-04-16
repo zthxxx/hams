@@ -578,6 +578,23 @@ func runApply(ctx context.Context, flags *provider.GlobalFlags, registry *provid
 		return nil
 	}
 
+	// If the user interrupted mid-apply (Ctrl+C → context.Canceled or
+	// SIGTERM → context.Canceled via signal.NotifyContext in root.go),
+	// the per-provider Execute loop would have bailed early and the
+	// outer for-loop kept iterating, producing a misleading
+	// "hams apply complete: 0 installed, ..." summary AND a zero exit
+	// code. Short-circuit here so the shell sees the interruption, the
+	// per-provider state that WAS saved during earlier iterations is
+	// still on disk, and no enrichment / summary prints pretend the
+	// work completed cleanly.
+	if ctx.Err() != nil {
+		return hamserr.NewUserError(hamserr.ExitPartialFailure,
+			fmt.Sprintf("hams apply interrupted: %s", ctx.Err().Error()),
+			"Partially-applied state has been saved to disk; inspect with `hams refresh`",
+			"Re-run `hams apply` to continue installing remaining resources",
+		)
+	}
+
 	// Run async enrichment for providers that support it, non-blocking.
 	enrichErrors := runEnrichPhase(ctx, sorted, cfg)
 	if len(enrichErrors) > 0 {

@@ -822,3 +822,70 @@ func TestRunApply_NonTTYWithProfileFlagButNoMachineID(t *testing.T) {
 		t.Errorf("message should NOT name profile_tag (user already set it via --profile); got %q", ufe.Message)
 	}
 }
+
+// TestRunApply_InterruptedContextReturnsPartialFailure locks in cycle 84:
+// when the root context is canceled mid-apply (Ctrl+C / SIGTERM from
+// root.go's signal.NotifyContext), runApply MUST NOT fall through to
+// the "hams apply complete" summary and return nil. Instead it emits
+// a UserFacingError with ExitPartialFailure whose message names the
+// interruption and whose suggestions point the user at `hams refresh`
+// and the re-run path.
+//
+// Without this, Ctrl+C during a long-running apply produced a silent
+// exit 0 + "0 installed" summary — the user's shell couldn't tell
+// they had canceled.
+func TestRunApply_InterruptedContextReturnsPartialFailure(t *testing.T) {
+	storeDir, profileDir, _, flags := setupApplyTestEnv(t, []string{"brew"})
+	writeApplyTestFile(t, filepath.Join(profileDir, "Homebrew.hams.yaml"),
+		"packages:\n  - app: git\n")
+
+	// A provider whose Apply would hang indefinitely; but since the
+	// context starts already canceled, provider.Execute's ctx.Done
+	// check returns immediately with a ctx.Err() in the result Errors.
+	p := &applyTestProvider{
+		manifest: provider.Manifest{
+			Name:        "brew",
+			DisplayName: "Homebrew",
+			Platforms:   []provider.Platform{provider.PlatformAll},
+			FilePrefix:  "Homebrew",
+		},
+		planFn: func(_ context.Context, _ *hamsfile.File, _ *state.File) ([]provider.Action, error) {
+			return []provider.Action{{ID: "git", Type: provider.ActionInstall}}, nil
+		},
+		applyFn: func(_ context.Context, _ provider.Action) error {
+			t.Fatalf("Apply should not be called when context is already canceled")
+			return nil
+		},
+	}
+	registry := provider.NewRegistry()
+	if err := registry.Register(p); err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // cancel before running — simulates early Ctrl+C
+
+	err := runApply(ctx, flags, registry, sudo.NoopAcquirer{}, "", true, "", "", false, bootstrapMode{})
+	if err == nil {
+		t.Fatal("runApply should surface the cancellation; got nil")
+	}
+	var ufe *hamserr.UserFacingError
+	if !errors.As(err, &ufe) {
+		t.Fatalf("want *UserFacingError, got %T: %v", err, err)
+	}
+	if ufe.Code != hamserr.ExitPartialFailure {
+		t.Errorf("Code = %d, want ExitPartialFailure (%d)", ufe.Code, hamserr.ExitPartialFailure)
+	}
+	if !strings.Contains(ufe.Message, "interrupted") {
+		t.Errorf("message should say `interrupted`; got %q", ufe.Message)
+	}
+	// Suggestions must teach the user how to recover.
+	joined := strings.Join(ufe.Suggestions, "\n")
+	if !strings.Contains(joined, "hams refresh") {
+		t.Errorf("suggestions should mention `hams refresh`; got %v", ufe.Suggestions)
+	}
+	if !strings.Contains(joined, "Re-run") {
+		t.Errorf("suggestions should point to re-run; got %v", ufe.Suggestions)
+	}
+	_ = storeDir
+}
