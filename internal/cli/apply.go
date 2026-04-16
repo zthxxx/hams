@@ -154,9 +154,9 @@ func runApply(ctx context.Context, flags *provider.GlobalFlags, registry *provid
 	// nil-session branches skip the tracing machinery entirely.
 	otelSess := maybeStartOTelSession(paths.DataHome, "hams.apply")
 	defer func() {
-		status := "ok"
+		status := otelStatusOK
 		if retErr != nil {
-			status = "error"
+			status = otelStatusError
 		}
 		otelSess.End(context.Background(), status)
 	}()
@@ -195,6 +195,11 @@ func runApply(ctx context.Context, flags *provider.GlobalFlags, registry *provid
 	if dagErr != nil {
 		return fmt.Errorf("resolving provider dependencies: %w", dagErr)
 	}
+
+	// Attach root-span attributes now that profile + provider count
+	// are resolved. Per observability spec, the root span carries
+	// hams.profile + hams.providers.count.
+	otelSess.AttachRootAttrs(cfg.ProfileTag, len(sorted))
 
 	// Default `hams apply` does NOT touch state-only providers (those with
 	// a state file but no hamsfile). Remove them BEFORE refresh so

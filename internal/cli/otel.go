@@ -4,7 +4,9 @@ import (
 	"context"
 	"log/slog"
 	"os"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/zthxxx/hams/internal/otel"
 )
@@ -20,12 +22,22 @@ import (
 // want observability set the env var once (shell rc) or inline.
 const otelEnvVar = "HAMS_OTEL"
 
+// otelStatus* are the span.EndStatus string tokens used across the
+// CLI/executor boundary. Extracted to satisfy goconst (each string
+// appears in at least 3 places: apply.go, commands.go, otel.go).
+const (
+	otelStatusOK    = "ok"
+	otelStatusError = "error"
+)
+
 // otelSessionState carries the session + root span so callers can
 // both pass the session to provider.Execute and end/flush the root
 // span at shutdown. Zero value represents "OTel disabled".
 type otelSessionState struct {
-	session  *otel.Session
-	rootSpan *otel.Span
+	session   *otel.Session
+	rootSpan  *otel.Span
+	startTime time.Time
+	operation string // "hams.apply" or "hams.refresh" for metric labeling
 }
 
 // maybeStartOTelSession returns an active OTel session when
@@ -49,8 +61,31 @@ func maybeStartOTelSession(dataHome, operation string) otelSessionState {
 		DataHome: dataHome,
 		Enabled:  true,
 	})
+	// Root span per-observability-spec. Required attributes
+	// (hams.profile, hams.providers.count, hams.result) are filled
+	// in by the caller via AttachRootAttrs / recorded at End.
 	root := session.StartSpan(operation, "", nil)
-	return otelSessionState{session: session, rootSpan: root}
+	return otelSessionState{
+		session:   session,
+		rootSpan:  root,
+		startTime: time.Now(),
+		operation: operation,
+	}
+}
+
+// AttachRootAttrs records context-dependent attributes on the root
+// span. Called once after the CLI has resolved the profile tag and
+// counted the number of providers it will execute. No-op when
+// OTel is disabled.
+func (s otelSessionState) AttachRootAttrs(profile string, providerCount int) {
+	if s.rootSpan == nil {
+		return
+	}
+	if s.rootSpan.Attrs == nil {
+		s.rootSpan.Attrs = map[string]string{}
+	}
+	s.rootSpan.Attrs["hams.profile"] = profile
+	s.rootSpan.Attrs["hams.providers.count"] = strconv.Itoa(providerCount)
 }
 
 // End finalizes the root span and flushes the session via Shutdown.
@@ -58,14 +93,49 @@ func maybeStartOTelSession(dataHome, operation string) otelSessionState {
 // otel.Shutdown internally applies its own select on ctx.Done() so
 // a stuck flush cannot hang the caller past a reasonable budget.
 //
+// The root span gets a hams.result attribute mapped from status:
+//
+//	"ok"              → "success"
+//	"partial-failure" → passthrough
+//	"error"           → "failure"
+//
+// Matching the observability spec's three documented result values.
+//
+// Duration metric hams.apply.duration is emitted unconditionally
+// (spec requires it on both apply and refresh) with hams.command
+// derived from the operation name.
+//
 // Safe to call on a zero otelSessionState (no-op).
 func (s otelSessionState) End(ctx context.Context, status string) {
 	if s.session == nil {
 		return
 	}
+
+	// Map executor-level status → spec-required hams.result attr.
+	result := status
+	switch status {
+	case otelStatusOK:
+		result = "success"
+	case otelStatusError:
+		result = "failure"
+	}
+
 	if s.rootSpan != nil {
+		if s.rootSpan.Attrs == nil {
+			s.rootSpan.Attrs = map[string]string{}
+		}
+		s.rootSpan.Attrs["hams.result"] = result
 		s.session.EndSpan(s.rootSpan, status)
 	}
+
+	// Apply duration metric per observability spec. Unit: ms.
+	elapsed := time.Since(s.startTime).Milliseconds()
+	cmd := strings.TrimPrefix(s.operation, "hams.")
+	s.session.RecordMetric("hams.apply.duration", float64(elapsed), "ms", map[string]string{
+		"hams.command": cmd,
+		"hams.result":  result,
+	})
+
 	if err := s.session.Shutdown(ctx); err != nil {
 		slog.Warn("otel shutdown failed", "error", err)
 	}

@@ -56,9 +56,9 @@ func runRefresh(ctx context.Context, flags *provider.GlobalFlags, registry *prov
 	// parallel with runApply.
 	otelSess := maybeStartOTelSession(paths.DataHome, "hams.refresh")
 	defer func() {
-		status := "ok"
+		status := otelStatusOK
 		if retErr != nil {
-			status = "error"
+			status = otelStatusError
 		}
 		otelSess.End(context.Background(), status)
 	}()
@@ -91,6 +91,11 @@ func runRefresh(ctx context.Context, flags *provider.GlobalFlags, registry *prov
 		}
 		return nil
 	}
+
+	// Attach root-span attributes now that profile + provider count
+	// are resolved. Per observability spec, the root span carries
+	// hams.profile + hams.providers.count.
+	otelSess.AttachRootAttrs(cfg.ProfileTag, len(providers))
 
 	slog.Info("refreshing state", "providers", len(providers))
 	probeResults := provider.ProbeAll(ctx, providers, stateDir, cfg.MachineID)
