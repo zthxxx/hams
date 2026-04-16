@@ -134,7 +134,17 @@ This project uses [OpenSpec](https://openspec.dev) for spec-driven development.
 
 ## Current Task
 
-No active change. Archived 2026-04-16:
+**Filed for next session:** `extend-bootstrap-to-chainable-providers`
+(proposal + design + specs + tasks drafted at
+`openspec/changes/extend-bootstrap-to-chainable-providers/`).
+Critical-architect + power-user Agent-team debate landed on Option
+C narrow extension — 4 providers (pnpm, duti, mas, ansible) adopt
+cycle-5's `BootstrapRequiredError` pattern; 7 skipped with recorded
+reasoning. Architect explicitly recommended: file and stop reactive
+cycling, implement in a fresh session with a clear head. Validated
+clean via `openspec validate --strict`.
+
+Archived 2026-04-16:
 `homebrew-bootstrap-opt-in` — critical-architect review of the 4
 archived cycles surfaced a real spec/code divergence in the Homebrew
 provider: `builtin-providers/spec.md:375-378` said hams SHALL
