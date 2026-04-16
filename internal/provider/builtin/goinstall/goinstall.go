@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"strings"
 
+	"github.com/zthxxx/hams/internal/config"
 	hamserr "github.com/zthxxx/hams/internal/error"
 	"github.com/zthxxx/hams/internal/hamsfile"
 	"github.com/zthxxx/hams/internal/provider"
@@ -22,12 +23,16 @@ const (
 
 // Provider implements the go install provider.
 type Provider struct {
+	cfg    *config.Config
 	runner CmdRunner
 }
 
 // New creates a new go install provider wired with a real CmdRunner.
+// cfg supplies store/profile paths for the CLI-first auto-record path.
 // Pass NewFakeCmdRunner from tests for DI-isolated unit testing.
-func New(runner CmdRunner) *Provider { return &Provider{runner: runner} }
+func New(cfg *config.Config, runner CmdRunner) *Provider {
+	return &Provider{cfg: cfg, runner: runner}
+}
 
 // Manifest returns the go install provider metadata.
 func (p *Provider) Manifest() provider.Manifest {
@@ -99,30 +104,77 @@ func (p *Provider) List(_ context.Context, desired *hamsfile.File, sf *state.Fil
 }
 
 // HandleCommand processes CLI subcommands for goinstall.
-func (p *Provider) HandleCommand(ctx context.Context, args []string, _ map[string]string, flags *provider.GlobalFlags) error {
+func (p *Provider) HandleCommand(ctx context.Context, args []string, hamsFlags map[string]string, flags *provider.GlobalFlags) error {
 	verb, remaining := provider.ParseVerb(args)
 
 	switch verb {
 	case "install", "i":
-		if len(remaining) == 0 {
-			return hamserr.NewUserError(hamserr.ExitUsageError,
-				"goinstall requires a package path",
-				"Usage: hams goinstall install <pkg[@version]>",
-				"To install all recorded packages, use: hams apply --only=goinstall",
-			)
-		}
-		pkgs := make([]string, 0, len(remaining))
-		for _, r := range remaining {
-			pkgs = append(pkgs, injectLatest(r))
-		}
-		if flags.DryRun {
-			fmt.Printf("[dry-run] Would install: go install %s\n", strings.Join(pkgs, " "))
-			return nil
-		}
-		return provider.WrapExecPassthrough(ctx, "go", append([]string{"install"}, pkgs...), nil)
+		return p.handleInstall(ctx, remaining, hamsFlags, flags)
 	default:
 		return provider.WrapExecPassthrough(ctx, "go", args, nil)
 	}
+}
+
+// handleInstall runs `go install <pkg@version>` via the CmdRunner seam
+// and, on success, appends the resolved (pinned) package path to the
+// goinstall hamsfile. The recorded entry preserves user intent — if
+// the user typed `go install foo@v1.2.3`, `foo@v1.2.3` is what lands
+// in the hamsfile; bare `foo` becomes `foo@latest` via `injectLatest`
+// so later `hams apply` reproduces the original install.
+//
+// goinstall has no uninstall verb (binaries must be removed manually),
+// so only the install branch auto-records.
+func (p *Provider) handleInstall(ctx context.Context, args []string, hamsFlags map[string]string, flags *provider.GlobalFlags) error {
+	if len(args) == 0 {
+		return hamserr.NewUserError(hamserr.ExitUsageError,
+			"goinstall requires a package path",
+			"Usage: hams goinstall install <pkg[@version]>",
+			"To install all recorded packages, use: hams apply --only=goinstall",
+		)
+	}
+	paths := packageArgs(args)
+	if len(paths) == 0 {
+		return hamserr.NewUserError(hamserr.ExitUsageError,
+			"goinstall requires at least one package path",
+			"Usage: hams goinstall install <pkg[@version]>",
+		)
+	}
+	pkgs := make([]string, 0, len(paths))
+	for _, r := range paths {
+		pkgs = append(pkgs, injectLatest(r))
+	}
+	if flags.DryRun {
+		fmt.Printf("[dry-run] Would install: go install %s\n", strings.Join(pkgs, " "))
+		return nil
+	}
+
+	for _, pkg := range pkgs {
+		if err := p.runner.Install(ctx, pkg); err != nil {
+			return err
+		}
+	}
+
+	hf, err := p.loadOrCreateHamsfile(hamsFlags, flags)
+	if err != nil {
+		return err
+	}
+	for _, pkg := range pkgs {
+		hf.AddApp(tagCLI, pkg, "")
+	}
+	return hf.Write()
+}
+
+// packageArgs filters positional tokens: flags (leading `-`) are
+// excluded so they don't get recorded as package paths.
+func packageArgs(args []string) []string {
+	out := make([]string, 0, len(args))
+	for _, a := range args {
+		if strings.HasPrefix(a, "-") {
+			continue
+		}
+		out = append(out, a)
+	}
+	return out
 }
 
 // Name returns the CLI name.
