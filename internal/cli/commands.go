@@ -154,6 +154,14 @@ func configCmd() *cli.Command {
 					fmt.Printf("Config home:       %s\n", logging.TildePath(paths.ConfigHome))
 					fmt.Printf("Data home:         %s\n", logging.TildePath(paths.DataHome))
 					fmt.Printf("Global config:     %s\n", logging.TildePath(paths.GlobalConfigPath()))
+					// Point users at their local overrides file — sensitive
+					// values (`hams config set notification.bark_token ...`)
+					// land there, and `hams config list` otherwise has no
+					// way to surface arbitrary sensitive keys.
+					localPath := localConfigPath(paths, cfg.StorePath)
+					if localPath != "" {
+						fmt.Printf("Local overrides:   %s\n", logging.TildePath(localPath))
+					}
 					fmt.Printf("Profile tag:       %s\n", cfg.ProfileTag)
 					fmt.Printf("Machine ID:        %s\n", cfg.MachineID)
 					fmt.Printf("Store path:        %s\n", logging.TildePath(cfg.StorePath))
@@ -259,6 +267,18 @@ func configCmd() *cli.Command {
 			},
 		},
 	}
+}
+
+// localConfigPath returns the effective path for hams.config.local.yaml
+// — store-scoped when a store is active, otherwise the global fallback
+// in ConfigHome. Mirrors the routing in config.WriteConfigKey and
+// config.ReadRawConfigKey so `hams config list` points users at the
+// same file that sensitive-key writes land in.
+func localConfigPath(paths config.Paths, storePath string) string {
+	if storePath == "" {
+		return filepath.Join(paths.ConfigHome, "hams.config.local.yaml")
+	}
+	return filepath.Join(storePath, "hams.config.local.yaml")
 }
 
 func printConfigKey(cfg *config.Config, paths config.Paths, storePath, key string) error {
