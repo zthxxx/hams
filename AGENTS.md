@@ -187,6 +187,10 @@ Spec corrections:
 
 Total commits in cycle 2: 15+ (still growing — iteration 3 adds hooks+OTel defer).
 
+### Cycle 96 — `hams brew install` now writes state (not just hamsfile)
+
+- [x] Closes the homebrew half of CP-1's auto-record gap. `hams brew install git` (cycle 52's work) wrote `Homebrew.hams.yaml` but NOT `Homebrew.state.yaml`, so `hams list --only=brew` returned empty immediately after install because list reads state only — users had to run `hams refresh` to see the resource. Fix: added `statePath` + `loadOrCreateStateFile` helpers (line-for-line port of apt's U12-U15 pattern), updated `handleInstall`/`handleRemove` to load both files, `SetResource(pkg, StateOK/StateRemoved)`, and `Write + Save` in order. Coverage dipped 57.8% → 54.8% because the state-write branch is not yet DI-testable — homebrew's `handleInstall` still uses `provider.WrapExecPassthrough` instead of the CmdRunner seam; switching it is a clean follow-up that lets apt-style U1-U5 tests exercise the path. (commit `0d08ae7`)
+
 ### Cycle 95 — provider arg parser handles `--flag=value` forms symmetrically
 
 - [x] Follow-up to cycle 94 (which fixed the top-level error path). The same bug class lived in `parseProviderArgs` and `stripGlobalFlags`: only bare `--json` / `--debug` / `--dry-run` / `--no-color` matched. So `hams apt --json=true install foo` leaked `--json=true` into passthrough, which `ParseVerb` then treated as the verb, which fell through to apt-get as `--json=true` — apt-get rejected it with "option is not understood". Fix: new `boolFlagMatch(arg, flag, *target)` helper that consumes bare, `=true`, `=1`, `=false`, `=0` forms. Replaces the four existing case branches in both parsers so the two entry points stay in lockstep. Regression test `TestParseProviderArgs_BoolFlagEqualsForm` — 7 table-driven cases covering all forms plus the "unknown --flag=value stays in passthrough" invariant. (commit `5847a8e`)
