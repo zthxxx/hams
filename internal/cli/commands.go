@@ -285,6 +285,26 @@ func configCmd() *cli.Command {
 	}
 }
 
+// ensureStoreIsGitRepo returns a user-facing error when the store is
+// not a git repository — the generic git fatal-output plus
+// "exit status 128" wrapping otherwise surfaces as a confusing error.
+// Actionable: point users at `git init` or `hams apply --from-repo=`.
+func ensureStoreIsGitRepo(storePath string) error {
+	gitDir := filepath.Join(storePath, ".git")
+	if _, err := os.Stat(gitDir); err == nil {
+		return nil
+	}
+	// Also accept bare repos (HEAD at the store root).
+	if _, err := os.Stat(filepath.Join(storePath, "HEAD")); err == nil {
+		return nil
+	}
+	return hamserr.NewUserError(hamserr.ExitUsageError,
+		fmt.Sprintf("store at %s is not a git repository", logging.TildePath(storePath)),
+		"Initialize git in the store: cd "+storePath+" && git init",
+		"Or clone an existing store: hams apply --from-repo=<user/repo>",
+	)
+}
+
 // localConfigPath returns the effective path for hams.config.local.yaml
 // — store-scoped when a store is active, otherwise the global fallback
 // in ConfigHome. Mirrors the routing in config.WriteConfigKey and
@@ -503,6 +523,10 @@ func storeCmd() *cli.Command {
 						)
 					}
 
+					if err := ensureStoreIsGitRepo(storePath); err != nil {
+						return err
+					}
+
 					gitAdd := exec.CommandContext(ctx, "git", "-C", storePath, "add", "-A") //nolint:gosec // storePath is user-configured
 					gitAdd.Stdin = os.Stdin
 					gitAdd.Stdout = os.Stdout
@@ -547,6 +571,10 @@ func storeCmd() *cli.Command {
 							"no store directory configured",
 							"Set store_path in ~/.config/hams/hams.config.yaml",
 						)
+					}
+
+					if err := ensureStoreIsGitRepo(storePath); err != nil {
+						return err
 					}
 
 					gitPull := exec.CommandContext(ctx, "git", "-C", storePath, "pull", "--rebase") //nolint:gosec // storePath is user-configured
