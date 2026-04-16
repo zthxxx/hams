@@ -64,8 +64,10 @@ Ansible 的幂等性藏在每个模块里，质量参差不齐。
 hams brew install htop
 
 # 三个月后，新笔记本开箱：
-hams apply --from-repo=zthxxx/hams-store
-# hams 克隆 store、问你 profile tag、挨个装回来
+hams apply --bootstrap --from-repo=zthxxx/hams-store
+# hams 克隆 store、问你 profile tag、自动装上缺失的前置工具（brew、pnpm、
+# ansible 等，每次前有 consent 确认），然后挨个装回来。交互终端不传
+# --bootstrap 也行，hams 会在每次要跑 install 脚本前弹 [y/N/s] 让你确认。
 
 # 好奇自己管了些啥
 hams list

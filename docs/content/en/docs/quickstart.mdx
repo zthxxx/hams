@@ -88,10 +88,16 @@ hams bundles go-git, so you don't need to install `git` first. Classic chicken-a
 ### Apply from your store repo
 
 ```bash
-hams apply --from-repo=<your-username>/hams-store
+# If the machine doesn't have Homebrew / pnpm / ansible etc. yet, add --bootstrap
+# so hams auto-installs prerequisites under your consent. See the `apply` page
+# for the full list of bootstrap-supported providers.
+hams apply --bootstrap --from-repo=<your-username>/hams-store
 ```
 
-Replace the placeholder with your GitHub username and store repo name.
+Replace the placeholder with your GitHub username and store repo name. On an
+interactive terminal, `--bootstrap` is optional — hams will show a `[y/N/s]`
+prompt before running any install script. In CI / scripts, pass `--bootstrap`
+explicitly (or `--no-bootstrap` to fail fast).
 
 ### Answer two quick questions
 

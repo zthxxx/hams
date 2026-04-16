@@ -64,8 +64,11 @@ The `🐹` is the official mascot. It's not going anywhere.
 hams brew install htop
 
 # Three months later, unboxing a new laptop
-hams apply --from-repo=zthxxx/hams-store
-# hams clones your store, asks for a profile tag, installs the lot
+hams apply --bootstrap --from-repo=zthxxx/hams-store
+# hams clones your store, asks for a profile tag, auto-installs any
+# missing prerequisites (brew, pnpm, ansible) after consent, and
+# installs the lot. Omit --bootstrap on an interactive TTY and hams
+# will prompt [y/N/s] before running any install script.
 
 # Curious what's managed?
 hams list
