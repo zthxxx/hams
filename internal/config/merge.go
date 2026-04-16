@@ -16,8 +16,9 @@ func mergeFromFile(cfg *Config, path string) error {
 	}
 
 	var overlay Config
+	// Bare yaml error (path already appears in the Load() caller's wrap).
 	if err := yaml.Unmarshal(data, &overlay); err != nil {
-		return fmt.Errorf("loading config %s: %w", path, err)
+		return err
 	}
 
 	mergeConfig(cfg, &overlay)
@@ -38,8 +39,9 @@ func mergeFromStoreFile(cfg *Config, path string) error {
 	}
 
 	var overlay Config
+	// Bare yaml error (path already appears in the Load() caller's wrap).
 	if err := yaml.Unmarshal(data, &overlay); err != nil {
-		return fmt.Errorf("loading store config %s: %w", path, err)
+		return err
 	}
 
 	if err := validateStoreScope(&overlay, path); err != nil {

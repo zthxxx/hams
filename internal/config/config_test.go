@@ -294,6 +294,47 @@ func TestLoad_C5_StoreWithoutMachineScopedOk(t *testing.T) {
 	}
 }
 
+// TestLoad_MalformedGlobalYAMLSurfaces asserts that a malformed global
+// config file returns an error containing the file path, so users can
+// fix the broken file. Previously the error was silently ignored by
+// apply.go's storePath-resolution path, demoting it to a confusing
+// "no store directory configured" message.
+func TestLoad_MalformedGlobalYAMLSurfaces(t *testing.T) {
+	configHome := t.TempDir()
+	globalCfg := filepath.Join(configHome, "hams.config.yaml")
+	writeYAML(t, globalCfg, "not : valid : yaml: at all")
+
+	paths := Paths{ConfigHome: configHome, DataHome: t.TempDir()}
+	_, err := Load(paths, "")
+	if err == nil {
+		t.Fatal("expected error loading malformed YAML")
+	}
+	if !strings.Contains(err.Error(), globalCfg) {
+		t.Errorf("error should reference the broken file path %q; got %q", globalCfg, err.Error())
+	}
+	if !strings.Contains(err.Error(), "yaml") {
+		t.Errorf("error should identify the root cause (yaml parse error); got %q", err.Error())
+	}
+}
+
+// TestLoad_MalformedStoreYAMLSurfaces is the equivalent check for
+// <store>/hams.config.yaml — the error SHALL name the specific file.
+func TestLoad_MalformedStoreYAMLSurfaces(t *testing.T) {
+	configHome := t.TempDir()
+	storeDir := t.TempDir()
+	projectCfg := filepath.Join(storeDir, "hams.config.yaml")
+	writeYAML(t, projectCfg, "not : valid : yaml: at all")
+
+	paths := Paths{ConfigHome: configHome, DataHome: t.TempDir()}
+	_, err := Load(paths, storeDir)
+	if err == nil {
+		t.Fatal("expected error loading malformed store YAML")
+	}
+	if !strings.Contains(err.Error(), projectCfg) {
+		t.Errorf("error should reference the broken store file path %q; got %q", projectCfg, err.Error())
+	}
+}
+
 // TestValidate_WarnsOncePerProcess asserts that repeated Validate() calls
 // with empty profile_tag/machine_id fire at most one slog.Warn per field.
 // Before the once-guard, `hams list` duplicated the warnings 2x per

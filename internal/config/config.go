@@ -115,13 +115,13 @@ func Load(paths Paths, storePath string) (*Config, error) {
 	if storePath != "" {
 		projectPath := filepath.Join(storePath, "hams.config.yaml")
 		if err := mergeFromStoreFile(cfg, projectPath); err != nil && !os.IsNotExist(err) {
-			return nil, err
+			return nil, fmt.Errorf("loading project config %s: %w", projectPath, err)
 		}
 
 		// Level 4: local overrides (same rejection rule as level 3).
 		localPath := filepath.Join(storePath, "hams.config.local.yaml")
 		if err := mergeFromStoreFile(cfg, localPath); err != nil && !os.IsNotExist(err) {
-			return nil, err
+			return nil, fmt.Errorf("loading local overrides %s: %w", localPath, err)
 		}
 	}
 
