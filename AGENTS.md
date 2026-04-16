@@ -187,6 +187,10 @@ Spec corrections:
 
 Total commits in cycle 2: 15+ (still growing — iteration 3 adds hooks+OTel defer).
 
+### Cycle 59 — `config list --json` emits machine-parseable output
+
+- [x] `--json` global flag was honored by `hams list` and error output, but `hams config list --json` silently printed text. Added a flat JSON object emission covering the same fields as text output. Text path unchanged. (commit `5cfc09e`)
+
 ### Cycle 58 — Regression test for cycle 55 filter-excluded distinction
 
 - [x] `TestList_FilterExcludedAll_DistinctMessage` seeds a state with one ok resource, runs `list --status=hook-failed`, asserts the filter-excluded message appears and the empty-store install hint does NOT. (commit `267d9f4`)
