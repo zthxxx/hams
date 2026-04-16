@@ -181,20 +181,21 @@ Spec corrections:
 
 Total commits in cycle 2: 15+ (still growing — iteration 3 adds hooks+OTel defer).
 
-### Cycle 3 (in progress)
+### Cycle 3 — COMPLETE
 
 - [x] Architectural audit (state, hooks, lock, sudo, OTel) — **two new drifts found**: hooks engine has zero parsers wiring it; OTel exporter has zero CLI integration. Both deferred to v1.1 (commit `ed1a5af`).
 - [x] Homebrew CmdRunner DI refactor — 15.9% → 45.2% (commit `a9cebe7`).
 - [x] Vscodeext FilePrefix self-correction — docs incorrectly said `code-ext.hams.yaml`; impl ships `vscodeext.hams.yaml` intentionally (commit `2ac1a58`).
 - [x] Vscodeext CmdRunner DI refactor — 29.0% → 67.4% (commit `b70481b`).
-- [ ] Hooks parsing implementation (would deliver the deferred feature; medium-large work).
-- [ ] Ansible DI (lower priority, bash-chain provider).
-- [ ] CLI workflow verification (E2E happy-path audit).
+- [x] Hamsfile fail-loud warning when `hooks:` block declared (improves UX of the hooks-defer; commit `8abf8e9`).
+- [x] CLI fail-loud warning when `--hams-lucky` passed (improves UX of the lucky-defer; commit `bee5e67`).
+- [x] Ansible CmdRunner DI refactor — 17.9% → 70.5% (commit `efea1b8`).
 
-**Cycle 3 milestone**: 11 of 11 testable providers now have CmdRunner DI + apt-style U-pattern lifecycle tests. Coverage table:
+**Cycle 3 milestone**: ALL 12 testable providers now have CmdRunner DI + apt-style U-pattern lifecycle tests. (bash is the script-host that other providers' Bootstrap chains target via `BashScriptRunner` — testing it requires a different shape and is out of scope for this DI refactor.)
 
 | Provider | Before → After |
 |----------|---------------|
+| apt | 77.1% (already had DI) |
 | cargo | 28.8% → 68.8% |
 | npm | 23.4% → 67.7% |
 | pnpm | 29.8% → 71.4% |
@@ -205,9 +206,16 @@ Total commits in cycle 2: 15+ (still growing — iteration 3 adds hooks+OTel def
 | defaults | 20.4% → 58.9% |
 | homebrew | 15.9% → 45.2% |
 | vscodeext | 29.0% → 67.4% |
+| ansible | 17.9% → 70.5% |
 | git | 1.8% → 23.0% |
 
-Only ansible (bash-script chain, different shape) lacks DI-isolated tests.
+UX improvements for the v1.1-deferred features (hooks, OTel, lucky):
+
+- Users who pass `--hams-lucky` now see a fail-loud warning naming the affected provider.
+- Users who add a `hooks:` block to a hamsfile see a fail-loud warning naming the affected entries.
+- The OTel deferral has zero user-visible touch points (no flag, no config that suggests it works) and needs no warning.
+
+Cycle 3 commits: 8.
 
 ## Rules
 
