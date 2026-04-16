@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 
 	"golang.org/x/term"
@@ -80,7 +81,9 @@ func interactiveBootstrapPrompt(brerr *provider.BootstrapRequiredError) bootDeci
 	pl()
 	pl("Expected side effects:")
 	pl("  - prompts for sudo password (Homebrew / installer requirement)")
-	pl("  - may trigger macOS Xcode Command Line Tools install (~1GB, can hang on a GUI dialog)")
+	if runtime.GOOS == "darwin" {
+		pl("  - may trigger macOS Xcode Command Line Tools install (~1GB, can hang on a GUI dialog)")
+	}
 	pl("  - downloads from raw.githubusercontent.com (blocked by some corporate proxies)")
 	pl()
 	pl("Proceed?  [y]es  [N]o (default, exits)  [s]kip-this-provider")
@@ -112,4 +115,34 @@ func hamsfilePresent(profileDir string, manifest *provider.Manifest) bool {
 	_, errMain := os.Stat(filepath.Join(profileDir, prefix+".hams.yaml"))
 	_, errLocal := os.Stat(filepath.Join(profileDir, prefix+".hams.local.yaml"))
 	return errMain == nil || errLocal == nil
+}
+
+// buildBootstrapFailureSuggestions produces the list of actionable
+// remedies attached to the UserFacingError returned when bootstrap
+// fails. For each provider whose Bootstrap surfaced a
+// BootstrapRequiredError and whose consent was denied, we surface the
+// exact install script (verbatim from the manifest) and the
+// --bootstrap remedy. Per the builtin-providers spec scenario
+// "Bootstrap emits actionable error when --bootstrap is not set":
+// the error body SHALL name the missing binary, the exact script text,
+// AND the copy-pasteable remedy.
+func buildBootstrapFailureSuggestions(denied []*provider.BootstrapRequiredError) []string {
+	if len(denied) == 0 {
+		return []string{
+			"Ensure required tools are installed or remove the hamsfile entries",
+			"Use '--only' / '--except' to skip specific providers",
+		}
+	}
+	suggestions := make([]string, 0, 2+3*len(denied))
+	for _, brerr := range denied {
+		suggestions = append(suggestions,
+			fmt.Sprintf("%s (%s): install manually with:", brerr.Provider, brerr.Binary),
+			"  "+brerr.Script,
+		)
+	}
+	suggestions = append(suggestions,
+		"Or re-run hams with --bootstrap to auto-install missing prerequisites:",
+		"  hams apply --bootstrap [other flags...]",
+	)
+	return suggestions
 }

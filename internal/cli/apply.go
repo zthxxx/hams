@@ -205,8 +205,9 @@ func runApply(ctx context.Context, flags *provider.GlobalFlags, registry *provid
 	//   - only state present (hamsfile since deleted) → debug log, continue;
 	//     subsequent Probe/Plan will simply observe no desired state.
 	var (
-		bootstrapFailed []string
-		skipProviders   = map[string]bool{}
+		bootstrapFailed         []string
+		bootstrapRequiredDenied []*provider.BootstrapRequiredError
+		skipProviders           = map[string]bool{}
 	)
 	for _, p := range sorted {
 		bootstrapErr := p.Bootstrap(ctx)
@@ -238,7 +239,12 @@ func runApply(ctx context.Context, flags *provider.GlobalFlags, registry *provid
 				skipProviders[manifest.Name] = true
 				continue
 			case bootDecisionDeny:
-				// Fall through to the regular-failure path below.
+				// Capture the structured error so the final UserFacingError
+				// can surface the binary name + exact install script + the
+				// --bootstrap remedy (per builtin-providers spec scenario
+				// "Bootstrap emits actionable error when --bootstrap is not
+				// set"). Then fall through to the regular-failure path.
+				bootstrapRequiredDenied = append(bootstrapRequiredDenied, brerr)
 			}
 		}
 
@@ -251,7 +257,32 @@ func runApply(ctx context.Context, flags *provider.GlobalFlags, registry *provid
 				"provider", manifest.Name, "error", bootstrapErr)
 		}
 	}
+	// Transitively propagate skip-provider to any DAG dependents so we
+	// don't silently run a provider whose declared prerequisite was just
+	// removed from the run. Fixed-point because dependents of dependents
+	// must also skip.
 	if len(skipProviders) > 0 {
+		for {
+			added := false
+			for _, p := range sorted {
+				name := p.Manifest().Name
+				if skipProviders[name] {
+					continue
+				}
+				for _, dep := range p.Manifest().DependsOn {
+					if skipProviders[dep.Provider] {
+						slog.Info("cascading skip to dependent provider",
+							"provider", name, "depends_on", dep.Provider)
+						skipProviders[name] = true
+						added = true
+						break
+					}
+				}
+			}
+			if !added {
+				break
+			}
+		}
 		filtered := make([]provider.Provider, 0, len(sorted))
 		for _, p := range sorted {
 			if skipProviders[p.Manifest().Name] {
@@ -262,10 +293,10 @@ func runApply(ctx context.Context, flags *provider.GlobalFlags, registry *provid
 		sorted = filtered
 	}
 	if len(bootstrapFailed) > 0 {
+		suggestions := buildBootstrapFailureSuggestions(bootstrapRequiredDenied)
 		return hamserr.NewUserError(hamserr.ExitPartialFailure,
 			fmt.Sprintf("bootstrap failed for providers with hamsfiles: %s", strings.Join(bootstrapFailed, ", ")),
-			"Ensure required tools are installed or remove the hamsfile entries",
-			"Use '--only' / '--except' to skip specific providers",
+			suggestions...,
 		)
 	}
 

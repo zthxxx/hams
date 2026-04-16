@@ -9,7 +9,9 @@ import (
 	"strings"
 	"testing"
 
+	hamserr "github.com/zthxxx/hams/internal/error"
 	"github.com/zthxxx/hams/internal/provider"
+	"github.com/zthxxx/hams/internal/state"
 	"github.com/zthxxx/hams/internal/sudo"
 )
 
@@ -133,10 +135,15 @@ func TestResolveBootstrapConsent_EOFTreatsAsDeny(t *testing.T) {
 
 // End-to-end test: runApply with a provider that signals
 // BootstrapRequiredError, --no-bootstrap, verifies fail-fast error.
+// Per builtin-providers spec scenario "Bootstrap emits actionable
+// error when --bootstrap is not set", the UserFacingError body SHALL
+// name the missing binary, the exact script text from the manifest,
+// and the `hams apply --bootstrap` remedy.
 func TestRunApply_NoBootstrapFailsFastWithActionableError(t *testing.T) {
 	_, profileDir, _, flags := setupApplyTestEnv(t, []string{"brew"})
 	writeApplyTestFile(t, filepath.Join(profileDir, "Homebrew.hams.yaml"), "packages: []\n")
 
+	const installScript = `/bin/bash -c "$(curl -fsSL https://example.com/install.sh)"`
 	p := &applyTestProvider{
 		manifest: provider.Manifest{
 			Name: "brew", DisplayName: "Homebrew", FilePrefix: "Homebrew",
@@ -144,7 +151,7 @@ func TestRunApply_NoBootstrapFailsFastWithActionableError(t *testing.T) {
 		},
 		bootstrapFn: func(context.Context) error {
 			return &provider.BootstrapRequiredError{
-				Provider: "brew", Binary: "brew", Script: "install.sh",
+				Provider: "brew", Binary: "brew", Script: installScript,
 			}
 		},
 	}
@@ -160,6 +167,23 @@ func TestRunApply_NoBootstrapFailsFastWithActionableError(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "bootstrap failed") {
 		t.Errorf("expected 'bootstrap failed' in error message, got %q", err.Error())
+	}
+
+	// Spec contract: the structured error body carries binary + script
+	// + remedy. UserFacingError.Suggestions is where those land.
+	var ufe *hamserr.UserFacingError
+	if !errors.As(err, &ufe) {
+		t.Fatalf("expected *UserFacingError, got %T (%v)", err, err)
+	}
+	allSuggestions := strings.Join(ufe.Suggestions, "\n")
+	if !strings.Contains(allSuggestions, "brew") {
+		t.Errorf("suggestions should name the missing binary 'brew'; got %q", allSuggestions)
+	}
+	if !strings.Contains(allSuggestions, installScript) {
+		t.Errorf("suggestions should include the install script verbatim; got %q", allSuggestions)
+	}
+	if !strings.Contains(allSuggestions, "--bootstrap") {
+		t.Errorf("suggestions should include the --bootstrap remedy; got %q", allSuggestions)
 	}
 }
 
@@ -271,6 +295,77 @@ func TestRunApply_BootstrapScriptFailureIsFatal(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "bootstrap failed") || !strings.Contains(err.Error(), "brew") {
 		t.Errorf("expected 'bootstrap failed' + brew in error, got %q", err.Error())
+	}
+}
+
+// TTY skip ('s' answer) must cascade to DAG-dependent providers so
+// hams doesn't silently run vscodeext / mas against a brew that was
+// just opted out of. Per the cascading-skip guardrail in apply.go.
+func TestRunApply_SkipBootstrapCascadesToDependents(t *testing.T) {
+	_, profileDir, _, flags := setupApplyTestEnv(t, []string{"brew", "code-ext"})
+	writeApplyTestFile(t, filepath.Join(profileDir, "Homebrew.hams.yaml"), "packages: []\n")
+	writeApplyTestFile(t, filepath.Join(profileDir, "vscodeext.hams.yaml"), "packages: []\n")
+
+	// Interactive TTY prompt with 's' (skip-this-provider) answer.
+	origTTY := bootstrapPromptIsTTY
+	origIn := bootstrapPromptIn
+	defer func() {
+		bootstrapPromptIsTTY = origTTY
+		bootstrapPromptIn = origIn
+	}()
+	bootstrapPromptIsTTY = func() bool { return true }
+	bootstrapPromptIn = strings.NewReader("s\n")
+	bootstrapPromptOut = &bytes.Buffer{}
+
+	var bootstrapCalls, probeCalls []string
+	brew := &applyTestProvider{
+		manifest: provider.Manifest{
+			Name: "brew", DisplayName: "Homebrew", FilePrefix: "Homebrew",
+			Platforms: []provider.Platform{provider.PlatformAll},
+		},
+		bootstrapFn: func(context.Context) error {
+			bootstrapCalls = append(bootstrapCalls, "brew")
+			return &provider.BootstrapRequiredError{
+				Provider: "brew", Binary: "brew", Script: "install.sh",
+			}
+		},
+	}
+	codeExt := &applyTestProvider{
+		manifest: provider.Manifest{
+			Name: "code-ext", DisplayName: "VS Code Extensions", FilePrefix: "vscodeext",
+			Platforms: []provider.Platform{provider.PlatformAll},
+			DependsOn: []provider.DependOn{{Provider: "brew"}},
+		},
+		bootstrapFn: func(context.Context) error {
+			bootstrapCalls = append(bootstrapCalls, "code-ext")
+			return nil
+		},
+		probeFn: func(context.Context, *state.File) ([]provider.ProbeResult, error) {
+			probeCalls = append(probeCalls, "code-ext")
+			return nil, nil
+		},
+	}
+
+	registry := provider.NewRegistry()
+	if err := registry.Register(brew); err != nil {
+		t.Fatalf("register brew: %v", err)
+	}
+	if err := registry.Register(codeExt); err != nil {
+		t.Fatalf("register code-ext: %v", err)
+	}
+
+	if err := runApply(context.Background(), flags, registry, sudo.NoopAcquirer{}, "", true, "", "", false, bootstrapMode{}); err != nil {
+		t.Fatalf("runApply: %v", err)
+	}
+	// code-ext's Bootstrap is reached before the cascade runs (the
+	// loop calls every provider's Bootstrap once). The cascade ensures
+	// code-ext is skipped from the REMAINDER of the pipeline.
+	// ProbeAll only runs against providers that survived the skip
+	// filter — so probeCalls must NOT include code-ext.
+	for _, c := range probeCalls {
+		if c == "code-ext" {
+			t.Errorf("code-ext should have been cascade-skipped; probeCalls = %v", probeCalls)
+		}
 	}
 }
 
