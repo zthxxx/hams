@@ -187,6 +187,10 @@ Spec corrections:
 
 Total commits in cycle 2: 15+ (still growing — iteration 3 adds hooks+OTel defer).
 
+### Cycle 66 — Regression test for cycle 65 log-file wiring
+
+- [x] `TestRunRefresh_CreatesSessionLogFile` asserts runRefresh creates the month-bucket log file at `${HAMS_DATA_HOME}/<YYYY-MM>/hams.<YYYYMM>.log` with non-zero content. Even the no-providers-match early-return path triggers SetupLogging first, so the regression guard covers the common case. (commit `4dd1338`)
+
 ### Cycle 65 — `SetupLogging` wired into apply+refresh
 
 - [x] **Real scaffolded-but-unwired finding**: `cli.SetupLogging` was defined but had ZERO callers. Users got stderr output only — no rolling log file at `${HAMS_DATA_HOME}/<YYYY-MM>/hams.<YYYYMM>.log` despite spec references and the tui-logging "sticky header shows log file path" scenario pre-supposing its existence. Wired into `runApply` + `runRefresh` with deferred cleanup; short read-only commands (list, config get, version) unchanged. Verified apply dry-run now creates the file with session slog lines. (commit `dddecb0`)
