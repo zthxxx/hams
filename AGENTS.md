@@ -189,7 +189,7 @@ Total commits in cycle 2: 15+ (still growing — iteration 3 adds hooks+OTel def
 
 ### Cycle 98 — hamsfile.ListApps filters empty/whitespace entries
 
-- [x] Real user-workflow bug caught by manual end-to-end test. A malformed hamsfile entry like `- app: ""` or `- app: "  "` (from git merge conflict residue, accidental edit, or yaml round-trip) would flow through `ListApps` → `ComputePlan` → `install ""` / `install   ` on apt/brew/etc. Shell errors blamed the package manager, not the hamsfile. Fix: `hamsfile.ListApps` now `strings.TrimSpace`s the value before appending and skips empty-after-trim values silently. All callers (Plan, CLI install paths, `hams list`) inherit the fix. Regression test `TestListApps_SkipsEmptyAndWhitespaceEntries`. (commit `9c13d3b`)
+- [x] Real user-workflow bug caught by manual end-to-end test. A malformed hamsfile entry like `- app: ""` or `- app: "  "` (from git merge conflict residue, accidental edit, or yaml round-trip) would flow through `ListApps` → `ComputePlan` → `install ""` / `install <spaces>` on apt/brew/etc. Shell errors blamed the package manager, not the hamsfile. Fix: `hamsfile.ListApps` now `strings.TrimSpace`s the value before appending and skips empty-after-trim values silently. All callers (Plan, CLI install paths, `hams list`) inherit the fix. Regression test `TestListApps_SkipsEmptyAndWhitespaceEntries`. (commit `9c13d3b`)
 
 ### Cycle 97 — homebrew handleInstall/Remove on CmdRunner seam + U1-U7 tests
 
