@@ -268,8 +268,16 @@ func caskApps(f *hamsfile.File) map[string]bool {
 	return result
 }
 
-// Remove uninstalls a brew package.
+// Remove uninstalls a brew package, routing tap-format IDs
+// (user/repo, no formula suffix) through `brew untap` instead —
+// otherwise `brew uninstall user/repo` fails with "No installed keg
+// or cask" and the tap is never actually removed. This is the
+// correct inverse of the tap case in handleTap / isTapFormat.
 func (p *Provider) Remove(ctx context.Context, resourceID string) error {
+	if isTapFormat(resourceID) {
+		slog.Info("brew untap", "repo", resourceID)
+		return p.runner.Untap(ctx, resourceID)
+	}
 	slog.Info("brew uninstall", "package", resourceID)
 	return p.runner.Uninstall(ctx, resourceID)
 }

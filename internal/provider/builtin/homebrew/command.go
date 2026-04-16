@@ -39,6 +39,11 @@ type CmdRunner interface {
 
 	// Tap runs `brew tap <repo>`.
 	Tap(ctx context.Context, repo string) error
+
+	// Untap runs `brew untap <repo>`. Separate verb from Uninstall
+	// because brew rejects `brew uninstall user/repo`: taps are
+	// metadata, not installed packages.
+	Untap(ctx context.Context, repo string) error
 }
 
 // NewRealCmdRunner returns the production CmdRunner that shells out
@@ -113,6 +118,16 @@ func (r *realCmdRunner) Tap(ctx context.Context, repo string) error {
 	cmd.Stderr = os.Stderr
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("brew tap %s: %w", repo, err)
+	}
+	return nil
+}
+
+func (r *realCmdRunner) Untap(ctx context.Context, repo string) error {
+	cmd := exec.CommandContext(ctx, "brew", "untap", repo) //nolint:gosec // repo from hamsfile/state entries
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("brew untap %s: %w", repo, err)
 	}
 	return nil
 }
