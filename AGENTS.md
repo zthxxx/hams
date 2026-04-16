@@ -187,6 +187,10 @@ Spec corrections:
 
 Total commits in cycle 2: 15+ (still growing — iteration 3 adds hooks+OTel defer).
 
+### Cycle 114 — Executor log messages: broken English verb tenses
+
+- [x] Real UX bug visible in every `hams apply` run. `executor.go` built phase log messages via naive string concat: `slog.Info(phase+"ing", ...)` produced `"installing"` / `"updateing"` / `"removeing"`; `slog.Info(phase+"d", ...)` produced `"installd"` / `"updated"` / `"removed"`. So `installd`, `updateing`, and `removeing` shipped into every log line — not English, not greppable. Ops runbooks and docs use the correct English forms; an operator grep-ing for `"installing"`, `"removing"`, `"updating"` would miss every hams apply message. Fix: two lookup helpers (`phaseGerund`, `phasePastTense`) hard-code the English spellings for known phases with a fallback to the naive concat for future additions. 3 regression tests gate the spellings. Visible in the `task check` test output before the fix: `msg=installd provider=brew resource=git` and `msg=removeing provider=brew resource=git`. After: consistent installing/installed, updating/updated, removing/removed. provider coverage: 74.4% → 74.8%. (commit `968d224`)
+
 ### Cycle 113 — `AtomicWrite` error + edge-case coverage
 
 - [x] Test-design cycle. `AtomicWrite` had two untested error branches and one untested edge case that all map to real user workflows. (1) Parent-is-a-file: a user typos a profile path as a filename, or a prior step wrote a file where a directory was expected — `MkdirAll` fails; `AtomicWrite` must surface a "creating directory" error, not silently continue. (2) Empty-data: writing zero bytes after `RemoveApp` drains a hamsfile must persist as an explicit empty-file marker, not error out (so subsequent reads see an empty document, not "file not found"). (3) Overwrite: the atomic rename must completely replace existing content with no hybrid state (regression gate if someone "optimizes" to in-place write). 3 regression tests. hamsfile coverage: 82.5% → 82.9%. (commit `5c3fd9f`)
