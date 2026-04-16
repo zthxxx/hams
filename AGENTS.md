@@ -181,6 +181,10 @@ Spec corrections:
 
 Total commits in cycle 2: 15+ (still growing — iteration 3 adds hooks+OTel defer).
 
+### Cycle 27 — Friendly error when `store push/pull` runs in a non-git dir
+
+- [x] **Raw git error surfaced**: `hams store push` in a non-git store showed "fatal: not a git repository" + "git add: exit status 128" — user had no idea what to do. Added `ensureStoreIsGitRepo(storePath)` that checks for `.git/` or `HEAD` and returns a UserFacingError with two suggestions (`git init` or `hams apply --from-repo=`). Gate both push and pull. (commit `59ae404`)
+
 ### Cycle 26 — Observability spec reconciled with HAMS_OTEL reality
 
 - [x] **Session-creation scenarios said unconditional**: spec said `hams apply` always creates an OTel session; impl requires `HAMS_OTEL=1` (cycle 5 un-deferral). Added a "v1 enablement gate" paragraph + `HAMS_OTEL=1` qualifier on relevant scenarios + new "OTel disabled by default" scenario.
