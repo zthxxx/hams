@@ -187,6 +187,10 @@ Spec corrections:
 
 Total commits in cycle 2: 15+ (still growing — iteration 3 adds hooks+OTel defer).
 
+### Cycle 121 — `cloneRemoteRepo` honors context; Ctrl+C aborts clone promptly
+
+- [x] Real UX bug, same class as cycle 19 (context propagation through provider handlers) but at the bootstrap layer. `cloneRemoteRepo` used `gogit.PlainClone` — the no-ctx variant — so `Ctrl+C` during a `hams apply --from-repo=<user/repo>` clone appeared to hang until the network TCP round-trip timed out (can be minutes). Root ctx already cancels on SIGINT (cycle 12's `signal.NotifyContext`), but the clone path didn't plumb it through. Fix: thread ctx through `runApply → resolveFromRepoStorePath → bootstrapFromRepo → cloneRemoteRepo → PlainCloneContext` / `PullContext`. Updated 2 pre-existing tests that called `bootstrapFromRepo` directly to pass `context.Background()`. Regression test `TestCloneRemoteRepo_CanceledContextAborts` pre-cancels the ctx and asserts the function returns a non-nil fast-fail error without going through the full network round-trip. cli coverage: 64.8% → 65.5%. (commit `53f40a6`)
+
 ### Cycle 120 — Direct tests for `isLocalPathAttempt` classification
 
 - [x] `isLocalPathAttempt` decides whether `--from-repo=X` is a local path or GitHub shorthand — a classification error sends typo'd local paths down the clone branch (producing misleading "Repository not found" errors for what is actually a local typo), or vice versa. Coverage was 40% with no direct tests. Added 6 tests covering each rule: absolute `/` prefix (local even if nonexistent), `~/` prefix, relative `./`/`../` prefixes (gates against a future refactor that drops these in favor of stat-only), GitHub `user/repo` shorthand (not local), full URL `https://...` (not local), bare-name-that-stats-to-dir (local), bare-name-with-no-stat-hit (not local — falls through to clone path where cycle 72's friendly error surfaces). cli coverage: 64.6% → 64.8%. (commit `f6ca3b0`)
