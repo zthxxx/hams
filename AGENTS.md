@@ -187,6 +187,10 @@ Spec corrections:
 
 Total commits in cycle 2: 15+ (still growing — iteration 3 adds hooks+OTel defer).
 
+### Cycle 73 — Regression tests for cycle 72 error-transform + refactor
+
+- [x] Lifted the cycle-72 inline transform into a pure `transformCloneError(repoURL, err)` helper (was untestable inside cloneRemoteRepo because it shells out to a real git remote). Two unit tests: "Repository not found" gets *UserFacingError with 3 suggestions and no "authentication" leak; other errors (e.g. "dial tcp: connection refused") propagate verbatim with the url-prefix wrap. No behavior change — coverage only. (commit `e97b3f4`)
+
 ### Cycle 72 — `--from-repo` friendly error for missing remote repo
 
 - [x] **Real UX confusion**: go-git reports missing public GitHub repos as "authentication required: Repository not found" — users chased credential issues when the real cause was a typo in the URL. Detect the "Repository not found" substring and emit a targeted UserFacingError with three suggestions (verify URL / configure git credentials for private / use absolute path for local). Other go-git errors still propagate verbatim. (commit `35443f5`)
