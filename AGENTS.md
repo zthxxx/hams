@@ -187,6 +187,10 @@ Spec corrections:
 
 Total commits in cycle 2: 15+ (still growing — iteration 3 adds hooks+OTel defer).
 
+### Cycle 37 — homebrew Plan + caskApps coverage (49.3% → 57.0%)
+
+- [x] 4-app hamsfile (2 cli + 2 cask) asserts that Plan correctly attaches `BrewResource{IsCask:true}` to cask-tagged packages (needed by Apply's `--cask` injection) and leaves cli-tagged packages with nil Resource. Also covers the empty-Root short-circuit. (commit `6d28ca8`)
+
 ### Cycle 36 — `hams list` singular/plural grammar
 
 - [x] `hams list` printed "apt (1 resources):" for a single resource. Tiny but visible polish. Branch on `len(filteredIDs) == 1` for "resource" vs "resources". Also fixed a stray bare URL in AGENTS.md from cycle 35. (commit `0d6adfe`)
