@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -421,5 +422,76 @@ func TestSetResource_BareDoesNotEmitEmptyRequestedFields(t *testing.T) {
 	}
 	if strings.Contains(body, "requested_source") {
 		t.Errorf("bare entry leaked requested_source: %q", body)
+	}
+}
+
+// TestResourceOptions_Values covers the three previously 0%
+// ResourceOption helpers (WithValue, WithCheckCmd, WithCheckStdout).
+// Each mutates a single Resource field and nothing else.
+func TestResourceOptions_Values(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name  string
+		apply ResourceOption
+		check func(t *testing.T, r *Resource)
+	}{
+		{
+			"WithValue",
+			WithValue("dark"),
+			func(t *testing.T, r *Resource) {
+				t.Helper()
+				if r.Value != "dark" {
+					t.Errorf("Value = %q, want 'dark'", r.Value)
+				}
+			},
+		},
+		{
+			"WithCheckCmd",
+			WithCheckCmd("test -f ~/.zshrc"),
+			func(t *testing.T, r *Resource) {
+				t.Helper()
+				if r.CheckCmd != "test -f ~/.zshrc" {
+					t.Errorf("CheckCmd = %q", r.CheckCmd)
+				}
+			},
+		},
+		{
+			"WithCheckStdout",
+			WithCheckStdout("ok\n"),
+			func(t *testing.T, r *Resource) {
+				t.Helper()
+				if r.CheckStdout != "ok\n" {
+					t.Errorf("CheckStdout = %q", r.CheckStdout)
+				}
+			},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			r := &Resource{}
+			tc.apply(r)
+			tc.check(t, r)
+		})
+	}
+}
+
+// TestFormatPID covers the PID-with-process-name helper. On Linux,
+// /proc/<pid>/cmdline is expected present for the running process;
+// on other OSes the helper falls back to the bare integer. The
+// current pid is always live so the happy-path branch works on Linux.
+func TestFormatPID(t *testing.T) {
+	// Non-positive PIDs return "0" / etc. via strconv.Itoa.
+	if got := FormatPID(0); got != "0" {
+		t.Errorf("FormatPID(0) = %q, want '0'", got)
+	}
+	// Self PID should always resolve. We can't assert exact process
+	// name (test binary varies), but we can assert the output
+	// contains the PID number.
+	selfPID := os.Getpid()
+	got := FormatPID(selfPID)
+	if !strings.Contains(got, strconv.Itoa(selfPID)) {
+		t.Errorf("FormatPID(self) = %q, want to contain %d", got, selfPID)
 	}
 }
