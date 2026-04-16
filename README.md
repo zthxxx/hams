@@ -40,7 +40,7 @@ hams apply --bootstrap --from-repo=your-username/hams-store
 
 1. **Install via CLI**: `hams brew install git` runs `brew install git` AND records `git` in `Homebrew.hams.yaml`
 2. **Sync to Git**: Push your hams-store repo with all `*.hams.yaml` files
-3. **Restore anywhere**: `hams apply --from-repo=you/hams-store` replays all installations on a new machine
+3. **Restore anywhere**: `hams apply --bootstrap --from-repo=you/hams-store` replays all installations on a new machine (add `--bootstrap` if prerequisites like Homebrew aren't installed yet)
 
 ## Features
 

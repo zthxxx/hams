@@ -40,7 +40,7 @@ hams apply --bootstrap --from-repo=your-username/hams-store
 
 1. **通过 CLI 安装**：`hams brew install git` 执行 `brew install git` **同时** 将 `git` 记录到 `Homebrew.hams.yaml`
 2. **同步到 Git**：推送你的 hams-store 仓库，包含所有 `*.hams.yaml` 文件
-3. **随处恢复**：`hams apply --from-repo=you/hams-store` 在新机器上重放所有安装
+3. **随处恢复**：`hams apply --bootstrap --from-repo=you/hams-store` 在新机器上重放所有安装（新机器如果还没装 Homebrew 等前置工具，加上 `--bootstrap`）
 
 ## 特性
 
