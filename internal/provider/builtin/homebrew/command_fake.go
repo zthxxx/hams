@@ -37,6 +37,7 @@ const (
 	fakeOpInstall      = "install"
 	fakeOpUninstall    = "uninstall"
 	fakeOpTap          = "tap"
+	fakeOpUntap        = "untap"
 )
 
 // NewFakeCmdRunner returns a fresh FakeCmdRunner.
@@ -206,6 +207,15 @@ func (f *FakeCmdRunner) Tap(_ context.Context, repo string) error {
 		return err
 	}
 	f.taps[repo] = true
+	return nil
+}
+
+// Untap implements CmdRunner.
+func (f *FakeCmdRunner) Untap(_ context.Context, repo string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.calls = append(f.calls, fakeCall{op: fakeOpUntap, name: repo})
+	delete(f.taps, repo)
 	return nil
 }
 

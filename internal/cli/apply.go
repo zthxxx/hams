@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io/fs"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -13,6 +14,7 @@ import (
 	"strings"
 
 	"github.com/urfave/cli/v3"
+	"golang.org/x/term"
 	"gopkg.in/yaml.v3"
 
 	"github.com/zthxxx/hams/internal/config"
@@ -70,13 +72,34 @@ func runApply(ctx context.Context, flags *provider.GlobalFlags, registry *provid
 			"Pick one: --bootstrap to auto-run, --no-bootstrap to fail fast",
 		)
 	}
+	// Validate --only/--except exclusion BEFORE loading config — otherwise
+	// users with both flags and no store-path get a misleading "no store
+	// configured" error first. The real filtering still happens later via
+	// filterProviders, but the exclusion check is pure args validation.
+	if only != "" && except != "" {
+		return hamserr.NewUserError(hamserr.ExitUsageError,
+			"--only and --except are mutually exclusive",
+			"Use --only to include specific providers, or --except to exclude them",
+		)
+	}
 	if flags.DryRun {
 		fmt.Println("[dry-run] Would apply configurations. No changes will be made.")
 	}
 
 	paths := resolvePaths(flags)
 
+	// Wire session logging to a file under ${HAMS_DATA_HOME}/<YYYY-MM>/
+	// per logging.Setup. Previously SetupLogging was defined but never
+	// called, so every `hams apply` session ran with the default slog
+	// handler writing to stderr only — users had no rolling log file
+	// even though the spec + docs reference one. Enabling for apply/
+	// refresh only; short commands (`--version`, `config get`) don't
+	// need per-invocation log files.
+	cleanupLog := SetupLogging(flags)
+	defer cleanupLog()
+
 	storePath := flags.Store
+	var configuredRepo string
 	if storePath == "" {
 		cfg, err := config.Load(paths, "")
 		if err != nil {
@@ -90,12 +113,29 @@ func runApply(ctx context.Context, flags *provider.GlobalFlags, registry *provid
 		if cfg.StorePath != "" {
 			storePath = cfg.StorePath
 		}
+		configuredRepo = cfg.StoreRepo
 	}
 
-	if fromRepo != "" {
-		slog.Info("from-repo specified", "repo", fromRepo)
+	// Resolution order for where the store lives, from highest to
+	// lowest precedence:
+	//   1. --from-repo on the command line  (explicit override)
+	//   2. --store on the command line       (explicit override, handled above via flags.Store)
+	//   3. store_path in config              (handled above via cfg.StorePath)
+	//   4. store_repo in config              (auto-clone, per schema-design spec)
+	// Step 4 was missing — cfg.StoreRepo was defined, written on
+	// `config set store_repo`, and displayed by `config get` but
+	// NEVER resolved into an actual store path. Users who configured
+	// only store_repo got "no store directory configured" despite
+	// the spec calling store_repo a required field.
+	effectiveFromRepo := fromRepo
+	if effectiveFromRepo == "" && storePath == "" && configuredRepo != "" {
+		slog.Info("resolving store from configured store_repo", "store_repo", configuredRepo)
+		effectiveFromRepo = configuredRepo
+	}
+	if effectiveFromRepo != "" {
+		slog.Info("from-repo specified", "repo", effectiveFromRepo)
 		var cloneErr error
-		storePath, cloneErr = bootstrapFromRepo(fromRepo, paths)
+		storePath, cloneErr = bootstrapFromRepo(effectiveFromRepo, paths)
 		if cloneErr != nil {
 			return fmt.Errorf("bootstrap from repo: %w", cloneErr)
 		}
@@ -120,20 +160,8 @@ func runApply(ctx context.Context, flags *provider.GlobalFlags, registry *provid
 	}
 
 	if cfg.ProfileTag == "" || cfg.MachineID == "" {
-		fmt.Println("Not Found Profile in config, init it at first")
-		tag, mid, promptErr := promptProfileInit()
-		if promptErr != nil {
-			return fmt.Errorf("profile init: %w", promptErr)
-		}
-		cfg.ProfileTag = tag
-		cfg.MachineID = mid
-
-		// Persist prompted values so they survive across runs.
-		if writeErr := config.WriteConfigKey(paths, storePath, "profile_tag", tag); writeErr != nil {
-			slog.Warn("failed to persist profile_tag", "error", writeErr)
-		}
-		if writeErr := config.WriteConfigKey(paths, storePath, "machine_id", mid); writeErr != nil {
-			slog.Warn("failed to persist machine_id", "error", writeErr)
+		if err := ensureProfileConfigured(paths, storePath, cfg); err != nil {
+			return err
 		}
 	}
 
@@ -349,13 +377,22 @@ func runApply(ctx context.Context, flags *provider.GlobalFlags, registry *provid
 		)
 	}
 
+	// Per-provider failure tracking lists. Declared above the refresh
+	// block because the pre-apply probe also uses stateSaveFailures
+	// (failures there affect the final summary just like post-install
+	// save failures do — same drift consequences).
+	var allResults []provider.ExecuteResult
+	var skippedProviders []string
+	var stateSaveFailures []string
+
 	if !noRefresh {
 		slog.Info("refreshing state")
 		probeResults := provider.ProbeAll(ctx, sorted, stateDir, cfg.MachineID)
 		for filePrefix, sf := range probeResults {
 			statePath := filepath.Join(stateDir, filePrefix+".state.yaml")
 			if saveErr := sf.Save(statePath); saveErr != nil {
-				slog.Error("failed to save probed state", "provider", sf.Provider, "error", saveErr)
+				slog.Error("failed to save probed state", "provider", sf.Provider, "path", statePath, "error", saveErr)
+				stateSaveFailures = append(stateSaveFailures, sf.Provider)
 			}
 		}
 	}
@@ -376,8 +413,6 @@ func runApply(ctx context.Context, flags *provider.GlobalFlags, registry *provid
 		}
 	}
 
-	var allResults []provider.ExecuteResult
-	var skippedProviders []string
 	for _, p := range sorted {
 		manifest := p.Manifest()
 		name := manifest.Name
@@ -427,8 +462,22 @@ func runApply(ctx context.Context, flags *provider.GlobalFlags, registry *provid
 			continue
 		}
 
+		// state.Load returns a wrapped error for any read/parse failure.
+		// Missing file (os.ErrNotExist) is the common first-run case —
+		// fall back to an empty state. Any OTHER failure (YAML corruption,
+		// permission denied) is destructive to swallow: silently resetting
+		// to empty state would (1) lose drift detection for every tracked
+		// resource and (2) could re-trigger installs the user already
+		// performed. Skip the provider and report it instead so the user
+		// can inspect or delete the state file manually.
 		sf, loadErr := state.Load(statePath)
 		if loadErr != nil {
+			if !errors.Is(loadErr, fs.ErrNotExist) {
+				slog.Error("failed to load state file (corrupted?)",
+					"provider", name, "path", statePath, "error", loadErr)
+				skippedProviders = append(skippedProviders, name)
+				continue
+			}
 			sf = state.New(name, cfg.MachineID)
 		}
 
@@ -469,24 +518,62 @@ func runApply(ctx context.Context, flags *provider.GlobalFlags, registry *provid
 			continue
 		}
 
-		result := provider.Execute(ctx, p, actions, sf, otelSess.Session())
-		allResults = append(allResults, result)
+		// Execute + save state for this provider in an IIFE so a panic
+		// during provider.Execute (buggy provider, OOM in runner, etc.)
+		// still flushes the partially-updated state.File to disk before
+		// re-panicking. Without this, a panic after installing N of M
+		// actions would lose the in-memory tracking — next apply would
+		// re-attempt the already-installed actions.
+		func() {
+			defer func() {
+				if r := recover(); r != nil {
+					slog.Error("provider panicked during Execute; flushing state before unwinding",
+						"provider", name, "panic", r, "path", statePath)
+					if saveErr := sf.Save(statePath); saveErr != nil {
+						slog.Error("failed to save state after provider panic",
+							"provider", name, "path", statePath, "error", saveErr)
+					}
+					panic(r) // re-throw after best-effort flush
+				}
+			}()
 
-		if result.Failed == 0 {
-			sf.ConfigHash = currentHash
-		}
+			result := provider.Execute(ctx, p, actions, sf, otelSess.Session())
+			allResults = append(allResults, result)
 
-		if saveErr := sf.Save(statePath); saveErr != nil {
-			slog.Error("failed to save state", "provider", name, "error", saveErr)
-		}
+			if result.Failed == 0 {
+				sf.ConfigHash = currentHash
+			}
 
-		slog.Info("provider complete", "provider", name,
-			"installed", result.Installed, "failed", result.Failed, "skipped", result.Skipped)
+			if saveErr := sf.Save(statePath); saveErr != nil {
+				// State save failure is non-fatal to the install (the install
+				// succeeded) but DOES invalidate drift tracking until a
+				// successful save. Track it so the final summary surfaces the
+				// inconsistency to the user — previously these failures were
+				// only logged and scripts couldn't detect them.
+				slog.Error("failed to save state", "provider", name, "path", statePath, "error", saveErr)
+				stateSaveFailures = append(stateSaveFailures, name)
+			}
+
+			slog.Info("provider complete", "provider", name,
+				"installed", result.Installed, "failed", result.Failed, "skipped", result.Skipped)
+		}()
 	}
 
 	// Dry-run: all providers have been planned and printed; skip
-	// enrichment and the execute-phase summary.
+	// enrichment and the execute-phase summary. Report skipped providers
+	// and return ExitPartialFailure so CI scripts and `hams apply`
+	// previews fail fast on broken hamsfiles instead of silently exiting
+	// 0 — matching the non-dry-run branch's error semantics.
 	if flags.DryRun {
+		if len(skippedProviders) > 0 {
+			fmt.Printf("Warning: %d provider(s) skipped due to errors: %s\n",
+				len(skippedProviders), strings.Join(skippedProviders, ", "))
+			return hamserr.NewUserError(hamserr.ExitPartialFailure,
+				fmt.Sprintf("[dry-run] %d providers skipped due to errors (see log for details)", len(skippedProviders)),
+				"Fix the hamsfile or remove broken provider entries before running apply",
+				"Use '--debug' for detailed error output",
+			)
+		}
 		fmt.Println("[dry-run] No changes made.")
 		return nil
 	}
@@ -507,10 +594,19 @@ func runApply(ctx context.Context, flags *provider.GlobalFlags, registry *provid
 		fmt.Printf("Warning: %d provider(s) skipped due to errors: %s\n",
 			len(skippedProviders), strings.Join(skippedProviders, ", "))
 	}
+	if len(stateSaveFailures) > 0 {
+		// Install succeeded but persisting the record failed. Surface so
+		// the user knows the next apply will re-plan these resources
+		// instead of treating them as already-tracked.
+		fmt.Printf("Warning: %d provider(s) failed to persist state after apply: %s\n",
+			len(stateSaveFailures), strings.Join(stateSaveFailures, ", "))
+		fmt.Println("  Next `hams apply` may re-execute these resources. Check permissions on the store.")
+	}
 
-	if merged.Failed > 0 || len(skippedProviders) > 0 {
+	if merged.Failed > 0 || len(skippedProviders) > 0 || len(stateSaveFailures) > 0 {
 		return hamserr.NewUserError(hamserr.ExitPartialFailure,
-			fmt.Sprintf("%d resources failed, %d providers skipped", merged.Failed, len(skippedProviders)),
+			fmt.Sprintf("%d resources failed, %d providers skipped, %d state saves failed",
+				merged.Failed, len(skippedProviders), len(stateSaveFailures)),
 			"Run 'hams apply' again to retry failed resources",
 			"Use '--debug' for detailed error output",
 		)
@@ -673,6 +769,49 @@ func printDryRunActions(name, displayName string, actions []provider.Action) {
 	if len(skips) > 0 {
 		fmt.Printf("  (%d resources unchanged)\n", len(skips))
 	}
+}
+
+// ensureProfileConfigured fills in any missing profile_tag / machine_id
+// fields on cfg. Interactive TTYs get the legacy prompt flow; non-TTYs
+// (CI, cloud-init, piped stdin) surface a UserFacingError naming the
+// missing keys + concrete remediation instead of reading EOF.
+//
+// Previously this logic lived inline in runApply and violated
+// golangci-lint nestif (complexity 8). Extracted for testability and
+// clarity — any future "apply on a fresh machine" UX change should
+// touch only this helper.
+func ensureProfileConfigured(paths config.Paths, storePath string, cfg *config.Config) error {
+	if term.IsTerminal(int(os.Stdin.Fd())) { //nolint:gosec // Fd() returns uintptr that fits in int on all supported platforms
+		fmt.Println("Not Found Profile in config, init it at first")
+		tag, mid, promptErr := promptProfileInit()
+		if promptErr != nil {
+			return fmt.Errorf("profile init: %w", promptErr)
+		}
+		cfg.ProfileTag = tag
+		cfg.MachineID = mid
+		if writeErr := config.WriteConfigKey(paths, storePath, "profile_tag", tag); writeErr != nil {
+			slog.Warn("failed to persist profile_tag", "error", writeErr)
+		}
+		if writeErr := config.WriteConfigKey(paths, storePath, "machine_id", mid); writeErr != nil {
+			slog.Warn("failed to persist machine_id", "error", writeErr)
+		}
+		return nil
+	}
+
+	missing := make([]string, 0, 2)
+	if cfg.ProfileTag == "" {
+		missing = append(missing, "profile_tag")
+	}
+	if cfg.MachineID == "" {
+		missing = append(missing, "machine_id")
+	}
+	return hamserr.NewUserError(hamserr.ExitUsageError,
+		fmt.Sprintf("%s not configured and stdin is not a terminal", strings.Join(missing, " and ")),
+		"Set them explicitly (example):",
+		"  hams config set profile_tag macOS",
+		"  hams config set machine_id $(hostname)",
+		"Or pass --profile=<tag> on the command line; machine_id still needs to be configured",
+	)
 }
 
 // SetupLogging initializes logging from global flags and returns the cleanup function.

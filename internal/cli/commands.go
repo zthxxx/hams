@@ -57,7 +57,22 @@ Only resources already tracked in state are probed — no new resources are disc
 }
 
 func runRefresh(ctx context.Context, flags *provider.GlobalFlags, registry *provider.Registry, only, except string) (retErr error) {
+	// Same --only/--except exclusion as runApply — check before config
+	// load so a misconfigured store doesn't mask the args error.
+	if only != "" && except != "" {
+		return hamserr.NewUserError(hamserr.ExitUsageError,
+			"--only and --except are mutually exclusive",
+			"Use --only to include specific providers, or --except to exclude them",
+		)
+	}
 	paths := resolvePaths(flags)
+
+	// Mirror runApply: persist session logs to ${HAMS_DATA_HOME}/<YYYY-MM>/
+	// for refresh too, since it's equally long-running when many
+	// providers are probed in parallel.
+	cleanupLog := SetupLogging(flags)
+	defer cleanupLog()
+
 	cfg, err := config.Load(paths, flags.Store)
 	if err != nil {
 		return fmt.Errorf("loading config: %w", err)
@@ -119,10 +134,12 @@ func runRefresh(ctx context.Context, flags *provider.GlobalFlags, registry *prov
 	probeStart := time.Now()
 	probeResults := provider.ProbeAll(ctx, providers, stateDir, cfg.MachineID)
 	probeElapsed := time.Since(probeStart).Milliseconds()
+	var saveFailures []string
 	for name, sf := range probeResults {
 		statePath := filepath.Join(stateDir, name+".state.yaml")
 		if saveErr := sf.Save(statePath); saveErr != nil {
-			slog.Error("failed to save probed state", "provider", name, "error", saveErr)
+			slog.Error("failed to save probed state", "provider", name, "path", statePath, "error", saveErr)
+			saveFailures = append(saveFailures, name)
 		}
 	}
 
@@ -143,13 +160,32 @@ func runRefresh(ctx context.Context, flags *provider.GlobalFlags, registry *prov
 	// misleading "1 providers probed".
 	probed := len(probeResults)
 	planned := len(providers)
-	if probed == planned {
+	if probed == planned && len(saveFailures) == 0 {
 		fmt.Printf("Refresh complete: %d providers probed\n", planned)
+		return nil
+	}
+	// Partial failure: some providers couldn't probe or their state
+	// file couldn't be saved. Return ExitPartialFailure so scripts
+	// detect the anomaly; previously refresh returned nil (exit 0)
+	// despite the log line warning of errors — a silent-exit-0 UX
+	// bug matching the apply --dry-run drift fixed in cycle 39.
+	if probed == planned {
+		fmt.Printf("Refresh complete: %d providers probed, but %d state file(s) failed to save: %s\n",
+			planned, len(saveFailures), strings.Join(saveFailures, ", "))
 	} else {
 		fmt.Printf("Refresh complete: %d/%d providers probed (%d probe error(s); see log for details)\n",
 			probed, planned, planned-probed)
 	}
-	return nil
+	if len(saveFailures) > 0 {
+		fmt.Printf("Warning: %d state save failure(s): %s — next run may re-probe these\n",
+			len(saveFailures), strings.Join(saveFailures, ", "))
+	}
+	return hamserr.NewUserError(hamserr.ExitPartialFailure,
+		fmt.Sprintf("%d of %d providers failed to probe, %d state saves failed",
+			planned-probed, planned, len(saveFailures)),
+		"Check slog output above for the specific error(s)",
+		"Use '--debug' for detailed error output",
+	)
 }
 
 func configCmd() *cli.Command {
@@ -167,14 +203,38 @@ func configCmd() *cli.Command {
 					if loadErr != nil {
 						return fmt.Errorf("loading config: %w", loadErr)
 					}
-					fmt.Printf("Config home:       %s\n", logging.TildePath(paths.ConfigHome))
-					fmt.Printf("Data home:         %s\n", logging.TildePath(paths.DataHome))
-					fmt.Printf("Global config:     %s\n", logging.TildePath(paths.GlobalConfigPath()))
 					// Point users at their local overrides file — sensitive
 					// values (`hams config set notification.bark_token ...`)
 					// land there, and `hams config list` otherwise has no
 					// way to surface arbitrary sensitive keys.
 					localPath := localConfigPath(paths, cfg.StorePath)
+
+					if flags.JSON {
+						// Per cli-architecture spec §"Global flags" —
+						// --json is for machine parsing across commands.
+						// Text output stays as the default; JSON is opt-in.
+						data := map[string]any{
+							"config_home":       paths.ConfigHome,
+							"data_home":         paths.DataHome,
+							"global_config":     paths.GlobalConfigPath(),
+							"local_overrides":   localPath,
+							"profile_tag":       cfg.ProfileTag,
+							"machine_id":        cfg.MachineID,
+							"store_path":        cfg.StorePath,
+							"llm_cli":           cfg.LLMCLI,
+							"provider_priority": cfg.ProviderPriority,
+						}
+						out, mErr := json.MarshalIndent(data, "", "  ")
+						if mErr != nil {
+							return fmt.Errorf("marshaling config list JSON: %w", mErr)
+						}
+						fmt.Println(string(out))
+						return nil
+					}
+
+					fmt.Printf("Config home:       %s\n", logging.TildePath(paths.ConfigHome))
+					fmt.Printf("Data home:         %s\n", logging.TildePath(paths.DataHome))
+					fmt.Printf("Global config:     %s\n", logging.TildePath(paths.GlobalConfigPath()))
 					if localPath != "" {
 						fmt.Printf("Local overrides:   %s\n", logging.TildePath(localPath))
 					}
@@ -382,24 +442,94 @@ func storeCmd() *cli.Command {
 			)
 		}
 
-		fmt.Printf("Store path:    %s\n", logging.TildePath(storePath))
-		fmt.Printf("Profile dir:   %s\n", logging.TildePath(cfg.ProfileDir()))
-		fmt.Printf("State dir:     %s\n", logging.TildePath(cfg.StateDir()))
-
-		profileDir := cfg.ProfileDir()
-		entries, readErr := os.ReadDir(profileDir)
-		if readErr != nil {
-			fmt.Printf("Profile dir:   (not found)\n")
-			return nil //nolint:nilerr // intentional: missing profile dir is not an error
+		// If the configured store_path points at a non-existent
+		// directory, distinguish that from "store exists but profile
+		// subdir missing" — the latter is normal for a fresh store,
+		// the former means the user's config is pointing at nothing.
+		storeDirExists := true
+		if info, statErr := os.Stat(storePath); statErr != nil || !info.IsDir() {
+			storeDirExists = false
 		}
 
-		hamsfiles := 0
-		for _, e := range entries {
-			if !e.IsDir() && filepath.Ext(e.Name()) == ".yaml" {
-				hamsfiles++
+		// Per cli-architecture spec §"Store command", status SHALL
+		// display store path, active profile tag, machine-id, and any
+		// uncommitted changes to Hamsfiles.
+		profileDir := cfg.ProfileDir()
+
+		// Count hamsfiles (profile-dir missing → sentinel -1 so JSON
+		// output can represent the same semantic as the text "(profile
+		// dir not found)" message).
+		hamsfiles := -1
+		if entries, readErr := os.ReadDir(profileDir); readErr == nil {
+			hamsfiles = 0
+			for _, e := range entries {
+				if !e.IsDir() && filepath.Ext(e.Name()) == ".yaml" {
+					hamsfiles++
+				}
 			}
 		}
-		fmt.Printf("Hamsfiles:     %d\n", hamsfiles)
+
+		// Git status: probe only when the store is actually a git repo.
+		// Non-git stores leave gitStatus empty; JSON consumers can
+		// distinguish "not a git repo" from "clean".
+		gitStatus := ""
+		gitChanges := 0
+		if _, err := os.Stat(filepath.Join(storePath, ".git")); err == nil {
+			cmdCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			gs := exec.CommandContext(cmdCtx, "git", "-C", storePath, "status", "--short") //nolint:gosec // storePath is user-configured
+			out, gsErr := gs.Output()
+			switch {
+			case gsErr != nil:
+				gitStatus = fmt.Sprintf("command failed: %v", gsErr)
+			case len(out) == 0:
+				gitStatus = "clean"
+			default:
+				gitChanges = strings.Count(string(out), "\n")
+				gitStatus = fmt.Sprintf("%d uncommitted change(s)", gitChanges)
+			}
+		}
+
+		if flags.JSON {
+			data := map[string]any{
+				"store_path":        storePath,
+				"store_path_exists": storeDirExists,
+				"profile_tag":       cfg.ProfileTag,
+				"machine_id":        cfg.MachineID,
+				"profile_dir":       cfg.ProfileDir(),
+				"state_dir":         cfg.StateDir(),
+				"hamsfiles":         hamsfiles,
+				"git_status":        gitStatus,
+				"git_changes":       gitChanges,
+			}
+			out, mErr := json.MarshalIndent(data, "", "  ")
+			if mErr != nil {
+				return fmt.Errorf("marshaling store status JSON: %w", mErr)
+			}
+			fmt.Println(string(out))
+			return nil
+		}
+
+		if !storeDirExists {
+			fmt.Printf("Store path:    %s  (does NOT exist)\n", logging.TildePath(storePath))
+			fmt.Println("  The configured store_path points at a missing directory.")
+			fmt.Println("  Run 'hams store init' to create it, or fix store_path in hams.config.yaml.")
+			return nil
+		}
+
+		fmt.Printf("Store path:    %s\n", logging.TildePath(storePath))
+		fmt.Printf("Profile tag:   %s\n", cfg.ProfileTag)
+		fmt.Printf("Machine ID:    %s\n", cfg.MachineID)
+		fmt.Printf("Profile dir:   %s\n", logging.TildePath(cfg.ProfileDir()))
+		fmt.Printf("State dir:     %s\n", logging.TildePath(cfg.StateDir()))
+		if hamsfiles >= 0 {
+			fmt.Printf("Hamsfiles:     %d\n", hamsfiles)
+		} else {
+			fmt.Printf("Hamsfiles:     (profile dir not found)\n")
+		}
+		if gitStatus != "" {
+			fmt.Printf("Git status:    %s\n", gitStatus)
+		}
 
 		return nil
 	}
@@ -588,10 +718,37 @@ func storeCmd() *cli.Command {
 	}
 }
 
+// shortName extracts the human-facing resource name from an ID that
+// may be a full URN (urn:hams:<provider>:<name>) or a bare name.
+// Used by list --json's `name` field per the cli-architecture spec:
+// consumers that don't care about URN namespacing get just "htop"
+// from "urn:hams:apt:htop".
+func shortName(id string) string {
+	const prefix = "urn:hams:"
+	if !strings.HasPrefix(id, prefix) {
+		return id
+	}
+	// urn:hams:<provider>:<name> — split on the 3rd colon.
+	rest := strings.TrimPrefix(id, prefix)
+	_, name, ok := strings.Cut(rest, ":")
+	if !ok {
+		return id
+	}
+	return name
+}
+
 // listResource is used for JSON serialization of list output.
+// Field names follow the cli-architecture spec §"List in JSON format":
+// each element contains `provider`, `name`, `status`, `version` + extras.
+// `name` is the short resource identifier (e.g., "htop") extracted from
+// the URN; `id` is the full URN (e.g., "urn:hams:apt:htop") retained
+// for scripts that need a globally-unique handle. Both fields carry
+// the same info but at different granularity — consumers pick what
+// matches their schema.
 type listResource struct {
 	Provider    string `json:"provider"`
 	DisplayName string `json:"display_name"`
+	Name        string `json:"name"`
 	ID          string `json:"id"`
 	Status      string `json:"status"`
 	Version     string `json:"version,omitempty"`
@@ -627,15 +784,39 @@ func listCmd(registry *provider.Registry) *cli.Command {
 			statusFilter := cmd.String("status")
 			var statusSet map[string]bool
 			if statusFilter != "" {
+				// Validate against the defined ResourceState values so a
+				// typo like --status=failled doesn't silently produce
+				// "no managed resources found" — previously the typo
+				// matched zero resources and looked identical to an empty
+				// store to the user.
+				validStates := map[string]bool{
+					"ok": true, "failed": true, "pending": true,
+					"removed": true, "hook-failed": true,
+				}
 				statusSet = make(map[string]bool)
+				var unknown []string
 				for s := range strings.SplitSeq(statusFilter, ",") {
-					statusSet[strings.TrimSpace(s)] = true
+					trimmed := strings.TrimSpace(s)
+					if trimmed == "" {
+						continue
+					}
+					if !validStates[trimmed] {
+						unknown = append(unknown, trimmed)
+					}
+					statusSet[trimmed] = true
+				}
+				if len(unknown) > 0 {
+					return hamserr.NewUserError(hamserr.ExitUsageError,
+						fmt.Sprintf("unknown status value(s): %s", strings.Join(unknown, ", ")),
+						"Valid statuses: ok, failed, pending, removed, hook-failed",
+					)
 				}
 			}
 
 			stateDir := cfg.StateDir()
 			var jsonResults []listResource
 			printedAny := false
+			hadAnyResources := false // any provider had >0 pre-filter resources
 
 			for _, p := range providers {
 				manifest := p.Manifest()
@@ -654,6 +835,7 @@ func listCmd(registry *provider.Registry) *cli.Command {
 				if len(sf.Resources) == 0 {
 					continue
 				}
+				hadAnyResources = true
 
 				// Collect filtered resources for this provider.
 				var filteredIDs []string
@@ -674,13 +856,18 @@ func listCmd(registry *provider.Registry) *cli.Command {
 						jsonResults = append(jsonResults, listResource{
 							Provider:    manifest.Name,
 							DisplayName: displayName,
+							Name:        shortName(id),
 							ID:          id,
 							Status:      string(r.State),
 							Version:     r.Version,
 						})
 					}
 				} else {
-					fmt.Printf("\n%s (%d resources):\n", displayName, len(filteredIDs))
+					noun := "resources"
+					if len(filteredIDs) == 1 {
+						noun = "resource"
+					}
+					fmt.Printf("\n%s (%d %s):\n", displayName, len(filteredIDs), noun)
 					for _, id := range filteredIDs {
 						r := sf.Resources[id]
 						status := string(r.State)
@@ -704,13 +891,22 @@ func listCmd(registry *provider.Registry) *cli.Command {
 				}
 				fmt.Println(string(data))
 			} else if !printedAny {
-				// Empty-state message so users know the command worked but
-				// no state files contain resources matching the current
-				// filter. Silent exit 0 was indistinguishable from
-				// "command hung" or "wrong flag".
-				fmt.Println("No managed resources found.")
-				fmt.Println("Run 'hams <provider> install <package>' to start managing resources,")
-				fmt.Println("or 'hams apply' to replay configurations from the store.")
+				// Distinguish truly-empty state (no resources anywhere)
+				// from filter-matched-nothing (resources exist but a
+				// valid --status/--only/--except excluded them all).
+				// The original "no managed resources" message was
+				// misleading in the latter case.
+				switch {
+				case hadAnyResources:
+					fmt.Println("No resources match the current filter.")
+					if statusFilter != "" {
+						fmt.Printf("  --status=%q matched zero entries. Try without it or widen the set.\n", statusFilter)
+					}
+				default:
+					fmt.Println("No managed resources found.")
+					fmt.Println("Run 'hams <provider> install <package>' to start managing resources,")
+					fmt.Println("or 'hams apply' to replay configurations from the store.")
+				}
 			}
 
 			return nil

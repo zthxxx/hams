@@ -12,6 +12,7 @@ import (
 	gogit "github.com/go-git/go-git/v5"
 
 	"github.com/zthxxx/hams/internal/config"
+	hamserr "github.com/zthxxx/hams/internal/error"
 	"github.com/zthxxx/hams/internal/logging"
 )
 
@@ -19,15 +20,46 @@ import (
 // the local store path. Local paths are resolved first; if the path exists as a
 // directory with a .git folder, it is used directly. Otherwise, it is treated as
 // a remote URL (with GitHub shorthand expansion) and cloned.
+//
+// Input that clearly looks like a local path attempt (starts with `/`, `~/`,
+// `./`, `../`, or points at an existing directory) does NOT fall through to
+// remote cloning when resolveLocalRepo rejects it — otherwise a typo in the
+// local path turned into a confusing "authentication required" error against
+// https://github.com//<path>. Local-looking inputs now surface the real local
+// error (e.g., "not a git repository").
 func bootstrapFromRepo(repo string, paths config.Paths) (string, error) {
 	// Priority 1: check if repo is a local path.
-	if localPath, err := resolveLocalRepo(repo); err == nil {
+	localPath, err := resolveLocalRepo(repo)
+	if err == nil {
 		slog.Info("using local store repo", "path", logging.TildePath(localPath))
 		return localPath, nil
+	}
+	if isLocalPathAttempt(repo) {
+		return "", fmt.Errorf("resolving local store repo: %w", err)
 	}
 
 	// Priority 2: treat as remote URL (expand GitHub shorthand).
 	return cloneRemoteRepo(repo, paths)
+}
+
+// isLocalPathAttempt reports whether the input string unambiguously looks
+// like a local filesystem path — either prefixed with an explicit path
+// separator marker (`/`, `~/`, `./`, `../`) or naming an existing
+// filesystem entry. Ambiguous bare names like "user/repo" are NOT
+// considered local (they fall through to the GitHub-shorthand path).
+func isLocalPathAttempt(repo string) bool {
+	if strings.HasPrefix(repo, "/") ||
+		strings.HasPrefix(repo, "~/") ||
+		strings.HasPrefix(repo, "./") ||
+		strings.HasPrefix(repo, "../") {
+		return true
+	}
+	// Last resort: stat it. `user/repo` (GitHub shorthand) won't exist
+	// on disk so this check won't misfire for the common remote case.
+	if _, err := os.Stat(repo); err == nil {
+		return true
+	}
+	return false
 }
 
 // resolveLocalRepo checks if the given path is a local git repository.
@@ -102,12 +134,31 @@ func cloneRemoteRepo(repo string, paths config.Paths) (string, error) {
 		Progress: os.Stdout,
 	})
 	if err != nil {
-		return "", fmt.Errorf("cloning %s: %w", repoURL, err)
+		return "", transformCloneError(repoURL, err)
 	}
 
 	fmt.Printf("Download Hams Store success\n")
 	fmt.Printf("Profile Store is %s now\n\n", logging.TildePath(clonePath))
 	return clonePath, nil
+}
+
+// transformCloneError re-phrases go-git error messages that would
+// confuse users. Currently catches the "Repository not found"
+// signature (which go-git wraps as "authentication required: ...")
+// and returns a UserFacingError with actionable suggestions. Other
+// errors propagate verbatim with a short "cloning <url>:" prefix.
+// Extracted from cloneRemoteRepo so the error-transform branch is
+// directly unit-testable without network.
+func transformCloneError(repoURL string, err error) error {
+	if strings.Contains(err.Error(), "Repository not found") {
+		return hamserr.NewUserError(hamserr.ExitGeneralError,
+			fmt.Sprintf("repository %s not found or not accessible", repoURL),
+			"Verify the URL is correct (case-sensitive on GitHub)",
+			"For private repos: configure a git credential helper or use SSH URL",
+			"For local paths: use an absolute path starting with / or ~/",
+		)
+	}
+	return fmt.Errorf("cloning %s: %w", repoURL, err)
 }
 
 func resolveClonePath(repo string, paths config.Paths) string {

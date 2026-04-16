@@ -187,6 +187,170 @@ Spec corrections:
 
 Total commits in cycle 2: 15+ (still growing — iteration 3 adds hooks+OTel defer).
 
+### Cycle 75 — Non-TTY profile init: clear UserFacingError instead of cryptic EOF
+
+- [x] Real user-workflow bug: `runApply` called `promptProfileInit()` unconditionally when either `profile_tag` or `machine_id` was empty. On CI / cloud-init / piped-stdin invocations, bufio's `ReadString('\n')` immediately returned io.EOF and the error propagated as `"profile init: reading profile tag: EOF"` — users could not tell from the message that they needed to set profile_tag/machine_id explicitly. The `store init` command already had a TTY check (commands.go:571); `runApply` did not. Fix: extracted `ensureProfileConfigured(paths, storePath, cfg)` in apply.go that picks TTY prompt vs UserFacingError based on `term.IsTerminal(os.Stdin.Fd())`. Non-TTY path returns a `UserFacingError{Code: ExitUsageError}` whose message names exactly which keys are missing and whose suggestions teach `hams config set profile_tag <tag>` / `hams config set machine_id $(hostname)`. Refactor also silences a nestif complexity violation. Two regression tests: `TestRunApply_NonTTYWithoutProfileEmitsUserError` (both keys missing) and `TestRunApply_NonTTYWithProfileFlagButNoMachineID` (only machine_id missing after --profile override); both assert the error shape and that `EOF` never leaks into the surface. (commit `ce0c6b7`)
+
+### Cycle 74 — Coverage tests for config set gating and routing
+
+- [x] Two new tests in `internal/config/config_test.go`: `TestIsValidConfigKey` covers the whitelist used by `hams config set` (profile_tag, machine_id, store_path, store_repo, llm_cli — plus negative cases: typos, sensitive-pattern leaks, empty); `TestWriteConfigKey_GlobalVsLocal` covers the sensitive-vs-nonsensitive routing (non-sensitive → global YAML, sensitive like `notification.bark_token` → local YAML, with cross-file leak checks). Both functions were 0% covered despite being the core of `hams config set`. `internal/config` coverage: 77.4% → 88.3%. No behavior change — coverage only. (commit `4db29d5`)
+
+### Cycle 73 — Regression tests for cycle 72 error-transform + refactor
+
+- [x] Lifted the cycle-72 inline transform into a pure `transformCloneError(repoURL, err)` helper (was untestable inside cloneRemoteRepo because it shells out to a real git remote). Two unit tests: "Repository not found" gets *UserFacingError with 3 suggestions and no "authentication" leak; other errors (e.g. "dial tcp: connection refused") propagate verbatim with the url-prefix wrap. No behavior change — coverage only. (commit `e97b3f4`)
+
+### Cycle 72 — `--from-repo` friendly error for missing remote repo
+
+- [x] **Real UX confusion**: go-git reports missing public GitHub repos as "authentication required: Repository not found" — users chased credential issues when the real cause was a typo in the URL. Detect the "Repository not found" substring and emit a targeted UserFacingError with three suggestions (verify URL / configure git credentials for private / use absolute path for local). Other go-git errors still propagate verbatim. (commit `35443f5`)
+
+### Cycle 71 — `list --json` adds spec-required `name` field
+
+- [x] **Spec drift**: cli-architecture §"List in JSON format" says each element SHALL contain `provider`, `name`, `status`, `version`. My prior `listResource` had `id` (the full URN like `urn:hams:apt:htop`) but no short `name` — JSON consumers had to parse URNs themselves. Added `name` field via new `shortName(id)` helper that strips the `urn:hams:<provider>:` prefix; `id` retained for scripts that want the unique handle. Regression test covers 7 cases including bare names and malformed URNs. (commit `03dacc2`)
+
+### Cycle 70 — Regression test for cycle 69 missing-store_path detection
+
+- [x] `TestStoreStatus_MissingStorePath` asserts three invariants after pointing `store_path` at a ghost directory: (1) output contains "does NOT exist", (2) output contains "hams store init" suggestion, (3) the normal "Profile tag:" / "Machine ID:" status block is suppressed (so misleading derived paths don't appear). (commit `1aa47a6`)
+
+### Cycle 69 — `store status` detects non-existent `store_path`
+
+- [x] If `store_path` pointed at a missing directory, `store status` printed derived paths + "Hamsfiles: (profile dir not found)" with no indication that the ROOT was missing. Added an upfront `os.Stat` probe; text mode emits a loud "(does NOT exist)" header + actionable hints (`store init` or fix config), JSON mode exposes `store_path_exists: bool`. Normal-case output unchanged. (commit `20df10c`)
+
+### Cycle 68 — Regression test for cycle 67 dual-sink slog
+
+- [x] `TestSetup_DualSink` redirects `os.Stderr` to a pipe, calls Setup, emits a `slog.Info` with a SIGIL marker, drains both sinks, asserts both captured it. Prevents a future refactor from silently dropping either sink (live feedback OR persistent capture). (commit `54ec4df`)
+
+### Cycle 67 — Dual-sink slog: stderr AND file (fix for cycle 65 regression)
+
+- [x] **Caught my own bug**: `logging.Setup` replaced the default slog handler with one writing ONLY to the file. After cycle 65 wired this into apply/refresh, users saw no live progress — `hams apply` appeared to hang while silently writing to the log file. Swapped the handler's writer for `io.MultiWriter(os.Stderr, logFile)` so both destinations receive the same output. Live feedback restored, file capture preserved. (commit `68e66ab`)
+
+### Cycle 66 — Regression test for cycle 65 log-file wiring
+
+- [x] `TestRunRefresh_CreatesSessionLogFile` asserts runRefresh creates the month-bucket log file at `${HAMS_DATA_HOME}/<YYYY-MM>/hams.<YYYYMM>.log` with non-zero content. Even the no-providers-match early-return path triggers SetupLogging first, so the regression guard covers the common case. (commit `4dd1338`)
+
+### Cycle 65 — `SetupLogging` wired into apply+refresh
+
+- [x] **Real scaffolded-but-unwired finding**: `cli.SetupLogging` was defined but had ZERO callers. Users got stderr output only — no rolling log file at `${HAMS_DATA_HOME}/<YYYY-MM>/hams.<YYYYMM>.log` despite spec references and the tui-logging "sticky header shows log file path" scenario pre-supposing its existence. Wired into `runApply` + `runRefresh` with deferred cleanup; short read-only commands (list, config get, version) unchanged. Verified apply dry-run now creates the file with session slog lines. (commit `dddecb0`)
+
+### Cycle 64 — notify Channel.Name() contracts (52% → 60%)
+
+- [x] Added `TestDesktopNotifier_Name` and `TestBarkChannel_Name` covering the previously 0%-covered `.Name()` methods (used by Manager.Notify's per-channel slog.Info). `Bark.Send()` intentionally left uncovered — DI'ing the hardcoded https URL now would lock an API shape before v1.1 un-defers the notification wiring. Added a clear comment pointing to the deferral. (commit `18dc477`)
+
+### Cycle 63 — state ResourceOptions + FormatPID tests (72.6% → 84.1%)
+
+- [x] `WithValue`, `WithCheckCmd`, `WithCheckStdout`, `FormatPID` were all at 0%. Added table-driven `TestResourceOptions_Values` covering all three setters, and `TestFormatPID` covering both the bare-int fallback (negative PID) and the `/proc/<pid>/cmdline` happy path via `os.Getpid()`. (commit `7eb825f`)
+
+### Cycle 62 — i18n Tf nil-localizer fallback (90.7% → 92%)
+
+- [x] `Tf` has an early-return branch when `localizer` is nil (Init not called / failed). Every UI caller depends on it passing through the msgID rather than panicking. Added regression test that swaps `localizer = nil` and asserts the guarantee. (commit `8dac8ad`)
+
+### Cycle 61 — `LoadOrCreateEmpty` + `ListApps` coverage (74% → 82%)
+
+- [x] Both public helpers were at 0% despite being called by every provider. Added 5 tests: missing-file creates parent dir and returns fresh File; existing-file loads apps verbatim; parent-is-a-file surfaces ENOTDIR; ListApps walks all tags and returns both `app:` and `urn:` values; empty/nil-root returns nil without panic. (commit `f147c80`)
+
+### Cycle 60 — `store status --json` emits machine-parseable payload
+
+- [x] Matches cycle 59's pattern. Refactored status computation (hamsfiles count, git status, git changes count) into local variables, then branch on flags.JSON. Added `git_changes` as an integer so scripts can detect "any uncommitted changes?" without parsing the string. (commit `6a3db54`)
+
+### Cycle 59 — `config list --json` emits machine-parseable output
+
+- [x] `--json` global flag was honored by `hams list` and error output, but `hams config list --json` silently printed text. Added a flat JSON object emission covering the same fields as text output. Text path unchanged. (commit `5cfc09e`)
+
+### Cycle 58 — Regression test for cycle 55 filter-excluded distinction
+
+- [x] `TestList_FilterExcludedAll_DistinctMessage` seeds a state with one ok resource, runs `list --status=hook-failed`, asserts the filter-excluded message appears and the empty-store install hint does NOT. (commit `267d9f4`)
+
+### Cycle 57 — Regression tests for cycle 56 store status
+
+- [x] `TestStoreStatus_SpecCompliantOutput` asserts the four spec-required lines (store path, profile tag, machine-id, hamsfiles) appear. `TestStoreStatus_WithGitRepo` `git init`s the store, runs status, asserts the Git status line is present with "uncommitted" or "clean". (commit `8c0fe48`)
+
+### Cycle 56 — `store status` surfaces profile tag, machine-id, git changes
+
+- [x] Spec drift (cli-architecture §"Store command"): spec required `hams store status` to display profile tag, machine-id, and git status; impl only printed store path + derived profile/state dirs + hamsfile count. Added explicit `Profile tag:` / `Machine ID:` lines and a conditional `Git status:` line (clean / N changes / fail-open on non-git stores). 5s timeout on the git call guards against hangs. (commit `979c012`)
+
+### Cycle 55 — `list` distinguishes empty-state from filter-excluded-all
+
+- [x] `hams list --status=hook-failed` against a store with 5 tracked resources (none in that status) printed "No managed resources found. Run 'hams install ...'" — misleading because the user HAS resources. Added `hadAnyResources` tracker; split the final output into two branches (truly-empty vs. filter-matched-zero) with appropriate hints. (commit `dc28d96`)
+
+### Cycle 54 — `--status` filter validates values
+
+- [x] `hams list --status=failled` (typo) silently matched zero resources and printed "No managed resources found" — indistinguishable from an empty store. Validated each comma-separated value against the 5 defined `ResourceState` constants; typos return `ExitUsageError` with the unknown value and the valid-state list. Multi-value filters still work. (commit `4e399a8`)
+
+### Cycle 53 — Panic recovery in parallel Probe goroutines
+
+- [x] Matches cycle 51's pattern but for `ProbeAll`: a panic in any provider's Probe would take down the whole parallel refresh, even though healthy providers' probes had completed. `defer recover()` in each goroutine body now logs the panic and omits the provider from the results map — runRefresh (cycle 40) surfaces the mismatch via ExitPartialFailure. (commit `6752155`)
+
+### Cycle 52 — `brew untap` for tap removals (was silently broken)
+
+- [x] **Real UX bug**: Homebrew's `Remove` always called `brew uninstall <id>`. For tap-format IDs (`user/repo`), brew rejects that with "No installed keg or cask" — so a user who deleted `homebrew/cask-fonts` from their hamsfile saw the removal marked as failed forever; the tap stayed registered. Added `Untap` to `CmdRunner` (real + fake) and routed Remove through it when `isTapFormat` is true. Tests U11/U12 lock both branches. (commit `5fab924`)
+
+### Cycle 51 — Panic recovery in apply loop (data-integrity)
+
+- [x] **Real data-integrity issue** (from agent-assisted audit): if a provider's Apply method panics mid-loop (buggy provider, OOM in runner), in-memory state updates for successful actions were lost because `sf.Save` hadn't run. Next apply would re-attempt already-installed resources. Wrapped each provider's Execute+Save in an IIFE with `defer recover()`: log panic context → best-effort `sf.Save` → re-throw panic. Regression test simulates a provider succeeding on action 1 then panicking on action 2, asserts state contains action 1. (commit `27bbb35`)
+
+### Cycle 50 — Regression test for cycle 49 store_repo resolution
+
+- [x] `TestRunApply_AutoResolvesStoreFromConfigRepo` asserts runApply resolves the store via `store_repo` when no `--from-repo`/`--store`/`store_path` is set. Uses a local bare-repo fixture so the test is network-free. (commit `7bb688f`)
+
+### Cycle 49 — `store_repo` config field actually used
+
+- [x] **Real spec drift**: schema-design spec lists `store_repo` as a REQUIRED config field that "points to the hams store repository". But the impl only read it back via `config get store_repo` for display — never used it to resolve the store. Users who followed the spec saw "no store configured" despite having it set. Fixed: when no `--from-repo`/`--store`/`store_path` is present, `store_repo` is now treated as the effective `--from-repo` (lowest precedence). (commit `b035a03`)
+
+### Cycle 48 — `runRefresh` test coverage (45.8% → 49.8%)
+
+- [x] `runRefresh` had zero coverage despite being a top-level command. Added three tests: flag-exclusion (cycle 38), no-providers-match happy path, and ExitPartialFailure on state-load corruption (cycles 40/43/47 regression guard). (commit `350ed9a`)
+
+### Cycle 47 — Remaining silent state-save failures propagated
+
+- [x] Two more silent-log save paths after cycle 46: (1) apply's pre-apply refresh phase called sf.Save with log-only failure — now appends to the same `stateSaveFailures` slice so the final summary covers both probe-phase and install-phase save failures. (2) runRefresh's own probe loop had the same silent-log pattern — added a `saveFailures` slice, extended the "Refresh complete" output to show save failures alongside probe failures, returns ExitPartialFailure. After cycles 39/40/43/46/47 every state.Save/state.Load failure surfaces to exit code + terminal. (commit `89553b0`)
+
+### Cycle 46 — State-save failures reported in final summary
+
+- [x] After a successful install, if `sf.Save()` fails (disk full, mid-run permission change), only a slog.Error fired and apply reported "complete" with exit 0 — scripts couldn't detect state drift. Now tracked in a `stateSaveFailures` slice, surfaced in the final summary with a user-friendly hint about "next apply may re-execute these resources", and included in the ExitPartialFailure condition. (commit `fdc09cd`)
+
+### Cycle 45 — State-corruption fix propagated to CLI handlers (apt, brew)
+
+- [x] Same silent-reset bug as cycle 43 in the per-provider CLI paths (`hams apt install`, `hams brew list`). apt's `loadOrCreateStateFile` changed signature from `*state.File` → `(*state.File, error)`; missing-file still synthesizes, corruption propagates with path context. homebrew's `handleList` now returns the wrapped error instead of silently showing "all desired as additions". Together with cycle 43, every production state.Load call distinguishes ErrNotExist from destructive errors. (commit `667552b`)
+
+### Cycle 44 — Regression test for cycle 43 state-corruption fix
+
+- [x] `TestApply_CorruptedStateFile_SkipsProviderNotSilentReset` asserts three invariants: (1) runApply returns `ExitPartialFailure`, not nil; (2) zero apply actions ran against the synthesized-empty state; (3) the corrupt state file is preserved verbatim on disk so users can inspect it. (commit `4c888ee`)
+
+### Cycle 43 — Silent state-reset on corrupted state file (CRITICAL DATA)
+
+- [x] **Real data-integrity bug**: `state.Load` returns a wrapped error for any read/parse failure. Both `apply.go` and `probe.go` swallowed all errors and substituted `state.New()` — a corrupted state file would silently reset to empty, losing drift tracking for every tracked resource and potentially re-triggering installs. Distinguished `errors.Is(err, fs.ErrNotExist)` (first-run, OK) from other errors (corruption, permission). Corrupt state now skips the provider with a clear ERROR log and surfaces via the cycle 39/40 ExitPartialFailure flow. (commit `5fac677`)
+
+### Cycle 42 — git-clone Plan coverage (23% → 43%)
+
+- [x] 3 tests for git-clone's Plan + cloneParseResources: structured-fields path, legacy `"remote -> path"` scalar fallback, non-mapping-root error. Biggest git-provider coverage uplift in this run — remaining uncovered code (Apply/handleAdd/HandleCommand) needs real git execution and is covered by Docker integration tests. (commit `4e07068`)
+
+### Cycle 41 — regression test for cycle 39 dry-run exit semantics
+
+- [x] Added `TestApply_DryRun_SkippedProvider_ReturnsPartialFailure` — simulates a provider whose Plan returns an error and asserts runApply returns `*UserFacingError{Code: ExitPartialFailure}` whose message mentions "dry-run". Locks in the cycle 39 fix from the test side. (commit `fbc23e2`)
+
+### Cycle 40 — `refresh` returns non-zero when probes fail
+
+- [x] **Twin of cycle 39** — `hams refresh` printed "(1 probe error(s); see log for details)" but returned nil (exit 0). Scripts couldn't detect probe failures. Now returns ExitPartialFailure with a slog-pointer suggestion. Happy-path unchanged. (commit `795aca1`)
+
+### Cycle 39 — `apply --dry-run` reports skipped providers
+
+- [x] **Real silent bug**: `hams apply --dry-run` exited 0 even when a hamsfile failed to parse. CI preview scripts missed broken hamsfiles until the actual apply ran. Non-dry-run correctly returned ExitPartialFailure; dry-run silently swallowed it. Parity restored: dry-run now prints the skipped-provider warning AND returns ExitPartialFailure with a targeted suggestion. (commit `68bf644`)
+
+### Cycle 38 — `--only`/`--except` exclusion checked before config load
+
+- [x] `hams apply --only=X --except=Y` with no store returned "no store configured" first, then the user fixed it and got "mutually exclusive" on the second attempt. Moved the exclusion check to the top of runApply/runRefresh (alongside the existing `--bootstrap/--no-bootstrap` check). Downstream filterProviders still guards for programmatic callers. (commit `26d5117`)
+
+### Cycle 37 — homebrew Plan + caskApps coverage (49.3% → 57.0%)
+
+- [x] 4-app hamsfile (2 cli + 2 cask) asserts that Plan correctly attaches `BrewResource{IsCask:true}` to cask-tagged packages (needed by Apply's `--cask` injection) and leaves cli-tagged packages with nil Resource. Also covers the empty-Root short-circuit. (commit `6d28ca8`)
+
+### Cycle 36 — `hams list` singular/plural grammar
+
+- [x] `hams list` printed "apt (1 resources):" for a single resource. Tiny but visible polish. Branch on `len(filteredIDs) == 1` for "resource" vs "resources". Also fixed a stray bare URL in AGENTS.md from cycle 35. (commit `0d6adfe`)
+
+### Cycle 35 — `--from-repo=/local/path` surfaces local errors
+
+- [x] `hams apply --from-repo=/tmp/not-a-git-repo` printed a misleading "cloning `https://github.com//tmp/...`: Repository not found" because local-repo failure fell through to the GitHub-shorthand path. Added `isLocalPathAttempt()` to distinguish unambiguously-local inputs (prefix `/`, `~/`, `./`, `../`, or stat-visible) from remote shorthand. Local-looking inputs now surface the real local error. Regression test covers 3 cases. (commit `fa414e1`)
+
 ### Cycle 34 — selfupdate 0%-entry-point tests (68.9% → 76.4%)
 
 - [x] 3 tests for `NewUpdater`, `CurrentVersion`, `LatestRelease`. `LatestRelease` gets a full httptest round-trip asserting both Version and Assets are mapped from the GitHub API JSON — complements the existing `LatestVersion` tests that only covered tag-name extraction. (commit `c19b6c2`)

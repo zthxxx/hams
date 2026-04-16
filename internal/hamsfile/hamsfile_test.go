@@ -516,3 +516,105 @@ func TestAddAppWithFields_EmptyExtrasOnExistingIsNoop(t *testing.T) {
 		t.Errorf("empty source extra leaked into YAML: %q", body)
 	}
 }
+
+// TestLoadOrCreateEmpty_MissingFile asserts the create-empty branch:
+// a non-existent path returns a fresh in-memory File rooted at the
+// requested path. The caller persists via Write(). This is the path
+// every provider's `loadOrCreateHamsfile` hits on first install.
+func TestLoadOrCreateEmpty_MissingFile(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "never-existed.hams.yaml")
+
+	f, err := LoadOrCreateEmpty(path)
+	if err != nil {
+		t.Fatalf("LoadOrCreateEmpty on missing file: %v", err)
+	}
+	if f == nil {
+		t.Fatal("returned nil File")
+	}
+	if f.Path != path {
+		t.Errorf("Path = %q, want %q", f.Path, path)
+	}
+	if f.Root == nil {
+		t.Error("Root should be a fresh document node, not nil")
+	}
+	// The parent directory must be auto-created so Write() later doesn't
+	// fail with ENOENT.
+	if _, statErr := os.Stat(filepath.Dir(path)); statErr != nil {
+		t.Errorf("parent dir should exist after LoadOrCreateEmpty: %v", statErr)
+	}
+}
+
+// TestLoadOrCreateEmpty_ExistingFile asserts the read path: an
+// existing hamsfile is loaded verbatim, not replaced with empty.
+func TestLoadOrCreateEmpty_ExistingFile(t *testing.T) {
+	path := writeTempFile(t, sampleYAML)
+	f, err := LoadOrCreateEmpty(path)
+	if err != nil {
+		t.Fatalf("LoadOrCreateEmpty: %v", err)
+	}
+	apps := f.ListApps()
+	if len(apps) != 3 {
+		t.Errorf("expected 3 apps from sample YAML, got %d: %v", len(apps), apps)
+	}
+}
+
+// TestLoadOrCreateEmpty_NonExistFileSurfacesOtherErrors asserts
+// that non-ErrNotExist errors propagate (e.g., a path whose PARENT
+// is a regular file → mkdir fails with ENOTDIR).
+func TestLoadOrCreateEmpty_NonMissingErrorPropagates(t *testing.T) {
+	dir := t.TempDir()
+	// Create a regular file at <dir>/block so <dir>/block/x.yaml
+	// can't be created (parent is a file, not a dir).
+	blocker := filepath.Join(dir, "block")
+	if err := os.WriteFile(blocker, []byte("x"), 0o600); err != nil {
+		t.Fatalf("seed blocker: %v", err)
+	}
+	_, err := LoadOrCreateEmpty(filepath.Join(blocker, "child.hams.yaml"))
+	if err == nil {
+		t.Error("expected error when parent path is a file")
+	}
+}
+
+// TestListApps_MultipleTagsAndFields asserts that ListApps returns
+// every `app:` and `urn:` value across all top-level tags, regardless
+// of extra fields in each entry.
+func TestListApps_MultipleTagsAndFields(t *testing.T) {
+	const yamlDoc = `dev:
+  - app: htop
+    intro: process viewer
+  - app: jq
+cli:
+  - urn: urn:hams:apt:curl
+    version: "8.0"
+`
+	path := writeTempFile(t, yamlDoc)
+	f, err := Read(path)
+	if err != nil {
+		t.Fatalf("Read: %v", err)
+	}
+	apps := f.ListApps()
+	want := map[string]bool{"htop": true, "jq": true, "urn:hams:apt:curl": true}
+	if len(apps) != len(want) {
+		t.Fatalf("got %d apps, want %d: %v", len(apps), len(want), apps)
+	}
+	for _, a := range apps {
+		if !want[a] {
+			t.Errorf("unexpected app %q", a)
+		}
+	}
+}
+
+// TestListApps_EmptyAndMalformed asserts that ListApps returns nil
+// on an empty/malformed root without panicking.
+func TestListApps_EmptyAndMalformed(t *testing.T) {
+	empty := NewEmpty("x.yaml")
+	if got := empty.ListApps(); len(got) != 0 {
+		t.Errorf("empty hamsfile should have no apps, got %v", got)
+	}
+
+	nilRoot := &File{Path: "x.yaml"}
+	if got := nilRoot.ListApps(); got != nil {
+		t.Errorf("nil-root File should return nil apps, got %v", got)
+	}
+}

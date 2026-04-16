@@ -216,3 +216,19 @@ func TestTf_WithTemplateData(t *testing.T) {
 		t.Errorf("Tf(\"unknown.key\") = %q, want key passthrough", got)
 	}
 }
+
+// TestTf_NilLocalizerFallsBackToMsgID asserts the early-return
+// branch of Tf: when Init() hasn't been called (or failed), the
+// package-level `localizer` is nil. Callers of Tf must get the
+// msgID back — NOT a panic. Previously 0% on that branch.
+func TestTf_NilLocalizerFallsBackToMsgID(t *testing.T) {
+	// Swap out any existing localizer to simulate "Init not called".
+	orig := localizer
+	localizer = nil
+	t.Cleanup(func() { localizer = orig })
+
+	got := Tf("some.key", map[string]any{"k": "v"})
+	if got != "some.key" {
+		t.Errorf("Tf with nil localizer = %q, want msgID passthrough", got)
+	}
+}

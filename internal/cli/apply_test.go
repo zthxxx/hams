@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -13,6 +14,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
+	hamserr "github.com/zthxxx/hams/internal/error"
 	"github.com/zthxxx/hams/internal/hamsfile"
 	"github.com/zthxxx/hams/internal/provider"
 	"github.com/zthxxx/hams/internal/state"
@@ -537,5 +539,286 @@ func TestApply_PruneOrphans_HamsfilePresent_DoesNotPrune(t *testing.T) {
 	r := sf.Resources["htop"]
 	if r.State != state.StateOK {
 		t.Errorf("htop.State = %q, want %q (still declared, must not transition)", r.State, state.StateOK)
+	}
+}
+
+// TestApply_ProviderPanic_FlushesStateBeforeUnwinding asserts cycle-51:
+// if a provider's Apply method panics mid-loop (buggy provider, OOM in
+// runner, etc.), any in-memory state changes from actions that DID
+// complete before the panic are flushed to disk before the process
+// unwinds. Without the recover-and-save guard, a panic after installing
+// N of M actions would lose the state updates, causing next apply to
+// re-attempt already-installed resources.
+func TestApply_ProviderPanic_FlushesStateBeforeUnwinding(t *testing.T) {
+	_, profileDir, stateDir, flags := setupApplyTestEnv(t, []string{"apt"})
+	hamsfilePath := filepath.Join(profileDir, "apt.hams.yaml")
+	writeApplyTestFile(t, hamsfilePath, "packages:\n  - app: first\n  - app: second\n")
+
+	// Provider returns two Install actions; Apply succeeds for "first"
+	// (updates in-memory state) and panics on "second".
+	applyCount := 0
+	p := &applyTestProvider{
+		manifest: provider.Manifest{
+			Name: "apt", DisplayName: "apt", FilePrefix: "apt",
+			Platforms: []provider.Platform{provider.PlatformAll},
+		},
+		planFn: func(_ context.Context, _ *hamsfile.File, _ *state.File) ([]provider.Action, error) {
+			return []provider.Action{
+				{ID: "first", Type: provider.ActionInstall},
+				{ID: "second", Type: provider.ActionInstall},
+			}, nil
+		},
+		applyFn: func(_ context.Context, a provider.Action) error {
+			applyCount++
+			if a.ID == "second" {
+				panic("synthesized provider panic")
+			}
+			return nil
+		},
+	}
+	registry := provider.NewRegistry()
+	if err := registry.Register(p); err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+
+	// The panic must propagate (we re-throw after saving), so catch it
+	// in the test and assert both the recovery and state-on-disk.
+	defer func() {
+		r := recover()
+		if r == nil {
+			t.Fatal("expected panic to propagate after state flush")
+		}
+
+		// State must have been flushed to disk with the successful
+		// "first" entry — otherwise the next apply would re-install it.
+		statePath := filepath.Join(stateDir, "apt.state.yaml")
+		sf, loadErr := state.Load(statePath)
+		if loadErr != nil {
+			t.Fatalf("state file not written after panic: %v", loadErr)
+		}
+		if _, ok := sf.Resources["first"]; !ok {
+			t.Errorf("state should contain successfully-installed 'first'; got %v", sf.Resources)
+		}
+		if applyCount != 2 {
+			t.Errorf("Apply should have run twice (success + panic); got %d", applyCount)
+		}
+	}()
+
+	//nolint:errcheck // we expect runApply to panic before returning; the deferred recover verifies
+	runApply(context.Background(), flags, registry, sudo.NoopAcquirer{}, "", true, "", "", false, bootstrapMode{})
+	t.Fatal("runApply should have panicked; reached unreachable line")
+}
+
+// TestApply_CorruptedStateFile_SkipsProviderNotSilentReset locks in
+// the cycle-43 data-integrity fix: when the state file exists but
+// is unparseable (corruption, merge conflict, editor crash), apply
+// MUST NOT silently replace it with an empty state. Doing so would
+// lose drift detection for every tracked resource and potentially
+// re-trigger installs. The provider should be skipped and reported
+// via ExitPartialFailure, exactly like cycle 39's broken-hamsfile
+// path.
+func TestApply_CorruptedStateFile_SkipsProviderNotSilentReset(t *testing.T) {
+	_, profileDir, stateDir, flags := setupApplyTestEnv(t, []string{"apt"})
+	hamsfilePath := filepath.Join(profileDir, "apt.hams.yaml")
+	writeApplyTestFile(t, hamsfilePath, "packages:\n  - app: htop\n")
+
+	// Create a state file with corrupt YAML — parse will fail but the
+	// file exists (so we're NOT in the ErrNotExist fallback branch).
+	statePath := filepath.Join(stateDir, "apt.state.yaml")
+	if err := os.MkdirAll(stateDir, 0o750); err != nil {
+		t.Fatalf("mkdir state: %v", err)
+	}
+	writeApplyTestFile(t, statePath, "this is : totally : broken : yaml :")
+
+	var applied []provider.Action
+	p := &applyTestProvider{
+		manifest: provider.Manifest{
+			Name: "apt", DisplayName: "apt", FilePrefix: "apt",
+			Platforms: []provider.Platform{provider.PlatformAll},
+		},
+		planFn: func(_ context.Context, _ *hamsfile.File, _ *state.File) ([]provider.Action, error) {
+			return []provider.Action{{ID: "htop", Type: provider.ActionInstall}}, nil
+		},
+		applyFn: func(_ context.Context, a provider.Action) error {
+			applied = append(applied, a)
+			return nil
+		},
+	}
+	registry := provider.NewRegistry()
+	if err := registry.Register(p); err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+
+	err := runApply(context.Background(), flags, registry, sudo.NoopAcquirer{}, "", true, "", "", false, bootstrapMode{})
+	if err == nil {
+		t.Fatal("expected ExitPartialFailure when state is corrupted; got nil")
+	}
+	var ufe *hamserr.UserFacingError
+	if !errors.As(err, &ufe) || ufe.Code != hamserr.ExitPartialFailure {
+		t.Fatalf("expected *UserFacingError{ExitPartialFailure}; got %v (type %T)", err, err)
+	}
+
+	// The critical assertion: NO apply actions ran. Silent-reset
+	// behavior would have produced an action for "htop" against the
+	// synthesized empty state.
+	if len(applied) != 0 {
+		t.Errorf("corrupted state must skip provider, not apply %d actions: %+v", len(applied), applied)
+	}
+
+	// And the state file on disk must still contain the corrupt
+	// content — hams hasn't overwritten it with an empty state.
+	contents, readErr := os.ReadFile(statePath)
+	if readErr != nil {
+		t.Fatalf("state file missing after run (should be preserved): %v", readErr)
+	}
+	if !strings.Contains(string(contents), "totally : broken") {
+		t.Errorf("state file was rewritten; expected corrupt contents preserved, got %q", contents)
+	}
+}
+
+// TestApply_DryRun_SkippedProvider_ReturnsPartialFailure locks in the
+// cycle 39 fix: when dry-run planning encounters a broken hamsfile
+// (here, the provider's Plan returns an error), the skipped-providers
+// branch must return ExitPartialFailure — NOT silently exit 0.
+// CI preview scripts depend on this semantic.
+func TestApply_DryRun_SkippedProvider_ReturnsPartialFailure(t *testing.T) {
+	_, profileDir, _, flags := setupApplyTestEnv(t, []string{"apt"})
+	hamsfilePath := filepath.Join(profileDir, "apt.hams.yaml")
+	writeApplyTestFile(t, hamsfilePath, "packages:\n  - app: htop\n")
+
+	registry := provider.NewRegistry()
+	planErr := errors.New("synthesized: plan failed")
+	p := &applyTestProvider{
+		manifest: provider.Manifest{
+			Name: "apt", DisplayName: "apt", FilePrefix: "apt",
+			Platforms: []provider.Platform{provider.PlatformAll},
+		},
+		planFn: func(_ context.Context, _ *hamsfile.File, _ *state.File) ([]provider.Action, error) {
+			return nil, planErr
+		},
+	}
+	if err := registry.Register(p); err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+
+	flags.DryRun = true
+	err := runApply(context.Background(), flags, registry, sudo.NoopAcquirer{}, "", true, "", "", false, bootstrapMode{})
+	if err == nil {
+		t.Fatal("dry-run should return an error when a provider is skipped; got nil")
+	}
+	var ufe *hamserr.UserFacingError
+	if !errors.As(err, &ufe) {
+		t.Fatalf("expected *UserFacingError, got %T: %v", err, err)
+	}
+	if ufe.Code != hamserr.ExitPartialFailure {
+		t.Errorf("Code = %d, want ExitPartialFailure (%d)", ufe.Code, hamserr.ExitPartialFailure)
+	}
+	if !strings.Contains(ufe.Message, "dry-run") {
+		t.Errorf("message should mention dry-run; got %q", ufe.Message)
+	}
+}
+
+// TestRunApply_NonTTYWithoutProfileEmitsUserError asserts cycle 75:
+// when stdin is not a terminal AND profile_tag/machine_id are
+// unconfigured, runApply MUST NOT invoke the interactive prompt
+// (which would read EOF and surface as
+// "profile init: reading profile tag: EOF"). Instead it returns a
+// *UserFacingError with ExitUsageError whose message names the
+// missing keys and whose suggestions show how to set them.
+//
+// This is the CI / cloud-init path: users pipe the command from a
+// script with /dev/null on stdin. Go's test runner also has a
+// non-TTY stdin by default, so this test exercises exactly that
+// environment without additional plumbing.
+func TestRunApply_NonTTYWithoutProfileEmitsUserError(t *testing.T) {
+	configHome := t.TempDir()
+	dataHome := t.TempDir()
+	storeDir := t.TempDir()
+	t.Setenv("HAMS_CONFIG_HOME", configHome)
+	t.Setenv("HAMS_DATA_HOME", dataHome)
+
+	// Empty global config — no profile_tag, no machine_id.
+	writeApplyTestFile(t, filepath.Join(configHome, "hams.config.yaml"), "")
+	// Store exists and points somewhere; keeps runApply past the
+	// earlier "no store" check so the profile-missing branch is
+	// actually reached.
+	writeApplyTestFile(t, filepath.Join(storeDir, "hams.config.yaml"),
+		"store_path: "+storeDir+"\n")
+
+	flags := &provider.GlobalFlags{Store: storeDir}
+	registry := provider.NewRegistry()
+
+	err := runApply(context.Background(), flags, registry,
+		sudo.NoopAcquirer{}, "", true, "", "", false, bootstrapMode{})
+	if err == nil {
+		t.Fatal("expected error when profile_tag/machine_id missing on non-TTY; got nil")
+	}
+	var ufe *hamserr.UserFacingError
+	if !errors.As(err, &ufe) {
+		t.Fatalf("want *UserFacingError, got %T: %v", err, err)
+	}
+	if ufe.Code != hamserr.ExitUsageError {
+		t.Errorf("Code = %d, want ExitUsageError (%d)", ufe.Code, hamserr.ExitUsageError)
+	}
+	// Message must name the missing keys so users know what to fix.
+	if !strings.Contains(ufe.Message, "profile_tag") {
+		t.Errorf("message should name profile_tag; got %q", ufe.Message)
+	}
+	if !strings.Contains(ufe.Message, "machine_id") {
+		t.Errorf("message should name machine_id; got %q", ufe.Message)
+	}
+	if !strings.Contains(ufe.Message, "stdin is not a terminal") {
+		t.Errorf("message should explain non-TTY cause; got %q", ufe.Message)
+	}
+	// Suggestions must teach the fix.
+	joined := strings.Join(ufe.Suggestions, "\n")
+	if !strings.Contains(joined, "config set profile_tag") {
+		t.Errorf("suggestions should recommend `hams config set profile_tag`; got %v", ufe.Suggestions)
+	}
+	if !strings.Contains(joined, "config set machine_id") {
+		t.Errorf("suggestions should recommend `hams config set machine_id`; got %v", ufe.Suggestions)
+	}
+	// And the error MUST NOT contain the confusing EOF surface.
+	if strings.Contains(err.Error(), "EOF") {
+		t.Errorf("error should not leak `EOF`; got %q", err.Error())
+	}
+}
+
+// TestRunApply_NonTTYWithProfileFlagButNoMachineID asserts that
+// --profile alone doesn't bypass the machine_id requirement — the
+// error still surfaces with ExitUsageError and names machine_id.
+// Without this, users would set --profile=macOS, still hit the
+// prompt on the machine_id field, and see the same cryptic EOF
+// error.
+func TestRunApply_NonTTYWithProfileFlagButNoMachineID(t *testing.T) {
+	configHome := t.TempDir()
+	dataHome := t.TempDir()
+	storeDir := t.TempDir()
+	t.Setenv("HAMS_CONFIG_HOME", configHome)
+	t.Setenv("HAMS_DATA_HOME", dataHome)
+
+	// profile_tag set, machine_id missing.
+	writeApplyTestFile(t, filepath.Join(configHome, "hams.config.yaml"),
+		"profile_tag: macOS\n")
+	writeApplyTestFile(t, filepath.Join(storeDir, "hams.config.yaml"),
+		"store_path: "+storeDir+"\n")
+
+	flags := &provider.GlobalFlags{Store: storeDir, Profile: "linux"} // override profile_tag; still no machine_id
+	registry := provider.NewRegistry()
+
+	err := runApply(context.Background(), flags, registry,
+		sudo.NoopAcquirer{}, "", true, "", "", false, bootstrapMode{})
+	if err == nil {
+		t.Fatal("expected error when machine_id missing on non-TTY")
+	}
+	var ufe *hamserr.UserFacingError
+	if !errors.As(err, &ufe) {
+		t.Fatalf("want *UserFacingError, got %T: %v", err, err)
+	}
+	if !strings.Contains(ufe.Message, "machine_id") {
+		t.Errorf("message should name machine_id; got %q", ufe.Message)
+	}
+	if strings.Contains(ufe.Message, "profile_tag") {
+		t.Errorf("message should NOT name profile_tag (user already set it via --profile); got %q", ufe.Message)
 	}
 }

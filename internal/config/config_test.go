@@ -336,6 +336,79 @@ func TestReadRawConfigKey_UnsetReturnsFalse(t *testing.T) {
 	}
 }
 
+// TestIsValidConfigKey covers the whitelist check used by `hams
+// config set` before accepting a key. Previously 0% covered; any
+// future refactor of ValidConfigKeys would go unnoticed.
+func TestIsValidConfigKey(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		key  string
+		want bool
+	}{
+		{"profile_tag", true},
+		{"machine_id", true},
+		{"store_path", true},
+		{"store_repo", true},
+		{"llm_cli", true},
+		{"profile_tg", false},              // typo
+		{"notification.bark_token", false}, // sensitive-pattern, not whitelist
+		{"", false},
+	}
+	for _, tc := range cases {
+		if got := IsValidConfigKey(tc.key); got != tc.want {
+			t.Errorf("IsValidConfigKey(%q) = %v, want %v", tc.key, got, tc.want)
+		}
+	}
+}
+
+// TestWriteConfigKey_GlobalVsLocal covers the routing behavior of
+// WriteConfigKey: non-sensitive keys land in the global config,
+// sensitive keys route to hams.config.local.yaml. Both paths were
+// previously 0% covered even though they're the core of `hams config set`.
+func TestWriteConfigKey_GlobalVsLocal(t *testing.T) {
+	configHome := t.TempDir()
+	storeDir := t.TempDir()
+	paths := Paths{ConfigHome: configHome, DataHome: t.TempDir()}
+
+	// Non-sensitive key → global config.
+	if err := WriteConfigKey(paths, storeDir, "profile_tag", "macOS"); err != nil {
+		t.Fatalf("WriteConfigKey profile_tag: %v", err)
+	}
+	globalPath := filepath.Join(configHome, "hams.config.yaml")
+	globalBytes, err := os.ReadFile(globalPath)
+	if err != nil {
+		t.Fatalf("read global config: %v", err)
+	}
+	if !strings.Contains(string(globalBytes), "profile_tag: macOS") {
+		t.Errorf("global config missing profile_tag; got %q", globalBytes)
+	}
+	// Local override should NOT contain the non-sensitive value.
+	localPath := filepath.Join(storeDir, "hams.config.local.yaml")
+	if _, statErr := os.Stat(localPath); statErr == nil {
+		b, _ := os.ReadFile(localPath) //nolint:errcheck // read-back assertion; any read error will fail the Contains check below
+		if strings.Contains(string(b), "profile_tag") {
+			t.Errorf("non-sensitive key leaked into local config; got %q", b)
+		}
+	}
+
+	// Sensitive key → local config.
+	if writeErr := WriteConfigKey(paths, storeDir, "notification.bark_token", "abc123"); writeErr != nil {
+		t.Fatalf("WriteConfigKey bark_token: %v", writeErr)
+	}
+	localBytes, err := os.ReadFile(localPath)
+	if err != nil {
+		t.Fatalf("read local config: %v", err)
+	}
+	if !strings.Contains(string(localBytes), "notification.bark_token: abc123") {
+		t.Errorf("local config missing bark_token; got %q", localBytes)
+	}
+	// Global config must NOT leak the secret.
+	globalBytes2, _ := os.ReadFile(globalPath) //nolint:errcheck // read-back assertion; any read error will fail the Contains check below
+	if strings.Contains(string(globalBytes2), "bark_token") {
+		t.Errorf("sensitive key leaked into global config: %q", globalBytes2)
+	}
+}
+
 // TestLoad_MalformedGlobalYAMLSurfaces asserts that a malformed global
 // config file returns an error containing the file path, so users can
 // fix the broken file. Previously the error was silently ignored by

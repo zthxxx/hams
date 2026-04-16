@@ -210,6 +210,47 @@ func TestU9_Probe_SwallowsCaskListError(t *testing.T) {
 	}
 }
 
+// U11 — Remove on a tap-format ID (user/repo, no formula suffix)
+// routes to `brew untap`, NOT `brew uninstall`. Otherwise brew
+// returns "no installed keg or cask" and the tap stays registered.
+func TestU11_Remove_TapFormatID_RoutesToUntap(t *testing.T) {
+	t.Parallel()
+	fake := NewFakeCmdRunner().SeedTap("homebrew/cask-fonts")
+	p := New(&config.Config{}, fake)
+
+	if err := p.Remove(context.Background(), "homebrew/cask-fonts"); err != nil {
+		t.Fatalf("Remove: %v", err)
+	}
+	if got := fake.CallCount(fakeOpUntap, "homebrew/cask-fonts"); got != 1 {
+		t.Errorf("Untap call count = %d, want 1", got)
+	}
+	if got := fake.CallCount(fakeOpUninstall, "homebrew/cask-fonts"); got != 0 {
+		t.Errorf("Uninstall must not be called for tap; got %d", got)
+	}
+	// Verify tap was actually removed from the fake.
+	if fake.IsTapRegistered("homebrew/cask-fonts") {
+		t.Error("tap should be removed from state")
+	}
+}
+
+// U12 — Remove on a package-format ID still goes through Uninstall
+// (regression guard: ensure the tap-routing branch doesn't misfire).
+func TestU12_Remove_PackageID_RoutesToUninstall(t *testing.T) {
+	t.Parallel()
+	fake := NewFakeCmdRunner().SeedFormula("htop", "3.3.0")
+	p := New(&config.Config{}, fake)
+
+	if err := p.Remove(context.Background(), "htop"); err != nil {
+		t.Fatalf("Remove: %v", err)
+	}
+	if got := fake.CallCount(fakeOpUninstall, "htop"); got != 1 {
+		t.Errorf("Uninstall call count = %d, want 1", got)
+	}
+	if got := fake.CallCount(fakeOpUntap, "htop"); got != 0 {
+		t.Errorf("Untap must not be called for package; got %d", got)
+	}
+}
+
 // U10 — Probe SWALLOWS tap-listing errors (taps are auxiliary;
 // failure should not block formulae/cask diff).
 func TestU10_Probe_SwallowsTapListError(t *testing.T) {

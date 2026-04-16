@@ -3,6 +3,7 @@ package logging
 
 import (
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -10,8 +11,17 @@ import (
 	"time"
 )
 
-// Setup initializes the global slog logger with file and optional console output.
+// Setup initializes the global slog logger with file AND stderr output.
 // Creates the monthly log directory and log file if they don't exist.
+// Writing to both destinations means:
+//   - Live stderr feedback for users watching the command run.
+//   - Persisted file log for later inspection (spec'd path per
+//     tui-logging/spec.md §"Sticky header shows log file path").
+//
+// Before this change, Setup redirected slog to the file ONLY — which
+// made `hams apply` appear to hang from the user's perspective
+// (no live log lines), even though the command was doing real work
+// and writing to the file in the background.
 func Setup(dataHome string, debug bool) (*os.File, error) {
 	now := time.Now()
 	monthDir := filepath.Join(dataHome, now.Format("2006-01"))
@@ -30,7 +40,12 @@ func Setup(dataHome string, debug bool) (*os.File, error) {
 		level = slog.LevelDebug
 	}
 
-	handler := slog.NewTextHandler(logFile, &slog.HandlerOptions{
+	// MultiWriter fans out every slog call to both sinks. No-color /
+	// structured parity: the TextHandler emits the same format on
+	// both, so `grep ERROR` works on the file and the terminal output
+	// stays in sync with what was persisted.
+	sink := io.MultiWriter(os.Stderr, logFile)
+	handler := slog.NewTextHandler(sink, &slog.HandlerOptions{
 		Level: level,
 	})
 	slog.SetDefault(slog.New(handler))
