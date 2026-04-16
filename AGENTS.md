@@ -181,6 +181,10 @@ Spec corrections:
 
 Total commits in cycle 2: 15+ (still growing — iteration 3 adds hooks+OTel defer).
 
+### Cycle 28 — `hams self-upgrade` honors `--dry-run`
+
+- [x] Global `--dry-run` advertised but `self-upgrade` ignored it — ran `brew upgrade` or actually downloaded+replaced the binary. Both channels now print a preview (no side effects). Binary path still resolves the latest release (read-only) so it can show "Would upgrade from vA to vB". Threads `*provider.GlobalFlags` end-to-end. (commit `5a31463`)
+
 ### Cycle 27 — Friendly error when `store push/pull` runs in a non-git dir
 
 - [x] **Raw git error surfaced**: `hams store push` in a non-git store showed "fatal: not a git repository" + "git add: exit status 128" — user had no idea what to do. Added `ensureStoreIsGitRepo(storePath)` that checks for `.git/` or `HEAD` and returns a UserFacingError with two suggestions (`git init` or `hams apply --from-repo=`). Gate both push and pull. (commit `59ae404`)
