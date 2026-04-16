@@ -187,6 +187,10 @@ Spec corrections:
 
 Total commits in cycle 2: 15+ (still growing — iteration 3 adds hooks+OTel defer).
 
+### Cycle 65 — `SetupLogging` wired into apply+refresh
+
+- [x] **Real scaffolded-but-unwired finding**: `cli.SetupLogging` was defined but had ZERO callers. Users got stderr output only — no rolling log file at `${HAMS_DATA_HOME}/<YYYY-MM>/hams.<YYYYMM>.log` despite spec references and the tui-logging "sticky header shows log file path" scenario pre-supposing its existence. Wired into `runApply` + `runRefresh` with deferred cleanup; short read-only commands (list, config get, version) unchanged. Verified apply dry-run now creates the file with session slog lines. (commit `dddecb0`)
+
 ### Cycle 64 — notify Channel.Name() contracts (52% → 60%)
 
 - [x] Added `TestDesktopNotifier_Name` and `TestBarkChannel_Name` covering the previously 0%-covered `.Name()` methods (used by Manager.Notify's per-channel slog.Info). `Bark.Send()` intentionally left uncovered — DI'ing the hardcoded https URL now would lock an API shape before v1.1 un-defers the notification wiring. Added a clear comment pointing to the deferral. (commit `18dc477`)
