@@ -201,7 +201,9 @@ All error messages SHALL be structured to be parseable by AI agents. Each error 
 
 ### Requirement: Self-upgrade command
 
-The `hams self-upgrade` command SHALL detect the installation channel and perform an upgrade accordingly. Channel detection SHALL first check for a channel marker file at `${HAMS_DATA_HOME}/install-channel` (containing `binary` or `homebrew`). If no marker exists, the system SHALL infer the channel from the binary path: if the path contains `/homebrew/` or `/Cellar/`, the channel is `homebrew`; otherwise, it is `binary`. For the `binary` channel, self-upgrade SHALL fetch the latest release from the GitHub Releases API, download the appropriate platform binary, verify its checksum, and atomically replace the running binary. For the `homebrew` channel, self-upgrade SHALL invoke `brew upgrade hams`. The command SHALL display the current version, the available version, and a confirmation prompt before proceeding (skippable with `--yes`).
+The `hams self-upgrade` command SHALL detect the installation channel and perform an upgrade accordingly. Channel detection SHALL first check for a channel marker file at `${HAMS_DATA_HOME}/install-channel` (containing `binary` or `homebrew`). If no marker exists, the system SHALL infer the channel from the binary path: if the path contains `/homebrew/` or `/Cellar/`, the channel is `homebrew`; otherwise, it is `binary`. For the `binary` channel, self-upgrade SHALL fetch the latest release from the GitHub Releases API, download the appropriate platform binary, verify its checksum, and atomically replace the running binary. For the `homebrew` channel, self-upgrade SHALL invoke `brew upgrade hams`. The command SHALL display progress (download + version transition) to stdout and exit non-zero on failure.
+
+> **Note (v1 shipped):** an earlier draft of this requirement specified a confirmation prompt skippable via `--yes`. The v1 impl skips the prompt by default and has no `--yes` flag — self-upgrade runs unattended. A v1.1 change MAY reintroduce the confirmation behind an explicit `--confirm` opt-in, but the v1 contract is "upgrade directly." This aligns with the broader CI/script-first posture of hams (matches how apt/brew/npm behave when invoked non-interactively).
 
 #### Scenario: Binary channel upgrade
 
@@ -694,35 +696,65 @@ The `--hams-lucky` flag is a forward-looking opt-out for the LLM-driven enrichme
 - The honest architectural call is "documented gap, not dead code" — distinct from the `CLIHandler` interface (which had no plumbing reachable from any production code path and was removed in commit `10de4bd`).
 
 ---
-<!-- Merged from change: 2026-04-16-defer-hooks-and-otel -->
+<!-- Merged from change: 2026-04-16-defer-hooks-and-otel (hooks un-deferred in cycle 4) -->
 
-# CLI Architecture — Spec Delta (hooks-defer + OTel-defer)
+# CLI Architecture — Spec Delta (hooks implemented; OTel still deferred)
 
 ## MODIFIED
 
-### Requirement: Hamsfile Hooks Parsing — Deferred to v1.1
+### Requirement: Hamsfile Hooks Parsing — Implemented
 
-The v1 hamsfile loader does NOT parse `hooks:` blocks. The execution engine at `internal/provider/hooks.go` is fully built but receives no input — no provider's `Plan()` populates `Action.Hooks`, and `internal/hamsfile/` has zero hook-parsing logic.
+The hooks deferral was lifted in cycle 4. Implementation:
 
-#### Scenario: v1 silently ignores hooks: blocks
+- `internal/hamsfile/hooks.go` defines `(*File).AppHookNode(appID)` returning the YAML mapping for an item's `hooks:` key.
+- `internal/provider/hooks_parse.go` defines `ParseHookSet(node)` and `PopulateActionHooks(actions, desired)`.
+- Every builtin provider's `Plan()` now ends with `return provider.PopulateActionHooks(actions, desired), nil` so hamsfile-declared hooks flow through to `Action.Hooks` and are dispatched by `executor.go` around each install/update.
 
-- **WHEN** a user adds a `hooks:` block to an item in their hamsfile
-- **THEN** the v1 hams loader SHALL load the hamsfile without error
-- **AND** `hams apply` SHALL NOT execute any hook
-- **AND** no warning is emitted in v1 (a follow-up change MAY add one).
+Verification: `internal/provider/hooks_integration_test.go` exercises the full YAML → Plan → Execute → runHook pipeline via shell side effects (touch a tempfile) for both inline and deferred hooks.
 
-### Requirement: OTel CLI Integration — Deferred to v1.1
+#### Scenario: hooks: block fires during install
 
-The `internal/otel/` package defines `Session`, `Span`, `LocalFileExporter` with file output to `${HAMS_DATA_HOME}/otel/`. However, no CLI command creates an `otel.NewSession()` — `internal/cli/apply.go:444` calls `provider.Execute(ctx, p, actions, sf)` without the optional `otelSession` variadic, so the executor's per-action span-record calls are no-ops.
+- **WHEN** a user adds `hooks: { pre_install: [{run: "touch /tmp/marker"}] }` to a hamsfile item
+- **AND** that item goes through `hams apply` with an Install action
+- **THEN** the hook's `run` command SHALL execute on the host shell
+- **AND** `/tmp/marker` SHALL exist after apply completes.
 
-#### Scenario: v1 produces no OTel output
+#### Scenario: defer:true hook runs after provider finishes
 
-- **WHEN** a user runs `hams apply` in v1
+- **WHEN** a `post_install` hook has `defer: true`
+- **THEN** the inline execution SHALL skip it
+- **AND** the deferred hook SHALL run after all regular installs via `RunDeferredHooks`.
+
+### Requirement: OTel CLI Integration — Opt-in via HAMS_OTEL
+
+The OTel deferral was lifted in cycle 5. Integration is opt-in via the `HAMS_OTEL` env var (loose booleans: `true` / `yes` / `on` / `1`). When enabled:
+
+- `runApply` wraps the operation in a root `hams.apply` span.
+- `runRefresh` wraps the operation in a root `hams.refresh` span.
+- `provider.Execute` calls receive the session and record per-provider + per-resource child spans (already-existing executor span machinery).
+- The session's `LocalFileExporter` writes JSON trace + metric files under `${HAMS_DATA_HOME}/otel/traces/` and `${HAMS_DATA_HOME}/otel/metrics/` on shutdown.
+
+Opt-in rather than default-on because the file exporter accumulates JSON on every run; silent file accumulation for users who didn't ask for it is bad UX.
+
+#### Scenario: HAMS_OTEL unset → no OTel output
+
+- **WHEN** a user runs `hams apply` without `HAMS_OTEL=1`
 - **THEN** no file SHALL appear under `${HAMS_DATA_HOME}/otel/traces/` or `${HAMS_DATA_HOME}/otel/metrics/`
-- **AND** no error is emitted about missing OTel — the absence is silent.
+- **AND** the apply SHALL complete with no OTel overhead.
 
-### Why deferred (not removed)
+#### Scenario: HAMS_OTEL=1 → trace files appear
 
-- Hooks engine: ~200 lines of tested Go (hooks.go + hooks_test.go + executor.go dispatch glue).
-- OTel package: ~300 lines of exporter + span tracking.
-- Both would need full re-implementation if deleted. Documenting the gap matches the `--hams-lucky` precedent (commit `f4c0f20`). The honest architectural call is "documented gap, not dead code."
+- **WHEN** a user runs `HAMS_OTEL=1 hams apply`
+- **AND** the apply completes (success or failure)
+- **THEN** a trace JSON file SHALL appear under `${HAMS_DATA_HOME}/otel/traces/`
+- **AND** the root span SHALL have name `hams.apply` with status `ok` (success) or `error` (failure).
+
+#### Scenario: HAMS_OTEL=1 but dataHome is empty → silent disable
+
+- **WHEN** a user runs `HAMS_OTEL=1 hams apply` without a resolvable `HAMS_DATA_HOME`
+- **THEN** no files SHALL be written
+- **AND** no error SHALL be surfaced.
+
+### Remaining deferral: --hams-lucky
+
+The `--hams-lucky` LLM enrichment deferral from the original delta remains in place. `Enricher` interface has zero provider implementations; wiring the flag through requires implementing `Enrich(ctx, resourceID)` on at least one provider (a v1.1 feature-ticket, not a verification task).

@@ -8,7 +8,9 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/urfave/cli/v3"
 	"gopkg.in/yaml.v3"
@@ -38,7 +40,7 @@ Only resources already tracked in state are probed — no new resources are disc
 	}
 }
 
-func runRefresh(ctx context.Context, flags *provider.GlobalFlags, registry *provider.Registry, only, except string) error {
+func runRefresh(ctx context.Context, flags *provider.GlobalFlags, registry *provider.Registry, only, except string) (retErr error) {
 	paths := resolvePaths(flags)
 	cfg, err := config.Load(paths, flags.Store)
 	if err != nil {
@@ -47,6 +49,21 @@ func runRefresh(ctx context.Context, flags *provider.GlobalFlags, registry *prov
 	if flags.Profile != "" {
 		cfg.ProfileTag = flags.Profile
 	}
+
+	// OTel session is opt-in via HAMS_OTEL=1 (internal/cli/otel.go).
+	// Refresh doesn't invoke provider.Execute, so there are no
+	// per-provider child spans from executor.go — but the root span
+	// + session span machinery still capture the refresh duration
+	// and any RecordMetric calls we add later. Keeps the surface
+	// parallel with runApply.
+	otelSess := maybeStartOTelSession(paths.DataHome, "hams.refresh")
+	defer func() {
+		status := otelStatusOK
+		if retErr != nil {
+			status = otelStatusError
+		}
+		otelSess.End(context.Background(), status)
+	}()
 
 	stateDir := cfg.StateDir()
 	profileDir := cfg.ProfileDir()
@@ -77,13 +94,30 @@ func runRefresh(ctx context.Context, flags *provider.GlobalFlags, registry *prov
 		return nil
 	}
 
+	// Attach root-span attributes now that profile + provider count
+	// are resolved. Per observability spec, the root span carries
+	// hams.profile + hams.providers.count.
+	otelSess.AttachRootAttrs(cfg.ProfileTag, len(providers))
+
 	slog.Info("refreshing state", "providers", len(providers))
+	probeStart := time.Now()
 	probeResults := provider.ProbeAll(ctx, providers, stateDir, cfg.MachineID)
+	probeElapsed := time.Since(probeStart).Milliseconds()
 	for name, sf := range probeResults {
 		statePath := filepath.Join(stateDir, name+".state.yaml")
 		if saveErr := sf.Save(statePath); saveErr != nil {
 			slog.Error("failed to save probed state", "provider", name, "error", saveErr)
 		}
+	}
+
+	// hams.probe.duration metric per observability spec — elapsed
+	// time for the refresh ProbeAll phase. Emitted only when OTel
+	// is active; no-op when otelSess.Session() is nil.
+	if sess := otelSess.Session(); sess != nil {
+		sess.RecordMetric("hams.probe.duration", float64(probeElapsed), "ms", map[string]string{
+			"hams.command":         "refresh",
+			"hams.providers.count": strconv.Itoa(len(providers)),
+		})
 	}
 
 	// ProbeAll swallows per-provider probe errors (best-effort) and
@@ -288,6 +322,11 @@ func storeCmd() *cli.Command {
 		Usage:  "Manage the hams store directory",
 		Action: storeStatusAction,
 		Commands: []*cli.Command{
+			{
+				Name:   "status",
+				Usage:  "Show the current store path, profile, and hamsfile count",
+				Action: storeStatusAction,
+			},
 			{
 				Name:  "init",
 				Usage: "Initialize a new store directory structure",

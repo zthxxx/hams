@@ -116,7 +116,7 @@ func (p *Provider) Plan(_ context.Context, desired *hamsfile.File, observed *sta
 		}
 	}
 
-	return actions, nil
+	return provider.PopulateActionHooks(actions, desired), nil
 }
 
 // Apply executes a bash command for the given action.

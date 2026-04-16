@@ -63,7 +63,7 @@ type bootstrapMode struct {
 	Deny  bool // --no-bootstrap: never run, even on TTY
 }
 
-func runApply(ctx context.Context, flags *provider.GlobalFlags, registry *provider.Registry, sudoAcq sudo.Acquirer, fromRepo string, noRefresh bool, only, except string, pruneOrphans bool, boot bootstrapMode) error {
+func runApply(ctx context.Context, flags *provider.GlobalFlags, registry *provider.Registry, sudoAcq sudo.Acquirer, fromRepo string, noRefresh bool, only, except string, pruneOrphans bool, boot bootstrapMode) (retErr error) {
 	if boot.Allow && boot.Deny {
 		return hamserr.NewUserError(hamserr.ExitUsageError,
 			"--bootstrap and --no-bootstrap are mutually exclusive",
@@ -146,6 +146,21 @@ func runApply(ctx context.Context, flags *provider.GlobalFlags, registry *provid
 
 	defer sudoAcq.Stop()
 
+	// OTel session is opt-in via HAMS_OTEL=1 (see internal/cli/otel.go).
+	// When enabled, a root "hams.apply" span wraps the entire run and
+	// each provider.Execute call records child spans + per-provider
+	// metrics via the executor's existing span machinery (executor.go).
+	// When disabled, otelSess.Session() returns nil and Execute's
+	// nil-session branches skip the tracing machinery entirely.
+	otelSess := maybeStartOTelSession(paths.DataHome, "hams.apply")
+	defer func() {
+		status := otelStatusOK
+		if retErr != nil {
+			status = otelStatusError
+		}
+		otelSess.End(context.Background(), status)
+	}()
+
 	// Two-stage provider filter:
 	//   Stage 1 — artifact presence: skip providers that have no hamsfile AND
 	//   no state file for the active profile/machine. Prevents Bootstrap /
@@ -180,6 +195,11 @@ func runApply(ctx context.Context, flags *provider.GlobalFlags, registry *provid
 	if dagErr != nil {
 		return fmt.Errorf("resolving provider dependencies: %w", dagErr)
 	}
+
+	// Attach root-span attributes now that profile + provider count
+	// are resolved. Per observability spec, the root span carries
+	// hams.profile + hams.providers.count.
+	otelSess.AttachRootAttrs(cfg.ProfileTag, len(sorted))
 
 	// Default `hams apply` does NOT touch state-only providers (those with
 	// a state file but no hamsfile). Remove them BEFORE refresh so
@@ -399,17 +419,6 @@ func runApply(ctx context.Context, flags *provider.GlobalFlags, registry *provid
 			continue
 		}
 
-		// Surface v1.1-deferred feature usages so users who copied the
-		// documented `hooks:` example are not surprised by a silent
-		// no-op. See openspec/specs/cli-architecture/spec.md
-		// (hooks-defer + OTel-defer deltas) for the spec stance.
-		if deferred := hamsfile.LintDeferredFeatures(hf); deferred.HasAny() {
-			slog.Warn("hamsfile declares v1.1-deferred features (silently ignored in v1)",
-				"provider", name,
-				"hamsfile", hamsfilePath,
-				"hook_entries", deferred.HookEntries)
-		}
-
 		sf, loadErr := state.Load(statePath)
 		if loadErr != nil {
 			sf = state.New(name, cfg.MachineID)
@@ -452,7 +461,7 @@ func runApply(ctx context.Context, flags *provider.GlobalFlags, registry *provid
 			continue
 		}
 
-		result := provider.Execute(ctx, p, actions, sf)
+		result := provider.Execute(ctx, p, actions, sf, otelSess.Session())
 		allResults = append(allResults, result)
 
 		if result.Failed == 0 {

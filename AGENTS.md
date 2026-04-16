@@ -64,7 +64,7 @@ Single test: `go test -race -run TestFuncName ./path/to/package/...`
 
 - **Provider plugin system**: builtins compiled in Go, externals via `hashicorp/go-plugin` (local gRPC).
 - **Terraform-style state**: `.state/<machine-id>/<Provider>.state.yaml`, single-writer lock, refresh-then-diff.
-- **TUI**: BubbleTea alternate screen, collapsible logs, interactive popup for stdin.
+- **TUI**: BubbleTea models scaffolded at `internal/tui/` (alternate screen, collapsible logs, popup) but **unwired in v1**; CLI uses plain `slog` log lines. v1.1 will plug `tui.RunApplyTUI` into `runApply`. See `openspec/changes/2026-04-16-defer-tui-and-notify/`.
 - **OTel**: trace + metrics, local file exporter at `${HAMS_DATA_HOME}/otel/`.
 - **Docs**: Nextra on GitHub Pages at `hams.zthxxx.me`.
 
@@ -180,6 +180,55 @@ Spec corrections:
 - `goinstall`/`code-ext` naming reconciled across 4 spec files + en/zh-CN docs + README variants (commit 6f9e533).
 
 Total commits in cycle 2: 15+ (still growing — iteration 3 adds hooks+OTel defer).
+
+### Cycle 10 — internal/cli coverage gains (utility paths)
+
+- [x] **internal/cli: 39.5% → 42.0%** — added tests for previously-zero pure functions: `parseCSV` (--only/--except parsing, 3 cases), `validateProviderNames` (happy path + unknown providers with ExitUsageError + suggestion list per cli-architecture spec), `PrintError` (text mode, JSON mode, plain-error wrapping). Added reusable `captureStderr` helper (commit `9e1e387`).
+
+### Cycle 9 — Coverage gains for error + llm packages
+
+- [x] **internal/error: 35.7% → 100%** — added `TestErrorCodeFromExit_AllBranches` covering all 9 exit codes + fallbacks; `TestNewUserErrorWithCode` (explicit-code constructor); `TestNewUserError_AutoDerivesErrorCodeFromExit`; `TestUserFacingError_AsTargetType` (errors.As recovery for cmd/hams exit handler) (commit `cd78959`).
+- [x] **internal/llm: 29.9% → 80.6%** — added `TestRecommend_NoLLMConfigured`, `TestEnrichAsync_PropagatesRecommendError`, `TestEnrichCollector_AddCollectAll`/`AddAfterCollect`, `TestReportErrors_Empty`/`WithFailures` (commit `cd78959`).
+
+### Cycle 8 — Dead code removal + project-structure spec patch
+
+- [x] **`internal/runner/` deleted** — generic Runner interface superseded by per-provider CmdRunner abstractions; zero callers across internal/, pkg/, cmd/. Also removed `WrapExecWithRunner` + `WrapExecPassthroughWithRunner` (~240 lines dead) (commit `abd0bc6`).
+- [x] **`Formula/` + `examples/` added to project-structure spec** — both top-level dirs ship in the repo and are referenced by other specs (self-upgrade Homebrew channel + dev-sandbox), but were missing from the canonical layout (commit `0738457`).
+
+### Cycle 7 — TUI + notify deferred + OTel attr tests
+
+- [x] **TUI alternate-screen rendering deferred to v1.1** — `internal/tui/` ships ~500 lines of BubbleTea models but `RunApplyTUI` has zero callers. Same scaffolded-but-unwired pattern as lucky/hooks/OTel (commit `c7249d4`).
+- [x] **Notification system deferred to v1.1** — `internal/notify/` ships full Channel/Manager/terminal-notifier/Bark scaffolding but `Manager.Send` has zero callers (commit `c7249d4`).
+- [x] **CLAUDE.md TUI claim corrected** — was advertising TUI as a shipped feature; now honest about the deferral (commit `45ebf05`).
+- [x] **OTel attribute conformance tests** — covered `AttachRootAttrs` + status→`hams.result` mapping with 3 new tests (table-driven over 4 status mappings) (commit `2ffe525`).
+
+### Cycle 6 — OTel spec conformance + 3 spec-reconciliation fixes
+
+- [x] **Provider-system spec table reconciled** — removed `system`/`file`/`download` (spec'd Builtin but unimplemented in v1); ansible relabeled from "External (v1-deferred)" to "Builtin" to match reality (commit `da33233`).
+- [x] **`hams store status` subcommand** added — spec requires it but impl only had `hams store` default action (commit `98b643d`).
+- [x] **Self-upgrade spec updated** — v1 impl has no confirmation prompt / no `--yes` flag; spec now honestly says "upgrade directly" with a v1.1 note for future `--confirm` opt-in (commit `98b643d`).
+- [x] **OTel attribute conformance** — span attrs renamed to `hams.resource.*` / `hams.provider.*` / `hams.profile` / `hams.providers.count` / `hams.result` per observability spec. Root span gets `AttachRootAttrs(profile, count)` after CLI resolves the provider set. `hams.apply.duration` + `hams.probe.duration` metrics emitted. Provider-failures counter now semantically correct (1 per failing provider). Skipped resources get their own `hams.resource.skip` span. (commits `b0bd68c`, `a36de54`)
+
+### Cycle 5 — OTel delivered (un-deferred)
+
+- [x] **OTel CLI integration IMPLEMENTED** — opt-in via `HAMS_OTEL=1` env var (commit `1cfd54e`). Closes the deferral from commit `ed1a5af`.
+  - `internal/cli/otel.go`: `maybeStartOTelSession(dataHome, operation)` → `otelSessionState` with `Session()` accessor + `End(ctx, status)`. Loose-boolean env parsing (true/yes/on/1).
+  - `runApply` + `runRefresh` both wrap operations in root spans (`hams.apply` / `hams.refresh`) and pass the session to `provider.Execute`.
+  - Named return `(retErr error)` in both so the defer tags the root span with `ok`/`error` based on final return.
+  - End-to-end test proves `HAMS_OTEL=1 → trace JSON file appears under ${HAMS_DATA_HOME}/otel/traces/`.
+  - Updated cli-architecture spec to reflect shipped reality with 3 user-facing scenarios.
+
+### Cycle 4 — Hooks delivered (un-deferred)
+
+- [x] **Hamsfile hooks parsing IMPLEMENTED** — full YAML → Plan → Execute → runHook pipeline works end-to-end (commit `1479129`). Closes the deferral from commit `ed1a5af`.
+  - `internal/hamsfile/hooks.go`: `(*File).AppHookNode(appID)` walks YAML tree.
+  - `internal/provider/hooks_parse.go`: `ParseHookSet(node)` + `PopulateActionHooks(actions, desired)`.
+  - All 13 providers' `Plan()` updated to call `PopulateActionHooks`.
+  - End-to-end tests prove hooks fire with real shell side effects (touch a marker file).
+  - Removed the lint-warning fallback (hamsfile/lint.go, 300 lines) — no longer needed.
+  - Updated schema-design + cli-architecture specs to reflect shipped reality.
+
+**Only 1 v1.1 deferral remains**: `--hams-lucky` LLM enrichment (requires Enricher implementation on at least one provider — a feature ticket, not a verification task).
 
 ### Cycle 3 — COMPLETE
 

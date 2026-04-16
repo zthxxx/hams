@@ -19,9 +19,13 @@ type ExecuteResult struct {
 	Errors    []error
 }
 
-// Execute runs actions sequentially for a single provider.
-// It updates the state file after each action. If otelSession is non-nil, provider
-// and resource-level spans are recorded.
+// Execute runs actions sequentially for a single provider. It updates
+// the state file after each action. If otelSession is non-nil, provider
+// and resource-level spans are recorded per the observability spec
+// (openspec/specs/observability/spec.md): provider spans are named
+// `hams.provider.<name>` with `hams.provider.*` attributes; resource
+// spans are named `hams.resource.<action>` with `hams.resource.*`
+// attributes + `hams.provider.name`.
 func Execute(ctx context.Context, p Provider, actions []Action, sf *state.File, otelSession ...*otel.Session) ExecuteResult {
 	var result ExecuteResult
 	var session *otel.Session
@@ -31,12 +35,16 @@ func Execute(ctx context.Context, p Provider, actions []Action, sf *state.File, 
 
 	name := p.Manifest().Name
 
-	// Provider-level span.
+	// Provider-level span — started before actions so the span
+	// duration reflects the full provider phase. The
+	// hams.provider.resource_count attribute records the PLANNED
+	// action count; final failed/skipped tallies go on Shutdown
+	// via session-level metrics.
 	var providerSpan *otel.Span
 	if session != nil {
 		providerSpan = session.StartSpan("hams.provider."+name, "", map[string]string{
-			"provider": name,
-			"actions":  fmt.Sprintf("%d", len(actions)),
+			"hams.provider.name":           name,
+			"hams.provider.resource_count": fmt.Sprintf("%d", len(actions)),
 		})
 	}
 
@@ -45,7 +53,7 @@ func Execute(ctx context.Context, p Provider, actions []Action, sf *state.File, 
 		case <-ctx.Done():
 			result.Errors = append(result.Errors, ctx.Err())
 			if session != nil && providerSpan != nil {
-				session.EndSpan(providerSpan, "canceled")
+				endProviderSpan(session, providerSpan, name, &result, "canceled")
 			}
 			return result
 		default:
@@ -54,6 +62,10 @@ func Execute(ctx context.Context, p Provider, actions []Action, sf *state.File, 
 		switch action.Type {
 		case ActionSkip:
 			result.Skipped++
+			// Skipped actions still get a near-zero-duration span
+			// per the observability spec (Scenario: Skipped
+			// resource records skip reason).
+			recordSkipSpan(session, name, action.ID)
 			continue
 		case ActionInstall:
 			executeAction(ctx, p, action, sf, &result, session, phaseInstall)
@@ -69,13 +81,52 @@ func Execute(ctx context.Context, p Provider, actions []Action, sf *state.File, 
 		if result.Failed > 0 {
 			status = "error"
 		}
-		session.EndSpan(providerSpan, status)
-
-		session.RecordMetric("hams.provider.failures", float64(result.Failed), "count", map[string]string{"provider": name})
-		session.RecordMetric("hams.resources.total", float64(result.Installed+result.Updated+result.Removed+result.Skipped+result.Failed), "count", map[string]string{"provider": name})
+		endProviderSpan(session, providerSpan, name, &result, status)
 	}
 
 	return result
+}
+
+// endProviderSpan finalizes the provider span with the correct attrs
+// + ends it, and records the two provider-level metrics the
+// observability spec requires (provider failures, resources total).
+func endProviderSpan(session *otel.Session, span *otel.Span, providerName string, result *ExecuteResult, status string) {
+	// Attribute update: the full failed_count is only known at
+	// end-of-provider. Mutate via the public span.Attrs map.
+	if span.Attrs == nil {
+		span.Attrs = map[string]string{}
+	}
+	span.Attrs["hams.provider.failed_count"] = fmt.Sprintf("%d", result.Failed)
+	session.EndSpan(span, status)
+
+	// Metrics per observability spec:
+	//   hams.provider.failures: counter incremented by 1 per provider
+	//   with at least one failed resource (not by failed count — the
+	//   spec's scenario says "incremented once per provider that has
+	//   at least one failed resource").
+	//   hams.resources.total: total resources processed by provider.
+	if result.Failed > 0 {
+		session.RecordMetric("hams.provider.failures", 1, "count", map[string]string{"hams.provider.name": providerName})
+	}
+	session.RecordMetric("hams.resources.total",
+		float64(result.Installed+result.Updated+result.Removed+result.Skipped+result.Failed),
+		"count", map[string]string{"hams.provider.name": providerName})
+}
+
+// recordSkipSpan emits a near-zero-duration span for a skipped
+// resource action. Per the observability spec scenario "Skipped
+// resource records skip reason".
+func recordSkipSpan(session *otel.Session, providerName, resourceID string) {
+	if session == nil {
+		return
+	}
+	span := session.StartSpan("hams.resource.skip", "", map[string]string{
+		"hams.resource.id":     resourceID,
+		"hams.resource.action": "skip",
+		"hams.resource.result": "skipped",
+		"hams.provider.name":   providerName,
+	})
+	session.EndSpan(span, "ok")
 }
 
 const (
@@ -92,7 +143,9 @@ func executeAction(ctx context.Context, p Provider, action Action, sf *state.Fil
 	var span *otel.Span
 	if session != nil {
 		span = session.StartSpan("hams.resource."+phase, "", map[string]string{
-			"provider": name, "resource": action.ID,
+			"hams.resource.id":     action.ID,
+			"hams.resource.action": phase,
+			"hams.provider.name":   name,
 		})
 	}
 
@@ -185,11 +238,23 @@ func runPhasePostHooks(ctx context.Context, action Action, phase string, sf *sta
 	return nil
 }
 
-// endSpan closes an OTel span if the session is active.
+// endSpan closes an OTel span if the session is active, stamping
+// the hams.resource.result attribute to match the status string per
+// the observability spec. Status "ok" → result "ok", anything else
+// → result "failed".
 func endSpan(session *otel.Session, span *otel.Span, status string) {
-	if session != nil {
-		session.EndSpan(span, status)
+	if session == nil || span == nil {
+		return
 	}
+	if span.Attrs == nil {
+		span.Attrs = map[string]string{}
+	}
+	result := "ok"
+	if status != "ok" {
+		result = "failed"
+	}
+	span.Attrs["hams.resource.result"] = result
+	session.EndSpan(span, status)
 }
 
 func incrementCounter(result *ExecuteResult, phase string) {

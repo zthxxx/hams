@@ -201,7 +201,8 @@ func isTapFormat(name string) bool {
 }
 
 // Plan computes actions for Homebrew packages.
-// Tags named "cask" in the hamsfile are marked so Apply can inject --cask.
+// Tags named "cask" in the hamsfile are marked so Apply can inject
+// --cask. Hamsfile-declared hooks are attached to each action.
 func (p *Provider) Plan(_ context.Context, desired *hamsfile.File, observed *state.File) ([]provider.Action, error) {
 	apps := desired.ListApps()
 	caskSet := caskApps(desired)
@@ -211,7 +212,7 @@ func (p *Provider) Plan(_ context.Context, desired *hamsfile.File, observed *sta
 			actions[i].Resource = BrewResource{IsCask: true}
 		}
 	}
-	return actions, nil
+	return provider.PopulateActionHooks(actions, desired), nil
 }
 
 // Apply installs a brew package. If the action carries a BrewResource with IsCask set,

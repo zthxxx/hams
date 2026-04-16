@@ -150,7 +150,7 @@ func (p *Provider) Plan(_ context.Context, desired *hamsfile.File, observed *sta
 			}
 		}
 	}
-	return actions, nil
+	return provider.PopulateActionHooks(actions, desired), nil
 }
 
 // pinStateOpts returns the state options needed to record an apt pin

@@ -76,10 +76,12 @@ func (p *Provider) Probe(ctx context.Context, sf *state.File) ([]provider.ProbeR
 	return results, nil
 }
 
-// Plan computes actions for VS Code extensions.
+// Plan computes actions for VS Code extensions and attaches any
+// hamsfile-declared hooks to each action.
 func (p *Provider) Plan(_ context.Context, desired *hamsfile.File, observed *state.File) ([]provider.Action, error) {
 	apps := desired.ListApps()
-	return provider.ComputePlan(apps, observed, observed.ConfigHash), nil
+	actions := provider.ComputePlan(apps, observed, observed.ConfigHash)
+	return provider.PopulateActionHooks(actions, desired), nil
 }
 
 // Apply installs a VS Code extension.

@@ -96,7 +96,7 @@ State fields: `urn`, `value`, `config-at`, `updated-at`, `checked-at`.
 
 #### Class 3: Check-based Providers
 
-Providers: bash, system (chsh/scutil), ansible.
+Providers: bash, ansible (the `system (chsh/scutil)` provider mentioned in earlier drafts is not shipped in v1).
 
 The provider SHALL execute the user-supplied `check:` command. The exit code determines presence (0 = present, non-zero = absent). The stdout of the check command SHALL be captured as a fingerprint for drift detection.
 
@@ -389,12 +389,9 @@ The system SHALL classify all known providers into builtin (compiled into the ha
 | git-clone | Builtin | 4 (Filesystem) | all | none (uses bundled go-git or system git) |
 | defaults | Builtin | 2 (KV Config) | darwin | none |
 | duti | Builtin | 2 (KV Config) | darwin | homebrew (duti) |
-| system | Builtin | 3 (Check-based) | all | none |
-| ansible | External (v1-deferred) | 3 (Check-based) | all | pip/uv (ansible) |
-| file | Builtin | 4 (Filesystem) | all | none |
-| download | Builtin | 4 (Filesystem) | all | none |
+| ansible | Builtin | 3 (Check-based) | all | bash (pipx install --include-deps ansible) |
 
-All external providers in v1 are deferred (interface designed but not shipped). Only builtin providers are available in the initial release.
+In v1, 15 builtin providers are shipped (bash counts once; `git` gives two providers — `git-config` + `git-clone`). External providers (loaded via `hashicorp/go-plugin` local gRPC) are **interface-defined but not shipped in v1** — see `Provider Plugin Interface` section below for the contract. Planned-but-not-shipped providers (`system` OS config, generic `file` writer, `download` URL fetch) are **not present** in v1.
 
 #### Scenario: Builtin provider available without plugin setup
 
