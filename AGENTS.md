@@ -187,6 +187,10 @@ Spec corrections:
 
 Total commits in cycle 2: 15+ (still growing — iteration 3 adds hooks+OTel defer).
 
+### Cycle 36 — `hams list` singular/plural grammar
+
+- [x] `hams list` printed "apt (1 resources):" for a single resource. Tiny but visible polish. Branch on `len(filteredIDs) == 1` for "resource" vs "resources". Also fixed a stray bare URL in AGENTS.md from cycle 35. (commit `0d6adfe`)
+
 ### Cycle 35 — `--from-repo=/local/path` surfaces local errors
 
 - [x] `hams apply --from-repo=/tmp/not-a-git-repo` printed a misleading "cloning `https://github.com//tmp/...`: Repository not found" because local-repo failure fell through to the GitHub-shorthand path. Added `isLocalPathAttempt()` to distinguish unambiguously-local inputs (prefix `/`, `~/`, `./`, `../`, or stat-visible) from remote shorthand. Local-looking inputs now surface the real local error. Regression test covers 3 cases. (commit `fa414e1`)
