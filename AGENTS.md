@@ -187,6 +187,10 @@ Spec corrections:
 
 Total commits in cycle 2: 15+ (still growing — iteration 3 adds hooks+OTel defer).
 
+### Cycle 68 — Regression test for cycle 67 dual-sink slog
+
+- [x] `TestSetup_DualSink` redirects `os.Stderr` to a pipe, calls Setup, emits a `slog.Info` with a SIGIL marker, drains both sinks, asserts both captured it. Prevents a future refactor from silently dropping either sink (live feedback OR persistent capture). (commit `54ec4df`)
+
 ### Cycle 67 — Dual-sink slog: stderr AND file (fix for cycle 65 regression)
 
 - [x] **Caught my own bug**: `logging.Setup` replaced the default slog handler with one writing ONLY to the file. After cycle 65 wired this into apply/refresh, users saw no live progress — `hams apply` appeared to hang while silently writing to the log file. Swapped the handler's writer for `io.MultiWriter(os.Stderr, logFile)` so both destinations receive the same output. Live feedback restored, file capture preserved. (commit `68e66ab`)
