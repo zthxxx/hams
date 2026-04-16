@@ -437,35 +437,27 @@ func storeCmd() *cli.Command {
 
 		// Per cli-architecture spec §"Store command", status SHALL
 		// display store path, active profile tag, machine-id, and any
-		// uncommitted changes to Hamsfiles. Print profile tag and
-		// machine ID explicitly (not just derived paths) and attempt
-		// a `git status --short` for the changes column.
-		fmt.Printf("Store path:    %s\n", logging.TildePath(storePath))
-		fmt.Printf("Profile tag:   %s\n", cfg.ProfileTag)
-		fmt.Printf("Machine ID:    %s\n", cfg.MachineID)
-		fmt.Printf("Profile dir:   %s\n", logging.TildePath(cfg.ProfileDir()))
-		fmt.Printf("State dir:     %s\n", logging.TildePath(cfg.StateDir()))
-
+		// uncommitted changes to Hamsfiles.
 		profileDir := cfg.ProfileDir()
-		entries, readErr := os.ReadDir(profileDir)
-		if readErr != nil {
-			fmt.Printf("Hamsfiles:     (profile dir not found)\n")
-			// Still try git status below — the store dir itself may
-			// be initialized even without a profile subdir.
-		} else {
-			hamsfiles := 0
+
+		// Count hamsfiles (profile-dir missing → sentinel -1 so JSON
+		// output can represent the same semantic as the text "(profile
+		// dir not found)" message).
+		hamsfiles := -1
+		if entries, readErr := os.ReadDir(profileDir); readErr == nil {
+			hamsfiles = 0
 			for _, e := range entries {
 				if !e.IsDir() && filepath.Ext(e.Name()) == ".yaml" {
 					hamsfiles++
 				}
 			}
-			fmt.Printf("Hamsfiles:     %d\n", hamsfiles)
 		}
 
-		// Git status: show uncommitted changes if the store is a git
-		// repo. Non-git stores or `git` unavailable just omit the line
-		// — not everyone tracks their store in git, and `hams store
-		// status` shouldn't fail for them.
+		// Git status: probe only when the store is actually a git repo.
+		// Non-git stores leave gitStatus empty; JSON consumers can
+		// distinguish "not a git repo" from "clean".
+		gitStatus := ""
+		gitChanges := 0
 		if _, err := os.Stat(filepath.Join(storePath, ".git")); err == nil {
 			cmdCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
@@ -473,13 +465,46 @@ func storeCmd() *cli.Command {
 			out, gsErr := gs.Output()
 			switch {
 			case gsErr != nil:
-				fmt.Printf("Git status:    (command failed: %v)\n", gsErr)
+				gitStatus = fmt.Sprintf("command failed: %v", gsErr)
 			case len(out) == 0:
-				fmt.Printf("Git status:    clean\n")
+				gitStatus = "clean"
 			default:
-				lines := strings.Count(string(out), "\n")
-				fmt.Printf("Git status:    %d uncommitted change(s)\n", lines)
+				gitChanges = strings.Count(string(out), "\n")
+				gitStatus = fmt.Sprintf("%d uncommitted change(s)", gitChanges)
 			}
+		}
+
+		if flags.JSON {
+			data := map[string]any{
+				"store_path":  storePath,
+				"profile_tag": cfg.ProfileTag,
+				"machine_id":  cfg.MachineID,
+				"profile_dir": cfg.ProfileDir(),
+				"state_dir":   cfg.StateDir(),
+				"hamsfiles":   hamsfiles,
+				"git_status":  gitStatus,
+				"git_changes": gitChanges,
+			}
+			out, mErr := json.MarshalIndent(data, "", "  ")
+			if mErr != nil {
+				return fmt.Errorf("marshaling store status JSON: %w", mErr)
+			}
+			fmt.Println(string(out))
+			return nil
+		}
+
+		fmt.Printf("Store path:    %s\n", logging.TildePath(storePath))
+		fmt.Printf("Profile tag:   %s\n", cfg.ProfileTag)
+		fmt.Printf("Machine ID:    %s\n", cfg.MachineID)
+		fmt.Printf("Profile dir:   %s\n", logging.TildePath(cfg.ProfileDir()))
+		fmt.Printf("State dir:     %s\n", logging.TildePath(cfg.StateDir()))
+		if hamsfiles >= 0 {
+			fmt.Printf("Hamsfiles:     %d\n", hamsfiles)
+		} else {
+			fmt.Printf("Hamsfiles:     (profile dir not found)\n")
+		}
+		if gitStatus != "" {
+			fmt.Printf("Git status:    %s\n", gitStatus)
 		}
 
 		return nil
