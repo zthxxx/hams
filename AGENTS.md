@@ -181,6 +181,18 @@ Spec corrections:
 
 Total commits in cycle 2: 15+ (still growing — iteration 3 adds hooks+OTel defer).
 
+### Cycle 4 — Hooks delivered (un-deferred)
+
+- [x] **Hamsfile hooks parsing IMPLEMENTED** — full YAML → Plan → Execute → runHook pipeline works end-to-end (commit `1479129`). Closes the deferral from commit `ed1a5af`.
+  - `internal/hamsfile/hooks.go`: `(*File).AppHookNode(appID)` walks YAML tree.
+  - `internal/provider/hooks_parse.go`: `ParseHookSet(node)` + `PopulateActionHooks(actions, desired)`.
+  - All 13 providers' `Plan()` updated to call `PopulateActionHooks`.
+  - End-to-end tests prove hooks fire with real shell side effects (touch a marker file).
+  - Removed the lint-warning fallback (hamsfile/lint.go, 300 lines) — no longer needed.
+  - Updated schema-design + cli-architecture specs to reflect shipped reality.
+
+**Only 2 deferrals remain**: `--hams-lucky` LLM enrichment (needs Enricher impl in providers), OTel CLI integration (needs `otel.NewSession()` wiring in `runApply`/`runRefresh`).
+
 ### Cycle 3 — COMPLETE
 
 - [x] Architectural audit (state, hooks, lock, sudo, OTel) — **two new drifts found**: hooks engine has zero parsers wiring it; OTel exporter has zero CLI integration. Both deferred to v1.1 (commit `ed1a5af`).
