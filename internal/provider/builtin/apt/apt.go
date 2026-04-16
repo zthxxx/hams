@@ -3,7 +3,9 @@ package apt
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io/fs"
 	"log/slog"
 	"os/exec"
 	"path/filepath"
@@ -255,7 +257,10 @@ func (p *Provider) handleInstall(ctx context.Context, args []string, hamsFlags m
 		return err
 	}
 
-	sf := p.loadOrCreateStateFile(flags)
+	sf, err := p.loadOrCreateStateFile(flags)
+	if err != nil {
+		return err
+	}
 
 	for _, raw := range args {
 		pkg, requestedVersion, requestedSource := parseAptInstallToken(raw)
@@ -333,7 +338,10 @@ func (p *Provider) handleRemove(ctx context.Context, args []string, hamsFlags ma
 		return err
 	}
 
-	sf := p.loadOrCreateStateFile(flags)
+	sf, err := p.loadOrCreateStateFile(flags)
+	if err != nil {
+		return err
+	}
 
 	for _, raw := range args {
 		// Parse the install-token form so `hams apt remove nginx=1.24.0`
@@ -366,16 +374,22 @@ func (p *Provider) statePath(flags *provider.GlobalFlags) string {
 	return filepath.Join(cfg.StateDir(), p.Manifest().FilePrefix+".state.yaml")
 }
 
-// loadOrCreateStateFile reads the apt state file or returns a fresh one when
-// the file is absent or unreadable. Mirrors the lossy-on-error pattern used
-// by internal/provider/probe.go's loadOrCreateState helper.
-func (p *Provider) loadOrCreateStateFile(flags *provider.GlobalFlags) *state.File {
+// loadOrCreateStateFile reads the apt state file or returns a fresh one
+// when the file is absent. Non-ErrNotExist load failures (corrupted
+// YAML, permission denied) propagate to the caller so the CLI handler
+// can surface a user-facing error instead of silently overwriting a
+// file it couldn't parse — which would lose every previously-tracked
+// apt resource when the caller wrote the synthesized state back.
+func (p *Provider) loadOrCreateStateFile(flags *provider.GlobalFlags) (*state.File, error) {
 	cfg := p.effectiveConfig(flags)
 	sf, err := state.Load(p.statePath(flags))
-	if err != nil {
-		sf = state.New(p.Name(), cfg.MachineID)
+	if err == nil {
+		return sf, nil
 	}
-	return sf
+	if errors.Is(err, fs.ErrNotExist) {
+		return state.New(p.Name(), cfg.MachineID), nil
+	}
+	return nil, fmt.Errorf("loading apt state %s: %w", p.statePath(flags), err)
 }
 
 // packageArgs filters out flag-looking arguments so that passthrough flags

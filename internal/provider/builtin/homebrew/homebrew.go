@@ -3,7 +3,9 @@ package homebrew
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io/fs"
 	"log/slog"
 	"maps"
 	"os"
@@ -316,6 +318,11 @@ func (p *Provider) handleList(hamsFlags map[string]string, flags *provider.Globa
 	statePath := filepath.Join(cfg.StateDir(), "brew.state.yaml")
 	sf, err := state.Load(statePath)
 	if err != nil {
+		if !errors.Is(err, fs.ErrNotExist) {
+			// Corrupt / unreadable state. Don't silently show "all
+			// desired as additions" because that misrepresents drift.
+			return fmt.Errorf("loading brew state %s: %w", statePath, err)
+		}
 		// No state yet — show all desired as additions.
 		sf = state.New("brew", cfg.MachineID)
 	}
