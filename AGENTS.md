@@ -187,6 +187,10 @@ Spec corrections:
 
 Total commits in cycle 2: 15+ (still growing — iteration 3 adds hooks+OTel defer).
 
+### Cycle 93 — `hams refresh --profile=<typo>` symmetric validation
+
+- [x] Follow-up to cycle 92. Same silent-no-op-on-typo bug existed in refresh: `hams --profile=Typo refresh` printed "No providers match" + exit 0. Fix mirrors apply: when `flags.Profile` is explicit, stat `<store>/<profile>`; return `ExitUsageError` if missing. Regression test `TestRunRefresh_ExplicitProfileNotFoundEmitsUserError`. (commit `c749869`)
+
 ### Cycle 92 — Explicit `--profile=<typo>` errors cleanly instead of silent skip
 
 - [x] Real user-workflow bug symmetric to cycle 87's store_path validation. `hams --profile=Linux apply` when `<store>/Linux` doesn't exist used to print `"No providers match: no hamsfile or state file present..."` + exit 0, indistinguishable from a genuinely empty profile. A typo like `Linux` vs `linux` or `Macos` vs `macOS` silently became a no-op. Fix: when `flags.Profile` is explicitly set (via CLI flag), `os.Stat` `<store>/<flag>` and return `UserFacingError{Code: ExitUsageError}` if missing. The check fires ONLY for the explicit-flag case, NOT when profile_tag comes from hams.config.yaml — users shouldn't be forced to create empty profile dirs just to run apply. Two regression tests: `TestRunApply_ExplicitProfileNotFoundEmitsUserError` (strict path) and `TestRunApply_ConfigProfileSilentlyEmptyIsNotAnError` (lenient path). Also updated cycle-75's `TestRunApply_NonTTYWithProfileFlagButNoMachineID` to stub the profile dir (was relying on the pre-cycle-92 no-op behavior). (commit `c41812a`)
