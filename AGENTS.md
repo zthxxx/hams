@@ -189,7 +189,7 @@ Total commits in cycle 2: 15+ (still growing — iteration 3 adds hooks+OTel def
 
 ### Cycle 35 — `--from-repo=/local/path` surfaces local errors
 
-- [x] `hams apply --from-repo=/tmp/not-a-git-repo` printed a misleading "cloning https://github.com//tmp/...: Repository not found" because local-repo failure fell through to the GitHub-shorthand path. Added `isLocalPathAttempt()` to distinguish unambiguously-local inputs (prefix `/`, `~/`, `./`, `../`, or stat-visible) from remote shorthand. Local-looking inputs now surface the real local error. Regression test covers 3 cases. (commit `fa414e1`)
+- [x] `hams apply --from-repo=/tmp/not-a-git-repo` printed a misleading "cloning `https://github.com//tmp/...`: Repository not found" because local-repo failure fell through to the GitHub-shorthand path. Added `isLocalPathAttempt()` to distinguish unambiguously-local inputs (prefix `/`, `~/`, `./`, `../`, or stat-visible) from remote shorthand. Local-looking inputs now surface the real local error. Regression test covers 3 cases. (commit `fa414e1`)
 
 ### Cycle 34 — selfupdate 0%-entry-point tests (68.9% → 76.4%)
 
