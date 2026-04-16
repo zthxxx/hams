@@ -187,6 +187,10 @@ Spec corrections:
 
 Total commits in cycle 2: 15+ (still growing — iteration 3 adds hooks+OTel defer).
 
+### Cycle 89 — `--config=~/path` / `--store=~/path` now expands tilde
+
+- [x] Real user-workflow bug caught by manual end-to-end test. `hams --config=~/my.yaml` and `hams --store=~/my-store apply` produced the same silent-fallback-to-defaults behavior as cycle 85's `store_path: ~/…` in hams.config.yaml — shells do NOT expand `~/` inside `--flag=~/...` syntax (tilde expansion only fires at the start of a separate argument), so the literal `~/my.yaml` reached `paths.ConfigFilePath` and never matched the real file. Fix: exported `config.ExpandHome` (renamed from the internal helper), applied in `resolvePaths()` to both `flags.Config` and `flags.Store` (mutates `flags` in place so downstream readers see the same expanded value). The invariant is now "any hams input that names a local path supports `~/` regardless of whether it comes from a config file, a separate CLI arg, or a --flag=value form". Three regression tests in `root_test.go`; `internal/cli` coverage 58.5% → 59.0%. (commit `3055ff4`)
+
 ### Cycle 88 — `hams refresh` also validates store_path (symmetric to apply)
 
 - [x] Follow-up to cycle 87. The same "store_path doesn't exist → silent failure" issue affected `hams refresh` too: it printed `"No providers match: no hamsfile or state file present for any registered provider."` and exited 0, giving the user no hint that their `store_path` was misaimed. Fix: after `config.Load` in `runRefresh`, stat `cfg.StorePath`; if missing or not a directory, return the same `UserFacingError{Code: ExitUsageError}` that apply now produces. The invariant is now "any command that needs a valid store_path complains immediately when one is missing, not via a downstream symptom." Regression test `TestRunRefresh_NonexistentStorePathEmitsUserError`. (commit `8823aff`)
