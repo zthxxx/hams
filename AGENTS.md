@@ -187,6 +187,10 @@ Spec corrections:
 
 Total commits in cycle 2: 15+ (still growing — iteration 3 adds hooks+OTel defer).
 
+### Cycle 69 — `store status` detects non-existent `store_path`
+
+- [x] If `store_path` pointed at a missing directory, `store status` printed derived paths + "Hamsfiles: (profile dir not found)" with no indication that the ROOT was missing. Added an upfront `os.Stat` probe; text mode emits a loud "(does NOT exist)" header + actionable hints (`store init` or fix config), JSON mode exposes `store_path_exists: bool`. Normal-case output unchanged. (commit `20df10c`)
+
 ### Cycle 68 — Regression test for cycle 67 dual-sink slog
 
 - [x] `TestSetup_DualSink` redirects `os.Stderr` to a pipe, calls Setup, emits a `slog.Info` with a SIGIL marker, drains both sinks, asserts both captured it. Prevents a future refactor from silently dropping either sink (live feedback OR persistent capture). (commit `54ec4df`)
