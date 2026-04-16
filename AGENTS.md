@@ -187,6 +187,10 @@ Spec corrections:
 
 Total commits in cycle 2: 15+ (still growing — iteration 3 adds hooks+OTel defer).
 
+### Cycle 48 — `runRefresh` test coverage (45.8% → 49.8%)
+
+- [x] `runRefresh` had zero coverage despite being a top-level command. Added three tests: flag-exclusion (cycle 38), no-providers-match happy path, and ExitPartialFailure on state-load corruption (cycles 40/43/47 regression guard). (commit `350ed9a`)
+
 ### Cycle 47 — Remaining silent state-save failures propagated
 
 - [x] Two more silent-log save paths after cycle 46: (1) apply's pre-apply refresh phase called sf.Save with log-only failure — now appends to the same `stateSaveFailures` slice so the final summary covers both probe-phase and install-phase save failures. (2) runRefresh's own probe loop had the same silent-log pattern — added a `saveFailures` slice, extended the "Refresh complete" output to show save failures alongside probe failures, returns ExitPartialFailure. After cycles 39/40/43/46/47 every state.Save/state.Load failure surfaces to exit code + terminal. (commit `89553b0`)
