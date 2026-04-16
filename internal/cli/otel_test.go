@@ -120,3 +120,63 @@ func TestOTelSessionState_EndOnZeroValueIsNoOp(t *testing.T) {
 		t.Errorf("zero Session() = %v, want nil", zero.Session())
 	}
 }
+
+// TestAttachRootAttrs_StampsProfileAndCount asserts the root span's
+// hams.profile and hams.providers.count attributes match the
+// observability spec's required keys after AttachRootAttrs is called.
+func TestAttachRootAttrs_StampsProfileAndCount(t *testing.T) {
+	t.Setenv(otelEnvVar, "1")
+	dir := t.TempDir()
+	sess := maybeStartOTelSession(dir, "hams.apply")
+	if sess.Session() == nil {
+		t.Fatal("session is nil; setup failed")
+	}
+	defer sess.End(context.Background(), otelStatusOK)
+
+	sess.AttachRootAttrs("macOS", 7)
+	if sess.rootSpan == nil {
+		t.Fatal("rootSpan is nil")
+	}
+	if got := sess.rootSpan.Attrs["hams.profile"]; got != "macOS" {
+		t.Errorf("hams.profile = %q, want \"macOS\"", got)
+	}
+	if got := sess.rootSpan.Attrs["hams.providers.count"]; got != "7" {
+		t.Errorf("hams.providers.count = %q, want \"7\"", got)
+	}
+}
+
+// TestAttachRootAttrs_NoOpOnZeroValue asserts AttachRootAttrs is a
+// safe no-op when the session is disabled (zero state).
+func TestAttachRootAttrs_NoOpOnZeroValue(_ *testing.T) {
+	var zero otelSessionState
+	zero.AttachRootAttrs("macOS", 7) // should not panic
+}
+
+// TestEnd_MapsStatusToHamsResult asserts the documented status →
+// hams.result mapping at End: ok→success, error→failure, anything
+// else passes through verbatim (e.g., "partial-failure").
+func TestEnd_MapsStatusToHamsResult(t *testing.T) {
+	cases := []struct {
+		input string
+		want  string
+	}{
+		{otelStatusOK, "success"},
+		{otelStatusError, "failure"},
+		{"partial-failure", "partial-failure"},
+		{"canceled", "canceled"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.input, func(t *testing.T) {
+			t.Setenv(otelEnvVar, "1")
+			dir := t.TempDir()
+			sess := maybeStartOTelSession(dir, "hams.apply")
+			if sess.Session() == nil {
+				t.Fatal("session is nil; setup failed")
+			}
+			sess.End(context.Background(), tc.input)
+			if got := sess.rootSpan.Attrs["hams.result"]; got != tc.want {
+				t.Errorf("hams.result = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
