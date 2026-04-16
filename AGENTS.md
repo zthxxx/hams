@@ -187,6 +187,10 @@ Spec corrections:
 
 Total commits in cycle 2: 15+ (still growing — iteration 3 adds hooks+OTel defer).
 
+### Cycle 124 — `hams config list` now surfaces `store_repo`
+
+- [x] Real UX bug. `hams config list` output omitted `store_repo` in both text and JSON formats. A user who set it via `hams config set store_repo github.com/zthxxx/hams-store` and then ran `config list` to verify saw NO mention of the value — only `config get store_repo` would retrieve it. This half-implementation made `store_repo` feel second-class compared to the other config fields all visible in list. Fix: add `store_repo` to the JSON object AND the text-format print loop. Text only emits the "Store repo:" line when `StoreRepo` is non-empty so fresh-install output stays tight. Regression test `TestConfigList_IncludesStoreRepo` seeds a config and asserts both formats contain the value. cli coverage: 65.5% → 67.4%. (commit `23013d0`)
+
 ### Cycle 123 — apt `pinStateOpts` direct tests for pin-format detection
 
 - [x] `pinStateOpts` had 40% coverage — 3 branches (version-pin via `pkg=ver`, source-pin via `pkg/src`, bare-no-pin) plus the "explicit empty-version unpin" special case. A regression here would drop pins from state, so the next apply couldn't tell "installed from apt stable" vs "installed with an explicit version pin". 4 table-driven tests cover each branch including the `nginx=` empty-value case that represents "explicit unpin" (matches `strings.CutPrefix` semantics). apt coverage: 76.5% → 77.6%. (commit `f066910`)
