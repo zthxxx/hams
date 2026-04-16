@@ -3,6 +3,8 @@ package notify
 import (
 	"errors"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 )
@@ -177,9 +179,113 @@ func TestBarkChannel_Name(t *testing.T) {
 	}
 }
 
-// Note on Bark Send() coverage: barkChannel.Send uses a hardcoded
-// api.day.app URL without an injectable http.Client. Covering the
-// non-200 branch would require DI refactoring of the HTTP seam —
-// out of scope here because Bark is a v1.1-deferred feature (see
-// openspec/specs/tui-logging/spec.md). Adding DI now would lock in
-// an API shape before v1.1 wires the channel into apply/refresh.
+// TestBarkSend_HappyPath asserts barkChannel.Send hits the right
+// URL path (`/<token>/<title>/<message>`) against a test server and
+// returns nil on 200.
+//
+// NOT Parallel because we swap the package-global barkBaseURL.
+// Sharing that across goroutines would race; the tests are cheap
+// enough that sequential execution is fine.
+func TestBarkSend_HappyPath(t *testing.T) {
+	var gotPath string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+	t.Cleanup(withBarkBaseURL(srv.URL))
+
+	b := &barkChannel{token: "tok"}
+	if err := b.Send("hello", "world"); err != nil {
+		t.Fatalf("Send: %v", err)
+	}
+	if want := "/tok/hello/world"; gotPath != want {
+		t.Errorf("path = %q, want %q", gotPath, want)
+	}
+}
+
+// TestBarkSend_URLEscaping asserts special characters in title/
+// message are url.PathEscape'd rather than silently passed through.
+// The pre-cycle-107 implementation only replaced spaces, so `#` (URL
+// fragment separator), `?` (query delimiter), and `/` (segment
+// separator) would truncate or split the message. This is the
+// primary regression-gate test for cycle 107. `&` is left unescaped
+// by url.PathEscape per RFC 3986 sub-delims — that's intentional
+// and correct for URL path segments.
+func TestBarkSend_URLEscaping(t *testing.T) {
+	var gotPath string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// r.URL.Path is the decoded path; r.URL.RawPath preserves escapes.
+		if r.URL.RawPath != "" {
+			gotPath = r.URL.RawPath
+		} else {
+			gotPath = r.URL.Path
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+	t.Cleanup(withBarkBaseURL(srv.URL))
+
+	b := &barkChannel{token: "tok"}
+	if err := b.Send("hams apply #1 failed", "bad/chars?yes"); err != nil {
+		t.Fatalf("Send: %v", err)
+	}
+
+	// The escape MUST reach the server with encoded hazards — `#`,
+	// `?`, `/` MUST NOT appear as raw path delimiters between the
+	// token/title/message segments.
+	for _, hazard := range []string{"#", "?"} {
+		if strings.Contains(gotPath, hazard) {
+			t.Errorf("raw path %q still contains unescaped hazard %q — url.PathEscape failed",
+				gotPath, hazard)
+		}
+	}
+
+	// Title escaping: `#` → `%23`; `/` in message → `%2F` (or %2f).
+	if !strings.Contains(strings.ToLower(gotPath), "%23") {
+		t.Errorf("expected %%23 (escaped `#`) in path %q", gotPath)
+	}
+	if !strings.Contains(strings.ToLower(gotPath), "%2f") {
+		t.Errorf("expected %%2f (escaped `/`) in path %q", gotPath)
+	}
+}
+
+// TestBarkSend_Non200ReturnsError asserts barkChannel.Send returns
+// a typed error when the upstream responds with a non-2xx status.
+// Manager.Notify logs errors but continues, so tests that only went
+// through the Manager couldn't assert this branch.
+func TestBarkSend_Non200ReturnsError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusBadGateway)
+	}))
+	defer srv.Close()
+	t.Cleanup(withBarkBaseURL(srv.URL))
+
+	b := &barkChannel{token: "tok"}
+	err := b.Send("t", "m")
+	if err == nil {
+		t.Fatalf("Send with 502 response should return error, got nil")
+	}
+	if !strings.Contains(err.Error(), "502") {
+		t.Errorf("error %v should mention status 502", err)
+	}
+}
+
+// TestBarkSend_NetworkErrorReturnsError asserts Send surfaces the
+// underlying network error when the remote is unreachable.
+func TestBarkSend_NetworkErrorReturnsError(t *testing.T) {
+	t.Cleanup(withBarkBaseURL("http://127.0.0.1:1")) // unreachable port
+
+	b := &barkChannel{token: "tok"}
+	if err := b.Send("t", "m"); err == nil {
+		t.Fatalf("Send against unreachable host should return error, got nil")
+	}
+}
+
+// withBarkBaseURL swaps barkBaseURL for the duration of a test and
+// returns a cleanup func that restores the original.
+func withBarkBaseURL(newURL string) func() {
+	original := barkBaseURL
+	barkBaseURL = newURL
+	return func() { barkBaseURL = original }
+}

@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
-	"strings"
+	"net/url"
 	"time"
 
 	"github.com/gen2brain/beeep"
@@ -74,6 +74,12 @@ func (d *desktopNotifier) Send(title, message string) error {
 	return beeep.Notify(title, message, "")
 }
 
+// barkBaseURL is the default Bark API endpoint. Overridable so tests
+// can point the channel at an httptest.Server instead of the real
+// api.day.app (offline-safe, no external dependency on the notify
+// unit tests).
+var barkBaseURL = "https://api.day.app"
+
 // barkChannel sends push notifications via Bark app (iOS).
 type barkChannel struct {
 	token string
@@ -82,14 +88,22 @@ type barkChannel struct {
 func (b *barkChannel) Name() string { return "bark" }
 
 func (b *barkChannel) Send(title, message string) error {
-	url := fmt.Sprintf("https://api.day.app/%s/%s/%s",
-		b.token,
-		strings.ReplaceAll(title, " ", "%20"),
-		strings.ReplaceAll(message, " ", "%20"),
+	// The Bark API path is `/<token>/<title>/<message>` — each
+	// segment MUST be url.PathEscape'd so characters like `#`, `&`,
+	// `?`, `%`, `/` don't truncate the message at a fragment
+	// delimiter, inject fake query parameters, or split across path
+	// segments. The previous implementation only replaced spaces
+	// which meant any apply-summary containing `#` (e.g. issue refs,
+	// emoji, URL fragments) would lose everything after it.
+	endpoint := fmt.Sprintf("%s/%s/%s/%s",
+		barkBaseURL,
+		url.PathEscape(b.token),
+		url.PathEscape(title),
+		url.PathEscape(message),
 	)
 
 	client := &http.Client{Timeout: 10 * time.Second}
-	resp, err := client.Get(url) //nolint:noctx // Bark API uses simple GET, context not needed
+	resp, err := client.Get(endpoint) //nolint:noctx // Bark API uses simple GET, context not needed
 	if err != nil {
 		return fmt.Errorf("bark notification: %w", err)
 	}
