@@ -187,6 +187,10 @@ Spec corrections:
 
 Total commits in cycle 2: 15+ (still growing — iteration 3 adds hooks+OTel defer).
 
+### Cycle 75 — Non-TTY profile init: clear UserFacingError instead of cryptic EOF
+
+- [x] Real user-workflow bug: `runApply` called `promptProfileInit()` unconditionally when either `profile_tag` or `machine_id` was empty. On CI / cloud-init / piped-stdin invocations, bufio's `ReadString('\n')` immediately returned io.EOF and the error propagated as `"profile init: reading profile tag: EOF"` — users could not tell from the message that they needed to set profile_tag/machine_id explicitly. The `store init` command already had a TTY check (commands.go:571); `runApply` did not. Fix: extracted `ensureProfileConfigured(paths, storePath, cfg)` in apply.go that picks TTY prompt vs UserFacingError based on `term.IsTerminal(os.Stdin.Fd())`. Non-TTY path returns a `UserFacingError{Code: ExitUsageError}` whose message names exactly which keys are missing and whose suggestions teach `hams config set profile_tag <tag>` / `hams config set machine_id $(hostname)`. Refactor also silences a nestif complexity violation. Two regression tests: `TestRunApply_NonTTYWithoutProfileEmitsUserError` (both keys missing) and `TestRunApply_NonTTYWithProfileFlagButNoMachineID` (only machine_id missing after --profile override); both assert the error shape and that `EOF` never leaks into the surface. (commit `ce0c6b7`)
+
 ### Cycle 74 — Coverage tests for config set gating and routing
 
 - [x] Two new tests in `internal/config/config_test.go`: `TestIsValidConfigKey` covers the whitelist used by `hams config set` (profile_tag, machine_id, store_path, store_repo, llm_cli — plus negative cases: typos, sensitive-pattern leaks, empty); `TestWriteConfigKey_GlobalVsLocal` covers the sensitive-vs-nonsensitive routing (non-sensitive → global YAML, sensitive like `notification.bark_token` → local YAML, with cross-file leak checks). Both functions were 0% covered despite being the core of `hams config set`. `internal/config` coverage: 77.4% → 88.3%. No behavior change — coverage only. (commit `4db29d5`)
