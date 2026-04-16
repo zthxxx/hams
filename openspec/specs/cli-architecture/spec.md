@@ -694,22 +694,34 @@ The `--hams-lucky` flag is a forward-looking opt-out for the LLM-driven enrichme
 - The honest architectural call is "documented gap, not dead code" — distinct from the `CLIHandler` interface (which had no plumbing reachable from any production code path and was removed in commit `10de4bd`).
 
 ---
-<!-- Merged from change: 2026-04-16-defer-hooks-and-otel -->
+<!-- Merged from change: 2026-04-16-defer-hooks-and-otel (hooks un-deferred in cycle 4) -->
 
-# CLI Architecture — Spec Delta (hooks-defer + OTel-defer)
+# CLI Architecture — Spec Delta (hooks implemented; OTel still deferred)
 
 ## MODIFIED
 
-### Requirement: Hamsfile Hooks Parsing — Deferred to v1.1
+### Requirement: Hamsfile Hooks Parsing — Implemented
 
-The v1 hamsfile loader does NOT parse `hooks:` blocks. The execution engine at `internal/provider/hooks.go` is fully built but receives no input — no provider's `Plan()` populates `Action.Hooks`, and `internal/hamsfile/` has zero hook-parsing logic.
+The hooks deferral was lifted in cycle 4. Implementation:
 
-#### Scenario: v1 silently ignores hooks: blocks
+- `internal/hamsfile/hooks.go` defines `(*File).AppHookNode(appID)` returning the YAML mapping for an item's `hooks:` key.
+- `internal/provider/hooks_parse.go` defines `ParseHookSet(node)` and `PopulateActionHooks(actions, desired)`.
+- Every builtin provider's `Plan()` now ends with `return provider.PopulateActionHooks(actions, desired), nil` so hamsfile-declared hooks flow through to `Action.Hooks` and are dispatched by `executor.go` around each install/update.
 
-- **WHEN** a user adds a `hooks:` block to an item in their hamsfile
-- **THEN** the v1 hams loader SHALL load the hamsfile without error
-- **AND** `hams apply` SHALL NOT execute any hook
-- **AND** no warning is emitted in v1 (a follow-up change MAY add one).
+Verification: `internal/provider/hooks_integration_test.go` exercises the full YAML → Plan → Execute → runHook pipeline via shell side effects (touch a tempfile) for both inline and deferred hooks.
+
+#### Scenario: hooks: block fires during install
+
+- **WHEN** a user adds `hooks: { pre_install: [{run: "touch /tmp/marker"}] }` to a hamsfile item
+- **AND** that item goes through `hams apply` with an Install action
+- **THEN** the hook's `run` command SHALL execute on the host shell
+- **AND** `/tmp/marker` SHALL exist after apply completes.
+
+#### Scenario: defer:true hook runs after provider finishes
+
+- **WHEN** a `post_install` hook has `defer: true`
+- **THEN** the inline execution SHALL skip it
+- **AND** the deferred hook SHALL run after all regular installs via `RunDeferredHooks`.
 
 ### Requirement: OTel CLI Integration — Deferred to v1.1
 

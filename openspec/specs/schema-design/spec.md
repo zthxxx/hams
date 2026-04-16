@@ -325,9 +325,7 @@ THEN hams SHALL exit with a validation error stating that script-type resources 
 
 ---
 
-### Requirement: Hamsfile Hooks Schema — Deferred to v1.1
-
-> **v1 status (as of 2026-04-16):** The `hooks:` schema below is documented and the `internal/provider/hooks.go` execution engine is fully built and tested, but the v1 hamsfile loader does NOT yet parse `hooks:` keys and no provider's `Plan()` method populates `Action.Hooks`. In v1, a `hooks:` block in a hamsfile is **silently ignored**. The scenarios in this section describe v1.1 behavior; v1 behavior is documented in `cli-architecture/spec.md` (hooks-defer delta, commit TBD).
+### Requirement: Hamsfile Hooks Schema
 
 Items in a Hamsfile MAY declare lifecycle hooks via a `hooks` mapping. Hooks SHALL only fire on the `NotPresent -> Install` transition.
 

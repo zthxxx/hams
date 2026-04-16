@@ -399,17 +399,6 @@ func runApply(ctx context.Context, flags *provider.GlobalFlags, registry *provid
 			continue
 		}
 
-		// Surface v1.1-deferred feature usages so users who copied the
-		// documented `hooks:` example are not surprised by a silent
-		// no-op. See openspec/specs/cli-architecture/spec.md
-		// (hooks-defer + OTel-defer deltas) for the spec stance.
-		if deferred := hamsfile.LintDeferredFeatures(hf); deferred.HasAny() {
-			slog.Warn("hamsfile declares v1.1-deferred features (silently ignored in v1)",
-				"provider", name,
-				"hamsfile", hamsfilePath,
-				"hook_entries", deferred.HookEntries)
-		}
-
 		sf, loadErr := state.Load(statePath)
 		if loadErr != nil {
 			sf = state.New(name, cfg.MachineID)

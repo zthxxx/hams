@@ -80,15 +80,16 @@ func (p *Provider) Probe(_ context.Context, sf *state.File) ([]provider.ProbeRes
 	return results, nil
 }
 
-// Plan computes actions for ansible playbooks.
-// Each resource ID is the playbook path, attached as the action Resource.
+// Plan computes actions for ansible playbooks. Each resource ID is
+// the playbook path, attached as the action Resource. Hamsfile-
+// declared hooks are attached to each action.
 func (p *Provider) Plan(_ context.Context, desired *hamsfile.File, observed *state.File) ([]provider.Action, error) {
 	apps := desired.ListApps()
 	actions := provider.ComputePlan(apps, observed, observed.ConfigHash)
 	for i := range actions {
 		actions[i].Resource = actions[i].ID
 	}
-	return actions, nil
+	return provider.PopulateActionHooks(actions, desired), nil
 }
 
 // Apply runs an ansible playbook.
