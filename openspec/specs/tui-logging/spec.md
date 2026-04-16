@@ -1,6 +1,8 @@
 ## ADDED Requirements
 
-### Requirement: Alternate-Screen TUI Layout
+### Requirement: Alternate-Screen TUI Layout — Deferred to v1.1
+
+> **v1 status (as of 2026-04-16):** The TUI scaffolding at `internal/tui/` (~500 lines of BubbleTea models) is fully built and unit-tested but **never invoked from the CLI in v1**. A grep for `tui\.` across `internal/cli/` returns zero matches; `runApply` writes plain log lines via `slog` even on a TTY. The scenarios below describe v1.1 behavior. v1 ships with plain log-line output. See `openspec/changes/2026-04-16-defer-tui-and-notify/` for the deferral rationale.
 
 The system SHALL render a BubbleTea-based alternate-screen terminal UI during `hams apply` and other long-running operations when stdout is a TTY.
 
@@ -35,7 +37,9 @@ The TUI SHALL occupy the full alternate screen and restore the original terminal
 - **WHEN** the user presses the collapse keyboard shortcut again
 - **THEN** the log output section SHALL expand to show the full scrollable log output
 
-### Requirement: Interactive Popup for Blocking Stdin Operations
+### Requirement: Interactive Popup for Blocking Stdin Operations — Deferred to v1.1
+
+> **v1 status (as of 2026-04-16):** Same status as the alternate-screen TUI deferral above. `internal/tui/popup.go` defines `PopupModel` but has zero callers. Forward-looking — no v1 provider needs interactive stdin.
 
 The system SHALL provide a tmux-popup-style overlay within the alternate-screen TUI for operations that require interactive stdin (e.g., signin flows, OAuth authorization, manual confirmation prompts).
 
@@ -58,7 +62,9 @@ All log output and user interaction for the blocking operation SHALL be containe
 - **WHEN** a popup is triggered for a blocking interactive action
 - **THEN** the system SHALL send a notification (via the notification system) to alert the user that manual input is required
 
-### Requirement: Notification System
+### Requirement: Notification System — Deferred to v1.1
+
+> **v1 status (as of 2026-04-16):** `internal/notify/` defines the multi-channel notification scaffolding (terminal-notifier + Bark) but `Manager.Send` has zero callers in `internal/cli/`. v1 `hams apply` completion does NOT trigger any notification. v1.1 will wire `Manager.Send` at apply-completion + popup-trigger points.
 
 The system SHALL provide a notification system with the following channels:
 
