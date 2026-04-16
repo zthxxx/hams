@@ -141,6 +141,30 @@ func TestPrintError_PlainErrorIsWrapped(t *testing.T) {
 	}
 }
 
+// TestShortName_ExtractsURNSuffix asserts cycle-71: shortName
+// strips the `urn:hams:<provider>:` prefix to yield just the
+// resource name used by `hams list --json`'s `name` field per
+// the cli-architecture spec.
+func TestShortName_ExtractsURNSuffix(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		in, want string
+	}{
+		{"urn:hams:apt:htop", "htop"},
+		{"urn:hams:brew:git", "git"},
+		{"urn:hams:defaults:com.apple.dock.autohide", "com.apple.dock.autohide"},
+		{"htop", "htop"},                 // bare name passthrough
+		{"", ""},                         // empty passthrough
+		{"urn:hams:", "urn:hams:"},       // malformed URN (no provider) passthrough
+		{"urn:hams:apt", "urn:hams:apt"}, // missing colon after provider → passthrough
+	}
+	for _, tc := range cases {
+		if got := shortName(tc.in); got != tc.want {
+			t.Errorf("shortName(%q) = %q, want %q", tc.in, got, tc.want)
+		}
+	}
+}
+
 // TestPrintConfigKey_TypedFields asserts each whitelisted typed
 // field prints the expected Config field; previously 0% coverage.
 func TestPrintConfigKey_TypedFields(t *testing.T) {

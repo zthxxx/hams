@@ -718,10 +718,37 @@ func storeCmd() *cli.Command {
 	}
 }
 
+// shortName extracts the human-facing resource name from an ID that
+// may be a full URN (urn:hams:<provider>:<name>) or a bare name.
+// Used by list --json's `name` field per the cli-architecture spec:
+// consumers that don't care about URN namespacing get just "htop"
+// from "urn:hams:apt:htop".
+func shortName(id string) string {
+	const prefix = "urn:hams:"
+	if !strings.HasPrefix(id, prefix) {
+		return id
+	}
+	// urn:hams:<provider>:<name> — split on the 3rd colon.
+	rest := strings.TrimPrefix(id, prefix)
+	_, name, ok := strings.Cut(rest, ":")
+	if !ok {
+		return id
+	}
+	return name
+}
+
 // listResource is used for JSON serialization of list output.
+// Field names follow the cli-architecture spec §"List in JSON format":
+// each element contains `provider`, `name`, `status`, `version` + extras.
+// `name` is the short resource identifier (e.g., "htop") extracted from
+// the URN; `id` is the full URN (e.g., "urn:hams:apt:htop") retained
+// for scripts that need a globally-unique handle. Both fields carry
+// the same info but at different granularity — consumers pick what
+// matches their schema.
 type listResource struct {
 	Provider    string `json:"provider"`
 	DisplayName string `json:"display_name"`
+	Name        string `json:"name"`
 	ID          string `json:"id"`
 	Status      string `json:"status"`
 	Version     string `json:"version,omitempty"`
@@ -829,6 +856,7 @@ func listCmd(registry *provider.Registry) *cli.Command {
 						jsonResults = append(jsonResults, listResource{
 							Provider:    manifest.Name,
 							DisplayName: displayName,
+							Name:        shortName(id),
 							ID:          id,
 							Status:      string(r.State),
 							Version:     r.Version,
