@@ -18,14 +18,19 @@ import (
 // cliName is the pnpm provider's manifest + CLI name.
 const cliName = "pnpm"
 
-// AutoInjectFlags are flags automatically added if not present.
+// AutoInjectFlags are flags automatically added if not present (used
+// by the HandleCommand passthrough; apply/remove paths use the
+// CmdRunner which always passes -g).
 var AutoInjectFlags = map[string]string{"--global": ""}
 
 // Provider implements the pnpm package manager provider.
-type Provider struct{}
+type Provider struct {
+	runner CmdRunner
+}
 
-// New creates a new pnpm provider.
-func New() *Provider { return &Provider{} }
+// New creates a new pnpm provider wired with a real CmdRunner.
+// Pass NewFakeCmdRunner from tests for DI-isolated unit testing.
+func New(runner CmdRunner) *Provider { return &Provider{runner: runner} }
 
 // pnpmInstallScript is the consent-gated install command. npm is the
 // host (already on PATH by the time this runs, since pnpm depends on
@@ -70,8 +75,12 @@ func (p *Provider) Manifest() provider.Manifest {
 // provider.ErrBootstrapRequired); the CLI orchestrator decides whether
 // to run the manifest-declared install script based on --bootstrap /
 // TTY prompt. Bootstrap itself NEVER executes a network install.
+//
+// LookPath is delegated to the CmdRunner so unit tests can simulate
+// "missing pnpm" via WithLookPathError without mutating the host's
+// real PATH.
 func (p *Provider) Bootstrap(_ context.Context) error {
-	if _, err := pnpmBinaryLookup("pnpm"); err == nil {
+	if err := p.runner.LookPath(); err == nil {
 		return nil
 	}
 	return &provider.BootstrapRequiredError{
@@ -83,12 +92,12 @@ func (p *Provider) Bootstrap(_ context.Context) error {
 
 // Probe queries pnpm for globally installed packages.
 func (p *Provider) Probe(ctx context.Context, sf *state.File) ([]provider.ProbeResult, error) {
-	output, err := exec.CommandContext(ctx, "pnpm", "list", "-g", "--json").Output()
+	output, err := p.runner.List(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("pnpm list: %w", err)
+		return nil, err
 	}
 
-	installed := parsePnpmList(string(output))
+	installed := parsePnpmList(output)
 	var results []provider.ProbeResult
 	for id, r := range sf.Resources {
 		if r.State == state.StateRemoved {
@@ -112,13 +121,13 @@ func (p *Provider) Plan(_ context.Context, desired *hamsfile.File, observed *sta
 // Apply installs a pnpm package globally.
 func (p *Provider) Apply(ctx context.Context, action provider.Action) error {
 	slog.Info("pnpm add", "package", action.ID)
-	return provider.WrapExecPassthrough(ctx, "pnpm", []string{"add", action.ID}, AutoInjectFlags)
+	return p.runner.Install(ctx, action.ID)
 }
 
 // Remove uninstalls a pnpm package globally.
 func (p *Provider) Remove(ctx context.Context, resourceID string) error {
 	slog.Info("pnpm remove", "package", resourceID)
-	return provider.WrapExecPassthrough(ctx, "pnpm", []string{"remove", resourceID}, AutoInjectFlags)
+	return p.runner.Uninstall(ctx, resourceID)
 }
 
 // List returns installed packages with status.
