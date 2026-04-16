@@ -187,6 +187,10 @@ Spec corrections:
 
 Total commits in cycle 2: 15+ (still growing — iteration 3 adds hooks+OTel defer).
 
+### Cycle 113 — `AtomicWrite` error + edge-case coverage
+
+- [x] Test-design cycle. `AtomicWrite` had two untested error branches and one untested edge case that all map to real user workflows. (1) Parent-is-a-file: a user typos a profile path as a filename, or a prior step wrote a file where a directory was expected — `MkdirAll` fails; `AtomicWrite` must surface a "creating directory" error, not silently continue. (2) Empty-data: writing zero bytes after `RemoveApp` drains a hamsfile must persist as an explicit empty-file marker, not error out (so subsequent reads see an empty document, not "file not found"). (3) Overwrite: the atomic rename must completely replace existing content with no hybrid state (regression gate if someone "optimizes" to in-place write). 3 regression tests. hamsfile coverage: 82.5% → 82.9%. (commit `5c3fd9f`)
+
 ### Cycle 112 — Lock corruption + missing-file error-shape tests
 
 - [x] Small test-design cycle. `Lock.Acquire`'s corrupt-lock branch and `Lock.Read`'s missing-file + malformed-YAML branches were both untested. These are load-bearing error paths: Acquire's corruption branch keeps hams from silently overwriting a lock whose YAML is corrupt (the user needs to inspect/remove it manually), and Read's corruption branch distinguishes "stale from crash" vs "genuinely corrupt" for upstream callers that handle each differently. Added 3 regression tests: `TestLock_UnreadableLockFileErrors` (Acquire against corrupt YAML errors AND names the lock path), `TestLock_Read_MissingFile` (returns os.IsNotExist-wrapped for errors.Is), `TestLock_Read_MalformedYAMLSurfacesParseError` (mentions "parsing" in the error text). state coverage: 84.1% → 86.7%. (commit `9286de0`)
