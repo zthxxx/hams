@@ -153,6 +153,64 @@ resources:
 	}
 }
 
-// Prevent unused-import removal of filepath when the file gets
-// gofmt'd; it's used in future expansions for per-file checks.
-var _ = filepath.Join
+// TestList_JSON_IncludesValueAndLastError locks in the cycle-116
+// enhancement: `hams list --json` surfaces the Resource.Value
+// (relevant for KV-Config providers: defaults/duti/git-config) and
+// Resource.LastError (scripts can detect failures without parsing
+// the state YAML directly). omitempty keeps the output clean — a
+// Package-class row with no value doesn't emit an empty `value`.
+func TestList_JSON_IncludesValueAndLastError(t *testing.T) {
+	storeDir, _, stateDir, _ := setupApplyTestEnv(t, []string{"git-config"})
+
+	// Seed a git-config state file with a succeeded resource (Value
+	// populated) and a failed one (LastError populated).
+	statePath := filepath.Join(stateDir, "git-config.state.yaml")
+	writeApplyTestFile(t, statePath, `provider: git-config
+machine_id: test-machine
+resources:
+  user.name=zthxxx:
+    state: ok
+    value: zthxxx
+  core.pager=less:
+    state: failed
+    last_error: "pager binary missing"
+`)
+
+	registry := provider.NewRegistry()
+	p := &applyTestProvider{
+		manifest: provider.Manifest{
+			Name: "git-config", DisplayName: "git config", FilePrefix: "git-config",
+			Platforms: []provider.Platform{provider.PlatformAll},
+		},
+	}
+	if err := registry.Register(p); err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+
+	got := captureStdout(t, func() {
+		app := NewApp(registry, sudo.NoopAcquirer{})
+		if err := app.Run(context.Background(),
+			[]string{"hams", "--store", storeDir, "--json", "list"}); err != nil {
+			t.Fatalf("list: %v", err)
+		}
+	})
+
+	// Must be valid JSON and contain the two resources.
+	if !strings.Contains(got, `"value": "zthxxx"`) {
+		t.Errorf("JSON output missing value for ok resource; got:\n%s", got)
+	}
+	if !strings.Contains(got, `"last_error": "pager binary missing"`) {
+		t.Errorf("JSON output missing last_error for failed resource; got:\n%s", got)
+	}
+	// The ok resource should NOT emit a last_error key (omitempty).
+	// Specifically, the entry for user.name=zthxxx (first in the output)
+	// must not have last_error — check the text is bounded to the ok entry.
+	if idx := strings.Index(got, "user.name=zthxxx"); idx >= 0 {
+		if end := strings.Index(got[idx:], "}"); end > 0 {
+			slice := got[idx : idx+end]
+			if strings.Contains(slice, "last_error") {
+				t.Errorf("ok-resource entry should NOT emit last_error; entry:\n%s", slice)
+			}
+		}
+	}
+}

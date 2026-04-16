@@ -850,7 +850,12 @@ func shortName(id string) string {
 // the URN; `id` is the full URN (e.g., "urn:hams:apt:htop") retained
 // for scripts that need a globally-unique handle. Both fields carry
 // the same info but at different granularity — consumers pick what
-// matches their schema.
+// matches their schema. `version` is populated for Package-class
+// resources; `value` for KV-Config-class (defaults/duti/git-config);
+// `last_error` when the resource's state is `failed` or
+// `hook-failed`. All three use `omitempty` so a KV-Config entry
+// doesn't emit an empty `version`, and a Package entry doesn't
+// emit an empty `value`.
 type listResource struct {
 	Provider    string `json:"provider"`
 	DisplayName string `json:"display_name"`
@@ -858,6 +863,8 @@ type listResource struct {
 	ID          string `json:"id"`
 	Status      string `json:"status"`
 	Version     string `json:"version,omitempty"`
+	Value       string `json:"value,omitempty"`
+	LastError   string `json:"last_error,omitempty"`
 }
 
 func listCmd(registry *provider.Registry) *cli.Command {
@@ -966,6 +973,8 @@ func listCmd(registry *provider.Registry) *cli.Command {
 							ID:          id,
 							Status:      string(r.State),
 							Version:     r.Version,
+							Value:       r.Value,
+							LastError:   r.LastError,
 						})
 					}
 				} else {
