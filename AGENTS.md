@@ -187,6 +187,10 @@ Spec corrections:
 
 Total commits in cycle 2: 15+ (still growing — iteration 3 adds hooks+OTel defer).
 
+### Cycle 98 — hamsfile.ListApps filters empty/whitespace entries
+
+- [x] Real user-workflow bug caught by manual end-to-end test. A malformed hamsfile entry like `- app: ""` or `- app: "  "` (from git merge conflict residue, accidental edit, or yaml round-trip) would flow through `ListApps` → `ComputePlan` → `install ""` / `install   ` on apt/brew/etc. Shell errors blamed the package manager, not the hamsfile. Fix: `hamsfile.ListApps` now `strings.TrimSpace`s the value before appending and skips empty-after-trim values silently. All callers (Plan, CLI install paths, `hams list`) inherit the fix. Regression test `TestListApps_SkipsEmptyAndWhitespaceEntries`. (commit `9c13d3b`)
+
 ### Cycle 97 — homebrew handleInstall/Remove on CmdRunner seam + U1-U7 tests
 
 - [x] Follow-up to cycle 96. The state-write feature landed but lost coverage (57.8% → 54.8%) because homebrew's `handleInstall` shelled out via `provider.WrapExecPassthrough`, which isn't DI-testable. Fix: switch `handleInstall` and `handleRemove` to drive `p.runner.Install` / `p.runner.Uninstall` per-package (same shape as cargo/npm/pnpm/uv/goinstall/mas/vscodeext); `--cask` flag now routes `isCask=true` through the runner. Extracted `tagCask = "cask"` const (goconst). Added 7 `TestHandleCommand_U*` tests mirroring apt's U1-U7: install records both hamsfile+state, idempotent re-install, install-failure leaves both untouched, remove deletes+marks state removed, remove-failure preserves both, dry-run skips everything, `--cask` routes under "cask" tag AND forwards `isCask=true`. Coverage recovers and tops baseline: 54.8% → 67.5%. (commit `3e06b89`)
