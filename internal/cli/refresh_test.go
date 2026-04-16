@@ -142,6 +142,36 @@ func TestRunRefresh_SaveFailure_ReturnsPartialFailure(t *testing.T) {
 	}
 }
 
+// TestRunRefresh_ExplicitProfileNotFoundEmitsUserError locks in
+// cycle 93: symmetric to cycle 92's apply fix. `hams --profile=Typo
+// refresh` used to print "No providers match" + exit 0 instead of
+// naming the bad profile. Now it emits ExitUsageError with a clear
+// message identifying the profile and the missing path.
+func TestRunRefresh_ExplicitProfileNotFoundEmitsUserError(t *testing.T) {
+	storeDir, _, _, _ := setupApplyTestEnv(t, nil)
+
+	flags := &provider.GlobalFlags{Store: storeDir, Profile: "Typo"}
+	registry := provider.NewRegistry()
+
+	err := runRefresh(context.Background(), flags, registry, "", "")
+	if err == nil {
+		t.Fatal("expected error when --profile dir doesn't exist")
+	}
+	var ufe *hamserr.UserFacingError
+	if !errors.As(err, &ufe) {
+		t.Fatalf("want *UserFacingError, got %T: %v", err, err)
+	}
+	if ufe.Code != hamserr.ExitUsageError {
+		t.Errorf("Code = %d, want ExitUsageError (%d)", ufe.Code, hamserr.ExitUsageError)
+	}
+	if !strings.Contains(ufe.Message, "Typo") {
+		t.Errorf("message should name the typo'd profile; got %q", ufe.Message)
+	}
+	if !strings.Contains(ufe.Message, "not found") {
+		t.Errorf("message should say the profile isn't found; got %q", ufe.Message)
+	}
+}
+
 // TestRunRefresh_FlagStoreOverridesConfig locks in cycle 90: when the
 // user passes --store=X, it MUST take precedence over the global
 // config's store_path. Previously config.Load populated cfg.StorePath

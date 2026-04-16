@@ -79,6 +79,17 @@ func runRefresh(ctx context.Context, flags *provider.GlobalFlags, registry *prov
 	}
 	if flags.Profile != "" {
 		cfg.ProfileTag = flags.Profile
+		// Symmetric to cycle 92: when --profile is explicit, validate
+		// the profile dir exists. Same "silent no-op on typo" problem
+		// that cycle 92 fixed for apply.
+		profileDir := cfg.ProfileDir()
+		if info, statErr := os.Stat(profileDir); statErr != nil || !info.IsDir() {
+			return hamserr.NewUserError(hamserr.ExitUsageError,
+				fmt.Sprintf("profile %q not found at %s", flags.Profile, profileDir),
+				"Check available profiles: ls "+cfg.StorePath,
+				"Or create this profile: mkdir -p "+profileDir,
+			)
+		}
 	}
 	// NOTE: cycle 90 originally patched `cfg.StorePath = flags.Store`
 	// here; cycle 91 promoted that guarantee into `config.Load` itself
