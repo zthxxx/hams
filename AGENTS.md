@@ -187,6 +187,10 @@ Spec corrections:
 
 Total commits in cycle 2: 15+ (still growing — iteration 3 adds hooks+OTel defer).
 
+### Cycle 42 — git-clone Plan coverage (23% → 43%)
+
+- [x] 3 tests for git-clone's Plan + cloneParseResources: structured-fields path, legacy `"remote -> path"` scalar fallback, non-mapping-root error. Biggest git-provider coverage uplift in this run — remaining uncovered code (Apply/handleAdd/HandleCommand) needs real git execution and is covered by Docker integration tests. (commit `4e07068`)
+
 ### Cycle 41 — regression test for cycle 39 dry-run exit semantics
 
 - [x] Added `TestApply_DryRun_SkippedProvider_ReturnsPartialFailure` — simulates a provider whose Plan returns an error and asserts runApply returns `*UserFacingError{Code: ExitPartialFailure}` whose message mentions "dry-run". Locks in the cycle 39 fix from the test side. (commit `fbc23e2`)
