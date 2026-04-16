@@ -181,6 +181,15 @@ Spec corrections:
 
 Total commits in cycle 2: 15+ (still growing — iteration 3 adds hooks+OTel defer).
 
+### Cycle 5 — OTel delivered (un-deferred)
+
+- [x] **OTel CLI integration IMPLEMENTED** — opt-in via `HAMS_OTEL=1` env var (commit `1cfd54e`). Closes the deferral from commit `ed1a5af`.
+  - `internal/cli/otel.go`: `maybeStartOTelSession(dataHome, operation)` → `otelSessionState` with `Session()` accessor + `End(ctx, status)`. Loose-boolean env parsing (true/yes/on/1).
+  - `runApply` + `runRefresh` both wrap operations in root spans (`hams.apply` / `hams.refresh`) and pass the session to `provider.Execute`.
+  - Named return `(retErr error)` in both so the defer tags the root span with `ok`/`error` based on final return.
+  - End-to-end test proves `HAMS_OTEL=1 → trace JSON file appears under ${HAMS_DATA_HOME}/otel/traces/`.
+  - Updated cli-architecture spec to reflect shipped reality with 3 user-facing scenarios.
+
 ### Cycle 4 — Hooks delivered (un-deferred)
 
 - [x] **Hamsfile hooks parsing IMPLEMENTED** — full YAML → Plan → Execute → runHook pipeline works end-to-end (commit `1479129`). Closes the deferral from commit `ed1a5af`.
@@ -191,7 +200,7 @@ Total commits in cycle 2: 15+ (still growing — iteration 3 adds hooks+OTel def
   - Removed the lint-warning fallback (hamsfile/lint.go, 300 lines) — no longer needed.
   - Updated schema-design + cli-architecture specs to reflect shipped reality.
 
-**Only 2 deferrals remain**: `--hams-lucky` LLM enrichment (needs Enricher impl in providers), OTel CLI integration (needs `otel.NewSession()` wiring in `runApply`/`runRefresh`).
+**Only 1 v1.1 deferral remains**: `--hams-lucky` LLM enrichment (requires Enricher implementation on at least one provider — a feature ticket, not a verification task).
 
 ### Cycle 3 — COMPLETE
 
