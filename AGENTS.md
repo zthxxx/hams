@@ -187,6 +187,10 @@ Spec corrections:
 
 Total commits in cycle 2: 15+ (still growing — iteration 3 adds hooks+OTel defer).
 
+### Cycle 49 — `store_repo` config field actually used
+
+- [x] **Real spec drift**: schema-design spec lists `store_repo` as a REQUIRED config field that "points to the hams store repository". But the impl only read it back via `config get store_repo` for display — never used it to resolve the store. Users who followed the spec saw "no store configured" despite having it set. Fixed: when no `--from-repo`/`--store`/`store_path` is present, `store_repo` is now treated as the effective `--from-repo` (lowest precedence). (commit `b035a03`)
+
 ### Cycle 48 — `runRefresh` test coverage (45.8% → 49.8%)
 
 - [x] `runRefresh` had zero coverage despite being a top-level command. Added three tests: flag-exclusion (cycle 38), no-providers-match happy path, and ExitPartialFailure on state-load corruption (cycles 40/43/47 regression guard). (commit `350ed9a`)
