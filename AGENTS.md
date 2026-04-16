@@ -187,6 +187,10 @@ Spec corrections:
 
 Total commits in cycle 2: 15+ (still growing — iteration 3 adds hooks+OTel defer).
 
+### Cycle 47 — Remaining silent state-save failures propagated
+
+- [x] Two more silent-log save paths after cycle 46: (1) apply's pre-apply refresh phase called sf.Save with log-only failure — now appends to the same `stateSaveFailures` slice so the final summary covers both probe-phase and install-phase save failures. (2) runRefresh's own probe loop had the same silent-log pattern — added a `saveFailures` slice, extended the "Refresh complete" output to show save failures alongside probe failures, returns ExitPartialFailure. After cycles 39/40/43/46/47 every state.Save/state.Load failure surfaces to exit code + terminal. (commit `89553b0`)
+
 ### Cycle 46 — State-save failures reported in final summary
 
 - [x] After a successful install, if `sf.Save()` fails (disk full, mid-run permission change), only a slog.Error fired and apply reported "complete" with exit 0 — scripts couldn't detect state drift. Now tracked in a `stateSaveFailures` slice, surfaced in the final summary with a user-friendly hint about "next apply may re-execute these resources", and included in the ExitPartialFailure condition. (commit `fdc09cd`)
