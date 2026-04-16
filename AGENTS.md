@@ -187,6 +187,10 @@ Spec corrections:
 
 Total commits in cycle 2: 15+ (still growing — iteration 3 adds hooks+OTel defer).
 
+### Cycle 94 — `--json=true` / `--json=false` now parsed at error boundary
+
+- [x] Real user-workflow bug caught by manual end-to-end test. urfave/cli accepts all of `--json`, `--json=true`, `--json=false`, `--json=1`, `--json=0` for BoolFlag. But the top-level `Execute()` error path in `root.go` scans `os.Args` directly (urfave's parsed value is unreachable from the os.Exit path) and only matched the bare `--json` form. Result: `hams --json=true apply --store=/nope` silently emitted the text error instead of the JSON object users expect from scripts. Fix: extracted `hasJSONFlag(args)` helper handling all five forms with right-wins semantics (matching urfave/cli). Nine-case table-driven test `TestHasJSONFlag_AllForms` covers the full grid including "embedded in other args doesn't match" (e.g., `--jsonx` negative case). `internal/cli` coverage: 59.1% → 59.7%. (commit `ac20935`)
+
 ### Cycle 93 — `hams refresh --profile=<typo>` symmetric validation
 
 - [x] Follow-up to cycle 92. Same silent-no-op-on-typo bug existed in refresh: `hams --profile=Typo refresh` printed "No providers match" + exit 0. Fix mirrors apply: when `flags.Profile` is explicit, stat `<store>/<profile>`; return `ExitUsageError` if missing. Regression test `TestRunRefresh_ExplicitProfileNotFoundEmitsUserError`. (commit `c749869`)
