@@ -187,6 +187,10 @@ Spec corrections:
 
 Total commits in cycle 2: 15+ (still growing — iteration 3 adds hooks+OTel defer).
 
+### Cycle 54 — `--status` filter validates values
+
+- [x] `hams list --status=failled` (typo) silently matched zero resources and printed "No managed resources found" — indistinguishable from an empty store. Validated each comma-separated value against the 5 defined `ResourceState` constants; typos return `ExitUsageError` with the unknown value and the valid-state list. Multi-value filters still work. (commit `4e399a8`)
+
 ### Cycle 53 — Panic recovery in parallel Probe goroutines
 
 - [x] Matches cycle 51's pattern but for `ProbeAll`: a panic in any provider's Probe would take down the whole parallel refresh, even though healthy providers' probes had completed. `defer recover()` in each goroutine body now logs the panic and omits the provider from the results map — runRefresh (cycle 40) surfaces the mismatch via ExitPartialFailure. (commit `6752155`)
