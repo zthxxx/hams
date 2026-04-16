@@ -43,7 +43,7 @@ func registerBuiltins(registry *provider.Registry, sudoCmd sudo.CmdBuilder) {
 		pnpm.New(pnpm.NewRealCmdRunner()),
 		uv.New(uv.NewRealCmdRunner()),
 		goinstall.New(goinstall.NewRealCmdRunner()),
-		cargo.New(cargo.NewRealCmdRunner()),
+		cargo.New(builtinCfg, cargo.NewRealCmdRunner()),
 		git.NewConfigProvider(),
 		git.NewCloneProvider(builtinCfg),
 		defaults.New(builtinCfg, defaults.NewRealCmdRunner()),
