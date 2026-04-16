@@ -181,6 +181,12 @@ Spec corrections:
 
 Total commits in cycle 2: 15+ (still growing — iteration 3 adds hooks+OTel defer).
 
+### Cycle 16 — Sensitive config key gating matches the schema-design spec
+
+- [x] **`hams config set` accepted only 5 hardcoded keys**: the spec requires `notification.bark_token` (and similar) to auto-route to `hams.config.local.yaml`, but the `set` command rejected any key not in the `ValidConfigKeys` whitelist. Loosened the gate: accept whitelisted keys OR keys matching a sensitive pattern. Typos still rejected. (commit `910165c`)
+- [x] **Missing "key" pattern in `sensitivePatterns`**: schema-design spec lists `token, key, secret, password, credential` but impl only had 4 of them — `api_key` fell through as non-sensitive. Added "key" with an explanatory comment; expanded `TestIsSensitiveKey_SubstringMatch` to cover `api_key` and `openai_api_key`.
+- [x] Manual verification of `hams config set notification.bark_token abc123` and `openai_api_key sk-xxx` confirmed routing + 0600 perms on the `.local.yaml` file.
+
 ### Cycle 15 — Platform consistency between internal and CLI registries
 
 - [x] **Platform mismatch leaked into `hams --help`**: internal registry silently skipped `defaults`/`duti`/`mas` on Linux (so `apply --only=defaults` correctly said "unknown provider"), but the CLI dispatch registry advertised them anyway. Linux users saw macOS-only commands in help and then exec-failed with "executable not found". Exported `provider.IsPlatformsMatch`; apply the same platform filter in `registerBuiltins` before calling `RegisterProvider`. Added `TestRegisterBuiltins_FiltersCLIByPlatform` with runtime.GOOS-aware assertions. (commit `d843bfd`)
