@@ -542,6 +542,73 @@ func TestApply_PruneOrphans_HamsfilePresent_DoesNotPrune(t *testing.T) {
 	}
 }
 
+// TestApply_CorruptedStateFile_SkipsProviderNotSilentReset locks in
+// the cycle-43 data-integrity fix: when the state file exists but
+// is unparseable (corruption, merge conflict, editor crash), apply
+// MUST NOT silently replace it with an empty state. Doing so would
+// lose drift detection for every tracked resource and potentially
+// re-trigger installs. The provider should be skipped and reported
+// via ExitPartialFailure, exactly like cycle 39's broken-hamsfile
+// path.
+func TestApply_CorruptedStateFile_SkipsProviderNotSilentReset(t *testing.T) {
+	_, profileDir, stateDir, flags := setupApplyTestEnv(t, []string{"apt"})
+	hamsfilePath := filepath.Join(profileDir, "apt.hams.yaml")
+	writeApplyTestFile(t, hamsfilePath, "packages:\n  - app: htop\n")
+
+	// Create a state file with corrupt YAML — parse will fail but the
+	// file exists (so we're NOT in the ErrNotExist fallback branch).
+	statePath := filepath.Join(stateDir, "apt.state.yaml")
+	if err := os.MkdirAll(stateDir, 0o750); err != nil {
+		t.Fatalf("mkdir state: %v", err)
+	}
+	writeApplyTestFile(t, statePath, "this is : totally : broken : yaml :")
+
+	var applied []provider.Action
+	p := &applyTestProvider{
+		manifest: provider.Manifest{
+			Name: "apt", DisplayName: "apt", FilePrefix: "apt",
+			Platforms: []provider.Platform{provider.PlatformAll},
+		},
+		planFn: func(_ context.Context, _ *hamsfile.File, _ *state.File) ([]provider.Action, error) {
+			return []provider.Action{{ID: "htop", Type: provider.ActionInstall}}, nil
+		},
+		applyFn: func(_ context.Context, a provider.Action) error {
+			applied = append(applied, a)
+			return nil
+		},
+	}
+	registry := provider.NewRegistry()
+	if err := registry.Register(p); err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+
+	err := runApply(context.Background(), flags, registry, sudo.NoopAcquirer{}, "", true, "", "", false, bootstrapMode{})
+	if err == nil {
+		t.Fatal("expected ExitPartialFailure when state is corrupted; got nil")
+	}
+	var ufe *hamserr.UserFacingError
+	if !errors.As(err, &ufe) || ufe.Code != hamserr.ExitPartialFailure {
+		t.Fatalf("expected *UserFacingError{ExitPartialFailure}; got %v (type %T)", err, err)
+	}
+
+	// The critical assertion: NO apply actions ran. Silent-reset
+	// behavior would have produced an action for "htop" against the
+	// synthesized empty state.
+	if len(applied) != 0 {
+		t.Errorf("corrupted state must skip provider, not apply %d actions: %+v", len(applied), applied)
+	}
+
+	// And the state file on disk must still contain the corrupt
+	// content — hams hasn't overwritten it with an empty state.
+	contents, readErr := os.ReadFile(statePath)
+	if readErr != nil {
+		t.Fatalf("state file missing after run (should be preserved): %v", readErr)
+	}
+	if !strings.Contains(string(contents), "totally : broken") {
+		t.Errorf("state file was rewritten; expected corrupt contents preserved, got %q", contents)
+	}
+}
+
 // TestApply_DryRun_SkippedProvider_ReturnsPartialFailure locks in the
 // cycle 39 fix: when dry-run planning encounters a broken hamsfile
 // (here, the provider's Plan returns an error), the skipped-providers
