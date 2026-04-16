@@ -39,7 +39,7 @@ func registerBuiltins(registry *provider.Registry, sudoCmd sudo.CmdBuilder) {
 	cliProviders := []cliProvider{
 		homebrew.New(builtinCfg),
 		apt.New(builtinCfg, apt.NewRealCmdRunner(sudoCmd)),
-		npm.New(),
+		npm.New(npm.NewRealCmdRunner()),
 		pnpm.New(),
 		uv.New(),
 		goinstall.New(),
