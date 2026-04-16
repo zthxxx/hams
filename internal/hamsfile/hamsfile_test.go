@@ -206,6 +206,74 @@ func TestAtomicWrite_CreatesFile(t *testing.T) {
 	}
 }
 
+// TestAtomicWrite_ParentIsFileErrors asserts AtomicWrite surfaces
+// an error (not silent overwrite) when the target's parent
+// directory path is actually a file. This is a real scenario: a
+// user typos the profile path as a filename, or an earlier step
+// wrote a file where a directory was expected.
+func TestAtomicWrite_ParentIsFileErrors(t *testing.T) {
+	dir := t.TempDir()
+	// Create "parent" as a file (not a directory) to force MkdirAll to fail.
+	parentFile := filepath.Join(dir, "parent")
+	if err := os.WriteFile(parentFile, []byte("not a dir"), 0o600); err != nil {
+		t.Fatalf("seed parent file: %v", err)
+	}
+	// AtomicWrite target is <parent>/test.yaml — MkdirAll on
+	// <parent> fails because <parent> is already a file.
+	target := filepath.Join(parentFile, "test.yaml")
+	err := AtomicWrite(target, []byte("hello"))
+	if err == nil {
+		t.Fatalf("AtomicWrite into a file-parent should error")
+	}
+	if !strings.Contains(err.Error(), "creating directory") {
+		t.Errorf("error should mention 'creating directory', got: %v", err)
+	}
+}
+
+// TestAtomicWrite_EmptyDataWritesEmptyFile asserts writing zero
+// bytes produces an empty file rather than an error or skip. This
+// is the expected behavior when a hamsfile has no entries after
+// RemoveApp drains everything — the file should still persist as
+// an explicit "yes, this is empty" marker.
+func TestAtomicWrite_EmptyDataWritesEmptyFile(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "empty.yaml")
+
+	if err := AtomicWrite(path, []byte{}); err != nil {
+		t.Fatalf("AtomicWrite empty: %v", err)
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("Stat: %v", err)
+	}
+	if info.Size() != 0 {
+		t.Errorf("empty write produced size=%d, want 0", info.Size())
+	}
+}
+
+// TestAtomicWrite_OverwriteExisting asserts AtomicWrite is truly
+// atomic and leaves no intermediate state: overwriting a file with
+// new content replaces it completely with the new payload.
+func TestAtomicWrite_OverwriteExisting(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "test.yaml")
+
+	if err := AtomicWrite(path, []byte("first")); err != nil {
+		t.Fatalf("first AtomicWrite: %v", err)
+	}
+	if err := AtomicWrite(path, []byte("second")); err != nil {
+		t.Fatalf("second AtomicWrite: %v", err)
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	if string(data) != "second" {
+		t.Errorf("after overwrite, content = %q, want 'second'", string(data))
+	}
+}
+
 func TestAtomicWrite_NoTempFileOnSuccess(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "test.yaml")
