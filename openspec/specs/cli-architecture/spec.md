@@ -494,6 +494,14 @@ prerequisite is missing surface that as a regular probe error, which
 - **THEN** apply SHALL exit with code 2 and an error message naming the conflict
 - **AND** no providers SHALL be bootstrapped, probed, or executed.
 
+#### Scenario: `--dry-run --bootstrap` prints but does not execute
+
+- **WHEN** the user runs `hams apply --dry-run --bootstrap` on a machine without a prerequisite (e.g. `brew`)
+- **THEN** apply SHALL resolve consent to `bootDecisionRun` as usual
+- **AND** apply SHALL print `[dry-run] Would bootstrap <provider> via: <script>` to stdout
+- **AND** apply SHALL NOT invoke `provider.RunBootstrap` (no /bin/bash fork, no network call, no host mutation)
+- **AND** apply SHALL continue with the remaining providers, then fall through to the regular dry-run plan printing.
+
 ### Requirement: Config command
 
 The `hams config` command SHALL provide subcommands for reading and writing hams configuration values. `hams config get <key>` SHALL print the current value of the specified configuration key. `hams config set <key> <value>` SHALL write the value to the appropriate config file. Keys that contain sensitive values (e.g., `bark-token`) SHALL be written to `hams.config.local.yaml` or OS keychain, never to git-tracked config files. `hams config list` SHALL display all current configuration values with their sources (global, project, local override). `hams config edit` SHALL open the config file in the user's `$EDITOR`.

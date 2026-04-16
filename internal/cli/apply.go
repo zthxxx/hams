@@ -221,6 +221,15 @@ func runApply(ctx context.Context, flags *provider.GlobalFlags, registry *provid
 		if errors.As(bootstrapErr, &brerr) && hasHamsfile {
 			switch resolveBootstrapConsent(boot, brerr) {
 			case bootDecisionRun:
+				// Dry-run preserves --bootstrap's INTENT (user consented)
+				// without the side effect: print what WOULD run and
+				// leave the host untouched. The surrounding printDryRunPlan
+				// step still fires to show the rest of the plan.
+				if flags.DryRun {
+					fmt.Printf("[dry-run] Would bootstrap %s via: %s\n",
+						manifest.Name, brerr.Script)
+					continue
+				}
 				if runErr := provider.RunBootstrap(ctx, p, registry); runErr != nil {
 					slog.Error("provider bootstrap script failed",
 						"provider", manifest.Name, "error", runErr)

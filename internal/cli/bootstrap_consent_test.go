@@ -187,6 +187,57 @@ func TestRunApply_NoBootstrapFailsFastWithActionableError(t *testing.T) {
 	}
 }
 
+// Dry-run MUST preserve --bootstrap's INTENT (user consented) without
+// the side effect: hams prints what WOULD run and leaves the host
+// untouched. A dry-run that actually forked /bin/bash to run install.sh
+// would violate the core dry-run contract in ways the user would not
+// recover from cleanly (partial brew install, PATH mutations, etc).
+func TestRunApply_DryRunBootstrapDoesNotExecuteScript(t *testing.T) {
+	_, profileDir, _, flags := setupApplyTestEnv(t, []string{"bash", "brew"})
+	writeApplyTestFile(t, filepath.Join(profileDir, "Homebrew.hams.yaml"), "packages: []\n")
+	writeApplyTestFile(t, filepath.Join(profileDir, "bash.hams.yaml"), "packages: []\n")
+	flags.DryRun = true // THE test lever
+
+	var scriptInvocations []string
+	bash := &bashRunnerFake{
+		applyTestProvider: applyTestProvider{
+			manifest: provider.Manifest{
+				Name: "bash", DisplayName: "bash", FilePrefix: "bash",
+				Platforms: []provider.Platform{provider.PlatformAll},
+			},
+		},
+		runScript: func(_ context.Context, script string) error {
+			scriptInvocations = append(scriptInvocations, script)
+			return nil
+		},
+	}
+	brew := &applyTestProvider{
+		manifest: provider.Manifest{
+			Name: "brew", DisplayName: "Homebrew", FilePrefix: "Homebrew",
+			Platforms: []provider.Platform{provider.PlatformAll},
+			DependsOn: []provider.DependOn{{Provider: "bash", Script: "install.sh"}},
+		},
+		bootstrapFn: func(context.Context) error {
+			return &provider.BootstrapRequiredError{Provider: "brew", Binary: "brew", Script: "install.sh"}
+		},
+	}
+
+	registry := provider.NewRegistry()
+	if err := registry.Register(bash); err != nil {
+		t.Fatalf("register bash: %v", err)
+	}
+	if err := registry.Register(brew); err != nil {
+		t.Fatalf("register brew: %v", err)
+	}
+
+	if err := runApply(context.Background(), flags, registry, sudo.NoopAcquirer{}, "", true, "", "", false, bootstrapMode{Allow: true}); err != nil {
+		t.Fatalf("runApply: %v", err)
+	}
+	if len(scriptInvocations) != 0 {
+		t.Errorf("dry-run must NOT execute the bootstrap script; got invocations %v", scriptInvocations)
+	}
+}
+
 // End-to-end test: runApply with --bootstrap and a provider whose
 // Bootstrap returns ErrBootstrapRequired, verifies that RunBootstrap is
 // called via the registered bash provider and Bootstrap is retried.
