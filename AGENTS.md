@@ -187,6 +187,10 @@ Spec corrections:
 
 Total commits in cycle 2: 15+ (still growing — iteration 3 adds hooks+OTel defer).
 
+### Cycle 106 — Property-based tests for 5 providers + .gitignore fix
+
+- [x] Test-design cycle. Per CLAUDE.md testing convention ("property-based > example-based"), 5 providers lacked property tests: git, defaults, duti, homebrew, goinstall. Added ~20 rapid-based property tests across parser helpers that production feeds arbitrary input to (state-file IDs after merge conflicts, brew stdout after schema changes, user CLI args with random flag orderings). Properties: no-panic on arbitrary input, idempotency, prefix/round-trip invariants, fail-closed on malformed input. Hit one real bug in MY own property-test design (joined-lines vs split-lines mismatch caught by rapid's shrinker: `["A\nA"]` joined then parsed differs from pre-join expectation) — demonstrates property tests catching issues example tests miss by construction. Also: `.gitignore` had `testdata/rapid/` without `**/` prefix, so it only matched at repo root — `internal/provider/builtin/duti/testdata/rapid/` was tracked. Fixed by prefixing with `**/`. homebrew coverage: 67.5% → 68.2%. (commits `77c3c04`, `ac25b61`)
+
 ### Cycle 105 — Dead code cleanup + stringer tests
 
 - [x] Maintenance cycle. `Registry.All()` had zero callers anywhere in the codebase (grep across `internal/`, `pkg/`, `cmd/`, all `*.go` including tests). Deleted per "continuous garbage collection" rule. Added tests for `ResourceClass.String`, `ActionType.String`, and `BootstrapRequiredError.Error` / `Unwrap` — these implement user-facing formatting that the consent flow and dry-run preview rely on being stable, but previously sat at 0% coverage, so a rename would have silently garbled log messages without any test catching it. `errors.Is` / `errors.As` round-trip also asserted. provider coverage: 70.2% → 73.6%. (commit `95565e0`)
