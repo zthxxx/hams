@@ -30,6 +30,7 @@ Thumbs.db
 # Debug
 __debug_bin*
 *.log
+.logs
 .cache
 
 # Environment
