@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"strings"
 
+	"github.com/zthxxx/hams/internal/config"
 	hamserr "github.com/zthxxx/hams/internal/error"
 	"github.com/zthxxx/hams/internal/hamsfile"
 	"github.com/zthxxx/hams/internal/provider"
@@ -22,13 +23,17 @@ const (
 
 // Provider implements the VS Code extension provider.
 type Provider struct {
+	cfg    *config.Config
 	runner CmdRunner
 }
 
 // New creates a new VS Code extension provider wired with a real
-// CmdRunner. Pass NewFakeCmdRunner from tests for DI-isolated unit
-// testing.
-func New(runner CmdRunner) *Provider { return &Provider{runner: runner} }
+// CmdRunner. cfg supplies store/profile paths for the CLI-first
+// auto-record path.
+// Pass NewFakeCmdRunner from tests for DI-isolated unit testing.
+func New(cfg *config.Config, runner CmdRunner) *Provider {
+	return &Provider{cfg: cfg, runner: runner}
+}
 
 // Manifest returns the vscodeext provider metadata.
 func (p *Provider) Manifest() provider.Manifest {
@@ -103,40 +108,107 @@ func (p *Provider) List(_ context.Context, desired *hamsfile.File, sf *state.Fil
 }
 
 // HandleCommand processes CLI subcommands for code-ext.
-func (p *Provider) HandleCommand(ctx context.Context, args []string, _ map[string]string, flags *provider.GlobalFlags) error {
+func (p *Provider) HandleCommand(ctx context.Context, args []string, hamsFlags map[string]string, flags *provider.GlobalFlags) error {
 	verb, remaining := provider.ParseVerb(args)
 
 	switch verb {
 	case "install", "i":
-		if len(remaining) == 0 {
-			return hamserr.NewUserError(hamserr.ExitUsageError,
-				"code-ext install requires an extension ID",
-				"Usage: hams code-ext install <publisher.extension>",
-				"To install all recorded extensions, use: hams apply --only=code-ext",
-			)
-		}
-		if flags.DryRun {
-			fmt.Printf("[dry-run] Would install: code --install-extension %s\n", strings.Join(remaining, " "))
-			return nil
-		}
-		installArgs := []string{}
-		for _, ext := range remaining {
-			installArgs = append(installArgs, "--install-extension", ext)
-		}
-		return provider.WrapExecPassthrough(ctx, "code", installArgs, nil)
+		return p.handleInstall(ctx, remaining, hamsFlags, flags)
 	case "remove", "uninstall", "rm":
-		if flags.DryRun {
-			fmt.Printf("[dry-run] Would remove: code --uninstall-extension %s\n", strings.Join(remaining, " "))
-			return nil
-		}
-		uninstallArgs := []string{}
-		for _, ext := range remaining {
-			uninstallArgs = append(uninstallArgs, "--uninstall-extension", ext)
-		}
-		return provider.WrapExecPassthrough(ctx, "code", uninstallArgs, nil)
+		return p.handleRemove(ctx, remaining, hamsFlags, flags)
 	default:
 		return provider.WrapExecPassthrough(ctx, "code", args, nil)
 	}
+}
+
+// handleInstall runs `code --install-extension <ext>` via the CmdRunner
+// seam and, on success, appends each extension ID to the code-ext
+// hamsfile.
+func (p *Provider) handleInstall(ctx context.Context, args []string, hamsFlags map[string]string, flags *provider.GlobalFlags) error {
+	if len(args) == 0 {
+		return hamserr.NewUserError(hamserr.ExitUsageError,
+			"code-ext install requires an extension ID",
+			"Usage: hams code-ext install <publisher.extension>",
+			"To install all recorded extensions, use: hams apply --only=code-ext",
+		)
+	}
+	exts := extensionArgs(args)
+	if len(exts) == 0 {
+		return hamserr.NewUserError(hamserr.ExitUsageError,
+			"code-ext install requires at least one extension ID",
+			"Usage: hams code-ext install <publisher.extension>",
+		)
+	}
+	if flags.DryRun {
+		fmt.Printf("[dry-run] Would install: code --install-extension %s\n", strings.Join(exts, " "))
+		return nil
+	}
+
+	for _, ext := range exts {
+		if err := p.runner.Install(ctx, ext); err != nil {
+			return err
+		}
+	}
+
+	hf, err := p.loadOrCreateHamsfile(hamsFlags, flags)
+	if err != nil {
+		return err
+	}
+	for _, ext := range exts {
+		hf.AddApp(tagCLI, ext, "")
+	}
+	return hf.Write()
+}
+
+// handleRemove runs `code --uninstall-extension <ext>` via the
+// CmdRunner seam and, on success, removes each extension from the
+// code-ext hamsfile.
+func (p *Provider) handleRemove(ctx context.Context, args []string, hamsFlags map[string]string, flags *provider.GlobalFlags) error {
+	if len(args) == 0 {
+		return hamserr.NewUserError(hamserr.ExitUsageError,
+			"code-ext remove requires an extension ID",
+			"Usage: hams code-ext remove <publisher.extension>",
+		)
+	}
+	exts := extensionArgs(args)
+	if len(exts) == 0 {
+		return hamserr.NewUserError(hamserr.ExitUsageError,
+			"code-ext remove requires at least one extension ID",
+			"Usage: hams code-ext remove <publisher.extension>",
+		)
+	}
+	if flags.DryRun {
+		fmt.Printf("[dry-run] Would remove: code --uninstall-extension %s\n", strings.Join(exts, " "))
+		return nil
+	}
+
+	for _, ext := range exts {
+		if err := p.runner.Uninstall(ctx, ext); err != nil {
+			return err
+		}
+	}
+
+	hf, err := p.loadOrCreateHamsfile(hamsFlags, flags)
+	if err != nil {
+		return err
+	}
+	for _, ext := range exts {
+		hf.RemoveApp(ext)
+	}
+	return hf.Write()
+}
+
+// extensionArgs filters positional tokens: flags (leading `-`) are
+// excluded so they don't get recorded as extension IDs.
+func extensionArgs(args []string) []string {
+	out := make([]string, 0, len(args))
+	for _, a := range args {
+		if strings.HasPrefix(a, "-") {
+			continue
+		}
+		out = append(out, a)
+	}
+	return out
 }
 
 // Name returns the CLI name.
