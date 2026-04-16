@@ -181,6 +181,13 @@ Spec corrections:
 
 Total commits in cycle 2: 15+ (still growing — iteration 3 adds hooks+OTel defer).
 
+### Cycle 3 (continuing)
+
+- [x] Architectural audit (state, hooks, lock, sudo, OTel) — **two new drifts found**: hooks engine has zero parsers wiring it; OTel exporter has zero CLI integration. Both deferred to v1.1 (commit `ed1a5af`).
+- [x] Homebrew CmdRunner DI refactor — 15.9% → 45.2% (commit `a9cebe7`).
+- [ ] Vscodeext apply/probe DI refactor (last meaningful Tier-1-equivalent gap).
+- [ ] Ansible DI (lower priority, bash-chain provider).
+
 ## Rules
 
 @.claude/rules/code-conventions.md

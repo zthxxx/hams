@@ -1587,7 +1587,7 @@ The VS Code Extensions provider (`code-ext`) SHALL wrap `code --install-extensio
 |-------|-------|
 | Name | `code-ext` |
 | Display name | `VS Code Extensions` |
-| File | `code-ext.hams.yaml` |
+| File | `vscodeext.hams.yaml` (FilePrefix is `vscodeext`, distinct from Manifest.Name `code-ext`) |
 | Resource class | Package |
 | Platform | both |
 | depend-on | `homebrew` (for `visual-studio-code` cask on macOS) |
@@ -2507,7 +2507,7 @@ Each provider's Hamsfile SHALL follow the naming convention `<Display Name>.hams
 | uv | `uv.hams.yaml` |
 | goinstall | `goinstall.hams.yaml` |
 | cargo | `Cargo.hams.yaml` |
-| code-ext | `code-ext.hams.yaml` |
+| code-ext | `vscodeext.hams.yaml` |
 | git-config | `git config.hams.yaml` |
 | git-clone | `git clone.hams.yaml` |
 | defaults | `defaults.hams.yaml` |
