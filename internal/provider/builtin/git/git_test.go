@@ -8,7 +8,7 @@ import (
 
 func TestManifest(t *testing.T) {
 	t.Parallel()
-	p := NewConfigProvider()
+	p := NewConfigProvider(nil)
 	m := p.Manifest()
 	if m.Name != "git-config" {
 		t.Errorf("Name = %q", m.Name)
@@ -26,7 +26,7 @@ func TestManifest(t *testing.T) {
 
 func TestNameDisplayName(t *testing.T) {
 	t.Parallel()
-	p := NewConfigProvider()
+	p := NewConfigProvider(nil)
 	if p.Name() != "git-config" {
 		t.Errorf("Name() = %q", p.Name())
 	}

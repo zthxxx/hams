@@ -3,6 +3,7 @@ package state
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -107,5 +108,73 @@ func TestIsProcessAlive_Invalid(t *testing.T) {
 	}
 	if isProcessAlive(-1) {
 		t.Error("PID -1 should not be reported alive")
+	}
+}
+
+// TestLock_UnreadableLockFileErrors asserts the "lock file exists
+// but we can't parse it" path returns an actionable error naming
+// the lock file path. Without this gate, a corrupted lock (e.g.
+// partial write during crash, or manual edit) could be silently
+// overwritten in the stale-reclaim branch — losing user intent.
+//
+// The current Acquire code tries to `l.Read()` when OpenFile fails
+// with O_EXCL; if Read can't parse the YAML, it surfaces a
+// wrapped error pointing at the lock path so the user knows what
+// to inspect / remove.
+func TestLock_UnreadableLockFileErrors(t *testing.T) {
+	dir := t.TempDir()
+	lock := NewLock(dir)
+
+	// Write garbage that fails YAML parsing.
+	lockPath := filepath.Join(dir, ".lock")
+	if err := os.WriteFile(lockPath, []byte("::not valid: yaml: {[}"), 0o600); err != nil {
+		t.Fatalf("write corrupt lock: %v", err)
+	}
+
+	err := lock.Acquire("hams apply")
+	if err == nil {
+		t.Fatalf("Acquire against corrupt lock should error")
+	}
+	// Error must mention the lock path so the user can act on it.
+	if !strings.Contains(err.Error(), lockPath) {
+		t.Errorf("error should name lock path %q, got: %v", lockPath, err)
+	}
+}
+
+// TestLock_Read_MissingFile asserts Lock.Read returns the
+// underlying os.ErrNotExist rather than a different error shape.
+// Callers use errors.Is to distinguish "first run" from "corrupt".
+func TestLock_Read_MissingFile(t *testing.T) {
+	dir := t.TempDir()
+	lock := NewLock(dir)
+
+	_, err := lock.Read()
+	if err == nil {
+		t.Fatalf("Read on missing lock should return error")
+	}
+	if !os.IsNotExist(err) {
+		t.Errorf("Read on missing lock should return ErrNotExist-wrapped, got: %v", err)
+	}
+}
+
+// TestLock_Read_MalformedYAMLSurfacesParseError asserts Lock.Read
+// returns a "parsing lock file" error (not a generic IO error)
+// when the file exists but contains invalid YAML. Caller relies on
+// this to distinguish "stale from crash" from "genuinely corrupt".
+func TestLock_Read_MalformedYAMLSurfacesParseError(t *testing.T) {
+	dir := t.TempDir()
+	lock := NewLock(dir)
+
+	lockPath := filepath.Join(dir, ".lock")
+	if err := os.WriteFile(lockPath, []byte("::not valid: yaml: {[}"), 0o600); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	_, err := lock.Read()
+	if err == nil {
+		t.Fatalf("Read on malformed lock should error")
+	}
+	if !strings.Contains(err.Error(), "parsing") {
+		t.Errorf("error should mention parsing, got: %v", err)
 	}
 }

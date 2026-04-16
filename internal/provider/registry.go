@@ -51,18 +51,6 @@ func (r *Registry) Get(name string) Provider {
 	return r.providers[strings.ToLower(name)]
 }
 
-// All returns all registered providers.
-func (r *Registry) All() []Provider {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-
-	result := make([]Provider, 0, len(r.providers))
-	for _, p := range r.providers {
-		result = append(result, p)
-	}
-	return result
-}
-
 // Names returns all registered provider names, sorted alphabetically.
 func (r *Registry) Names() []string {
 	r.mu.RLock()

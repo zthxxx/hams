@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"strings"
 
+	"github.com/zthxxx/hams/internal/config"
 	hamserr "github.com/zthxxx/hams/internal/error"
 	"github.com/zthxxx/hams/internal/hamsfile"
 	"github.com/zthxxx/hams/internal/provider"
@@ -21,10 +22,24 @@ const configProviderName = "git-config"
 const configDisplayName = "git config"
 
 // ConfigProvider implements the git config KV provider.
-type ConfigProvider struct{}
+type ConfigProvider struct {
+	cfg    *config.Config
+	runner CmdRunner
+}
 
-// NewConfigProvider creates a new git config provider.
-func NewConfigProvider() *ConfigProvider { return &ConfigProvider{} }
+// NewConfigProvider creates a new git config provider wired with the
+// given config and a real CmdRunner.
+func NewConfigProvider(cfg *config.Config) *ConfigProvider {
+	return &ConfigProvider{cfg: cfg, runner: NewRealCmdRunner()}
+}
+
+// WithRunner replaces the CmdRunner on the provider. Exposed so tests
+// can inject a fake runner that records calls and manipulates an
+// in-memory KV store, without exec-ing the host's git binary.
+func (p *ConfigProvider) WithRunner(r CmdRunner) *ConfigProvider {
+	p.runner = r
+	return p
+}
 
 // Manifest returns the git config provider metadata.
 func (p *ConfigProvider) Manifest() provider.Manifest {
@@ -53,7 +68,8 @@ func (p *ConfigProvider) Probe(ctx context.Context, sf *state.File) ([]provider.
 			continue
 		}
 
-		value, err := readGitConfig(ctx, id)
+		key := splitResourceKey(id)
+		value, err := p.runner.GetGlobal(ctx, key)
 		if err != nil {
 			results = append(results, provider.ProbeResult{ID: id, State: state.StateFailed, ErrorMsg: err.Error()})
 			continue
@@ -72,7 +88,7 @@ func (p *ConfigProvider) Plan(_ context.Context, desired *hamsfile.File, observe
 
 // Apply sets a git config value.
 func (p *ConfigProvider) Apply(ctx context.Context, action provider.Action) error {
-	// Resource format: "scope.section.key=value" e.g., "global.user.name=zthxxx"
+	// Resource format: "key=value" e.g., "user.name=zthxxx".
 	parts := strings.SplitN(action.ID, "=", 2)
 	if len(parts) != 2 {
 		return fmt.Errorf("git config: resource ID must be 'scope.key=value', got %q", action.ID)
@@ -82,16 +98,14 @@ func (p *ConfigProvider) Apply(ctx context.Context, action provider.Action) erro
 	value := parts[1]
 
 	slog.Info("git config", "key", key, "value", value)
-	cmd := exec.CommandContext(ctx, "git", "config", "--global", key, value) //nolint:gosec // git config args from hamsfile declarations
-	return cmd.Run()
+	return p.runner.SetGlobal(ctx, key, value)
 }
 
 // Remove unsets a git config value.
 func (p *ConfigProvider) Remove(ctx context.Context, resourceID string) error {
-	key := strings.SplitN(resourceID, "=", 2)[0]
+	key := splitResourceKey(resourceID)
 	slog.Info("git config --unset", "key", key)
-	cmd := exec.CommandContext(ctx, "git", "config", "--global", "--unset", key) //nolint:gosec // git config key from hamsfile declarations
-	return cmd.Run()
+	return p.runner.UnsetGlobal(ctx, key)
 }
 
 // List returns git config entries with diff between desired and observed.
@@ -100,26 +114,165 @@ func (p *ConfigProvider) List(_ context.Context, desired *hamsfile.File, sf *sta
 	return provider.FormatDiff(&diff), nil
 }
 
-// HandleCommand processes CLI subcommands for git config.
-func (p *ConfigProvider) HandleCommand(ctx context.Context, args []string, _ map[string]string, flags *provider.GlobalFlags) error {
-	if len(args) < 2 {
-		return hamserr.NewUserError(hamserr.ExitUsageError,
-			"git-config requires key and value",
-			"Usage: hams git-config <key> <value>",
-			"Example: hams git-config user.name zthxxx",
-		)
+// HandleCommand processes CLI subcommands for git config. Supported
+// shapes (per builtin-providers.md §git-config):
+//
+//   - `hams git-config set <key> <value>` (canonical) — sets and
+//     auto-records.
+//   - `hams git-config <key> <value>` (bare, backward compat) —
+//     same semantics as `set`.
+//   - `hams git-config remove <key>` — unsets globally and deletes
+//     the matching hamsfile entry.
+//   - `hams git-config list` — prints the desired-vs-observed diff.
+func (p *ConfigProvider) HandleCommand(ctx context.Context, args []string, hamsFlags map[string]string, flags *provider.GlobalFlags) error {
+	if len(args) == 0 {
+		return p.usageError()
 	}
 
-	key := args[0]
-	value := args[1]
+	switch args[0] {
+	case "set":
+		if len(args) != 3 {
+			return hamserr.NewUserError(hamserr.ExitUsageError,
+				"git-config set requires key and value",
+				"Usage: hams git-config set <key> <value>",
+				"Example: hams git-config set user.name zthxxx",
+			)
+		}
+		return p.doSet(ctx, args[1], args[2], hamsFlags, flags)
+	case "remove":
+		if len(args) != 2 {
+			return hamserr.NewUserError(hamserr.ExitUsageError,
+				"git-config remove requires a key",
+				"Usage: hams git-config remove <key>",
+				"Example: hams git-config remove user.name",
+			)
+		}
+		return p.doRemove(ctx, args[1], hamsFlags, flags)
+	case "list":
+		return p.doList(ctx, flags)
+	}
 
+	// Bare form: `hams git-config <key> <value>`.
+	if len(args) != 2 {
+		return p.usageError()
+	}
+	return p.doSet(ctx, args[0], args[1], hamsFlags, flags)
+}
+
+func (p *ConfigProvider) usageError() error {
+	return hamserr.NewUserError(hamserr.ExitUsageError,
+		"git-config requires a subcommand or key/value pair",
+		"Usage: hams git-config set <key> <value>",
+		"       hams git-config <key> <value>",
+		"       hams git-config remove <key>",
+		"       hams git-config list",
+	)
+}
+
+// doSet runs `git config --global <key> <value>` via the runner and
+// persists the entry into the hamsfile + state (via recordSet).
+func (p *ConfigProvider) doSet(ctx context.Context, key, value string, hamsFlags map[string]string, flags *provider.GlobalFlags) error {
 	if flags.DryRun {
 		fmt.Printf("[dry-run] Would set: git config --global %s %s\n", key, value)
 		return nil
 	}
 
-	cmd := exec.CommandContext(ctx, "git", "config", "--global", key, value) //nolint:gosec // git config args from CLI input
-	return cmd.Run()
+	if err := p.runner.SetGlobal(ctx, key, value); err != nil {
+		return err
+	}
+	return p.recordSet(key, value, hamsFlags, flags)
+}
+
+// doRemove runs `git config --global --unset <key>` via the runner
+// and deletes any hamsfile entry starting with `<key>=` (marking the
+// matching state resource StateRemoved).
+func (p *ConfigProvider) doRemove(ctx context.Context, key string, hamsFlags map[string]string, flags *provider.GlobalFlags) error {
+	if flags.DryRun {
+		fmt.Printf("[dry-run] Would unset: git config --global --unset %s\n", key)
+		return nil
+	}
+
+	if err := p.runner.UnsetGlobal(ctx, key); err != nil {
+		return err
+	}
+
+	hf, err := p.loadOrCreateHamsfile(hamsFlags, flags)
+	if err != nil {
+		return err
+	}
+	sf := p.loadOrCreateStateFile(flags)
+
+	prefix := key + "="
+	removed := false
+	for _, existing := range hf.ListApps() {
+		if strings.HasPrefix(existing, prefix) {
+			hf.RemoveApp(existing)
+			sf.SetResource(existing, state.StateRemoved)
+			removed = true
+		}
+	}
+	if !removed {
+		// No prior hamsfile entry. Record a tombstone so `hams apply`
+		// doesn't try to re-assert a stale value from state.
+		sf.SetResource(prefix, state.StateRemoved)
+	}
+
+	if writeErr := hf.Write(); writeErr != nil {
+		return writeErr
+	}
+	return sf.Save(p.statePath(flags))
+}
+
+// doList prints the desired-vs-observed diff for the git-config
+// provider (same output as `hams list --only=git-config`).
+func (p *ConfigProvider) doList(ctx context.Context, flags *provider.GlobalFlags) error {
+	hf, err := p.loadOrCreateHamsfile(nil, flags)
+	if err != nil {
+		return err
+	}
+	sf := p.loadOrCreateStateFile(flags)
+
+	output, err := p.List(ctx, hf, sf)
+	if err != nil {
+		return err
+	}
+	fmt.Print(output)
+	return nil
+}
+
+// recordSet persists the key=value pair into the hamsfile and state
+// file. If an entry with the same key but a different value already
+// exists in the hamsfile, it is replaced in-place (via remove+add)
+// so the hamsfile stays aligned with what `git config` actually has
+// on disk. Returns the first write error encountered.
+func (p *ConfigProvider) recordSet(key, value string, hamsFlags map[string]string, flags *provider.GlobalFlags) error {
+	hf, err := p.loadOrCreateHamsfile(hamsFlags, flags)
+	if err != nil {
+		return err
+	}
+
+	sf := p.loadOrCreateStateFile(flags)
+
+	newEntry := key + "=" + value
+	// Remove any pre-existing entry for this key with a different
+	// value so the hamsfile is single-valued per key.
+	for _, existing := range hf.ListApps() {
+		if existing == newEntry {
+			continue
+		}
+		if splitResourceKey(existing) == key {
+			hf.RemoveApp(existing)
+			sf.SetResource(existing, state.StateRemoved)
+		}
+	}
+
+	hf.AddApp(tagCLI, newEntry, "")
+	sf.SetResource(newEntry, state.StateOK, state.WithValue(value))
+
+	if writeErr := hf.Write(); writeErr != nil {
+		return writeErr
+	}
+	return sf.Save(p.statePath(flags))
 }
 
 // Name returns the CLI name.
@@ -128,12 +281,11 @@ func (p *ConfigProvider) Name() string { return configProviderName }
 // DisplayName returns the display name.
 func (p *ConfigProvider) DisplayName() string { return configDisplayName }
 
-func readGitConfig(ctx context.Context, resourceID string) (string, error) {
-	key := strings.SplitN(resourceID, "=", 2)[0]
-	cmd := exec.CommandContext(ctx, "git", "config", "--global", "--get", key) //nolint:gosec // git config key from state entries
-	output, err := cmd.Output()
-	if err != nil {
-		return "", fmt.Errorf("git config --get %s: %w", key, err)
-	}
-	return strings.TrimSpace(string(output)), nil
+// splitResourceKey returns the part of a resource ID before the first
+// `=`. The git-config resource ID convention is `<key>=<value>` (with
+// `global` scope implied); Probe/Remove need the key alone to invoke
+// `git config --get` / `--unset`, and the auto-record path needs it to
+// detect "same key, different value" drift.
+func splitResourceKey(resourceID string) string {
+	return strings.SplitN(resourceID, "=", 2)[0]
 }

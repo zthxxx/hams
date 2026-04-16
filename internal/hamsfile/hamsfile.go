@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 
 	"gopkg.in/yaml.v3"
@@ -129,6 +130,11 @@ func (f *File) Tags() []string {
 }
 
 // ListApps returns all app/URN names from all tags in the Hamsfile.
+// Empty-string and whitespace-only values are skipped — a malformed
+// hamsfile entry like `- app: ""` (e.g., from a git merge conflict
+// or manual editing) must not flow into the provider's install
+// command, which would otherwise attempt `brew install ""` or
+// `apt install ""` and fail with a cryptic downstream error.
 func (f *File) ListApps() []string {
 	doc := f.DocMapping()
 	if doc == nil {
@@ -149,7 +155,9 @@ func (f *File) ListApps() []string {
 			for k := 0; k < len(item.Content)-1; k += 2 {
 				key := item.Content[k].Value
 				if key == fieldApp || key == fieldURN {
-					apps = append(apps, item.Content[k+1].Value)
+					if name := strings.TrimSpace(item.Content[k+1].Value); name != "" {
+						apps = append(apps, name)
+					}
 					break
 				}
 			}

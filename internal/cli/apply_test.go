@@ -1051,3 +1051,46 @@ func TestRunApply_ConfigProfileSilentlyEmptyIsNotAnError(t *testing.T) {
 		t.Fatalf("config-derived empty profile should NOT error; got: %v", err)
 	}
 }
+
+// TestRunApply_FromRepoAndStoreAreMutuallyExclusive locks in cycle 100:
+// `hams apply --from-repo=X --store=Y` used to silently honor only
+// --from-repo (cloning to ${HAMS_DATA_HOME}/repo/X/), confusing users
+// who thought --store would redirect the clone. Now we emit a clear
+// UserFacingError naming both flags + the ${HAMS_DATA_HOME}/repo/...
+// clone location so the user can pick the right one.
+func TestRunApply_FromRepoAndStoreAreMutuallyExclusive(t *testing.T) {
+	configHome := t.TempDir()
+	dataHome := t.TempDir()
+	storeDir := t.TempDir()
+	t.Setenv("HAMS_CONFIG_HOME", configHome)
+	t.Setenv("HAMS_DATA_HOME", dataHome)
+	writeApplyTestFile(t, filepath.Join(configHome, "hams.config.yaml"),
+		"profile_tag: macOS\nmachine_id: mid1\n")
+
+	flags := &provider.GlobalFlags{Store: storeDir}
+	registry := provider.NewRegistry()
+
+	// Both --from-repo and --store passed; expect mutual-exclusion error.
+	err := runApply(context.Background(), flags, registry,
+		sudo.NoopAcquirer{}, "never-cloned/somerepo", true, "", "", false, bootstrapMode{})
+	if err == nil {
+		t.Fatal("expected error when both --from-repo and --store are set")
+	}
+	var ufe *hamserr.UserFacingError
+	if !errors.As(err, &ufe) {
+		t.Fatalf("want *UserFacingError, got %T: %v", err, err)
+	}
+	if ufe.Code != hamserr.ExitUsageError {
+		t.Errorf("Code = %d, want ExitUsageError (%d)", ufe.Code, hamserr.ExitUsageError)
+	}
+	if !strings.Contains(ufe.Message, "--from-repo") || !strings.Contains(ufe.Message, "--store") {
+		t.Errorf("message should name BOTH flags; got %q", ufe.Message)
+	}
+	if !strings.Contains(ufe.Message, "mutually exclusive") {
+		t.Errorf("message should say mutually exclusive; got %q", ufe.Message)
+	}
+	joined := strings.Join(ufe.Suggestions, "\n")
+	if !strings.Contains(joined, "HAMS_DATA_HOME") {
+		t.Errorf("suggestions should explain where --from-repo clones; got %v", ufe.Suggestions)
+	}
+}

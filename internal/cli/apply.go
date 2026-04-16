@@ -72,6 +72,20 @@ func runApply(ctx context.Context, flags *provider.GlobalFlags, registry *provid
 			"Pick one: --bootstrap to auto-run, --no-bootstrap to fail fast",
 		)
 	}
+	// --from-repo clones to `${HAMS_DATA_HOME}/repo/<user>/<repo>/`
+	// (see resolveClonePath in bootstrap.go) — there is no way for
+	// hams to honor a user-supplied --store location at the same time.
+	// Previously --store was silently dropped when --from-repo was
+	// also given, leading users to think they'd point the clone at a
+	// specific directory; the actual clone landed in data_home. Error
+	// loudly so the user picks one or the other.
+	if fromRepo != "" && flags.Store != "" {
+		return hamserr.NewUserError(hamserr.ExitUsageError,
+			"--from-repo and --store are mutually exclusive",
+			"--from-repo clones into ${HAMS_DATA_HOME}/repo/<user>/<name>/ — hams cannot honor a custom --store at the same time",
+			"Pick one: --from-repo=<user/repo> to clone, OR --store=<path> to use an existing local directory",
+		)
+	}
 	// Validate --only/--except exclusion BEFORE loading config — otherwise
 	// users with both flags and no store-path get a misleading "no store
 	// configured" error first. The real filtering still happens later via

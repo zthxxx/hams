@@ -30,6 +30,8 @@ const (
 	brewDisplayName = "Homebrew"
 	// tagCLI is the default hamsfile tag for CLI (non-cask, non-tap) brew formulas.
 	tagCLI = "cli"
+	// tagCask is the hamsfile tag for GUI apps installed via `brew install --cask`.
+	tagCask = "cask"
 )
 
 // BrewResource holds provider-specific data for a Homebrew action.
@@ -245,7 +247,7 @@ func caskApps(f *hamsfile.File) map[string]bool {
 
 	for i := 0; i < len(doc.Content)-1; i += 2 {
 		tagName := doc.Content[i].Value
-		if tagName != "cask" {
+		if tagName != tagCask {
 			continue
 		}
 		seq := doc.Content[i+1]
@@ -388,7 +390,7 @@ func (p *Provider) handleInstall(ctx context.Context, args []string, hamsFlags m
 	tag := parseInstallTag(hamsFlags)
 	// If --cask is present in args and no explicit tag was set, use "cask" as the tag.
 	if tag == tagCLI && hasCaskFlag(args) {
-		tag = "cask"
+		tag = tagCask
 	}
 	// Auto-detect tap format (user/repo with exactly one slash, no formula suffix).
 	if tag == tagCLI && len(packages) > 0 && isTapFormat(packages[0]) {
@@ -406,20 +408,41 @@ func (p *Provider) handleInstall(ctx context.Context, args []string, hamsFlags m
 		return nil
 	}
 
-	if err := provider.WrapExecPassthrough(ctx, "brew", append([]string{"install"}, args...), nil); err != nil {
-		return err
+	isCask := hasCaskFlag(args)
+	// Drive the runner per-package so the flow is DI-testable
+	// (previously `provider.WrapExecPassthrough` shelled out directly,
+	// so unit tests couldn't cover handleInstall without a real brew).
+	// Fail fast on first error to preserve apt-style atomic semantics:
+	// partial install → no recording.
+	for _, pkg := range packages {
+		if err := p.runner.Install(ctx, pkg, isCask); err != nil {
+			return err
+		}
 	}
 
 	hf, err := p.loadOrCreateHamsfile(hamsFlags, flags)
 	if err != nil {
 		return err
 	}
+	sf, err := p.loadOrCreateStateFile(flags)
+	if err != nil {
+		return err
+	}
 
 	for _, pkg := range packages {
 		hf.AddApp(tag, pkg, "")
+		// State write is additive — apt's U12-U15 pattern. Without
+		// this, `hams list --only=brew` showed nothing after a
+		// `hams brew install git` because `list` reads state files
+		// only. The hamsfile record alone is not enough for the
+		// list / refresh / drift paths.
+		sf.SetResource(pkg, state.StateOK)
 	}
 
-	return hf.Write()
+	if writeErr := hf.Write(); writeErr != nil {
+		return writeErr
+	}
+	return sf.Save(p.statePath(flags))
 }
 
 func (p *Provider) handleRemove(ctx context.Context, args []string, hamsFlags map[string]string, flags *provider.GlobalFlags) error {
@@ -443,20 +466,30 @@ func (p *Provider) handleRemove(ctx context.Context, args []string, hamsFlags ma
 		return nil
 	}
 
-	if err := provider.WrapExecPassthrough(ctx, "brew", append([]string{"uninstall"}, args...), nil); err != nil {
-		return err
+	for _, pkg := range packages {
+		if err := p.runner.Uninstall(ctx, pkg); err != nil {
+			return err
+		}
 	}
 
 	hf, err := p.loadOrCreateHamsfile(hamsFlags, flags)
 	if err != nil {
 		return err
 	}
+	sf, err := p.loadOrCreateStateFile(flags)
+	if err != nil {
+		return err
+	}
 
 	for _, pkg := range packages {
 		hf.RemoveApp(pkg)
+		sf.SetResource(pkg, state.StateRemoved)
 	}
 
-	return hf.Write()
+	if writeErr := hf.Write(); writeErr != nil {
+		return writeErr
+	}
+	return sf.Save(p.statePath(flags))
 }
 
 func (p *Provider) loadOrCreateHamsfile(hamsFlags map[string]string, flags *provider.GlobalFlags) (*hamsfile.File, error) {
@@ -465,6 +498,30 @@ func (p *Provider) loadOrCreateHamsfile(hamsFlags map[string]string, flags *prov
 		return nil, err
 	}
 	return hamsfile.LoadOrCreateEmpty(path)
+}
+
+// statePath returns the absolute path to brew.state.yaml for the
+// active machine. Mirrors apt.statePath.
+func (p *Provider) statePath(flags *provider.GlobalFlags) string {
+	cfg := p.effectiveConfig(flags)
+	return filepath.Join(cfg.StateDir(), p.Manifest().FilePrefix+".state.yaml")
+}
+
+// loadOrCreateStateFile reads the brew state file or returns a fresh
+// one when the file is absent. Non-ErrNotExist load failures (corrupt
+// YAML, permission denied) propagate so the CLI handler surfaces a
+// user-facing error instead of silently overwriting unparseable state.
+// Mirrors apt.loadOrCreateStateFile.
+func (p *Provider) loadOrCreateStateFile(flags *provider.GlobalFlags) (*state.File, error) {
+	cfg := p.effectiveConfig(flags)
+	sf, err := state.Load(p.statePath(flags))
+	if err == nil {
+		return sf, nil
+	}
+	if errors.Is(err, fs.ErrNotExist) {
+		return state.New(p.Name(), cfg.MachineID), nil
+	}
+	return nil, fmt.Errorf("loading brew state %s: %w", p.statePath(flags), err)
 }
 
 func (p *Provider) hamsfilePath(hamsFlags map[string]string, flags *provider.GlobalFlags) (string, error) {

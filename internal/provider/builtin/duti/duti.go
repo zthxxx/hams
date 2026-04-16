@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"strings"
 
+	"github.com/zthxxx/hams/internal/config"
 	hamserr "github.com/zthxxx/hams/internal/error"
 	"github.com/zthxxx/hams/internal/hamsfile"
 	"github.com/zthxxx/hams/internal/provider"
@@ -19,12 +20,15 @@ const cliName = "duti"
 
 // Provider implements the duti default-app association provider.
 type Provider struct {
+	cfg    *config.Config
 	runner CmdRunner
 }
 
 // New creates a new duti provider wired with a real CmdRunner.
 // Pass NewFakeCmdRunner from tests for DI-isolated unit testing.
-func New(runner CmdRunner) *Provider { return &Provider{runner: runner} }
+func New(cfg *config.Config, runner CmdRunner) *Provider {
+	return &Provider{cfg: cfg, runner: runner}
+}
 
 // dutiInstallScript is the consent-gated install command. brew is the
 // host (already on PATH if the user's fresh-Mac chain went brew →
@@ -130,14 +134,26 @@ func (p *Provider) List(_ context.Context, desired *hamsfile.File, sf *state.Fil
 	return provider.FormatDiff(&diff), nil
 }
 
-// HandleCommand processes CLI subcommands for duti.
-func (p *Provider) HandleCommand(ctx context.Context, args []string, _ map[string]string, flags *provider.GlobalFlags) error {
+// HandleCommand processes CLI subcommands for duti. The canonical
+// shape `hams duti <ext>=<bundle-id>` is auto-recorded into the
+// hamsfile and state so subsequent `hams apply` runs on other
+// machines reproduce the association. Other argument shapes (raw
+// `duti` flags like `-x`, `-s`) are passed through to the host
+// binary without bookkeeping.
+func (p *Provider) HandleCommand(ctx context.Context, args []string, hamsFlags map[string]string, flags *provider.GlobalFlags) error {
 	if len(args) == 0 {
 		return hamserr.NewUserError(hamserr.ExitUsageError,
 			"duti requires arguments",
 			"Usage: hams duti <ext>=<bundle-id>",
 			"Example: hams duti pdf=com.adobe.acrobat.pdf",
 		)
+	}
+
+	// Canonical shape: a single `<ext>=<bundle-id>` argument. Anything
+	// else (multiple args, flags) is a raw duti invocation and flows
+	// through the exec passthrough.
+	if len(args) == 1 && strings.Contains(args[0], "=") && !strings.HasPrefix(args[0], "-") {
+		return p.handleSet(ctx, args[0], hamsFlags, flags)
 	}
 
 	if flags.DryRun {
@@ -147,6 +163,63 @@ func (p *Provider) HandleCommand(ctx context.Context, args []string, _ map[strin
 
 	cmd := exec.CommandContext(ctx, "duti", args...) //nolint:gosec // duti args from CLI input
 	return cmd.Run()
+}
+
+// handleSet parses `<ext>=<bundle-id>`, runs the CmdRunner seam and
+// auto-records the association. Same-ext different-bundle-id
+// invocations replace the stale hamsfile entry in place.
+func (p *Provider) handleSet(ctx context.Context, arg string, hamsFlags map[string]string, flags *provider.GlobalFlags) error {
+	ext, bundleID, err := parseResourceID(arg)
+	if err != nil {
+		return hamserr.NewUserError(hamserr.ExitUsageError,
+			err.Error(),
+			"Usage: hams duti <ext>=<bundle-id>",
+			"Example: hams duti pdf=com.adobe.acrobat.pdf",
+		)
+	}
+
+	if flags.DryRun {
+		fmt.Printf("[dry-run] Would run: duti -s %s .%s all\n", bundleID, ext)
+		return nil
+	}
+
+	if err := p.runner.SetDefault(ctx, ext, bundleID); err != nil {
+		return err
+	}
+
+	return p.recordSet(ext, bundleID, hamsFlags, flags)
+}
+
+// recordSet persists the (ext, bundleID) pair into the hamsfile and
+// state. If an entry for the same ext with a DIFFERENT bundle-id
+// already exists, it is replaced in place (old → StateRemoved,
+// new → StateOK) so the hamsfile stays single-valued per extension.
+func (p *Provider) recordSet(ext, bundleID string, hamsFlags map[string]string, flags *provider.GlobalFlags) error {
+	hf, err := p.loadOrCreateHamsfile(hamsFlags, flags)
+	if err != nil {
+		return err
+	}
+	sf := p.loadOrCreateStateFile(flags)
+
+	newEntry := ext + "=" + bundleID
+	prefix := ext + "="
+	for _, existing := range hf.ListApps() {
+		if existing == newEntry {
+			continue
+		}
+		if strings.HasPrefix(existing, prefix) {
+			hf.RemoveApp(existing)
+			sf.SetResource(existing, state.StateRemoved)
+		}
+	}
+
+	hf.AddApp(tagCLI, newEntry, "")
+	sf.SetResource(newEntry, state.StateOK, state.WithValue(bundleID))
+
+	if writeErr := hf.Write(); writeErr != nil {
+		return writeErr
+	}
+	return sf.Save(p.statePath(flags))
 }
 
 // Name returns the CLI name.

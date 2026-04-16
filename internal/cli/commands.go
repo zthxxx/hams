@@ -397,6 +397,92 @@ func ensureStoreIsGitRepo(storePath string) error {
 	)
 }
 
+// storePushRunner is the exec seam for runStorePush. Production wires
+// realStorePushRunner (shells out to the host's git); tests inject a
+// fake that records calls and simulates git status / commit / push
+// outcomes. Keeps `hams store push` tests host-safe.
+type storePushRunner interface {
+	// Status runs `git -C <store> status --porcelain` and returns the
+	// trimmed stdout. An empty string means there is nothing to
+	// commit — the caller skips commit+push instead of surfacing
+	// "nothing to commit, working tree clean" as a confusing error.
+	Status(ctx context.Context, storePath string) (string, error)
+	// AddAll runs `git -C <store> add -A`.
+	AddAll(ctx context.Context, storePath string) error
+	// Commit runs `git -C <store> commit -m <msg>`.
+	Commit(ctx context.Context, storePath, message string) error
+	// Push runs `git -C <store> push`.
+	Push(ctx context.Context, storePath string) error
+}
+
+// realStorePushRunner shells out to the host git binary.
+type realStorePushRunner struct{}
+
+func (realStorePushRunner) Status(ctx context.Context, storePath string) (string, error) {
+	cmd := exec.CommandContext(ctx, "git", "-C", storePath, "status", "--porcelain") //nolint:gosec // storePath is user-configured
+	out, err := cmd.Output()
+	return strings.TrimSpace(string(out)), err
+}
+
+func (realStorePushRunner) AddAll(ctx context.Context, storePath string) error {
+	cmd := exec.CommandContext(ctx, "git", "-C", storePath, "add", "-A") //nolint:gosec // storePath is user-configured
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	return cmd.Run()
+}
+
+func (realStorePushRunner) Commit(ctx context.Context, storePath, message string) error {
+	cmd := exec.CommandContext(ctx, "git", "-C", storePath, "commit", "-m", message) //nolint:gosec // storePath is user-configured
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	return cmd.Run()
+}
+
+func (realStorePushRunner) Push(ctx context.Context, storePath string) error {
+	cmd := exec.CommandContext(ctx, "git", "-C", storePath, "push") //nolint:gosec // storePath is user-configured
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	return cmd.Run()
+}
+
+// pushRunner is the package-level store-push runner. Overridable in
+// tests so `hams store push` can be exercised without shelling out
+// to a real git binary.
+var pushRunner storePushRunner = realStorePushRunner{}
+
+// runStorePush stages, commits, and pushes the store with the given
+// message. A clean working tree short-circuits to a friendly
+// "nothing to commit" message and exits zero — running `hams store
+// push` right after `hams refresh` (which only mutates state files
+// under .state/ which is .gitignored) previously errored with
+// "nothing to commit, working tree clean" bubbled through as an
+// exec-exit-1 failure.
+func runStorePush(ctx context.Context, storePath, commitMsg string) error {
+	status, err := pushRunner.Status(ctx, storePath)
+	if err != nil {
+		return fmt.Errorf("git status: %w", err)
+	}
+
+	if status == "" {
+		fmt.Println("Nothing to commit — the store is clean. Skipping commit+push.")
+		return nil
+	}
+
+	if err := pushRunner.AddAll(ctx, storePath); err != nil {
+		return fmt.Errorf("git add: %w", err)
+	}
+	if err := pushRunner.Commit(ctx, storePath, commitMsg); err != nil {
+		return fmt.Errorf("git commit: %w", err)
+	}
+	if err := pushRunner.Push(ctx, storePath); err != nil {
+		return fmt.Errorf("git push: %w", err)
+	}
+	return nil
+}
+
 // localConfigPath returns the effective path for hams.config.local.yaml
 // — store-scoped when a store is active, otherwise the global fallback
 // in ConfigHome. Mirrors the routing in config.WriteConfigKey and
@@ -669,6 +755,13 @@ func storeCmd() *cli.Command {
 			{
 				Name:  "push",
 				Usage: "Commit and push store changes to the remote repository",
+				Flags: []cli.Flag{
+					&cli.StringFlag{
+						Name:    "message",
+						Aliases: []string{"m"},
+						Usage:   "Commit message (default: \"hams: update store\")",
+					},
+				},
 				Action: func(ctx context.Context, cmd *cli.Command) error {
 					flags := globalFlags(cmd)
 					paths := resolvePaths(flags)
@@ -689,31 +782,12 @@ func storeCmd() *cli.Command {
 						return err
 					}
 
-					gitAdd := exec.CommandContext(ctx, "git", "-C", storePath, "add", "-A") //nolint:gosec // storePath is user-configured
-					gitAdd.Stdin = os.Stdin
-					gitAdd.Stdout = os.Stdout
-					gitAdd.Stderr = os.Stderr
-					if runErr := gitAdd.Run(); runErr != nil {
-						return fmt.Errorf("git add: %w", runErr)
+					commitMsg := cmd.String("message")
+					if commitMsg == "" {
+						commitMsg = "hams: update store"
 					}
 
-					gitCommit := exec.CommandContext(ctx, "git", "-C", storePath, "commit", "-m", "hams: update store") //nolint:gosec // storePath is user-configured
-					gitCommit.Stdin = os.Stdin
-					gitCommit.Stdout = os.Stdout
-					gitCommit.Stderr = os.Stderr
-					if runErr := gitCommit.Run(); runErr != nil {
-						return fmt.Errorf("git commit: %w", runErr)
-					}
-
-					gitPush := exec.CommandContext(ctx, "git", "-C", storePath, "push") //nolint:gosec // storePath is user-configured
-					gitPush.Stdin = os.Stdin
-					gitPush.Stdout = os.Stdout
-					gitPush.Stderr = os.Stderr
-					if runErr := gitPush.Run(); runErr != nil {
-						return fmt.Errorf("git push: %w", runErr)
-					}
-
-					return nil
+					return runStorePush(ctx, storePath, commitMsg)
 				},
 			},
 			{
@@ -776,7 +850,12 @@ func shortName(id string) string {
 // the URN; `id` is the full URN (e.g., "urn:hams:apt:htop") retained
 // for scripts that need a globally-unique handle. Both fields carry
 // the same info but at different granularity — consumers pick what
-// matches their schema.
+// matches their schema. `version` is populated for Package-class
+// resources; `value` for KV-Config-class (defaults/duti/git-config);
+// `last_error` when the resource's state is `failed` or
+// `hook-failed`. All three use `omitempty` so a KV-Config entry
+// doesn't emit an empty `version`, and a Package entry doesn't
+// emit an empty `value`.
 type listResource struct {
 	Provider    string `json:"provider"`
 	DisplayName string `json:"display_name"`
@@ -784,6 +863,8 @@ type listResource struct {
 	ID          string `json:"id"`
 	Status      string `json:"status"`
 	Version     string `json:"version,omitempty"`
+	Value       string `json:"value,omitempty"`
+	LastError   string `json:"last_error,omitempty"`
 }
 
 func listCmd(registry *provider.Registry) *cli.Command {
@@ -892,6 +973,8 @@ func listCmd(registry *provider.Registry) *cli.Command {
 							ID:          id,
 							Status:      string(r.State),
 							Version:     r.Version,
+							Value:       r.Value,
+							LastError:   r.LastError,
 						})
 					}
 				} else {
@@ -903,11 +986,28 @@ func listCmd(registry *provider.Registry) *cli.Command {
 					for _, id := range filteredIDs {
 						r := sf.Resources[id]
 						status := string(r.State)
-						ver := ""
-						if r.Version != "" {
-							ver = " " + r.Version
+						// Show version OR value (mutually exclusive by
+						// resource class — Package sets Version, KV-Config
+						// sets Value). Without this, `hams list` on a
+						// git-config store showed `user.name=zthxxx ok`
+						// with no way to see the actual value without
+						// reading the state YAML.
+						extra := ""
+						switch {
+						case r.Version != "":
+							extra = " " + r.Version
+						case r.Value != "":
+							extra = " = " + r.Value
 						}
-						fmt.Printf("  %-30s %s%s\n", id, status, ver)
+						// Surface LastError for failed / hook-failed rows
+						// so a user debugging a broken apply doesn't have
+						// to run `hams list --json` or read state YAML
+						// to see WHY something failed. The (error: ...)
+						// suffix is distinctive and scriptable by sed/awk.
+						if r.LastError != "" {
+							extra += fmt.Sprintf(" (error: %s)", r.LastError)
+						}
+						fmt.Printf("  %-30s %s%s\n", id, status, extra)
 					}
 					printedAny = true
 				}

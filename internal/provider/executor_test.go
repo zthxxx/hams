@@ -133,6 +133,60 @@ func TestExecute_Remove(t *testing.T) {
 	}
 }
 
+// TestExecute_PostInstallHookFailure_SetsStateHookFailed is the
+// end-to-end gate for the "install succeeded but post-hook failed"
+// path. The state MUST end at StateHookFailed (not StatePending
+// from the pre-execution mark and not StateOK because the hook
+// rolled the whole resource status back). Regression gate against
+// a future refactor that accidentally removes the internal
+// sf.SetResource in hooks.go runPostHooks — the executor's
+// own path does NOT duplicate that write, so if it regresses,
+// the state would silently revert to StatePending and confuse
+// `hams list` + auditors.
+//
+// ComputePlan treats StateHookFailed identically to StatePending
+// (both → ActionInstall on the next apply) so re-apply behavior
+// is correct either way — but the state value is visible to
+// users via `hams list` and MUST reflect the actual outcome.
+func TestExecute_PostInstallHookFailure_SetsStateHookFailed(t *testing.T) {
+	p := &execStubProvider{
+		manifest: Manifest{Name: "test"},
+		applyErr: make(map[string]error),
+	}
+	sf := state.New("test", "machine")
+	actions := []Action{
+		{
+			ID:   "htop",
+			Type: ActionInstall,
+			Hooks: &HookSet{
+				PostInstall: []Hook{{Type: HookPostInstall, Command: "false"}},
+			},
+		},
+	}
+
+	result := Execute(context.Background(), p, actions, sf)
+
+	// Action itself succeeded → counted as installed.
+	if result.Installed != 1 {
+		t.Errorf("Installed = %d, want 1 (action succeeded)", result.Installed)
+	}
+	// Post-hook error is captured in the result so the caller
+	// can surface it to the user.
+	if len(result.Errors) != 1 {
+		t.Errorf("Errors = %d, want 1 (post-hook failed)", len(result.Errors))
+	}
+	// State MUST end at StateHookFailed so `hams list` shows the
+	// real outcome, not the stale "pending" from the pre-exec mark.
+	if got := sf.Resources["htop"].State; got != state.StateHookFailed {
+		t.Errorf("state = %q, want %q (post-hook failed)", got, state.StateHookFailed)
+	}
+	// The hook's error message MUST be preserved in LastError so
+	// an auditor reading the state file sees what went wrong.
+	if sf.Resources["htop"].LastError == "" {
+		t.Error("LastError is empty; expected hook failure text")
+	}
+}
+
 func TestExecute_ContextCancelled(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel() // Cancel immediately.

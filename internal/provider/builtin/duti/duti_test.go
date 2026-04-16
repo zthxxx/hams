@@ -8,7 +8,7 @@ import (
 
 func TestManifest(t *testing.T) {
 	t.Parallel()
-	p := New(NewFakeCmdRunner())
+	p := New(nil, NewFakeCmdRunner())
 	m := p.Manifest()
 	if m.Name != "duti" {
 		t.Errorf("Name = %q", m.Name)
@@ -81,7 +81,7 @@ func TestParseDutiOutput(t *testing.T) {
 
 func TestNameDisplayName(t *testing.T) {
 	t.Parallel()
-	p := New(NewFakeCmdRunner())
+	p := New(nil, NewFakeCmdRunner())
 	if p.Name() != "duti" || p.DisplayName() != "duti" {
 		t.Errorf("Name()=%q DisplayName()=%q", p.Name(), p.DisplayName())
 	}
