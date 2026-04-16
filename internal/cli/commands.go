@@ -86,7 +86,19 @@ func runRefresh(ctx context.Context, flags *provider.GlobalFlags, registry *prov
 		}
 	}
 
-	fmt.Printf("Refresh complete: %d providers probed\n", len(providers))
+	// ProbeAll swallows per-provider probe errors (best-effort) and
+	// drops the failing provider from the results map. Report the
+	// honest probed/planned ratio so a user who ran `refresh --only=brew`
+	// on a fresh-Mac without brew sees "0/1 providers probed", not a
+	// misleading "1 providers probed".
+	probed := len(probeResults)
+	planned := len(providers)
+	if probed == planned {
+		fmt.Printf("Refresh complete: %d providers probed\n", planned)
+	} else {
+		fmt.Printf("Refresh complete: %d/%d providers probed (%d probe error(s); see log for details)\n",
+			probed, planned, planned-probed)
+	}
 	return nil
 }
 
