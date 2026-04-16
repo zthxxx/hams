@@ -51,7 +51,7 @@ func withIsolatedHome(t *testing.T) string {
 func TestApply_WritesToIsolatedHome(t *testing.T) {
 	requireGit(t)
 	configPath := withIsolatedHome(t)
-	p := NewConfigProvider()
+	p := NewConfigProvider(nil)
 
 	// Apply expects the resource ID format "key=value" per git.go:74-76.
 	const key = "user.email"
@@ -79,7 +79,7 @@ func TestApply_WritesToIsolatedHome(t *testing.T) {
 func TestProbeAndRemove_RoundtripIsolated(t *testing.T) {
 	requireGit(t)
 	withIsolatedHome(t)
-	p := NewConfigProvider()
+	p := NewConfigProvider(nil)
 	ctx := context.Background()
 
 	const key = "init.defaultBranch"
@@ -134,7 +134,7 @@ func TestProbeAndRemove_RoundtripIsolated(t *testing.T) {
 func TestApply_RejectsMalformedResourceID(t *testing.T) {
 	requireGit(t)
 	withIsolatedHome(t)
-	p := NewConfigProvider()
+	p := NewConfigProvider(nil)
 
 	err := p.Apply(context.Background(), provider.Action{ID: "no-equals-sign"})
 	if err == nil {
