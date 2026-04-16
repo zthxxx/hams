@@ -187,6 +187,14 @@ Spec corrections:
 
 Total commits in cycle 2: 15+ (still growing — iteration 3 adds hooks+OTel defer).
 
+### Cycle 100 — `--from-repo` and `--store` now mutually exclusive
+
+- [x] Real user-workflow bug caught by manual end-to-end test. `hams apply --from-repo=X --store=/my/path` silently honored only `--from-repo` — the clone always lands in `${HAMS_DATA_HOME}/repo/<user>/<name>/`, never the user's `--store` path. User intent with both flags is genuinely unclear (redirect clone? prefer local path?), so rather than pick a winner and silently drop the other, hams now errors with `ExitUsageError` naming both flags + the actual clone location. Matches the existing `--bootstrap`/`--no-bootstrap` and `--only`/`--except` mutually-exclusive precedents. Regression test `TestRunApply_FromRepoAndStoreAreMutuallyExclusive` asserts the error shape and that `${HAMS_DATA_HOME}` is surfaced in the suggestions. (commit `5380007`)
+
+### Cycle 99 — ATTEMPTED, REVERTED — empty hamsfile was not a bootstrap-skip signal
+
+- [~] Tried to treat empty hamsfiles (`cli: []`) as "no hamsfile present" so bootstrap wouldn't demand brew on a machine with no brew entries. But the existing 4 bootstrap tests asserted the opposite contract: a committed placeholder hamsfile IS intentional — it signals "this provider is used on this profile, even if no packages yet". Revert was correct. Lesson: when a fix breaks existing tests, read the tests first — they're encoding the intentional behavior.
+
 ### Cycle 98 — hamsfile.ListApps filters empty/whitespace entries
 
 - [x] Real user-workflow bug caught by manual end-to-end test. A malformed hamsfile entry like `- app: ""` or `- app: "  "` (from git merge conflict residue, accidental edit, or yaml round-trip) would flow through `ListApps` → `ComputePlan` → `install ""` / `install <spaces>` on apt/brew/etc. Shell errors blamed the package manager, not the hamsfile. Fix: `hamsfile.ListApps` now `strings.TrimSpace`s the value before appending and skips empty-after-trim values silently. All callers (Plan, CLI install paths, `hams list`) inherit the fix. Regression test `TestListApps_SkipsEmptyAndWhitespaceEntries`. (commit `9c13d3b`)
