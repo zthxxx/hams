@@ -442,7 +442,8 @@ abort the apply run with a non-zero exit code.
 - **THEN** hams SHALL NOT retry
 - **AND** hams SHALL surface the script's exit code and the last 50 lines of its stderr
 - **AND** hams SHALL abort the apply run with a non-zero exit code
-- **AND** state files SHALL NOT be modified (no partial progress recorded).
+- **AND** state files SHALL NOT be modified (no partial progress recorded)
+- **AND** the returned `UserFacingError.Suggestions` SHALL surface the exact script that was attempted plus the `--bootstrap` remedy (identical breadcrumb shape as the consent-denied path). Rationale: a user who sees "bootstrap failed for providers: brew" needs to know which install command just failed so they can investigate (e.g. proxy blocked curl, sudo wasn't granted); a generic error forces a scavenger hunt through the log output. The invariant SHALL hold across all three failure paths: consent denied, consent=Run + script non-zero exit, consent=Run + retry still finds binary missing.
 
 #### Scenario: `--no-bootstrap` disables the interactive prompt
 
