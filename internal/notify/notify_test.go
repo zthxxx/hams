@@ -153,3 +153,33 @@ func TestNotifyApplyComplete_MessageFormat(t *testing.T) {
 		})
 	}
 }
+
+// TestDesktopNotifier_Name asserts the Channel.Name() contract for
+// the desktop notifier (needed by Manager.Notify for logging).
+// Send() is NOT covered here — it would trigger an actual OS-level
+// notification and requires a graphical session on Linux.
+func TestDesktopNotifier_Name(t *testing.T) {
+	t.Parallel()
+	d := &desktopNotifier{}
+	if got := d.Name(); got != "desktop" {
+		t.Errorf("Name() = %q, want 'desktop'", got)
+	}
+}
+
+// TestBarkChannel_Name asserts the Channel.Name() contract for the
+// Bark notifier. The name appears in slog.Info lines when each
+// Manager.Notify iteration fires.
+func TestBarkChannel_Name(t *testing.T) {
+	t.Parallel()
+	b := &barkChannel{token: "any"}
+	if got := b.Name(); got != "bark" {
+		t.Errorf("Name() = %q, want 'bark'", got)
+	}
+}
+
+// Note on Bark Send() coverage: barkChannel.Send uses a hardcoded
+// api.day.app URL without an injectable http.Client. Covering the
+// non-200 branch would require DI refactoring of the HTTP seam —
+// out of scope here because Bark is a v1.1-deferred feature (see
+// openspec/specs/tui-logging/spec.md). Adding DI now would lock in
+// an API shape before v1.1 wires the channel into apply/refresh.
