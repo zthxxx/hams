@@ -187,6 +187,10 @@ Spec corrections:
 
 Total commits in cycle 2: 15+ (still growing — iteration 3 adds hooks+OTel defer).
 
+### Cycle 125 — `hams refresh` summary uses correct singular grammar
+
+- [x] Mirror of cycle 36 (which fixed the same bug in `hams list`). `hams refresh` printed `"Refresh complete: 1 providers probed"` for single-provider runs — grammatically wrong. Extracted a `pluralize(count, singular, plural)` helper and applied to all 3 refresh-summary variants (happy path, save-failure path, probe-failure path) so each emits "provider" vs "providers" based on count. Regression test `TestRunRefresh_SingularProviderNoun` seeds a one-provider refresh and asserts the output contains `"1 provider probed"` AND does NOT contain `"1 providers probed"`. cli coverage: 67.4% → 67.8%. (commit `227830c`)
+
 ### Cycle 124 — `hams config list` now surfaces `store_repo`
 
 - [x] Real UX bug. `hams config list` output omitted `store_repo` in both text and JSON formats. A user who set it via `hams config set store_repo github.com/zthxxx/hams-store` and then ran `config list` to verify saw NO mention of the value — only `config get store_repo` would retrieve it. This half-implementation made `store_repo` feel second-class compared to the other config fields all visible in list. Fix: add `store_repo` to the JSON object AND the text-format print loop. Text only emits the "Store repo:" line when `StoreRepo` is non-empty so fresh-install output stays tight. Regression test `TestConfigList_IncludesStoreRepo` seeds a config and asserts both formats contain the value. cli coverage: 65.5% → 67.4%. (commit `23013d0`)
