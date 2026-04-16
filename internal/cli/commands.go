@@ -81,6 +81,22 @@ func runRefresh(ctx context.Context, flags *provider.GlobalFlags, registry *prov
 		cfg.ProfileTag = flags.Profile
 	}
 
+	// Validate the configured/supplied store path exists as a directory.
+	// Without this, refresh against a typo'd store_path silently reported
+	// "No providers match" + exit 0 — the user couldn't tell whether
+	// there genuinely were no providers or their config was misaimed.
+	// Symmetric with the same check in runApply (cycle 87).
+	if cfg.StorePath != "" {
+		if info, statErr := os.Stat(cfg.StorePath); statErr != nil || !info.IsDir() {
+			return hamserr.NewUserError(hamserr.ExitUsageError,
+				fmt.Sprintf("store_path %q does not exist or is not a directory", cfg.StorePath),
+				"Fix store_path in ~/.config/hams/hams.config.yaml",
+				"Or clone a store: hams apply --from-repo=<user/repo>",
+				"Or initialize one: hams store init",
+			)
+		}
+	}
+
 	// OTel session is opt-in via HAMS_OTEL=1 (internal/cli/otel.go).
 	// Refresh doesn't invoke provider.Execute, so there are no
 	// per-provider child spans from executor.go — but the root span

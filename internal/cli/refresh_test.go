@@ -141,3 +141,39 @@ func TestRunRefresh_SaveFailure_ReturnsPartialFailure(t *testing.T) {
 		t.Fatalf("expected ExitPartialFailure, got %v (%T)", err, err)
 	}
 }
+
+// TestRunRefresh_NonexistentStorePathEmitsUserError locks in cycle 88:
+// when store_path names a directory that doesn't exist, refresh used
+// to print "No providers match" and exit 0 — silently masking the
+// real misconfiguration. Now it emits the same UserFacingError that
+// runApply produces (cycle 87), so the user can't tell the two
+// commands apart on this class of bug.
+func TestRunRefresh_NonexistentStorePathEmitsUserError(t *testing.T) {
+	configHome := t.TempDir()
+	dataHome := t.TempDir()
+	t.Setenv("HAMS_CONFIG_HOME", configHome)
+	t.Setenv("HAMS_DATA_HOME", dataHome)
+	writeApplyTestFile(t, filepath.Join(configHome, "hams.config.yaml"),
+		"profile_tag: macOS\nmachine_id: mid1\n")
+
+	flags := &provider.GlobalFlags{Store: "/definitely/does/not/exist/ever"}
+	registry := provider.NewRegistry()
+
+	err := runRefresh(context.Background(), flags, registry, "", "")
+	if err == nil {
+		t.Fatal("expected error when store_path doesn't exist")
+	}
+	var ufe *hamserr.UserFacingError
+	if !errors.As(err, &ufe) {
+		t.Fatalf("want *UserFacingError, got %T: %v", err, err)
+	}
+	if ufe.Code != hamserr.ExitUsageError {
+		t.Errorf("Code = %d, want ExitUsageError (%d)", ufe.Code, hamserr.ExitUsageError)
+	}
+	if !strings.Contains(ufe.Message, "/definitely/does/not/exist/ever") {
+		t.Errorf("message should name the bad path; got %q", ufe.Message)
+	}
+	if !strings.Contains(ufe.Message, "does not exist or is not a directory") {
+		t.Errorf("message should explain what's wrong; got %q", ufe.Message)
+	}
+}
