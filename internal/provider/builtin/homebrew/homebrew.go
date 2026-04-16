@@ -414,12 +414,25 @@ func (p *Provider) handleInstall(ctx context.Context, args []string, hamsFlags m
 	if err != nil {
 		return err
 	}
+	sf, err := p.loadOrCreateStateFile(flags)
+	if err != nil {
+		return err
+	}
 
 	for _, pkg := range packages {
 		hf.AddApp(tag, pkg, "")
+		// State write is additive — apt's U12-U15 pattern. Without
+		// this, `hams list --only=brew` showed nothing after a
+		// `hams brew install git` because `list` reads state files
+		// only. The hamsfile record alone is not enough for the
+		// list / refresh / drift paths.
+		sf.SetResource(pkg, state.StateOK)
 	}
 
-	return hf.Write()
+	if writeErr := hf.Write(); writeErr != nil {
+		return writeErr
+	}
+	return sf.Save(p.statePath(flags))
 }
 
 func (p *Provider) handleRemove(ctx context.Context, args []string, hamsFlags map[string]string, flags *provider.GlobalFlags) error {
@@ -451,12 +464,20 @@ func (p *Provider) handleRemove(ctx context.Context, args []string, hamsFlags ma
 	if err != nil {
 		return err
 	}
+	sf, err := p.loadOrCreateStateFile(flags)
+	if err != nil {
+		return err
+	}
 
 	for _, pkg := range packages {
 		hf.RemoveApp(pkg)
+		sf.SetResource(pkg, state.StateRemoved)
 	}
 
-	return hf.Write()
+	if writeErr := hf.Write(); writeErr != nil {
+		return writeErr
+	}
+	return sf.Save(p.statePath(flags))
 }
 
 func (p *Provider) loadOrCreateHamsfile(hamsFlags map[string]string, flags *provider.GlobalFlags) (*hamsfile.File, error) {
@@ -465,6 +486,30 @@ func (p *Provider) loadOrCreateHamsfile(hamsFlags map[string]string, flags *prov
 		return nil, err
 	}
 	return hamsfile.LoadOrCreateEmpty(path)
+}
+
+// statePath returns the absolute path to brew.state.yaml for the
+// active machine. Mirrors apt.statePath.
+func (p *Provider) statePath(flags *provider.GlobalFlags) string {
+	cfg := p.effectiveConfig(flags)
+	return filepath.Join(cfg.StateDir(), p.Manifest().FilePrefix+".state.yaml")
+}
+
+// loadOrCreateStateFile reads the brew state file or returns a fresh
+// one when the file is absent. Non-ErrNotExist load failures (corrupt
+// YAML, permission denied) propagate so the CLI handler surfaces a
+// user-facing error instead of silently overwriting unparseable state.
+// Mirrors apt.loadOrCreateStateFile.
+func (p *Provider) loadOrCreateStateFile(flags *provider.GlobalFlags) (*state.File, error) {
+	cfg := p.effectiveConfig(flags)
+	sf, err := state.Load(p.statePath(flags))
+	if err == nil {
+		return sf, nil
+	}
+	if errors.Is(err, fs.ErrNotExist) {
+		return state.New(p.Name(), cfg.MachineID), nil
+	}
+	return nil, fmt.Errorf("loading brew state %s: %w", p.statePath(flags), err)
 }
 
 func (p *Provider) hamsfilePath(hamsFlags map[string]string, flags *provider.GlobalFlags) (string, error) {
