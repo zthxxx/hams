@@ -495,8 +495,20 @@ func runApply(ctx context.Context, flags *provider.GlobalFlags, registry *provid
 	}
 
 	// Dry-run: all providers have been planned and printed; skip
-	// enrichment and the execute-phase summary.
+	// enrichment and the execute-phase summary. Report skipped providers
+	// and return ExitPartialFailure so CI scripts and `hams apply`
+	// previews fail fast on broken hamsfiles instead of silently exiting
+	// 0 — matching the non-dry-run branch's error semantics.
 	if flags.DryRun {
+		if len(skippedProviders) > 0 {
+			fmt.Printf("Warning: %d provider(s) skipped due to errors: %s\n",
+				len(skippedProviders), strings.Join(skippedProviders, ", "))
+			return hamserr.NewUserError(hamserr.ExitPartialFailure,
+				fmt.Sprintf("[dry-run] %d providers skipped due to errors (see log for details)", len(skippedProviders)),
+				"Fix the hamsfile or remove broken provider entries before running apply",
+				"Use '--debug' for detailed error output",
+			)
+		}
 		fmt.Println("[dry-run] No changes made.")
 		return nil
 	}
