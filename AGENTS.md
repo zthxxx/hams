@@ -187,6 +187,10 @@ Spec corrections:
 
 Total commits in cycle 2: 15+ (still growing — iteration 3 adds hooks+OTel defer).
 
+### Cycle 62 — i18n Tf nil-localizer fallback (90.7% → 92%)
+
+- [x] `Tf` has an early-return branch when `localizer` is nil (Init not called / failed). Every UI caller depends on it passing through the msgID rather than panicking. Added regression test that swaps `localizer = nil` and asserts the guarantee. (commit `8dac8ad`)
+
 ### Cycle 61 — `LoadOrCreateEmpty` + `ListApps` coverage (74% → 82%)
 
 - [x] Both public helpers were at 0% despite being called by every provider. Added 5 tests: missing-file creates parent dir and returns fresh File; existing-file loads apps verbatim; parent-is-a-file surfaces ENOTDIR; ListApps walks all tags and returns both `app:` and `urn:` values; empty/nil-root returns nil without panic. (commit `f147c80`)
