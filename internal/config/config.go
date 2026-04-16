@@ -146,10 +146,13 @@ func Load(paths Paths, storePath string) (*Config, error) {
 	return cfg, nil
 }
 
-// expandHome expands a leading `~/` to the current user's home
+// ExpandHome expands a leading `~/` to the current user's home
 // directory. Returns the input unchanged when there's no tilde prefix
-// or when home resolution fails.
-func expandHome(path string) (string, error) {
+// or when home resolution fails. Shared with the CLI flag path so
+// `--config=~/foo` and `--store=~/bar` expand the same way the
+// config-file `store_path: ~/…` does (cycle 85), and `hams
+// --config=~/my.yaml` behaves symmetrically (cycle 89).
+func ExpandHome(path string) (string, error) {
 	if !strings.HasPrefix(path, "~/") {
 		return path, nil
 	}
@@ -159,6 +162,10 @@ func expandHome(path string) (string, error) {
 	}
 	return filepath.Join(home, path[2:]), nil
 }
+
+// expandHome is the lowercase alias kept for the existing call in
+// Load; ExpandHome is the exported entry point.
+func expandHome(path string) (string, error) { return ExpandHome(path) }
 
 // ProfileDir returns the absolute path to the active profile directory.
 func (c *Config) ProfileDir() string {

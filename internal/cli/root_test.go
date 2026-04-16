@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -156,5 +157,69 @@ func TestNewApp_ProviderCommandsAreSorted(t *testing.T) {
 				}
 			}
 		}
+	}
+}
+
+// TestResolvePaths_TildeExpansionForConfig locks in cycle 89: when
+// the user types `hams --config=~/my.yaml`, shell leaves `~/` as a
+// literal (bash only tilde-expands `~/...` at the start of a
+// separate argument). hams MUST expand it itself — otherwise
+// `paths.ConfigFilePath` stores `~/my.yaml`, which never matches
+// the real file on disk and every config read silently falls back
+// to defaults.
+func TestResolvePaths_TildeExpansionForConfig(t *testing.T) {
+	fakeHome := t.TempDir()
+	t.Setenv("HOME", fakeHome)
+
+	flags := &provider.GlobalFlags{Config: "~/my-config.yaml"}
+	paths := resolvePaths(flags)
+
+	wantConfigFile := filepath.Join(fakeHome, "my-config.yaml")
+	if paths.ConfigFilePath != wantConfigFile {
+		t.Errorf("ConfigFilePath = %q, want %q", paths.ConfigFilePath, wantConfigFile)
+	}
+	if flags.Config != wantConfigFile {
+		t.Errorf("flags.Config after resolvePaths = %q, want %q (callers reading flags.Config elsewhere need the expanded value)", flags.Config, wantConfigFile)
+	}
+	if paths.ConfigHome != fakeHome {
+		t.Errorf("ConfigHome = %q, want %q", paths.ConfigHome, fakeHome)
+	}
+}
+
+// TestResolvePaths_TildeExpansionForStore locks the same invariant
+// for --store. Without it, `hams --store=~/my-store apply` would
+// miss the actual store on disk and silently fall through to "no
+// store directory configured".
+func TestResolvePaths_TildeExpansionForStore(t *testing.T) {
+	fakeHome := t.TempDir()
+	t.Setenv("HOME", fakeHome)
+
+	flags := &provider.GlobalFlags{Store: "~/my-store"}
+	_ = resolvePaths(flags)
+
+	wantStore := filepath.Join(fakeHome, "my-store")
+	if flags.Store != wantStore {
+		t.Errorf("flags.Store after resolvePaths = %q, want %q", flags.Store, wantStore)
+	}
+}
+
+// TestResolvePaths_AbsolutePathsUnchanged asserts the expansion is
+// a no-op for paths that don't start with `~/` (absolute or relative
+// without tilde prefix).
+func TestResolvePaths_AbsolutePathsUnchanged(t *testing.T) {
+	flags := &provider.GlobalFlags{
+		Config: "/abs/path/config.yaml",
+		Store:  "/abs/path/store",
+	}
+	paths := resolvePaths(flags)
+
+	if flags.Config != "/abs/path/config.yaml" {
+		t.Errorf("Config changed unexpectedly: %q", flags.Config)
+	}
+	if flags.Store != "/abs/path/store" {
+		t.Errorf("Store changed unexpectedly: %q", flags.Store)
+	}
+	if paths.ConfigFilePath != "/abs/path/config.yaml" {
+		t.Errorf("ConfigFilePath = %q", paths.ConfigFilePath)
 	}
 }

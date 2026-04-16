@@ -35,11 +35,23 @@ func globalFlags(cmd *cli.Command) *provider.GlobalFlags {
 }
 
 // resolvePaths returns config.Paths with --config flag applied.
+// `--config=~/foo.yaml` is expanded to the real home path so
+// `hams --config=~/my.yaml` does what users expect — shells do NOT
+// expand `~` inside `--flag=~/path` (only as the leading word of a
+// separate argument), so hams does it itself. Same expansion also
+// applies to --store via the apply/refresh entry points (cycle 89).
 func resolvePaths(flags *provider.GlobalFlags) config.Paths {
 	paths := config.ResolvePaths()
 	if flags.Config != "" {
-		paths.ConfigHome = filepath.Dir(flags.Config)
-		paths.ConfigFilePath = flags.Config
+		expanded, _ := config.ExpandHome(flags.Config) //nolint:errcheck // best-effort; returns input unchanged on error
+		flags.Config = expanded
+		paths.ConfigHome = filepath.Dir(expanded)
+		paths.ConfigFilePath = expanded
+	}
+	if flags.Store != "" {
+		if expanded, expErr := config.ExpandHome(flags.Store); expErr == nil {
+			flags.Store = expanded
+		}
 	}
 	return paths
 }
