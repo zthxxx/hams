@@ -243,3 +243,86 @@ func TestBootstrapFromRepo_LocalAttemptSurfacesError(t *testing.T) {
 		})
 	}
 }
+
+// TestPreviewExistingStoreFromRepo_LocalPath: when the input names an
+// existing local git repo, preview returns it immediately (no network,
+// no clone-path lookup).
+func TestPreviewExistingStoreFromRepo_LocalPath(t *testing.T) {
+	dir := t.TempDir()
+	repoDir := filepath.Join(dir, "local-store")
+	if err := os.MkdirAll(filepath.Join(repoDir, ".git"), 0o750); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+
+	got, ok := previewExistingStoreFromRepo(repoDir, config.Paths{DataHome: t.TempDir()})
+	if !ok {
+		t.Fatal("expected ok=true for existing local repo")
+	}
+	if got != repoDir {
+		t.Errorf("path = %q, want %q", got, repoDir)
+	}
+}
+
+// TestPreviewExistingStoreFromRepo_PriorClone: when a remote-shorthand
+// has already been cloned into `${DataHome}/repo/<user>/<name>`,
+// preview reuses it without re-network.
+func TestPreviewExistingStoreFromRepo_PriorClone(t *testing.T) {
+	dataHome := t.TempDir()
+	clonePath := filepath.Join(dataHome, "repo", "zthxxx", "hams-store")
+	if err := os.MkdirAll(filepath.Join(clonePath, ".git"), 0o750); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+
+	got, ok := previewExistingStoreFromRepo("zthxxx/hams-store", config.Paths{DataHome: dataHome})
+	if !ok {
+		t.Fatal("expected ok=true for pre-cloned repo")
+	}
+	if got != clonePath {
+		t.Errorf("path = %q, want %q", got, clonePath)
+	}
+}
+
+// TestPreviewExistingStoreFromRepo_NotClonedYet: remote-shorthand with
+// no local copy → returns false so runApply's --dry-run branch knows
+// to print "Would clone" and exit without touching the network.
+func TestPreviewExistingStoreFromRepo_NotClonedYet(t *testing.T) {
+	_, ok := previewExistingStoreFromRepo("fresh-user/never-cloned", config.Paths{DataHome: t.TempDir()})
+	if ok {
+		t.Error("expected ok=false for never-cloned repo")
+	}
+}
+
+// TestRunApply_DryRunFromRepoSkipsCloneWhenNotCached asserts cycle 86:
+// `hams apply --dry-run --from-repo=X` MUST NOT clone when no prior
+// clone exists. Previously the clone fired before the dry-run check
+// so users got a real disk write + network call. Fix: preview
+// recognizes no-prior-clone and prints "Would clone X" + exits.
+func TestRunApply_DryRunFromRepoSkipsCloneWhenNotCached(t *testing.T) {
+	configHome := t.TempDir()
+	dataHome := t.TempDir()
+	t.Setenv("HAMS_CONFIG_HOME", configHome)
+	t.Setenv("HAMS_DATA_HOME", dataHome)
+	writeApplyTestFile(t, filepath.Join(configHome, "hams.config.yaml"),
+		"profile_tag: macOS\nmachine_id: mid1\n")
+
+	flags := &provider.GlobalFlags{DryRun: true}
+	registry := provider.NewRegistry()
+
+	// Use a repo shorthand that's never been cloned. Because we set
+	// DryRun=true and the preview returns (_, false), runApply's
+	// dry-run branch SHOULD print "Would clone" and return nil
+	// without ever invoking go-git (which would otherwise either
+	// hit the network or create a directory in dataHome/repo/).
+	err := runApply(context.Background(), flags, registry,
+		sudo.NoopAcquirer{}, "never-cloned-user/never-cloned-repo", true, "", "", false, bootstrapMode{})
+	if err != nil {
+		t.Fatalf("dry-run should exit cleanly when repo not cached; got: %v", err)
+	}
+
+	// CRITICAL: no filesystem side effect — the data_home/repo
+	// directory must NOT have been created.
+	repoPath := filepath.Join(dataHome, "repo", "never-cloned-user", "never-cloned-repo")
+	if _, statErr := os.Stat(repoPath); statErr == nil {
+		t.Errorf("dry-run should not have created clone dir at %q", repoPath)
+	}
+}
