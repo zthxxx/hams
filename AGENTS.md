@@ -187,6 +187,10 @@ Spec corrections:
 
 Total commits in cycle 2: 15+ (still growing — iteration 3 adds hooks+OTel defer).
 
+### Cycle 61 — `LoadOrCreateEmpty` + `ListApps` coverage (74% → 82%)
+
+- [x] Both public helpers were at 0% despite being called by every provider. Added 5 tests: missing-file creates parent dir and returns fresh File; existing-file loads apps verbatim; parent-is-a-file surfaces ENOTDIR; ListApps walks all tags and returns both `app:` and `urn:` values; empty/nil-root returns nil without panic. (commit `f147c80`)
+
 ### Cycle 60 — `store status --json` emits machine-parseable payload
 
 - [x] Matches cycle 59's pattern. Refactored status computation (hamsfiles count, git status, git changes count) into local variables, then branch on flags.JSON. Added `git_changes` as an integer so scripts can detect "any uncommitted changes?" without parsing the string. (commit `6a3db54`)
