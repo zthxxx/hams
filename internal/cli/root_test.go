@@ -203,6 +203,40 @@ func TestResolvePaths_TildeExpansionForStore(t *testing.T) {
 	}
 }
 
+// TestHasJSONFlag_AllForms locks in cycle 94: urfave/cli accepts
+// all of `--json`, `--json=true`, `--json=false`, `--json=1`, and
+// `--json=0` for BoolFlag — but the top-level Execute error path
+// scans os.Args directly (urfave's parsed value isn't reachable
+// there), so the scan must handle each form. Previously only bare
+// `--json` matched; `hams --json=true apply` silently produced text
+// output instead of JSON even though the user explicitly opted in.
+func TestHasJSONFlag_AllForms(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name string
+		args []string
+		want bool
+	}{
+		{"no flag", []string{"hams", "apply"}, false},
+		{"bare --json", []string{"hams", "--json", "apply"}, true},
+		{"--json=true", []string{"hams", "--json=true", "apply"}, true},
+		{"--json=1", []string{"hams", "--json=1", "apply"}, true},
+		{"--json=false", []string{"hams", "--json=false", "apply"}, false},
+		{"--json=0", []string{"hams", "--json=0", "apply"}, false},
+		{"--json then --json=false (last wins)", []string{"hams", "--json", "--json=false", "apply"}, false},
+		{"--json=false then --json (last wins)", []string{"hams", "--json=false", "--json", "apply"}, true},
+		{"embedded in other args does NOT match", []string{"hams", "apply", "--jsonx", "something"}, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			if got := hasJSONFlag(tc.args); got != tc.want {
+				t.Errorf("hasJSONFlag(%v) = %v, want %v", tc.args, got, tc.want)
+			}
+		})
+	}
+}
+
 // TestResolvePaths_AbsolutePathsUnchanged asserts the expansion is
 // a no-op for paths that don't start with `~/` (absolute or relative
 // without tilde prefix).

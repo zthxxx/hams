@@ -34,6 +34,29 @@ func globalFlags(cmd *cli.Command) *provider.GlobalFlags {
 	}
 }
 
+// hasJSONFlag detects --json in raw argv since urfave/cli's parsed
+// value is not reachable from the top-level Execute error path.
+// Accepts the three forms bash users commonly type: `--json`,
+// `--json=true`, `--json=false`. Without this, `hams --json=true
+// apply` emitted the text error instead of a JSON object — breaking
+// scripts that use the explicit boolean form.
+//
+// Later `--json=X` arguments override earlier ones (so
+// `--json --json=false` is treated as false, matching urfave/cli's
+// right-wins behavior).
+func hasJSONFlag(args []string) bool {
+	out := false
+	for _, arg := range args {
+		switch arg {
+		case jsonFlag, jsonFlag + "=true", jsonFlag + "=1":
+			out = true
+		case jsonFlag + "=false", jsonFlag + "=0":
+			out = false
+		}
+	}
+	return out
+}
+
 // resolvePaths returns config.Paths with --config flag applied.
 // `--config=~/foo.yaml` is expanded to the real home path so
 // `hams --config=~/my.yaml` does what users expect — shells do NOT
@@ -160,14 +183,7 @@ func Execute() {
 	stop()
 
 	if err != nil {
-		flags := &provider.GlobalFlags{}
-		// Check if --json was passed.
-		for _, arg := range os.Args {
-			if arg == jsonFlag {
-				flags.JSON = true
-			}
-		}
-		PrintError(err, flags.JSON)
+		PrintError(err, hasJSONFlag(os.Args))
 
 		exitCode := hamserr.ExitGeneralError
 		var ue *hamserr.UserFacingError
