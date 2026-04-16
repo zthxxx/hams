@@ -74,7 +74,7 @@ Use 'hams apply' to replay all installations from config.`,
 		h := handler // capture
 		app.Commands = append(app.Commands, &cli.Command{
 			Name:            h.Name(),
-			Usage:           fmt.Sprintf("Manage %s packages", h.DisplayName()),
+			Usage:           providerUsageDescription(h.Name(), h.DisplayName()),
 			SkipFlagParsing: true,
 			Action: func(_ context.Context, cmd *cli.Command) error {
 				return routeToProvider(h, cmd.Args().Slice(), globalFlags(cmd))
@@ -83,6 +83,37 @@ Use 'hams apply' to replay all installations from config.`,
 	}
 
 	return app
+}
+
+// providerUsageDescription returns the help-line text for a provider's
+// `hams <name>` subcommand. Maps each shipped provider to a sensible
+// noun ("packages" / "config entries" / "playbooks" / etc.) instead
+// of the previous one-size-fits-all "Manage X packages" — that
+// default was wrong for the 6 non-package builtins (git-config does
+// NOT manage packages, etc.).
+//
+// Unknown providers (e.g., future external plugins) fall through to
+// the package-class default so the help text is never empty.
+func providerUsageDescription(name, displayName string) string {
+	switch name {
+	case "git-config":
+		return "Manage git config entries"
+	case "git-clone":
+		return "Manage cloned git repositories"
+	case "defaults":
+		return "Manage macOS defaults preferences"
+	case "duti":
+		return "Manage macOS default-app associations"
+	case "bash":
+		return "Run bash provisioning scripts"
+	case "ansible":
+		return "Run Ansible playbooks"
+	case "code-ext":
+		return "Manage VS Code extensions"
+	}
+	// Package-class default (brew, apt, pnpm, npm, uv, goinstall,
+	// cargo, mas) — accurate for installed packages.
+	return fmt.Sprintf("Manage %s packages", displayName)
 }
 
 // Execute runs the root command with all subcommands wired up.
