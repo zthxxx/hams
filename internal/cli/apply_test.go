@@ -889,3 +889,85 @@ func TestRunApply_InterruptedContextReturnsPartialFailure(t *testing.T) {
 	}
 	_ = storeDir
 }
+
+// TestRunApply_NonexistentStorePathEmitsUserError locks in cycle 87:
+// when cfg.StorePath (or --store) names a directory that doesn't
+// exist, runApply MUST surface that directly instead of propagating
+// a confusing "creating lock directory: mkdir X: permission denied"
+// error from state.NewLock.Acquire. The previous error pointed at
+// the `.state/<machine-id>/.lock` subpath, which had nothing to do
+// with the actual misconfiguration (the store_path itself).
+func TestRunApply_NonexistentStorePathEmitsUserError(t *testing.T) {
+	configHome := t.TempDir()
+	dataHome := t.TempDir()
+	t.Setenv("HAMS_CONFIG_HOME", configHome)
+	t.Setenv("HAMS_DATA_HOME", dataHome)
+	writeApplyTestFile(t, filepath.Join(configHome, "hams.config.yaml"),
+		"profile_tag: macOS\nmachine_id: mid1\n")
+
+	flags := &provider.GlobalFlags{Store: "/definitely/does/not/exist/ever"}
+	registry := provider.NewRegistry()
+
+	err := runApply(context.Background(), flags, registry,
+		sudo.NoopAcquirer{}, "", true, "", "", false, bootstrapMode{})
+	if err == nil {
+		t.Fatal("expected error when store_path doesn't exist")
+	}
+	var ufe *hamserr.UserFacingError
+	if !errors.As(err, &ufe) {
+		t.Fatalf("want *UserFacingError, got %T: %v", err, err)
+	}
+	if ufe.Code != hamserr.ExitUsageError {
+		t.Errorf("Code = %d, want ExitUsageError (%d)", ufe.Code, hamserr.ExitUsageError)
+	}
+	// Message must name the specific bad path so users can copy-paste.
+	if !strings.Contains(ufe.Message, "/definitely/does/not/exist/ever") {
+		t.Errorf("message should name the bad path; got %q", ufe.Message)
+	}
+	if !strings.Contains(ufe.Message, "does not exist or is not a directory") {
+		t.Errorf("message should explain what's wrong; got %q", ufe.Message)
+	}
+	// Error must NOT mention the downstream .lock symptom.
+	if strings.Contains(ufe.Message, ".lock") || strings.Contains(ufe.Message, "lock directory") {
+		t.Errorf("error should not point at the .lock subpath (that's a symptom); got %q", ufe.Message)
+	}
+	joined := strings.Join(ufe.Suggestions, "\n")
+	if !strings.Contains(joined, "hams store init") && !strings.Contains(joined, "--from-repo") {
+		t.Errorf("suggestions should teach recovery; got %v", ufe.Suggestions)
+	}
+}
+
+// TestRunApply_StorePathIsFileNotDir asserts the same error fires
+// when store_path points at a regular file rather than a directory —
+// catches typos like `store_path: ~/.config/hams/hams.config.yaml`
+// where the user accidentally pointed at the config file.
+func TestRunApply_StorePathIsFileNotDir(t *testing.T) {
+	configHome := t.TempDir()
+	dataHome := t.TempDir()
+	t.Setenv("HAMS_CONFIG_HOME", configHome)
+	t.Setenv("HAMS_DATA_HOME", dataHome)
+	writeApplyTestFile(t, filepath.Join(configHome, "hams.config.yaml"),
+		"profile_tag: macOS\nmachine_id: mid1\n")
+
+	// Create a file (not a directory) and point --store at it.
+	fileAsStore := filepath.Join(t.TempDir(), "oops.yaml")
+	if err := os.WriteFile(fileAsStore, []byte("not a store"), 0o600); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+
+	flags := &provider.GlobalFlags{Store: fileAsStore}
+	registry := provider.NewRegistry()
+
+	err := runApply(context.Background(), flags, registry,
+		sudo.NoopAcquirer{}, "", true, "", "", false, bootstrapMode{})
+	if err == nil {
+		t.Fatal("expected error when store_path points at a file")
+	}
+	var ufe *hamserr.UserFacingError
+	if !errors.As(err, &ufe) {
+		t.Fatalf("want *UserFacingError, got %T: %v", err, err)
+	}
+	if !strings.Contains(ufe.Message, "is not a directory") {
+		t.Errorf("message should distinguish file vs missing; got %q", ufe.Message)
+	}
+}

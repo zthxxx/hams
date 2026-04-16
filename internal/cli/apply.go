@@ -152,6 +152,22 @@ func runApply(ctx context.Context, flags *provider.GlobalFlags, registry *provid
 		)
 	}
 
+	// Validate the configured/supplied store path exists as a directory
+	// BEFORE attempting config load / lock acquisition. Without this,
+	// a typo or stale path surfaced as "creating lock directory: mkdir
+	// /nonexistent: permission denied" — the error pointed at a
+	// symptom (the lock-file subpath) instead of the root cause (the
+	// store_path itself is wrong). Now users get a direct
+	// UserFacingError naming the bad path + remediation.
+	if info, statErr := os.Stat(storePath); statErr != nil || !info.IsDir() {
+		return hamserr.NewUserError(hamserr.ExitUsageError,
+			fmt.Sprintf("store_path %q does not exist or is not a directory", storePath),
+			"Fix store_path in ~/.config/hams/hams.config.yaml",
+			"Or clone a store: hams apply --from-repo=<user/repo>",
+			"Or initialize one: hams store init",
+		)
+	}
+
 	cfg, err := config.Load(paths, storePath)
 	if err != nil {
 		return fmt.Errorf("loading config: %w", err)
