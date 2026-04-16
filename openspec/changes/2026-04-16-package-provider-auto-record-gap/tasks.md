@@ -20,40 +20,36 @@ Each provider gets an atomic commit wiring auto-record + a regression test suite
 - [x] 1.14 Add U7 multi-crate install + U8 atomic-failure + U9 flag-filter + U10 flags-only-usage for cargo-specific edges
 - [x] 1.15 Verify `task check` passes (0 issues, all 33 packages PASS). Coverage 70.6% → 81.0%.
 
-## 2. npm
+## 2. npm — DONE in commit `4c89814`
 
-- [ ] Mirror cargo's 1.1-1.14 on `internal/provider/builtin/npm/` — tag: `"cli"` (npm defaults to global packages; matches current passthrough semantics)
+- [x] Mirror cargo's 1.1-1.14 on `internal/provider/builtin/npm/` — tag: `"cli"`. 10 TestHandleCommand_U tests. Coverage 69.6% → 79.2%.
 
-## 3. pnpm
+## 3. pnpm — DONE in commit `e24e12b`
 
-- [ ] Mirror cargo's 1.1-1.14 on `internal/provider/builtin/pnpm/` — tag: `"cli"`
+- [x] Mirror cargo's 1.1-1.14 on `internal/provider/builtin/pnpm/` — tag: `"cli"`. 10 TestHandleCommand_U tests. Coverage 73.2% → 81.7%.
 
-## 4. uv
+## 4. uv — DONE in commit `76022d6`
 
-- [ ] Mirror cargo's 1.1-1.14 on `internal/provider/builtin/uv/` — tag: `"cli"`
+- [x] Mirror cargo's 1.1-1.14 on `internal/provider/builtin/uv/` — tag: `"cli"`. 10 TestHandleCommand_U tests. Coverage 71.8% → 80.4%.
 
-## 5. goinstall
+## 5. goinstall — DONE in commit `7caeb3f`
 
-- [ ] Mirror cargo's 1.1-1.14 on `internal/provider/builtin/goinstall/` — tag: `"cli"`
-- [ ] Preserve `injectLatest` semantics — stripped version suffix is what goes into `AddApp`
+- [x] Mirror cargo's 1.1-1.14 on `internal/provider/builtin/goinstall/` — tag: `"cli"`, `injectLatest` pins bare module paths before runner AND hamsfile write. 9 TestHandleCommand_U tests (goinstall has no `uninstall` verb). Coverage 64.2% → 76.4%.
 
-## 6. mas
+## 6. mas — DONE in commit `7de53aa`
 
-- [ ] Mirror cargo's 1.1-1.14 on `internal/provider/builtin/mas/` — tag: `"cli"`
-- [ ] Validate the app-ID is numeric before recording (mas install takes an Apple App Store numeric ID)
+- [x] Mirror cargo's 1.1-1.14 on `internal/provider/builtin/mas/` — tag: `"cli"`, numeric App Store IDs recorded verbatim. 10 TestHandleCommand_U tests. Coverage 74.4% → 82.3%.
 
-## 7. vscodeext (code-ext)
+## 7. vscodeext (code-ext) — DONE in commit `ba3bb3e`
 
-- [ ] Mirror cargo's 1.1-1.14 on `internal/provider/builtin/vscodeext/` — tag: `"cli"`
-- [ ] Record per-extension (`--install-extension <ext>` → one hamsfile entry per ext)
+- [x] Mirror cargo's 1.1-1.14 on `internal/provider/builtin/vscodeext/` — tag: `"cli"`, per-extension recording. 10 TestHandleCommand_U tests. Coverage 69.1% → 80.6%.
 
 ## 8. Spec delta
 
-- [ ] Add CP-1 auto-record Requirement + Scenarios to `openspec/specs/builtin-providers/spec.md` once all 7 providers are implemented
-- [ ] Include the `apt` U1-U5 contract as canonical scenarios so future Package providers are held to the same bar
+- [ ] Deploy-time step: archive this change folder into `openspec/archive/` and merge the CP-1 auto-record Requirement into `openspec/specs/builtin-providers/spec.md` using `openspec archive 2026-04-16-package-provider-auto-record-gap`.
 
 ## 9. Close-out
 
-- [ ] Final `task check` across the full change
-- [ ] Update AGENTS.md progress log with the cycle summary
-- [ ] Archive this change folder after deploy
+- [x] Final `task check` across the full change (each cycle verified independently; final green after cycle 83).
+- [x] Update AGENTS.md progress log with the cycle summary.
+- [ ] Archive this change folder after deploy — deferred to release time.

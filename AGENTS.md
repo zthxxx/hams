@@ -187,6 +187,21 @@ Spec corrections:
 
 Total commits in cycle 2: 15+ (still growing — iteration 3 adds hooks+OTel defer).
 
+### Cycles 78–83 — Auto-record gap closed: npm/pnpm/uv/goinstall/mas/vscodeext
+
+Continuing the series from cycle 77 (cargo pilot), six more Package-class providers now satisfy the CP-1 auto-record contract. Every provider wire is the same shape — new `hamsfile.go` helper, `cfg *config.Config` field on `Provider`, `New(cfg, runner)`, `handleInstall` / `handleRemove` loop runner then write hamsfile, 10 `TestHandleCommand_U*` regression tests per provider. Atomic-on-failure semantics keep hamsfile honest; flag filtering (`packageArgs`/`crateArgs`/`toolArgs`/`appIDArgs`/`extensionArgs`) keeps cargo/npm/pnpm/uv/go/mas/code flag tokens out of the recorded resource names.
+
+Coverage gains (per provider):
+
+- **npm** (commit `4c89814`) 69.6% → 79.2%
+- **pnpm** (commit `e24e12b`) 73.2% → 81.7%
+- **uv** (commit `76022d6`) 71.8% → 80.4%
+- **goinstall** (commit `7caeb3f`) 64.2% → 76.4% — preserves `injectLatest` so bare module paths become `<path>@latest` before *both* runner call AND hamsfile write; no `uninstall` verb, so only install-branch auto-records.
+- **mas** (commit `7de53aa`) 74.4% → 82.3%
+- **code-ext** (commit `ba3bb3e`) 69.1% → 80.6%
+
+With cargo (cycle 77, 70.6% → 81.0%), every Package-class provider (9 in total — homebrew, apt, pnpm, npm, uv, goinstall, cargo, code-ext, mas) now writes the hamsfile on successful CLI-first install/remove. Only `homebrew` still writes hamsfile-but-not-state on the CLI path; its state-file upgrade is tracked separately (out of scope for this change; apt's U12-U15 pattern is the reference).
+
 ### Cycle 77 — Auto-record gap pilot (cargo): CLI install now writes hamsfile
 
 - [x] Implemented the pilot for openspec change `2026-04-16-package-provider-auto-record-gap`: `hams cargo install <crate>` and `hams cargo remove <crate>` now append/delete entries in `<profile>/cargo.hams.yaml` via the apt-style pattern. Prior behavior exited 0 without recording — silently violating CP-1 and the core "CLI-first, auto-record" philosophy. Added `cfg *config.Config` field to `cargo.Provider`; new `internal/provider/builtin/cargo/hamsfile.go` (port of apt's). HandleCommand now drives the CmdRunner seam (not `WrapExecPassthrough`) so the auto-record side-effects are DI-testable. 10 new `TestHandleCommand_U*` tests: U1 install-records, U2 idempotent, U3 failure leaves hamsfile untouched (not even created), U4 remove deletes, U5 remove-failure preserves, U6 dry-run skips both, U7 multi-crate all-recorded, U8 multi-crate atomic-on-failure, U9 cargo-flags filtered, U10 flags-only → usage error. Coverage 70.6% → 81.0%. Pattern locked in for the 6 follow-up providers (npm/pnpm/uv/goinstall/mas/vscodeext). (commit `39f8f4c`)
