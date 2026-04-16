@@ -21,11 +21,15 @@ const cliName = "defaults"
 
 // Provider implements the macOS defaults provider.
 type Provider struct {
-	cfg *config.Config
+	cfg    *config.Config
+	runner CmdRunner
 }
 
-// New creates a new defaults provider.
-func New(cfg *config.Config) *Provider { return &Provider{cfg: cfg} }
+// New creates a new defaults provider wired with a real CmdRunner.
+// Pass NewFakeCmdRunner from tests for DI-isolated unit testing.
+func New(cfg *config.Config, runner CmdRunner) *Provider {
+	return &Provider{cfg: cfg, runner: runner}
+}
 
 // Manifest returns the defaults provider metadata.
 func (p *Provider) Manifest() provider.Manifest {
@@ -40,10 +44,7 @@ func (p *Provider) Manifest() provider.Manifest {
 
 // Bootstrap checks if defaults is available (always on macOS).
 func (p *Provider) Bootstrap(_ context.Context) error {
-	if _, err := exec.LookPath(cliName); err != nil {
-		return fmt.Errorf("defaults not found in PATH (macOS only)")
-	}
-	return nil
+	return p.runner.LookPath()
 }
 
 // Probe reads current values for tracked defaults entries.
@@ -60,8 +61,7 @@ func (p *Provider) Probe(ctx context.Context, sf *state.File) ([]provider.ProbeR
 			continue
 		}
 
-		cmd := exec.CommandContext(ctx, cliName, "read", domain, key) //nolint:gosec // domain/key from state entries
-		output, err := cmd.Output()
+		value, err := p.runner.Read(ctx, domain, key)
 		if err != nil {
 			results = append(results, provider.ProbeResult{ID: id, State: state.StateFailed})
 			continue
@@ -70,7 +70,7 @@ func (p *Provider) Probe(ctx context.Context, sf *state.File) ([]provider.ProbeR
 		results = append(results, provider.ProbeResult{
 			ID:    id,
 			State: state.StateOK,
-			Value: strings.TrimSpace(string(output)),
+			Value: value,
 		})
 	}
 	return results, nil
@@ -91,17 +91,14 @@ func (p *Provider) Apply(ctx context.Context, action provider.Action) error {
 	}
 
 	slog.Info("defaults write", "domain", domain, "key", key, "type", typeStr, "value", value)
-	args := []string{"write", domain, key, "-" + typeStr, value}
-	cmd := exec.CommandContext(ctx, cliName, args...) //nolint:gosec // defaults args from hamsfile declarations
-	return cmd.Run()
+	return p.runner.Write(ctx, domain, key, typeStr, value)
 }
 
 // Remove deletes a defaults key.
 func (p *Provider) Remove(ctx context.Context, resourceID string) error {
 	domain, key := parseDomainKey(resourceID)
 	slog.Info("defaults delete", "domain", domain, "key", key)
-	cmd := exec.CommandContext(ctx, cliName, "delete", domain, key) //nolint:gosec // defaults args from hamsfile declarations
-	return cmd.Run()
+	return p.runner.Delete(ctx, domain, key)
 }
 
 // List returns defaults entries with status.

@@ -46,7 +46,7 @@ func registerBuiltins(registry *provider.Registry, sudoCmd sudo.CmdBuilder) {
 		cargo.New(cargo.NewRealCmdRunner()),
 		git.NewConfigProvider(),
 		git.NewCloneProvider(builtinCfg),
-		defaults.New(builtinCfg),
+		defaults.New(builtinCfg, defaults.NewRealCmdRunner()),
 		duti.New(duti.NewRealCmdRunner()),
 		mas.New(mas.NewRealCmdRunner()),
 		vscodeext.New(),

@@ -53,7 +53,7 @@ func TestBuiltinManifestScriptHostsAreBash(t *testing.T) {
 		cargo.New(cargo.NewFakeCmdRunner()),
 		git.NewConfigProvider(),
 		git.NewCloneProvider(cfg),
-		defaults.New(cfg),
+		defaults.New(cfg, defaults.NewFakeCmdRunner()),
 		duti.New(duti.NewFakeCmdRunner()),
 		mas.New(mas.NewFakeCmdRunner()),
 		vscodeext.New(),

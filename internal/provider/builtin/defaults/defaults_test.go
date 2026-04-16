@@ -8,7 +8,7 @@ import (
 
 func TestManifest(t *testing.T) {
 	t.Parallel()
-	p := New(nil)
+	p := New(nil, NewFakeCmdRunner())
 	m := p.Manifest()
 	if m.Name != "defaults" {
 		t.Errorf("Name = %q", m.Name)
@@ -101,7 +101,7 @@ func TestParseDefaultsResource(t *testing.T) {
 
 func TestNameDisplayName(t *testing.T) {
 	t.Parallel()
-	p := New(nil)
+	p := New(nil, NewFakeCmdRunner())
 	if p.Name() != "defaults" || p.DisplayName() != "defaults" {
 		t.Errorf("Name()=%q DisplayName()=%q", p.Name(), p.DisplayName())
 	}
