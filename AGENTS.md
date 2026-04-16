@@ -187,6 +187,10 @@ Spec corrections:
 
 Total commits in cycle 2: 15+ (still growing — iteration 3 adds hooks+OTel defer).
 
+### Cycle 33 — `printConfigKey` coverage (42.7% → 45.5%)
+
+- [x] 3 tests for the typed-fields switch, typo rejection, and the sensitive-key-no-file silent-exit path. Added a `captureStdout` helper mirroring the existing `captureStderr`. (commit `1bbdd1a`)
+
 ### Cycle 32 — `ensureStoreIsGitRepo` + `localConfigPath` tests
 
 - [x] Added unit tests for the two helpers introduced in cycles 18/27 — both were at 0% coverage. 3 subtests for the git-repo check (`.git`, bare HEAD, plain dir), and a simple routing check for the config-path helper. Pure functions, cheap regression guards. (commit `da06d44`)
