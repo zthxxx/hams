@@ -216,9 +216,13 @@ func executeAction(ctx context.Context, p Provider, action Action, sf *state.Fil
 		return
 	}
 
-	// Run post-hooks (install and update only).
+	// Run post-hooks (install and update only). When a hook fails,
+	// runPostHooks already calls sf.SetResource with StateHookFailed
+	// (see hooks.go:runPostHooks) — we don't duplicate that write
+	// here; we just record the error, bump the action counter, and
+	// end the span. ComputePlan promotes StateHookFailed to ActionInstall
+	// on the next apply, so re-apply semantics stay correct.
 	if err := runPhasePostHooks(ctx, action, phase, sf); err != nil {
-		// Action succeeded but hook failed — state is hook-failed.
 		incrementCounter(result, phase)
 		result.Errors = append(result.Errors, fmt.Errorf("%s: post-%s hook %s: %w", name, phase, action.ID, err))
 		slog.Info(phasePastTense(phase)+" (hook failed)", "provider", name, "resource", action.ID)
