@@ -5,7 +5,6 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"os/exec"
 	"strings"
 
 	hamserr "github.com/zthxxx/hams/internal/error"
@@ -15,10 +14,13 @@ import (
 )
 
 // Provider implements the cargo install provider.
-type Provider struct{}
+type Provider struct {
+	runner CmdRunner
+}
 
-// New creates a new cargo provider.
-func New() *Provider { return &Provider{} }
+// New creates a new cargo provider wired with a real CmdRunner.
+// Pass NewFakeCmdRunner from tests for DI-isolated unit testing.
+func New(runner CmdRunner) *Provider { return &Provider{runner: runner} }
 
 // Manifest returns the cargo provider metadata.
 func (p *Provider) Manifest() provider.Manifest {
@@ -33,21 +35,17 @@ func (p *Provider) Manifest() provider.Manifest {
 
 // Bootstrap checks if cargo is available.
 func (p *Provider) Bootstrap(_ context.Context) error {
-	if _, err := exec.LookPath("cargo"); err != nil {
-		return fmt.Errorf("cargo not found in PATH")
-	}
-	return nil
+	return p.runner.LookPath()
 }
 
 // Probe queries cargo for installed packages.
 func (p *Provider) Probe(ctx context.Context, sf *state.File) ([]provider.ProbeResult, error) {
-	cmd := exec.CommandContext(ctx, "cargo", "install", "--list")
-	output, err := cmd.Output()
+	output, err := p.runner.List(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("cargo install --list: %w", err)
+		return nil, err
 	}
 
-	installed := parseCargoList(string(output))
+	installed := parseCargoList(output)
 	var results []provider.ProbeResult
 	for id, r := range sf.Resources {
 		if r.State == state.StateRemoved {
@@ -71,13 +69,13 @@ func (p *Provider) Plan(_ context.Context, desired *hamsfile.File, observed *sta
 // Apply installs a cargo package.
 func (p *Provider) Apply(ctx context.Context, action provider.Action) error {
 	slog.Info("cargo install", "package", action.ID)
-	return provider.WrapExecPassthrough(ctx, "cargo", []string{"install", action.ID}, nil)
+	return p.runner.Install(ctx, action.ID)
 }
 
 // Remove uninstalls a cargo package.
 func (p *Provider) Remove(ctx context.Context, resourceID string) error {
 	slog.Info("cargo uninstall", "package", resourceID)
-	return provider.WrapExecPassthrough(ctx, "cargo", []string{"uninstall", resourceID}, nil)
+	return p.runner.Uninstall(ctx, resourceID)
 }
 
 // List returns installed cargo packages with status.

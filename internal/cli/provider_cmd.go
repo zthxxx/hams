@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"strings"
 
 	"github.com/zthxxx/hams/internal/provider"
@@ -38,6 +39,15 @@ func routeToProvider(handler ProviderHandler, args []string, flags *provider.Glo
 	if hamsFlags == nil {
 		// --help was found.
 		return showProviderHelp(handler)
+	}
+	// Surface v1.1-deferred --hams-lucky usage so users who pass the
+	// flag are not surprised by a silent no-op. See
+	// openspec/specs/cli-architecture/spec.md (lucky-defer delta) for
+	// the spec stance — Enricher interface has zero implementations
+	// in v1; the flag parses but no provider reads hamsFlags["lucky"].
+	if _, ok := hamsFlags["lucky"]; ok {
+		slog.Warn("--hams-lucky is parsed but silently ignored in v1 (LLM enrichment deferred to v1.1)",
+			"provider", handler.Name())
 	}
 	return handler.HandleCommand(context.TODO(), passthrough, hamsFlags, flags)
 }

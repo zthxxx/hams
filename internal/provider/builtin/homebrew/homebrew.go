@@ -3,7 +3,6 @@ package homebrew
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"log/slog"
 	"maps"
@@ -38,12 +37,18 @@ type BrewResource struct {
 
 // Provider implements the Homebrew package manager provider.
 type Provider struct {
-	cfg *config.Config
+	cfg    *config.Config
+	runner CmdRunner
 }
 
-// New creates a new Homebrew provider.
-func New(cfg *config.Config) *Provider {
-	return &Provider{cfg: cfg}
+// New creates a new Homebrew provider wired with a real CmdRunner.
+// Pass NewFakeCmdRunner from tests for DI-isolated unit testing.
+// Bootstrap uses the legacy brewBinaryLookup + envPathAugment
+// package-level seams (preserved for the existing install.sh retry
+// flow tests); the CmdRunner covers the post-bootstrap operations
+// (list formulae/casks/taps, install, uninstall, tap).
+func New(cfg *config.Config, runner CmdRunner) *Provider {
+	return &Provider{cfg: cfg, runner: runner}
 }
 
 // Manifest returns the Homebrew provider metadata.
@@ -136,13 +141,12 @@ func (p *Provider) Bootstrap(_ context.Context) error {
 
 // Probe queries brew for installed formulae, casks, and taps.
 func (p *Provider) Probe(ctx context.Context, sf *state.File) ([]provider.ProbeResult, error) {
-	installed, err := listInstalled(ctx)
+	installed, err := p.listInstalled(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("listing installed brew packages: %w", err)
 	}
 
-	// Also enumerate taps.
-	taps, err := listTaps(ctx)
+	taps, err := p.runner.ListTaps(ctx)
 	if err != nil {
 		slog.Debug("listing taps failed, ignoring", "error", err)
 	}
@@ -174,21 +178,20 @@ func (p *Provider) Probe(ctx context.Context, sf *state.File) ([]provider.ProbeR
 	return results, nil
 }
 
-// listTaps returns installed tap names.
-func listTaps(ctx context.Context) ([]string, error) {
-	cmd := exec.CommandContext(ctx, "brew", "tap")
-	output, err := cmd.Output()
+// listInstalled merges formulae and casks via the runner. Cask-listing
+// errors are logged and ignored (brew returns non-zero when zero casks
+// are installed).
+func (p *Provider) listInstalled(ctx context.Context) (map[string]string, error) {
+	formulae, err := p.runner.ListFormulae(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("brew tap: %w", err)
+		return nil, err
 	}
-	var taps []string
-	for line := range strings.SplitSeq(strings.TrimSpace(string(output)), "\n") {
-		line = strings.TrimSpace(line)
-		if line != "" {
-			taps = append(taps, line)
-		}
+	casks, err := p.runner.ListCasks(ctx)
+	if err != nil {
+		slog.Debug("listing casks failed, ignoring", "error", err)
 	}
-	return taps, nil
+	maps.Copy(formulae, casks)
+	return formulae, nil
 }
 
 // isTapFormat returns true if the package name looks like a tap (user/repo format without formula).
@@ -212,15 +215,14 @@ func (p *Provider) Plan(_ context.Context, desired *hamsfile.File, observed *sta
 }
 
 // Apply installs a brew package. If the action carries a BrewResource with IsCask set,
-// --cask is appended to the install command.
+// --cask is appended to the install command via the runner.
 func (p *Provider) Apply(ctx context.Context, action provider.Action) error {
-	args := []string{"install"}
+	isCask := false
 	if res, ok := action.Resource.(BrewResource); ok && res.IsCask {
-		args = append(args, "--cask")
+		isCask = true
 	}
-	args = append(args, action.ID)
-	slog.Info("brew install", "package", action.ID, "args", args)
-	return provider.WrapExecPassthrough(ctx, "brew", args, nil)
+	slog.Info("brew install", "package", action.ID, "cask", isCask)
+	return p.runner.Install(ctx, action.ID, isCask)
 }
 
 // caskApps returns the set of app names that appear under a "cask" tag in the hamsfile.
@@ -266,7 +268,7 @@ func caskApps(f *hamsfile.File) map[string]bool {
 // Remove uninstalls a brew package.
 func (p *Provider) Remove(ctx context.Context, resourceID string) error {
 	slog.Info("brew uninstall", "package", resourceID)
-	return provider.WrapExecPassthrough(ctx, "brew", []string{"uninstall", resourceID}, nil)
+	return p.runner.Uninstall(ctx, resourceID)
 }
 
 // List returns packages with diff between Hamsfile (desired) and state (observed).
@@ -439,66 +441,6 @@ func (p *Provider) handleRemove(ctx context.Context, args []string, hamsFlags ma
 	}
 
 	return hf.Write()
-}
-
-// listInstalled returns a map of installed package name → version.
-func listInstalled(ctx context.Context) (map[string]string, error) {
-	// List formulae.
-	formulae, err := listByType(ctx, "--formula")
-	if err != nil {
-		return nil, err
-	}
-
-	// List casks.
-	casks, err := listByType(ctx, "--cask")
-	if err != nil {
-		// Cask list might fail if no casks installed. That's OK.
-		slog.Debug("listing casks failed, ignoring", "error", err)
-	}
-
-	// Merge.
-	maps.Copy(formulae, casks)
-
-	return formulae, nil
-}
-
-func listByType(ctx context.Context, typeFlag string) (map[string]string, error) {
-	cmd := exec.CommandContext(ctx, "brew", "info", "--json=v2", "--installed", typeFlag) //nolint:gosec // typeFlag is --formula or --cask, not user input
-	output, err := cmd.Output()
-	if err != nil {
-		return nil, fmt.Errorf("brew info %s: %w", typeFlag, err)
-	}
-
-	var data struct {
-		Formulae []struct {
-			Name              string `json:"name"`
-			InstalledVersions []struct {
-				Version string `json:"version"`
-			} `json:"installed"`
-		} `json:"formulae"`
-		Casks []struct {
-			Token   string `json:"token"`
-			Version string `json:"version"`
-		} `json:"casks"`
-	}
-
-	if err := json.Unmarshal(output, &data); err != nil {
-		return nil, fmt.Errorf("parsing brew JSON: %w", err)
-	}
-
-	result := make(map[string]string)
-	for _, f := range data.Formulae {
-		version := ""
-		if len(f.InstalledVersions) > 0 {
-			version = f.InstalledVersions[0].Version
-		}
-		result[f.Name] = version
-	}
-	for _, c := range data.Casks {
-		result[c.Token] = c.Version
-	}
-
-	return result, nil
 }
 
 func (p *Provider) loadOrCreateHamsfile(hamsFlags map[string]string, flags *provider.GlobalFlags) (*hamsfile.File, error) {

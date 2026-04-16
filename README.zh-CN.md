@@ -44,7 +44,7 @@ hams apply --bootstrap --from-repo=your-username/hams-store
 
 ## 特性
 
-- **15 个内置 Provider**：Homebrew、apt、pnpm、npm、uv、go、cargo、VS Code 扩展、mas（App Store）、git config/clone、macOS defaults、duti、Ansible
+- **15 个内置 Provider**：Homebrew、apt、pnpm、npm、uv、goinstall、cargo、VS Code 扩展（`code-ext`）、mas（App Store）、git config/clone、macOS defaults、duti、Ansible
 - **Terraform 风格的状态管理**：跟踪已安装内容，自动重试失败项，检测配置漂移
 - **保留注释的 YAML**：你在 Hamsfile 中的注释不会丢失
 - **多机器 Profile**：一个 git 仓库，多台机器的配置（macOS、Linux、OpenWrt）

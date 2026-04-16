@@ -44,20 +44,20 @@ import (
 func TestBuiltinManifestScriptHostsAreBash(t *testing.T) {
 	cfg := &config.Config{}
 	all := []provider.Provider{
-		homebrew.New(cfg),
+		homebrew.New(cfg, homebrew.NewFakeCmdRunner()),
 		apt.New(cfg, apt.NewRealCmdRunner(sudo.DirectBuilder{})),
-		npm.New(),
-		pnpm.New(),
-		uv.New(),
-		goinstall.New(),
-		cargo.New(),
+		npm.New(npm.NewFakeCmdRunner()),
+		pnpm.New(pnpm.NewFakeCmdRunner()),
+		uv.New(uv.NewFakeCmdRunner()),
+		goinstall.New(goinstall.NewFakeCmdRunner()),
+		cargo.New(cargo.NewFakeCmdRunner()),
 		git.NewConfigProvider(),
 		git.NewCloneProvider(cfg),
-		defaults.New(cfg),
-		duti.New(),
-		mas.New(),
-		vscodeext.New(),
-		ansible.New(),
+		defaults.New(cfg, defaults.NewFakeCmdRunner()),
+		duti.New(duti.NewFakeCmdRunner()),
+		mas.New(mas.NewFakeCmdRunner()),
+		vscodeext.New(vscodeext.NewFakeCmdRunner()),
+		ansible.New(ansible.NewFakeCmdRunner()),
 		bash.New(),
 	}
 

@@ -44,9 +44,9 @@ provider_priority:
   - pnpm
   - npm
   - uv
-  - go
+  - goinstall
   - cargo
-  - vscode-ext
+  - code-ext
   - mas
   - git
   - defaults
@@ -204,7 +204,7 @@ A single resource MAY appear in multiple groups (multiple tags). The canonical i
 
 #### Package-Type Item Schema
 
-For package-type providers (Homebrew, pnpm, npm, uv, go, cargo, mas, apt, vscode-ext):
+For package-type providers (Homebrew, pnpm, npm, uv, goinstall, cargo, mas, apt, code-ext):
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
@@ -233,7 +233,7 @@ groups:
           - editor
         hooks:
           post_install:
-            - run: hams vscode-ext apply
+            - run: hams code-ext apply
               defer: true
 
   - tag: media
@@ -325,7 +325,9 @@ THEN hams SHALL exit with a validation error stating that script-type resources 
 
 ---
 
-### Requirement: Hamsfile Hooks Schema
+### Requirement: Hamsfile Hooks Schema — Deferred to v1.1
+
+> **v1 status (as of 2026-04-16):** The `hooks:` schema below is documented and the `internal/provider/hooks.go` execution engine is fully built and tested, but the v1 hamsfile loader does NOT yet parse `hooks:` keys and no provider's `Plan()` method populates `Action.Hooks`. In v1, a `hooks:` block in a hamsfile is **silently ignored**. The scenarios in this section describe v1.1 behavior; v1 behavior is documented in `cli-architecture/spec.md` (hooks-defer delta, commit TBD).
 
 Items in a Hamsfile MAY declare lifecycle hooks via a `hooks` mapping. Hooks SHALL only fire on the `NotPresent -> Install` transition.
 
@@ -350,7 +352,7 @@ Each hook entry SHALL contain:
     pre_install:
       - run: echo "Installing VS Code..."
     post_install:
-      - run: hams vscode-ext apply
+      - run: hams code-ext apply
         defer: true
       - run: defaults write com.microsoft.VSCode ApplePressAndHoldEnabled -bool false
 ```

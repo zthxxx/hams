@@ -12,6 +12,10 @@
 coverage.out
 coverage.html
 
+# pgregory.net/rapid failure-replay state files (one per failing seed,
+# regenerated on each property-test run; no value committing them)
+testdata/rapid/
+
 # Dependency
 /vendor/
 node_modules/

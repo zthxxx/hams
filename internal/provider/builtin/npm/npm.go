@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
-	"os/exec"
 	"strings"
 
 	hamserr "github.com/zthxxx/hams/internal/error"
@@ -19,13 +18,18 @@ import (
 const cliName = "npm"
 
 // AutoInjectFlags are flags automatically added if not present.
+// Used by HandleCommand passthrough; the apply/remove paths invoke the
+// CmdRunner directly which always passes --global.
 var AutoInjectFlags = map[string]string{"--global": ""}
 
 // Provider implements the npm package manager provider.
-type Provider struct{}
+type Provider struct {
+	runner CmdRunner
+}
 
-// New creates a new npm provider.
-func New() *Provider { return &Provider{} }
+// New creates a new npm provider wired with a real CmdRunner.
+// Pass NewFakeCmdRunner from tests for DI-isolated unit testing.
+func New(runner CmdRunner) *Provider { return &Provider{runner: runner} }
 
 // Manifest returns the npm provider metadata.
 func (p *Provider) Manifest() provider.Manifest {
@@ -40,20 +44,17 @@ func (p *Provider) Manifest() provider.Manifest {
 
 // Bootstrap checks if npm is available.
 func (p *Provider) Bootstrap(_ context.Context) error {
-	if _, err := exec.LookPath("npm"); err != nil {
-		return fmt.Errorf("npm not found in PATH")
-	}
-	return nil
+	return p.runner.LookPath()
 }
 
 // Probe queries npm for globally installed packages.
 func (p *Provider) Probe(ctx context.Context, sf *state.File) ([]provider.ProbeResult, error) {
-	output, err := exec.CommandContext(ctx, "npm", "list", "-g", "--json", "--depth=0").Output()
+	output, err := p.runner.List(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("npm list: %w", err)
+		return nil, err
 	}
 
-	installed := parseNpmList(string(output))
+	installed := parseNpmList(output)
 	var results []provider.ProbeResult
 	for id, r := range sf.Resources {
 		if r.State == state.StateRemoved {
@@ -77,13 +78,13 @@ func (p *Provider) Plan(_ context.Context, desired *hamsfile.File, observed *sta
 // Apply installs an npm package globally.
 func (p *Provider) Apply(ctx context.Context, action provider.Action) error {
 	slog.Info("npm install", "package", action.ID)
-	return provider.WrapExecPassthrough(ctx, "npm", []string{"install", action.ID}, AutoInjectFlags)
+	return p.runner.Install(ctx, action.ID)
 }
 
 // Remove uninstalls an npm package globally.
 func (p *Provider) Remove(ctx context.Context, resourceID string) error {
 	slog.Info("npm uninstall", "package", resourceID)
-	return provider.WrapExecPassthrough(ctx, "npm", []string{"uninstall", resourceID}, AutoInjectFlags)
+	return p.runner.Uninstall(ctx, resourceID)
 }
 
 // List returns installed packages with status.

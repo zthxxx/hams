@@ -649,32 +649,80 @@ The `hams apply` command without additional flags SHALL perform the following se
 - **THEN** the lock SHALL be released, all state files SHALL be updated, and the exit code SHALL be 0
 
 ---
-<!-- Merged from change: fix-v1-planning-gaps -->
+<!-- Merged from change: 2026-04-16-spec-impl-reconciliation -->
 
-# CLI Architecture — Spec Delta (fix-v1-planning-gaps)
+# CLI Architecture — Spec Delta (lucky-defer)
 
 ## MODIFIED
 
-### `--hams-lucky` Flag Behavior
+### Requirement: `--hams-lucky` Flag Behavior — Scaffolded, Deferred to v1.1
 
-When the `--hams-lucky` flag is passed after a provider command, the CLI SHALL skip all interactive TUI prompts and auto-accept LLM-recommended tags and intro:
+The `--hams-lucky` flag is a forward-looking opt-out for the LLM-driven enrichment chain. In v1, the flag plumbing is end-to-end correct but no provider implements `provider.Enricher`, so the user-facing scenarios are deferred until at least one provider's `Enrich(ctx, resourceID)` method calls `llm.Recommend()` and reads `hamsFlags["lucky"]`.
 
-- The flag SHALL be extracted by `splitHamsFlags()` and propagated to the provider's `HandleCommand()`.
-- The provider SHALL forward the lucky flag to the enrichment flow.
-- `RunTagPicker()` SHALL accept a `lucky` parameter; when `true`, it SHALL return LLM-recommended tags immediately without displaying the TUI picker.
-- `EnrichAsync()` SHALL auto-accept the LLM-generated intro when lucky mode is active.
-- This behavior is equivalent to non-interactive TTY mode, but explicitly user-requested.
+#### Current shipped behavior (v1)
 
-#### Scenario: --hams-lucky skips tag picker
+- `splitHamsFlags()` extracts `--hams-lucky` into `hamsFlags["lucky"]`. ✓
+- `RunTagPicker(llmTags, existingTags []string, lucky bool)` short-circuits when `lucky == true`. ✓
+- `Enricher` interface defined at `internal/provider/provider.go`. ✓
+- `runEnrichPhase` in `internal/cli/apply.go` iterates registered providers and type-asserts to `Enricher`. ✓
+- **Zero of 15 builtin providers implement `Enrich`.** The type assertion always fails; the loop body never executes.
+- **Zero providers read `hamsFlags["lucky"]`.** The flag never affects behavior.
+- **`llm.Recommend()` has zero production callers.** Configuring `llm_cli` via `hams config set llm_cli claude` writes the value but no code path reads it.
 
-Given the user runs `hams brew install git --hams-lucky`
-When the LLM returns recommended tags `["development-tool", "vcs"]`
-Then the tags SHALL be written to the Hamsfile without displaying the TUI picker
-And the LLM-generated intro SHALL be written without confirmation.
+#### Scenario: --hams-lucky flag parses without error
 
-#### Scenario: --hams-lucky with no LLM configured
+- **WHEN** the user runs `hams brew install git --hams-lucky`
+- **THEN** the CLI SHALL extract the `lucky` flag into the per-command `hamsFlags` map without warning or error
+- **AND** the install SHALL proceed as if the flag were absent (provider does not yet read the flag).
 
-Given the user runs `hams brew install git --hams-lucky` with no LLM CLI configured
-When enrichment fails gracefully
-Then the package SHALL still be installed and recorded without tags or intro
-And a warning SHALL be logged about LLM unavailability.
+#### Scenario: LLM enrichment scaffolding does not invoke LLM in v1
+
+- **WHEN** any user runs any `hams <provider> install ...` command in v1
+- **THEN** no LLM subprocess SHALL be spawned regardless of `--hams-lucky` or `llm_cli` config
+- **AND** no tags or intro fields SHALL be auto-populated in the resulting hamsfile entry.
+
+#### Scenario: Spec scenarios deferred to v1.1
+
+- **WHEN** a v1.1 release wires at least one provider's `Enrich` method to call `llm.Recommend()` and read `hamsFlags["lucky"]`
+- **THEN** the v1.1 spec SHALL re-enable the original `--hams-lucky skips tag picker` and `--hams-lucky with no LLM configured` scenarios as user-facing requirements
+- **AND** until then, those scenarios are DEFERRED, not failing, requirements.
+
+#### Why deferred (not removed)
+
+- The plumbing (`Enricher` interface, `RunTagPicker(lucky)`, `EnrichAsync`, `EnrichCollector`, `runEnrichPhase`, `llm.Recommend`, config field `LLMCLI`) is end-to-end correct and ready for a provider implementation to plug in.
+- Removing the scaffolding (~250 lines across `internal/llm/`, `internal/tui/`, `internal/provider/`, `internal/cli/`) would force re-implementation in v1.1 with identical structure.
+- The honest architectural call is "documented gap, not dead code" — distinct from the `CLIHandler` interface (which had no plumbing reachable from any production code path and was removed in commit `10de4bd`).
+
+---
+<!-- Merged from change: 2026-04-16-defer-hooks-and-otel -->
+
+# CLI Architecture — Spec Delta (hooks-defer + OTel-defer)
+
+## MODIFIED
+
+### Requirement: Hamsfile Hooks Parsing — Deferred to v1.1
+
+The v1 hamsfile loader does NOT parse `hooks:` blocks. The execution engine at `internal/provider/hooks.go` is fully built but receives no input — no provider's `Plan()` populates `Action.Hooks`, and `internal/hamsfile/` has zero hook-parsing logic.
+
+#### Scenario: v1 silently ignores hooks: blocks
+
+- **WHEN** a user adds a `hooks:` block to an item in their hamsfile
+- **THEN** the v1 hams loader SHALL load the hamsfile without error
+- **AND** `hams apply` SHALL NOT execute any hook
+- **AND** no warning is emitted in v1 (a follow-up change MAY add one).
+
+### Requirement: OTel CLI Integration — Deferred to v1.1
+
+The `internal/otel/` package defines `Session`, `Span`, `LocalFileExporter` with file output to `${HAMS_DATA_HOME}/otel/`. However, no CLI command creates an `otel.NewSession()` — `internal/cli/apply.go:444` calls `provider.Execute(ctx, p, actions, sf)` without the optional `otelSession` variadic, so the executor's per-action span-record calls are no-ops.
+
+#### Scenario: v1 produces no OTel output
+
+- **WHEN** a user runs `hams apply` in v1
+- **THEN** no file SHALL appear under `${HAMS_DATA_HOME}/otel/traces/` or `${HAMS_DATA_HOME}/otel/metrics/`
+- **AND** no error is emitted about missing OTel — the absence is silent.
+
+### Why deferred (not removed)
+
+- Hooks engine: ~200 lines of tested Go (hooks.go + hooks_test.go + executor.go dispatch glue).
+- OTel package: ~300 lines of exporter + span tracking.
+- Both would need full re-implementation if deleted. Documenting the gap matches the `--hams-lucky` precedent (commit `f4c0f20`). The honest architectural call is "documented gap, not dead code."

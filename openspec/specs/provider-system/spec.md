@@ -80,7 +80,7 @@ The Probe phase SHALL implement four distinct probe strategies based on the reso
 
 #### Class 1: Package Providers
 
-Providers: Homebrew, pnpm, npm, uv, go, cargo, mas, apt, vscode-ext.
+Providers: Homebrew, pnpm, npm, uv, goinstall, cargo, mas, apt, code-ext.
 
 The provider SHALL invoke the wrapped package manager's native list command (e.g., `brew list`, `pnpm list -g --json`, `code --list-extensions`) and parse its output to determine installed packages and versions.
 
@@ -149,11 +149,11 @@ Each provider SHALL declare a `depend-on` list in its manifest specifying which 
 
 The provider system SHALL build a directed acyclic graph (DAG) from all provider depend-on declarations and resolve it using topological sort to determine Bootstrap execution order.
 
-#### Scenario: VSCode Extension provider depends on Homebrew
+#### Scenario: VS Code Extensions provider depends on Homebrew
 
-WHEN the vscode-ext provider declares `depend-on: [{provider: homebrew, resource: visual-studio-code}]`
+WHEN the code-ext provider declares `depend-on: [{provider: homebrew, resource: visual-studio-code}]`
 AND the system is on macOS
-THEN the Bootstrap phase SHALL ensure Homebrew is bootstrapped and `visual-studio-code` is installed before the vscode-ext provider begins its Probe or Apply phases.
+THEN the Bootstrap phase SHALL ensure Homebrew is bootstrapped and `visual-studio-code` is installed before the code-ext provider begins its Probe or Apply phases.
 
 #### Scenario: Platform-conditional dependency
 
@@ -168,8 +168,8 @@ THEN the DAG resolution SHALL detect the cycle immediately and terminate with a 
 
 #### Scenario: Topological execution order
 
-WHEN the DAG contains: bash (no deps), homebrew (depends on bash), vscode-ext (depends on homebrew)
-THEN Bootstrap SHALL execute in order: bash -> homebrew -> vscode-ext.
+WHEN the DAG contains: bash (no deps), homebrew (depends on bash), code-ext (depends on homebrew)
+THEN Bootstrap SHALL execute in order: bash -> homebrew -> code-ext.
 
 #### Scenario: Multiple providers at same DAG level
 
@@ -283,9 +283,9 @@ THEN the hook SHALL NOT execute.
 
 #### Scenario: Nested provider call in hook
 
-WHEN a brew package `visual-studio-code` has a post-hook containing `hams vscode-ext install ms-python.python`
-THEN the hook execution engine SHALL dispatch the vscode-ext install to the vscode-ext provider
-AND the vscode-ext provider MUST already be bootstrapped (else the hook fails).
+WHEN a brew package `visual-studio-code` has a post-hook containing `hams code-ext install ms-python.python`
+THEN the hook execution engine SHALL dispatch the code-ext install to the code-ext provider
+AND the code-ext provider MUST already be bootstrapped (else the hook fails).
 
 ---
 
@@ -381,9 +381,9 @@ The system SHALL classify all known providers into builtin (compiled into the ha
 | pnpm | Builtin | 1 (Package) | all | bash (install script) or homebrew |
 | npm | Builtin | 1 (Package) | all | homebrew (node) or pnpm (node) |
 | uv | Builtin | 1 (Package) | all | bash (install script) or homebrew |
-| go | Builtin | 1 (Package) | all | homebrew (go) |
+| goinstall | Builtin | 1 (Package) | all | homebrew (go) |
 | cargo | Builtin | 1 (Package) | all | bash (rustup) or homebrew (rust) |
-| vscode-ext | Builtin | 1 (Package) | darwin, linux | homebrew (visual-studio-code) |
+| code-ext | Builtin | 1 (Package) | darwin, linux | homebrew (visual-studio-code) |
 | mas | Builtin | 1 (Package) | darwin | homebrew (mas) |
 | git-config | Builtin | 2 (KV Config) | all | none (uses bundled go-git or system git) |
 | git-clone | Builtin | 4 (Filesystem) | all | none (uses bundled go-git or system git) |
@@ -415,7 +415,7 @@ When multiple providers are ready to execute (i.e., all their DAG dependencies a
 The default priority list SHALL be:
 
 ```
-homebrew, apt, pnpm, npm, uv, go, cargo, vscode-ext, mas, git, defaults, duti, bash
+brew, apt, pnpm, npm, uv, goinstall, cargo, code-ext, mas, git-config, git-clone, defaults, duti, bash, ansible
 ```
 
 This list is overridable via the `provider-priority` field in `hams.config.yaml`.

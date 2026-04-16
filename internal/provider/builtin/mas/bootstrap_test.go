@@ -10,7 +10,7 @@ import (
 )
 
 func TestBootstrap_MasPresentReturnsNil(t *testing.T) {
-	p := New()
+	p := New(NewRealCmdRunner())
 	original := masBinaryLookup
 	defer func() { masBinaryLookup = original }()
 
@@ -22,7 +22,7 @@ func TestBootstrap_MasPresentReturnsNil(t *testing.T) {
 }
 
 func TestBootstrap_MasMissingReturnsStructuredError(t *testing.T) {
-	p := New()
+	p := New(NewRealCmdRunner())
 	original := masBinaryLookup
 	defer func() { masBinaryLookup = original }()
 
@@ -48,7 +48,7 @@ func TestBootstrap_ScriptMatchesManifest(t *testing.T) {
 	// DependsOn splits DAG ordering (Provider: brew, no Script) from
 	// script host (Provider: bash, with Script). Only bash implements
 	// BashScriptRunner, so the scripted entry's host must be bash.
-	p := New()
+	p := New(NewRealCmdRunner())
 	original := masBinaryLookup
 	defer func() { masBinaryLookup = original }()
 	masBinaryLookup = func(string) (string, error) { return "", exec.ErrNotFound }

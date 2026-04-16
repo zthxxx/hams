@@ -68,7 +68,7 @@ Single test: `go test -race -run TestFuncName ./path/to/package/...`
 - **OTel**: trace + metrics, local file exporter at `${HAMS_DATA_HOME}/otel/`.
 - **Docs**: Nextra on GitHub Pages at `hams.zthxxx.me`.
 
-15 builtin providers: Bash, Homebrew, apt, pnpm, npm, uv, go, cargo, VSCode Extension, git (config/clone), defaults, duti, mas, Ansible.
+15 builtin providers: Bash, Homebrew, apt, pnpm, npm, uv, goinstall, cargo, VS Code Extensions (`code-ext`), git (config/clone), defaults, duti, mas, Ansible.
 
 ## Directory Conventions
 
@@ -134,7 +134,9 @@ This project uses [OpenSpec](https://openspec.dev) for spec-driven development.
 
 ## Current Task
 
-Ralph Loop: Full verification cycle (all shipped specs, user workflow, tests, architecture)
+Ralph Loop: Verification cycle 2 — execute deferred follow-ups from `2026-04-16-verification-findings`
+
+### Completed in cycle 1
 
 - [x] Fix goconst lint errors across 7 provider files
 - [x] Fix Taskfile bug: `task check` was calling `task test` (includes integration/e2e via act) instead of `task test:unit`
@@ -147,6 +149,73 @@ Ralph Loop: Full verification cycle (all shipped specs, user workflow, tests, ar
 - [x] Record findings as OpenSpec change with task breakdown (`openspec/changes/2026-04-16-verification-findings/`)
 - [x] Remove dead CLIHandler interface (unused dead code in provider.go) — zero Go references remain
 - [x] Final `task check` pass (verified 0 issues, all 28 test packages PASS)
+- [x] Commit cycle-1 verification findings (10de4bd)
+
+### Cycle 2: deferred follow-ups
+
+- [x] **spec-reconciliation/naming**: Update `openspec/specs/builtin-providers/spec.md` to use `goinstall`/`code-ext`. Grep for stale references. (commit `6f9e533`)
+- [x] **lucky-enrichment**: Architect investigation found Enricher has zero implementers; `--hams-lucky` is a silent no-op flag. **Decision: defer entire feature to v1.1**, document gap honestly in spec, keep scaffolding. (commit `f4c0f20`)
+- [x] **property-based parser tests**: Add via `rapid` for cargo, npm, pnpm, uv, mas, vscodeext. (commit `3467967`)
+  - **Real bug found and fixed**: `parseExtensionList` silently emitted empty/whitespace keys on malformed input — would corrupt the desired-vs-observed diff.
+- [x] **Tier 3 tempdir-isolated tests**: git-config + git-clone apply/probe/remove via HOME redirect (no FakeCmdRunner refactor needed). (commits `703f66c`, `588b86e`)
+- [x] **Tier 1 lifecycle tests CLOSED** — all 5 package-like providers (cargo, npm, pnpm, uv, goinstall) refactored to CmdRunner DI + apt-style U-pattern lifecycle tests. Coverage gains: cargo 28→69%, npm 23→68%, pnpm 30→71%, uv 32→70%, goinstall 14→62%. Commits f3dde9a, a972bd4, 5bad9cd, 682f22b.
+- [x] **Tier 2 apply/probe DI tests CLOSED** — all 3 macOS-specific providers (mas, duti, defaults) refactored to CmdRunner DI + lifecycle tests. Coverage gains: mas 39→73%, duti 31→80%, defaults 20→59%. Commits 43be98b, 933080d, ff8fada.
+- [x] Verify `task check` passes after each change. Atomic commit per fix.
+
+### Cycle 2 summary
+
+Cycle 2 closed both test-coverage tiers — 8 of 8 providers with package-manager semantics now have DI-isolated lifecycle tests. All commits pass `task check` (0 lint, 28/28 PASS). Zero real package-manager invocations from unit tests. First Principle (CLAUDE.md) enforced across the board.
+
+Real bugs found and fixed during cycle:
+
+- `parseExtensionList` silently corrupted diff on `@version`-prefix or tab-containing inputs (commit 3467967).
+
+Architectural decisions documented:
+
+- `--hams-lucky` flag deferred to v1.1; spec rewritten to match shipped reality (commit f4c0f20).
+- DAG zero-indegree tie-breaking is alphabetical (priority list is inert for root-level providers); codified in `TestResolveDAG_ZeroIndegreePriority` + `provider-system/spec.md` delta (commit 10de4bd).
+
+Spec corrections:
+
+- `goinstall`/`code-ext` naming reconciled across 4 spec files + en/zh-CN docs + README variants (commit 6f9e533).
+
+Total commits in cycle 2: 15+ (still growing — iteration 3 adds hooks+OTel defer).
+
+### Cycle 3 — COMPLETE
+
+- [x] Architectural audit (state, hooks, lock, sudo, OTel) — **two new drifts found**: hooks engine has zero parsers wiring it; OTel exporter has zero CLI integration. Both deferred to v1.1 (commit `ed1a5af`).
+- [x] Homebrew CmdRunner DI refactor — 15.9% → 45.2% (commit `a9cebe7`).
+- [x] Vscodeext FilePrefix self-correction — docs incorrectly said `code-ext.hams.yaml`; impl ships `vscodeext.hams.yaml` intentionally (commit `2ac1a58`).
+- [x] Vscodeext CmdRunner DI refactor — 29.0% → 67.4% (commit `b70481b`).
+- [x] Hamsfile fail-loud warning when `hooks:` block declared (improves UX of the hooks-defer; commit `8abf8e9`).
+- [x] CLI fail-loud warning when `--hams-lucky` passed (improves UX of the lucky-defer; commit `bee5e67`).
+- [x] Ansible CmdRunner DI refactor — 17.9% → 70.5% (commit `efea1b8`).
+
+**Cycle 3 milestone**: ALL 12 testable providers now have CmdRunner DI + apt-style U-pattern lifecycle tests. (bash is the script-host that other providers' Bootstrap chains target via `BashScriptRunner` — testing it requires a different shape and is out of scope for this DI refactor.)
+
+| Provider | Before → After |
+|----------|---------------|
+| apt | 77.1% (already had DI) |
+| cargo | 28.8% → 68.8% |
+| npm | 23.4% → 67.7% |
+| pnpm | 29.8% → 71.4% |
+| uv | 31.5% → 70.0% |
+| goinstall | 13.7% → 62.0% |
+| mas | 38.6% → 72.7% |
+| duti | 31.4% → 80.2% |
+| defaults | 20.4% → 58.9% |
+| homebrew | 15.9% → 45.2% |
+| vscodeext | 29.0% → 67.4% |
+| ansible | 17.9% → 70.5% |
+| git | 1.8% → 23.0% |
+
+UX improvements for the v1.1-deferred features (hooks, OTel, lucky):
+
+- Users who pass `--hams-lucky` now see a fail-loud warning naming the affected provider.
+- Users who add a `hooks:` block to a hamsfile see a fail-loud warning naming the affected entries.
+- The OTel deferral has zero user-visible touch points (no flag, no config that suggests it works) and needs no warning.
+
+Cycle 3 commits: 8.
 
 ## Rules
 

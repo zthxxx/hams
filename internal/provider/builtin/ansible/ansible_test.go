@@ -8,7 +8,7 @@ import (
 
 func TestManifest(t *testing.T) {
 	t.Parallel()
-	p := New()
+	p := New(NewFakeCmdRunner())
 	m := p.Manifest()
 	if m.Name != "ansible" {
 		t.Errorf("Name = %q", m.Name)
@@ -26,7 +26,7 @@ func TestManifest(t *testing.T) {
 
 func TestNameDisplayName(t *testing.T) {
 	t.Parallel()
-	p := New()
+	p := New(NewFakeCmdRunner())
 	if p.Name() != "ansible" {
 		t.Errorf("Name() = %q", p.Name())
 	}

@@ -37,20 +37,20 @@ func registerBuiltins(registry *provider.Registry, sudoCmd sudo.CmdBuilder) {
 
 	// Providers that implement both Provider and ProviderHandler.
 	cliProviders := []cliProvider{
-		homebrew.New(builtinCfg),
+		homebrew.New(builtinCfg, homebrew.NewRealCmdRunner()),
 		apt.New(builtinCfg, apt.NewRealCmdRunner(sudoCmd)),
-		npm.New(),
-		pnpm.New(),
-		uv.New(),
-		goinstall.New(),
-		cargo.New(),
+		npm.New(npm.NewRealCmdRunner()),
+		pnpm.New(pnpm.NewRealCmdRunner()),
+		uv.New(uv.NewRealCmdRunner()),
+		goinstall.New(goinstall.NewRealCmdRunner()),
+		cargo.New(cargo.NewRealCmdRunner()),
 		git.NewConfigProvider(),
 		git.NewCloneProvider(builtinCfg),
-		defaults.New(builtinCfg),
-		duti.New(),
-		mas.New(),
-		vscodeext.New(),
-		ansible.New(),
+		defaults.New(builtinCfg, defaults.NewRealCmdRunner()),
+		duti.New(duti.NewRealCmdRunner()),
+		mas.New(mas.NewRealCmdRunner()),
+		vscodeext.New(vscodeext.NewRealCmdRunner()),
+		ansible.New(ansible.NewRealCmdRunner()),
 	}
 
 	// Providers that only implement Provider (no CLI handler).

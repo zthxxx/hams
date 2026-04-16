@@ -6,7 +6,7 @@ import { Callout } from 'nextra/components'
 这个 provider 就是为了让那个过程消失。
 
 同样支持 Cursor、VSCodium 这类 VS Code fork —— 只要它们也提供了兼容的 CLI 就行，
-通过 `hams.config.yaml` 里改 `vscode_ext.cli_command` 可以切。
+通过 `hams.config.yaml` 里改 `code_ext.cli_command` 可以切。
 
 **支持平台：** macOS、Linux
 
@@ -14,13 +14,13 @@ import { Callout } from 'nextra/components'
 
 ```bash
 # 装一个扩展（用 publisher.name 形式）
-hams vscode-ext install esbenp.prettier-vscode
+hams code-ext install esbenp.prettier-vscode
 
 # 卸掉
-hams vscode-ext uninstall esbenp.prettier-vscode
+hams code-ext uninstall esbenp.prettier-vscode
 
 # 列出被管的扩展
-hams vscode-ext list
+hams code-ext list
 ```
 
 扩展 ID 去哪找？打开 VS Code 扩展面板，右键任意扩展 → Copy Extension ID，就是 `publisher.name` 这个格式。
@@ -28,9 +28,9 @@ hams vscode-ext list
 ## Hamsfile 长什么样
 
 ```yaml
-# macOS/vscode-ext.hams.yaml
+# macOS/vscodeext.hams.yaml
 schema_version: 1
-provider: vscode-ext
+provider: code-ext
 
 groups:
   - tag: language-support
@@ -72,7 +72,7 @@ groups:
 
 ```yaml
 providers:
-  vscode-ext:
+  code-ext:
     cli_command: cursor   # 或者 codium
 ```
 

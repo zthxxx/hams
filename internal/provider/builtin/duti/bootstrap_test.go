@@ -10,7 +10,7 @@ import (
 )
 
 func TestBootstrap_DutiPresentReturnsNil(t *testing.T) {
-	p := New()
+	p := New(NewRealCmdRunner())
 	original := dutiBinaryLookup
 	defer func() { dutiBinaryLookup = original }()
 
@@ -22,7 +22,7 @@ func TestBootstrap_DutiPresentReturnsNil(t *testing.T) {
 }
 
 func TestBootstrap_DutiMissingReturnsStructuredError(t *testing.T) {
-	p := New()
+	p := New(NewRealCmdRunner())
 	original := dutiBinaryLookup
 	defer func() { dutiBinaryLookup = original }()
 
@@ -50,7 +50,7 @@ func TestBootstrap_ScriptMatchesManifest(t *testing.T) {
 	// RunBootstrap time). The DAG entry (Provider: brew, no Script)
 	// and the scripted entry (Provider: bash, with Script) are split;
 	// this test finds the scripted one.
-	p := New()
+	p := New(NewRealCmdRunner())
 	original := dutiBinaryLookup
 	defer func() { dutiBinaryLookup = original }()
 	dutiBinaryLookup = func(string) (string, error) { return "", exec.ErrNotFound }

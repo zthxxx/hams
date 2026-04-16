@@ -18,10 +18,13 @@ import (
 const cliName = "duti"
 
 // Provider implements the duti default-app association provider.
-type Provider struct{}
+type Provider struct {
+	runner CmdRunner
+}
 
-// New creates a new duti provider.
-func New() *Provider { return &Provider{} }
+// New creates a new duti provider wired with a real CmdRunner.
+// Pass NewFakeCmdRunner from tests for DI-isolated unit testing.
+func New(runner CmdRunner) *Provider { return &Provider{runner: runner} }
 
 // dutiInstallScript is the consent-gated install command. brew is the
 // host (already on PATH if the user's fresh-Mac chain went brew →
@@ -56,7 +59,7 @@ func (p *Provider) Manifest() provider.Manifest {
 // signaled via provider.BootstrapRequiredError so the CLI consent
 // flow can surface the install script + --bootstrap remedy.
 func (p *Provider) Bootstrap(_ context.Context) error {
-	if _, err := dutiBinaryLookup("duti"); err == nil {
+	if err := p.runner.LookPath(); err == nil {
 		return nil
 	}
 	return &provider.BootstrapRequiredError{
@@ -80,14 +83,13 @@ func (p *Provider) Probe(ctx context.Context, sf *state.File) ([]provider.ProbeR
 			continue
 		}
 
-		cmd := exec.CommandContext(ctx, "duti", "-x", ext) //nolint:gosec // ext from tracked state entries
-		output, cmdErr := cmd.Output()
-		if cmdErr != nil {
+		output, queryErr := p.runner.QueryDefault(ctx, ext)
+		if queryErr != nil {
 			results = append(results, provider.ProbeResult{ID: id, State: state.StateFailed})
 			continue
 		}
 
-		currentApp := parseDutiOutput(string(output))
+		currentApp := parseDutiOutput(output)
 		results = append(results, provider.ProbeResult{
 			ID:    id,
 			State: state.StateOK,
@@ -111,8 +113,7 @@ func (p *Provider) Apply(ctx context.Context, action provider.Action) error {
 		return err
 	}
 	slog.Info("duti set", "ext", ext, "bundle_id", bundleID)
-	cmd := exec.CommandContext(ctx, "duti", "-s", bundleID, "."+ext, "all") //nolint:gosec // duti args from hamsfile declarations
-	return cmd.Run()
+	return p.runner.SetDefault(ctx, ext, bundleID)
 }
 
 // Remove is a no-op for duti; macOS does not have a direct "reset to default" command.

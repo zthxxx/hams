@@ -8,7 +8,7 @@ import (
 
 func TestManifest(t *testing.T) {
 	t.Parallel()
-	p := New()
+	p := New(NewFakeCmdRunner())
 	m := p.Manifest()
 	if m.Name != "code-ext" {
 		t.Errorf("Name = %q", m.Name)
@@ -76,7 +76,7 @@ esbenp.prettier-vscode@10.1.0`,
 
 func TestNameDisplayName(t *testing.T) {
 	t.Parallel()
-	p := New()
+	p := New(NewFakeCmdRunner())
 	if p.Name() != "code-ext" {
 		t.Errorf("Name() = %q", p.Name())
 	}

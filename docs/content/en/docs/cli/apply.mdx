@@ -79,9 +79,9 @@ bootstrap consent flow — each with its own install script declared in the prov
 | `mas` | `brew install mas` | macOS; chains through brew |
 | `ansible` | `pipx install --include-deps ansible` | requires pipx (apt install pipx / brew install pipx) |
 
-Other providers (`npm`, `cargo`, `go`, `uv`, `vscodeext`, `apt`, `defaults`, `git`) intentionally
+Other providers (`npm`, `cargo`, `goinstall`, `uv`, `code-ext`, `apt`, `defaults`, `git`) intentionally
 DO NOT adopt `--bootstrap` — language runtime installation is user-owned (nvm / fnm / rustup /
-distro), `vscodeext` needs a GUI app, `apt`/`defaults` are platform-gated, `git` is pre-present
+distro), `code-ext` needs a GUI app, `apt`/`defaults` are platform-gated, `git` is pre-present
 on any machine that ran hams's installer. For these, hams emits a plain "not found in PATH" error
 with the install hint.
 

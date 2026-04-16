@@ -13,7 +13,7 @@ import (
 )
 
 func TestBootstrap_BrewPresentReturnsNil(t *testing.T) {
-	p := New(&config.Config{})
+	p := New(&config.Config{}, NewFakeCmdRunner())
 	original := brewBinaryLookup
 	defer func() { brewBinaryLookup = original }()
 
@@ -25,7 +25,7 @@ func TestBootstrap_BrewPresentReturnsNil(t *testing.T) {
 }
 
 func TestBootstrap_BrewMissingReturnsStructuredError(t *testing.T) {
-	p := New(&config.Config{})
+	p := New(&config.Config{}, NewFakeCmdRunner())
 	original := brewBinaryLookup
 	defer func() { brewBinaryLookup = original }()
 
@@ -61,7 +61,7 @@ func TestBootstrap_ScriptMatchesManifest(t *testing.T) {
 	// The script surfaced in the BootstrapRequiredError MUST be exactly
 	// what the manifest declares — otherwise users auditing the error
 	// message would see one script but --bootstrap would run another.
-	p := New(&config.Config{})
+	p := New(&config.Config{}, NewFakeCmdRunner())
 	original := brewBinaryLookup
 	defer func() { brewBinaryLookup = original }()
 
@@ -86,7 +86,7 @@ func TestBootstrap_ScriptMatchesManifest(t *testing.T) {
 // re-check, or the --bootstrap flow bails with "still unavailable
 // after bootstrap" on every fresh Mac/Linux install.
 func TestBootstrap_PathAugmentationAfterInstall(t *testing.T) {
-	p := New(&config.Config{})
+	p := New(&config.Config{}, NewFakeCmdRunner())
 	origLookup := brewBinaryLookup
 	origAugment := envPathAugment
 	defer func() {
@@ -124,7 +124,7 @@ func TestBootstrap_PathAugmentationAfterInstall(t *testing.T) {
 // error silently). This guards the "install.sh succeeded but dropped
 // brew somewhere weird" edge case.
 func TestBootstrap_PathAugmentationStillMissingSignalsConsent(t *testing.T) {
-	p := New(&config.Config{})
+	p := New(&config.Config{}, NewFakeCmdRunner())
 	origLookup := brewBinaryLookup
 	origAugment := envPathAugment
 	defer func() {

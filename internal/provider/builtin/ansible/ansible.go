@@ -16,10 +16,13 @@ import (
 )
 
 // Provider implements the Ansible provider.
-type Provider struct{}
+type Provider struct {
+	runner CmdRunner
+}
 
-// New creates a new Ansible provider.
-func New() *Provider { return &Provider{} }
+// New creates a new Ansible provider wired with a real CmdRunner.
+// Pass NewFakeCmdRunner from tests for DI-isolated unit testing.
+func New(runner CmdRunner) *Provider { return &Provider{runner: runner} }
 
 // ansibleInstallScript is the consent-gated install command. pipx is
 // chosen over pip because PEP 668 flags system-pip installs on modern
@@ -55,7 +58,7 @@ func (p *Provider) Manifest() provider.Manifest {
 // invocation will fail with "pipx: command not found" and the
 // surrounding bootstrap-failure path surfaces the chain.
 func (p *Provider) Bootstrap(_ context.Context) error {
-	if _, err := ansibleBinaryLookup("ansible-playbook"); err == nil {
+	if err := p.runner.LookPath(); err == nil {
 		return nil
 	}
 	return &provider.BootstrapRequiredError{
@@ -96,10 +99,7 @@ func (p *Provider) Apply(ctx context.Context, action provider.Action) error {
 	}
 
 	slog.Info("ansible-playbook", "playbook", playbookPath)
-	cmd := exec.CommandContext(ctx, "ansible-playbook", playbookPath) //nolint:gosec // playbook path from hamsfile
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	return cmd.Run()
+	return p.runner.RunPlaybook(ctx, playbookPath)
 }
 
 // Remove is a no-op for ansible — playbooks don't have uninstall.
