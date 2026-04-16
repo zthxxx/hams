@@ -12,6 +12,7 @@ import (
 	gogit "github.com/go-git/go-git/v5"
 
 	"github.com/zthxxx/hams/internal/config"
+	hamserr "github.com/zthxxx/hams/internal/error"
 	"github.com/zthxxx/hams/internal/logging"
 )
 
@@ -133,6 +134,20 @@ func cloneRemoteRepo(repo string, paths config.Paths) (string, error) {
 		Progress: os.Stdout,
 	})
 	if err != nil {
+		// go-git reports missing public repos as "authentication required:
+		// Repository not found" which is confusing (auth is a red
+		// herring — the repo just doesn't exist or is private to the
+		// caller). Detect that specific string and re-phrase to match
+		// reality; otherwise propagate verbatim.
+		errMsg := err.Error()
+		if strings.Contains(errMsg, "Repository not found") {
+			return "", hamserr.NewUserError(hamserr.ExitGeneralError,
+				fmt.Sprintf("repository %s not found or not accessible", repoURL),
+				"Verify the URL is correct (case-sensitive on GitHub)",
+				"For private repos: configure a git credential helper or use SSH URL",
+				"For local paths: use an absolute path starting with / or ~/",
+			)
+		}
 		return "", fmt.Errorf("cloning %s: %w", repoURL, err)
 	}
 
