@@ -187,6 +187,10 @@ Spec corrections:
 
 Total commits in cycle 2: 15+ (still growing — iteration 3 adds hooks+OTel defer).
 
+### Cycle 120 — Direct tests for `isLocalPathAttempt` classification
+
+- [x] `isLocalPathAttempt` decides whether `--from-repo=X` is a local path or GitHub shorthand — a classification error sends typo'd local paths down the clone branch (producing misleading "Repository not found" errors for what is actually a local typo), or vice versa. Coverage was 40% with no direct tests. Added 6 tests covering each rule: absolute `/` prefix (local even if nonexistent), `~/` prefix, relative `./`/`../` prefixes (gates against a future refactor that drops these in favor of stat-only), GitHub `user/repo` shorthand (not local), full URL `https://...` (not local), bare-name-that-stats-to-dir (local), bare-name-with-no-stat-hit (not local — falls through to clone path where cycle 72's friendly error surfaces). cli coverage: 64.6% → 64.8%. (commit `f6ca3b0`)
+
 ### Cycle 119 — `hams list` text output shows LastError for failed resources
 
 - [x] Third in the cycles 116-119 list UX sweep. Text output previously showed `htop  failed` with no indication of WHY — user had to run `--json` or read the state YAML to see the last_error text. Now: `htop  failed (error: package not found in repository)`. The `(error: ...)` suffix is distinctive (grep/sed friendly) and only emits when LastError is non-empty so healthy rows stay compact. Regression test seeds a failed apt resource with last_error text and asserts the suffix appears. cli coverage: 64.5% → 64.6%. (commit `f4208fa`)
