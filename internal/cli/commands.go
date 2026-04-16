@@ -196,14 +196,38 @@ func configCmd() *cli.Command {
 					if loadErr != nil {
 						return fmt.Errorf("loading config: %w", loadErr)
 					}
-					fmt.Printf("Config home:       %s\n", logging.TildePath(paths.ConfigHome))
-					fmt.Printf("Data home:         %s\n", logging.TildePath(paths.DataHome))
-					fmt.Printf("Global config:     %s\n", logging.TildePath(paths.GlobalConfigPath()))
 					// Point users at their local overrides file — sensitive
 					// values (`hams config set notification.bark_token ...`)
 					// land there, and `hams config list` otherwise has no
 					// way to surface arbitrary sensitive keys.
 					localPath := localConfigPath(paths, cfg.StorePath)
+
+					if flags.JSON {
+						// Per cli-architecture spec §"Global flags" —
+						// --json is for machine parsing across commands.
+						// Text output stays as the default; JSON is opt-in.
+						data := map[string]any{
+							"config_home":       paths.ConfigHome,
+							"data_home":         paths.DataHome,
+							"global_config":     paths.GlobalConfigPath(),
+							"local_overrides":   localPath,
+							"profile_tag":       cfg.ProfileTag,
+							"machine_id":        cfg.MachineID,
+							"store_path":        cfg.StorePath,
+							"llm_cli":           cfg.LLMCLI,
+							"provider_priority": cfg.ProviderPriority,
+						}
+						out, mErr := json.MarshalIndent(data, "", "  ")
+						if mErr != nil {
+							return fmt.Errorf("marshaling config list JSON: %w", mErr)
+						}
+						fmt.Println(string(out))
+						return nil
+					}
+
+					fmt.Printf("Config home:       %s\n", logging.TildePath(paths.ConfigHome))
+					fmt.Printf("Data home:         %s\n", logging.TildePath(paths.DataHome))
+					fmt.Printf("Global config:     %s\n", logging.TildePath(paths.GlobalConfigPath()))
 					if localPath != "" {
 						fmt.Printf("Local overrides:   %s\n", logging.TildePath(localPath))
 					}
