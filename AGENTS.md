@@ -187,6 +187,10 @@ Spec corrections:
 
 Total commits in cycle 2: 15+ (still growing — iteration 3 adds hooks+OTel defer).
 
+### Cycle 39 — `apply --dry-run` reports skipped providers
+
+- [x] **Real silent bug**: `hams apply --dry-run` exited 0 even when a hamsfile failed to parse. CI preview scripts missed broken hamsfiles until the actual apply ran. Non-dry-run correctly returned ExitPartialFailure; dry-run silently swallowed it. Parity restored: dry-run now prints the skipped-provider warning AND returns ExitPartialFailure with a targeted suggestion. (commit `68bf644`)
+
 ### Cycle 38 — `--only`/`--except` exclusion checked before config load
 
 - [x] `hams apply --only=X --except=Y` with no store returned "no store configured" first, then the user fixed it and got "mutually exclusive" on the second attempt. Moved the exclusion check to the top of runApply/runRefresh (alongside the existing `--bootstrap/--no-bootstrap` check). Downstream filterProviders still guards for programmatic callers. (commit `26d5117`)
