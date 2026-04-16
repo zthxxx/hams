@@ -55,7 +55,7 @@ func TestBuiltinManifestScriptHostsAreBash(t *testing.T) {
 		git.NewConfigProvider(cfg),
 		git.NewCloneProvider(cfg),
 		defaults.New(cfg, defaults.NewFakeCmdRunner()),
-		duti.New(duti.NewFakeCmdRunner()),
+		duti.New(cfg, duti.NewFakeCmdRunner()),
 		mas.New(cfg, mas.NewFakeCmdRunner()),
 		vscodeext.New(cfg, vscodeext.NewFakeCmdRunner()),
 		ansible.New(ansible.NewFakeCmdRunner()),

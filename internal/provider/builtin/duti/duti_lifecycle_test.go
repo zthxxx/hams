@@ -22,7 +22,7 @@ import (
 func TestU1_Apply_BindsAssociation(t *testing.T) {
 	t.Parallel()
 	fake := NewFakeCmdRunner()
-	p := New(fake)
+	p := New(nil, fake)
 
 	const id = "pdf=com.adobe.acrobat.pdf"
 	if err := p.Apply(context.Background(), provider.Action{ID: id}); err != nil {
@@ -42,7 +42,7 @@ func TestU1_Apply_BindsAssociation(t *testing.T) {
 func TestU2_Apply_RejectsMalformedID(t *testing.T) {
 	t.Parallel()
 	fake := NewFakeCmdRunner()
-	p := New(fake)
+	p := New(nil, fake)
 
 	err := p.Apply(context.Background(), provider.Action{ID: "no-equals-sign"})
 	if err == nil {
@@ -58,7 +58,7 @@ func TestU3_Apply_FailurePropagated(t *testing.T) {
 	t.Parallel()
 	wantErr := errors.New("simulated set failure")
 	fake := NewFakeCmdRunner().WithSetError("html", wantErr)
-	p := New(fake)
+	p := New(nil, fake)
 
 	gotErr := p.Apply(context.Background(), provider.Action{ID: "html=com.google.Chrome"})
 	if !errors.Is(gotErr, wantErr) {
@@ -72,7 +72,7 @@ func TestU3_Apply_FailurePropagated(t *testing.T) {
 func TestU4_Probe_ReadsCurrentDefaultAsValue(t *testing.T) {
 	t.Parallel()
 	fake := NewFakeCmdRunner().Seed("pdf", "com.apple.Preview")
-	p := New(fake)
+	p := New(nil, fake)
 
 	sf := state.New("duti", "test-machine")
 	sf.SetResource("pdf=com.apple.Preview", state.StateOK)
@@ -99,7 +99,7 @@ func TestU5_Probe_QueryErrorPerResource(t *testing.T) {
 	fake := NewFakeCmdRunner().
 		Seed("pdf", "com.apple.Preview").
 		WithQueryError("html", errors.New("simulated query failure"))
-	p := New(fake)
+	p := New(nil, fake)
 
 	sf := state.New("duti", "test-machine")
 	sf.SetResource("pdf=com.apple.Preview", state.StateOK)
@@ -129,7 +129,7 @@ func TestU5_Probe_QueryErrorPerResource(t *testing.T) {
 // ErrorMsg, without aborting the loop.
 func TestU6_Probe_MalformedIDReportedAsFailed(t *testing.T) {
 	t.Parallel()
-	p := New(NewFakeCmdRunner())
+	p := New(nil, NewFakeCmdRunner())
 	sf := state.New("duti", "test-machine")
 	sf.SetResource("garbage", state.StateOK) // no `=` separator
 
@@ -151,7 +151,7 @@ func TestU6_Probe_MalformedIDReportedAsFailed(t *testing.T) {
 // U7 — Probe skips StateRemoved entries.
 func TestU7_Probe_SkipsRemovedResources(t *testing.T) {
 	t.Parallel()
-	p := New(NewFakeCmdRunner())
+	p := New(nil, NewFakeCmdRunner())
 	sf := state.New("duti", "test-machine")
 	sf.SetResource("pdf=com.removed", state.StateRemoved)
 
@@ -171,7 +171,7 @@ func TestU7_Probe_SkipsRemovedResources(t *testing.T) {
 func TestU8_Remove_IsNoOp(t *testing.T) {
 	t.Parallel()
 	fake := NewFakeCmdRunner().Seed("pdf", "com.apple.Preview")
-	p := New(fake)
+	p := New(nil, fake)
 
 	if err := p.Remove(context.Background(), "pdf=com.apple.Preview"); err != nil {
 		t.Errorf("Remove should always return nil; got %v", err)
@@ -187,7 +187,7 @@ func TestU8_Remove_IsNoOp(t *testing.T) {
 // U9 — Bootstrap returns nil when duti is on PATH.
 func TestU9_Bootstrap_DutiPresentReturnsNil(t *testing.T) {
 	t.Parallel()
-	p := New(NewFakeCmdRunner())
+	p := New(nil, NewFakeCmdRunner())
 	if err := p.Bootstrap(context.Background()); err != nil {
 		t.Errorf("Bootstrap = %v, want nil", err)
 	}
@@ -198,7 +198,7 @@ func TestU9_Bootstrap_DutiPresentReturnsNil(t *testing.T) {
 func TestU10_Bootstrap_DutiMissingReturnsStructuredError(t *testing.T) {
 	t.Parallel()
 	fake := NewFakeCmdRunner().WithLookPathError(exec.ErrNotFound)
-	p := New(fake)
+	p := New(nil, fake)
 
 	err := p.Bootstrap(context.Background())
 	var brerr *provider.BootstrapRequiredError
@@ -233,7 +233,7 @@ associations:
 	}
 	hf := &hamsfile.File{Path: "test.yaml", Root: &root}
 
-	p := New(NewFakeCmdRunner())
+	p := New(nil, NewFakeCmdRunner())
 	observed := state.New("duti", "test")
 	actions, err := p.Plan(context.Background(), hf, observed)
 	if err != nil {
