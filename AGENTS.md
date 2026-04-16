@@ -187,6 +187,10 @@ Spec corrections:
 
 Total commits in cycle 2: 15+ (still growing — iteration 3 adds hooks+OTel defer).
 
+### Cycle 53 — Panic recovery in parallel Probe goroutines
+
+- [x] Matches cycle 51's pattern but for `ProbeAll`: a panic in any provider's Probe would take down the whole parallel refresh, even though healthy providers' probes had completed. `defer recover()` in each goroutine body now logs the panic and omits the provider from the results map — runRefresh (cycle 40) surfaces the mismatch via ExitPartialFailure. (commit `6752155`)
+
 ### Cycle 52 — `brew untap` for tap removals (was silently broken)
 
 - [x] **Real UX bug**: Homebrew's `Remove` always called `brew uninstall <id>`. For tap-format IDs (`user/repo`), brew rejects that with "No installed keg or cask" — so a user who deleted `homebrew/cask-fonts` from their hamsfile saw the removal marked as failed forever; the tap stayed registered. Added `Untap` to `CmdRunner` (real + fake) and routed Remove through it when `isTapFormat` is true. Tests U11/U12 lock both branches. (commit `5fab924`)
