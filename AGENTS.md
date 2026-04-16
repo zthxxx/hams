@@ -181,6 +181,10 @@ Spec corrections:
 
 Total commits in cycle 2: 15+ (still growing — iteration 3 adds hooks+OTel defer).
 
+### Cycle 15 — Platform consistency between internal and CLI registries
+
+- [x] **Platform mismatch leaked into `hams --help`**: internal registry silently skipped `defaults`/`duti`/`mas` on Linux (so `apply --only=defaults` correctly said "unknown provider"), but the CLI dispatch registry advertised them anyway. Linux users saw macOS-only commands in help and then exec-failed with "executable not found". Exported `provider.IsPlatformsMatch`; apply the same platform filter in `registerBuiltins` before calling `RegisterProvider`. Added `TestRegisterBuiltins_FiltersCLIByPlatform` with runtime.GOOS-aware assertions. (commit `d843bfd`)
+
 ### Cycle 14 — Malformed YAML errors surface correctly
 
 - [x] **Swallowed config.Load error in `runApply`** — when resolving store path, a malformed `~/.config/hams/hams.config.yaml` was demoted to a generic "no store directory configured" error, hiding the real YAML parse failure. Now propagates the config.Load error as-is. (commit `cbd70f4`)
