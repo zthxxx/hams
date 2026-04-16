@@ -187,6 +187,10 @@ Spec corrections:
 
 Total commits in cycle 2: 15+ (still growing — iteration 3 adds hooks+OTel defer).
 
+### Cycle 111 — `ComputePlan` now dedups duplicate desired entries
+
+- [x] Real user-workflow bug. `ComputePlan` iterated the raw desired slice without a dedup guard. A common drift case — the same app listed under two hamsfile tags after a move-between-tags edit (e.g. moved `htop` from `cli:` to `dev:` but forgot to delete the old entry) — made `ListApps` return `[htop, htop]`, so ComputePlan emitted two `Install` actions for the same ID. Apply then ran `apt install htop` twice (idempotent but wasteful) AND the final summary showed `installed=2` instead of 1. Fix: add a `seen` set guard in the install-path loop; first-occurrence order is preserved so hooks and dry-run preview stay deterministic. The removal-path was already dedup-safe (iterates `desiredSet`, a map). 2 regression tests (exact-count + first-occurrence order). provider coverage: 74.2% → 74.4%. (commit `4a1b3dd`)
+
 ### Cycle 110 — Direct tests for `filterProviders` + `parseCSV`
 
 - [x] `filterProviders` and `parseCSV` were only exercised transitively through apply/refresh command tests — no direct unit tests. A silent change to the CSV trimming behavior (e.g. a future "optimize" that loses empty-skip) would slip past existing coverage. Added 9 direct tests covering the full contract surface: both-flags-empty short-circuit, `--only`/`--except` mutual exclusion, only-filters-down, except-filters-out, case-insensitive matching, whitespace-part trimming, unknown-name usage errors for both flags (asserted via `errors.As` on the `UserFacingError` to inspect the suggestions list, since `Error()` returns only the top-line message), and `parseCSV` whitespace + empty-part handling. Test harness introduces a minimal `namedProvider` fake — only `Manifest()` is consulted by the filter, other Provider methods are no-op stubs. cli coverage: 60.6% → 62.5%. (commit `ec0526b`)
