@@ -57,6 +57,14 @@ Only resources already tracked in state are probed — no new resources are disc
 }
 
 func runRefresh(ctx context.Context, flags *provider.GlobalFlags, registry *provider.Registry, only, except string) (retErr error) {
+	// Same --only/--except exclusion as runApply — check before config
+	// load so a misconfigured store doesn't mask the args error.
+	if only != "" && except != "" {
+		return hamserr.NewUserError(hamserr.ExitUsageError,
+			"--only and --except are mutually exclusive",
+			"Use --only to include specific providers, or --except to exclude them",
+		)
+	}
 	paths := resolvePaths(flags)
 	cfg, err := config.Load(paths, flags.Store)
 	if err != nil {

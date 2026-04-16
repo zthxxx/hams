@@ -70,6 +70,16 @@ func runApply(ctx context.Context, flags *provider.GlobalFlags, registry *provid
 			"Pick one: --bootstrap to auto-run, --no-bootstrap to fail fast",
 		)
 	}
+	// Validate --only/--except exclusion BEFORE loading config — otherwise
+	// users with both flags and no store-path get a misleading "no store
+	// configured" error first. The real filtering still happens later via
+	// filterProviders, but the exclusion check is pure args validation.
+	if only != "" && except != "" {
+		return hamserr.NewUserError(hamserr.ExitUsageError,
+			"--only and --except are mutually exclusive",
+			"Use --only to include specific providers, or --except to exclude them",
+		)
+	}
 	if flags.DryRun {
 		fmt.Println("[dry-run] Would apply configurations. No changes will be made.")
 	}
