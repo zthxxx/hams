@@ -187,6 +187,10 @@ Spec corrections:
 
 Total commits in cycle 2: 15+ (still growing — iteration 3 adds hooks+OTel defer).
 
+### Cycle 55 — `list` distinguishes empty-state from filter-excluded-all
+
+- [x] `hams list --status=hook-failed` against a store with 5 tracked resources (none in that status) printed "No managed resources found. Run 'hams install ...'" — misleading because the user HAS resources. Added `hadAnyResources` tracker; split the final output into two branches (truly-empty vs. filter-matched-zero) with appropriate hints. (commit `dc28d96`)
+
 ### Cycle 54 — `--status` filter validates values
 
 - [x] `hams list --status=failled` (typo) silently matched zero resources and printed "No managed resources found" — indistinguishable from an empty store. Validated each comma-separated value against the 5 defined `ResourceState` constants; typos return `ExitUsageError` with the unknown value and the valid-state list. Multi-value filters still work. (commit `4e399a8`)
