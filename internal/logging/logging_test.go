@@ -1,6 +1,9 @@
 package logging
 
 import (
+	"bytes"
+	"io"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -86,5 +89,60 @@ func TestCreateSessionLog(t *testing.T) {
 	}
 	if _, statErr := os.Stat(logPath); os.IsNotExist(statErr) {
 		t.Errorf("session log not created at %s", logPath)
+	}
+}
+
+// TestSetup_DualSink locks in cycle-67: after Setup, slog output
+// must reach BOTH the file AND stderr. Before the MultiWriter fix,
+// `hams apply` appeared to hang because slog lines went ONLY to
+// the file, leaving the terminal silent.
+func TestSetup_DualSink(t *testing.T) {
+	// Redirect stderr to a pipe so we can capture it.
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("pipe: %v", err)
+	}
+	origStderr := os.Stderr
+	os.Stderr = w
+	t.Cleanup(func() { os.Stderr = origStderr })
+
+	dataHome := t.TempDir()
+	logFile, err := Setup(dataHome, false)
+	if err != nil {
+		t.Fatalf("Setup: %v", err)
+	}
+	defer logFile.Close() //nolint:errcheck // test cleanup
+
+	// Emit a slog line — should land in BOTH sinks.
+	slog.Info("dual-sink probe", "marker", "SIGIL")
+
+	// Close writer so the reader can drain.
+	if closeErr := w.Close(); closeErr != nil {
+		t.Fatalf("close pipe writer: %v", closeErr)
+	}
+
+	// Read captured stderr.
+	var stderrBuf bytes.Buffer
+	if _, copyErr := io.Copy(&stderrBuf, r); copyErr != nil {
+		t.Fatalf("drain pipe: %v", copyErr)
+	}
+	stderrOut := stderrBuf.String()
+
+	// Read captured file.
+	now := time.Now()
+	logPath := filepath.Join(dataHome, now.Format("2006-01"),
+		"hams."+now.Format("200601")+".log")
+	fileBytes, readErr := os.ReadFile(logPath)
+	if readErr != nil {
+		t.Fatalf("read log file: %v", readErr)
+	}
+	fileOut := string(fileBytes)
+
+	// Both must contain the sentinel.
+	if !strings.Contains(stderrOut, "SIGIL") {
+		t.Errorf("stderr missing SIGIL; got %q", stderrOut)
+	}
+	if !strings.Contains(fileOut, "SIGIL") {
+		t.Errorf("log file missing SIGIL; got %q", fileOut)
 	}
 }
