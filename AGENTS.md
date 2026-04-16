@@ -187,6 +187,10 @@ Spec corrections:
 
 Total commits in cycle 2: 15+ (still growing — iteration 3 adds hooks+OTel defer).
 
+### Cycle 45 — State-corruption fix propagated to CLI handlers (apt, brew)
+
+- [x] Same silent-reset bug as cycle 43 in the per-provider CLI paths (`hams apt install`, `hams brew list`). apt's `loadOrCreateStateFile` changed signature from `*state.File` → `(*state.File, error)`; missing-file still synthesizes, corruption propagates with path context. homebrew's `handleList` now returns the wrapped error instead of silently showing "all desired as additions". Together with cycle 43, every production state.Load call distinguishes ErrNotExist from destructive errors. (commit `667552b`)
+
 ### Cycle 44 — Regression test for cycle 43 state-corruption fix
 
 - [x] `TestApply_CorruptedStateFile_SkipsProviderNotSilentReset` asserts three invariants: (1) runApply returns `ExitPartialFailure`, not nil; (2) zero apply actions ran against the synthesized-empty state; (3) the corrupt state file is preserved verbatim on disk so users can inspect it. (commit `4c888ee`)
