@@ -114,22 +114,64 @@ func (p *ConfigProvider) List(_ context.Context, desired *hamsfile.File, sf *sta
 	return provider.FormatDiff(&diff), nil
 }
 
-// HandleCommand processes CLI subcommands for git config. The bare
-// form `hams git-config <key> <value>` auto-records the entry into the
-// hamsfile and state so subsequent `hams apply` runs on other machines
-// reproduce the configuration.
+// HandleCommand processes CLI subcommands for git config. Supported
+// shapes (per builtin-providers.md §git-config):
+//
+//   - `hams git-config set <key> <value>` (canonical) — sets and
+//     auto-records.
+//   - `hams git-config <key> <value>` (bare, backward compat) —
+//     same semantics as `set`.
+//   - `hams git-config remove <key>` — unsets globally and deletes
+//     the matching hamsfile entry.
+//   - `hams git-config list` — prints the desired-vs-observed diff.
 func (p *ConfigProvider) HandleCommand(ctx context.Context, args []string, hamsFlags map[string]string, flags *provider.GlobalFlags) error {
-	if len(args) < 2 {
-		return hamserr.NewUserError(hamserr.ExitUsageError,
-			"git-config requires key and value",
-			"Usage: hams git-config <key> <value>",
-			"Example: hams git-config user.name zthxxx",
-		)
+	if len(args) == 0 {
+		return p.usageError()
 	}
 
-	key := args[0]
-	value := args[1]
+	switch args[0] {
+	case "set":
+		if len(args) != 3 {
+			return hamserr.NewUserError(hamserr.ExitUsageError,
+				"git-config set requires key and value",
+				"Usage: hams git-config set <key> <value>",
+				"Example: hams git-config set user.name zthxxx",
+			)
+		}
+		return p.doSet(ctx, args[1], args[2], hamsFlags, flags)
+	case "remove":
+		if len(args) != 2 {
+			return hamserr.NewUserError(hamserr.ExitUsageError,
+				"git-config remove requires a key",
+				"Usage: hams git-config remove <key>",
+				"Example: hams git-config remove user.name",
+			)
+		}
+		return p.doRemove(ctx, args[1], hamsFlags, flags)
+	case "list":
+		return p.doList(ctx, flags)
+	}
 
+	// Bare form: `hams git-config <key> <value>`.
+	if len(args) != 2 {
+		return p.usageError()
+	}
+	return p.doSet(ctx, args[0], args[1], hamsFlags, flags)
+}
+
+func (p *ConfigProvider) usageError() error {
+	return hamserr.NewUserError(hamserr.ExitUsageError,
+		"git-config requires a subcommand or key/value pair",
+		"Usage: hams git-config set <key> <value>",
+		"       hams git-config <key> <value>",
+		"       hams git-config remove <key>",
+		"       hams git-config list",
+	)
+}
+
+// doSet runs `git config --global <key> <value>` via the runner and
+// persists the entry into the hamsfile + state (via recordSet).
+func (p *ConfigProvider) doSet(ctx context.Context, key, value string, hamsFlags map[string]string, flags *provider.GlobalFlags) error {
 	if flags.DryRun {
 		fmt.Printf("[dry-run] Would set: git config --global %s %s\n", key, value)
 		return nil
@@ -138,8 +180,64 @@ func (p *ConfigProvider) HandleCommand(ctx context.Context, args []string, hamsF
 	if err := p.runner.SetGlobal(ctx, key, value); err != nil {
 		return err
 	}
-
 	return p.recordSet(key, value, hamsFlags, flags)
+}
+
+// doRemove runs `git config --global --unset <key>` via the runner
+// and deletes any hamsfile entry starting with `<key>=` (marking the
+// matching state resource StateRemoved).
+func (p *ConfigProvider) doRemove(ctx context.Context, key string, hamsFlags map[string]string, flags *provider.GlobalFlags) error {
+	if flags.DryRun {
+		fmt.Printf("[dry-run] Would unset: git config --global --unset %s\n", key)
+		return nil
+	}
+
+	if err := p.runner.UnsetGlobal(ctx, key); err != nil {
+		return err
+	}
+
+	hf, err := p.loadOrCreateHamsfile(hamsFlags, flags)
+	if err != nil {
+		return err
+	}
+	sf := p.loadOrCreateStateFile(flags)
+
+	prefix := key + "="
+	removed := false
+	for _, existing := range hf.ListApps() {
+		if strings.HasPrefix(existing, prefix) {
+			hf.RemoveApp(existing)
+			sf.SetResource(existing, state.StateRemoved)
+			removed = true
+		}
+	}
+	if !removed {
+		// No prior hamsfile entry. Record a tombstone so `hams apply`
+		// doesn't try to re-assert a stale value from state.
+		sf.SetResource(prefix, state.StateRemoved)
+	}
+
+	if writeErr := hf.Write(); writeErr != nil {
+		return writeErr
+	}
+	return sf.Save(p.statePath(flags))
+}
+
+// doList prints the desired-vs-observed diff for the git-config
+// provider (same output as `hams list --only=git-config`).
+func (p *ConfigProvider) doList(ctx context.Context, flags *provider.GlobalFlags) error {
+	hf, err := p.loadOrCreateHamsfile(nil, flags)
+	if err != nil {
+		return err
+	}
+	sf := p.loadOrCreateStateFile(flags)
+
+	output, err := p.List(ctx, hf, sf)
+	if err != nil {
+		return err
+	}
+	fmt.Print(output)
+	return nil
 }
 
 // recordSet persists the key=value pair into the hamsfile and state

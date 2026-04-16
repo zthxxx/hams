@@ -302,3 +302,144 @@ func keys(m map[string]*state.Resource) []string {
 	}
 	return out
 }
+
+// U10 — canonical `set` verb: `hams git-config set <key> <value>`
+// behaves identically to the bare form.
+func TestHandleCommand_U10_SetVerbRecordsIdentically(t *testing.T) {
+	h := newGitHarness(t)
+
+	if err := h.provider.HandleCommand(context.Background(),
+		[]string{"set", "user.name", "zthxxx"}, nil, h.flags); err != nil {
+		t.Fatalf("set: %v", err)
+	}
+	if len(h.runner.SetCalls) != 1 {
+		t.Errorf("runner.SetGlobal = %d, want 1", len(h.runner.SetCalls))
+	}
+	apps := h.hamsfileApps()
+	if len(apps) != 1 || apps[0] != "user.name=zthxxx" {
+		t.Errorf("hamsfile = %v, want [user.name=zthxxx]", apps)
+	}
+}
+
+// U11 — `set` with wrong arity returns a usage error and does not
+// call the runner.
+func TestHandleCommand_U11_SetVerbWrongArityReturnsUsageError(t *testing.T) {
+	h := newGitHarness(t)
+
+	err := h.provider.HandleCommand(context.Background(), []string{"set", "user.name"}, nil, h.flags)
+	if err == nil {
+		t.Fatalf("expected usage error, got nil")
+	}
+	if len(h.runner.SetCalls) != 0 {
+		t.Errorf("runner.SetGlobal called %d times, want 0", len(h.runner.SetCalls))
+	}
+}
+
+// U12 — `remove <key>` calls runner.UnsetGlobal and deletes any
+// matching hamsfile entry, marking state StateRemoved.
+func TestHandleCommand_U12_RemoveVerbUnsetAndDeletesHamsfileEntry(t *testing.T) {
+	h := newGitHarness(t)
+
+	// Seed via set first.
+	if err := h.provider.HandleCommand(context.Background(),
+		[]string{"set", "user.name", "zthxxx"}, nil, h.flags); err != nil {
+		t.Fatalf("seed set: %v", err)
+	}
+	if err := h.provider.HandleCommand(context.Background(),
+		[]string{"remove", "user.name"}, nil, h.flags); err != nil {
+		t.Fatalf("remove: %v", err)
+	}
+
+	if len(h.runner.UnsetCalls) != 1 || h.runner.UnsetCalls[0].Key != "user.name" {
+		t.Errorf("runner.UnsetGlobal calls = %+v, want [{user.name}]", h.runner.UnsetCalls)
+	}
+	if apps := h.hamsfileApps(); len(apps) != 0 {
+		t.Errorf("post-remove hamsfile = %v, want []", apps)
+	}
+	sf := h.stateFile()
+	if sf == nil {
+		t.Fatalf("state file missing")
+	}
+	if r, ok := sf.Resources["user.name=zthxxx"]; !ok || r.State != state.StateRemoved {
+		t.Errorf("state[user.name=zthxxx] = (ok=%v, state=%v), want StateRemoved", ok, r.State)
+	}
+}
+
+// U13 — `remove` with no prior hamsfile entry records a
+// StateRemoved tombstone so a future apply doesn't re-assert a stale
+// value from somewhere.
+func TestHandleCommand_U13_RemoveVerbWithoutPriorEntryRecordsTombstone(t *testing.T) {
+	h := newGitHarness(t)
+
+	if err := h.provider.HandleCommand(context.Background(),
+		[]string{"remove", "user.email"}, nil, h.flags); err != nil {
+		t.Fatalf("remove: %v", err)
+	}
+
+	sf := h.stateFile()
+	if sf == nil {
+		t.Fatalf("state file missing")
+	}
+	if r, ok := sf.Resources["user.email="]; !ok || r.State != state.StateRemoved {
+		t.Errorf("tombstone missing: resources = %v", sf.Resources)
+	}
+}
+
+// U14 — `remove` with wrong arity returns a usage error.
+func TestHandleCommand_U14_RemoveVerbWrongArityReturnsUsageError(t *testing.T) {
+	h := newGitHarness(t)
+
+	err := h.provider.HandleCommand(context.Background(), []string{"remove"}, nil, h.flags)
+	if err == nil {
+		t.Fatalf("expected usage error, got nil")
+	}
+	if len(h.runner.UnsetCalls) != 0 {
+		t.Errorf("runner.UnsetGlobal called %d times, want 0", len(h.runner.UnsetCalls))
+	}
+}
+
+// U15 — `set` dry-run prints but skips all side effects.
+func TestHandleCommand_U15_SetVerbDryRunSkipsSideEffects(t *testing.T) {
+	h := newGitHarness(t)
+	h.flags.DryRun = true
+
+	if err := h.provider.HandleCommand(context.Background(),
+		[]string{"set", "user.name", "zthxxx"}, nil, h.flags); err != nil {
+		t.Fatalf("dry-run set: %v", err)
+	}
+	if len(h.runner.SetCalls) != 0 {
+		t.Errorf("runner.SetGlobal called %d times, want 0", len(h.runner.SetCalls))
+	}
+	if apps := h.hamsfileApps(); len(apps) != 0 {
+		t.Errorf("dry-run set wrote hamsfile = %v", apps)
+	}
+}
+
+// U16 — `remove` dry-run prints but skips all side effects.
+func TestHandleCommand_U16_RemoveVerbDryRunSkipsSideEffects(t *testing.T) {
+	h := newGitHarness(t)
+	h.flags.DryRun = true
+
+	if err := h.provider.HandleCommand(context.Background(),
+		[]string{"remove", "user.name"}, nil, h.flags); err != nil {
+		t.Fatalf("dry-run remove: %v", err)
+	}
+	if len(h.runner.UnsetCalls) != 0 {
+		t.Errorf("runner.UnsetGlobal called %d times, want 0", len(h.runner.UnsetCalls))
+	}
+	if sf := h.stateFile(); sf != nil {
+		t.Errorf("dry-run remove wrote state file")
+	}
+}
+
+// U17 — `list` verb delegates to Provider.List and emits the diff.
+// We only assert it doesn't error on an empty store (Detailed output
+// shape is covered by diff-package tests).
+func TestHandleCommand_U17_ListVerbRunsWithoutError(t *testing.T) {
+	h := newGitHarness(t)
+
+	if err := h.provider.HandleCommand(context.Background(),
+		[]string{"list"}, nil, h.flags); err != nil {
+		t.Fatalf("list: %v", err)
+	}
+}
