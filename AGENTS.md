@@ -187,6 +187,10 @@ Spec corrections:
 
 Total commits in cycle 2: 15+ (still growing — iteration 3 adds hooks+OTel defer).
 
+### Cycle 51 — Panic recovery in apply loop (data-integrity)
+
+- [x] **Real data-integrity issue** (from agent-assisted audit): if a provider's Apply method panics mid-loop (buggy provider, OOM in runner), in-memory state updates for successful actions were lost because `sf.Save` hadn't run. Next apply would re-attempt already-installed resources. Wrapped each provider's Execute+Save in an IIFE with `defer recover()`: log panic context → best-effort `sf.Save` → re-throw panic. Regression test simulates a provider succeeding on action 1 then panicking on action 2, asserts state contains action 1. (commit `27bbb35`)
+
 ### Cycle 50 — Regression test for cycle 49 store_repo resolution
 
 - [x] `TestRunApply_AutoResolvesStoreFromConfigRepo` asserts runApply resolves the store via `store_repo` when no `--from-repo`/`--store`/`store_path` is set. Uses a local bare-repo fixture so the test is network-free. (commit `7bb688f`)
