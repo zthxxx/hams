@@ -187,6 +187,10 @@ Spec corrections:
 
 Total commits in cycle 2: 15+ (still growing — iteration 3 adds hooks+OTel defer).
 
+### Cycle 58 — Regression test for cycle 55 filter-excluded distinction
+
+- [x] `TestList_FilterExcludedAll_DistinctMessage` seeds a state with one ok resource, runs `list --status=hook-failed`, asserts the filter-excluded message appears and the empty-store install hint does NOT. (commit `267d9f4`)
+
 ### Cycle 57 — Regression tests for cycle 56 store status
 
 - [x] `TestStoreStatus_SpecCompliantOutput` asserts the four spec-required lines (store path, profile tag, machine-id, hamsfiles) appear. `TestStoreStatus_WithGitRepo` `git init`s the store, runs status, asserts the Git status line is present with "uncommitted" or "clean". (commit `8c0fe48`)
