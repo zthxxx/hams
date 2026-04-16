@@ -187,6 +187,10 @@ Spec corrections:
 
 Total commits in cycle 2: 15+ (still growing — iteration 3 adds hooks+OTel defer).
 
+### Cycle 122 — ansible HandleCommand usage-error + dry-run tests
+
+- [x] `ansible.HandleCommand` had 0% coverage. Both the empty-args UserFacingError path and the dry-run preview path are trivially testable without exec-ing real ansible-playbook. Gate against the same class of bug as cycle 118's self-upgrade dry-run gate: a future refactor that drops the dry-run branch would silently run playbooks against the host. ansible coverage: 76.9% → 83.3%. (commit `d74114e`)
+
 ### Cycle 121 — `cloneRemoteRepo` honors context; Ctrl+C aborts clone promptly
 
 - [x] Real UX bug, same class as cycle 19 (context propagation through provider handlers) but at the bootstrap layer. `cloneRemoteRepo` used `gogit.PlainClone` — the no-ctx variant — so `Ctrl+C` during a `hams apply --from-repo=<user/repo>` clone appeared to hang until the network TCP round-trip timed out (can be minutes). Root ctx already cancels on SIGINT (cycle 12's `signal.NotifyContext`), but the clone path didn't plumb it through. Fix: thread ctx through `runApply → resolveFromRepoStorePath → bootstrapFromRepo → cloneRemoteRepo → PlainCloneContext` / `PullContext`. Updated 2 pre-existing tests that called `bootstrapFromRepo` directly to pass `context.Background()`. Regression test `TestCloneRemoteRepo_CanceledContextAborts` pre-cancels the ctx and asserts the function returns a non-nil fast-fail error without going through the full network round-trip. cli coverage: 64.8% → 65.5%. (commit `53f40a6`)
