@@ -181,6 +181,10 @@ Spec corrections:
 
 Total commits in cycle 2: 15+ (still growing — iteration 3 adds hooks+OTel defer).
 
+### Cycle 18 — `config list` surfaces the local-overrides path
+
+- [x] **Invisible .local.yaml**: after cycles 16/17 users could set/get `notification.bark_token`, but `hams config list` never told them where those values landed. Added a "Local overrides:" line using the same routing helper (`localConfigPath`) as WriteConfigKey/ReadRawConfigKey. Minimal fix — full per-key source-annotated listing per cli-architecture spec §"List all config values" is a larger refactor deferred to a future cycle. (commit `23fff82`)
+
 ### Cycle 17 — Symmetric `config get/set` for sensitive keys
 
 - [x] **`config get notification.bark_token` rejected**: users could `set` but not `get` an arbitrary sensitive key — total info asymmetry. Added `config.ReadRawConfigKey(paths, storePath, key)` that uses the same routing as `WriteConfigKey`. `printConfigKey` now falls through to it for sensitive-pattern keys. Returns `(value, found, err)` so callers distinguish "unset" from "error". Tests: `TestReadRawConfigKey_SensitiveFromStoreLocal`, `TestReadRawConfigKey_UnsetReturnsFalse`. (commit `57bfc98`)
