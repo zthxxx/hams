@@ -26,10 +26,13 @@ const masInstallScript = "brew install mas"
 var masBinaryLookup = exec.LookPath
 
 // Provider implements the Mac App Store provider.
-type Provider struct{}
+type Provider struct {
+	runner CmdRunner
+}
 
-// New creates a new mas provider.
-func New() *Provider { return &Provider{} }
+// New creates a new mas provider wired with a real CmdRunner.
+// Pass NewFakeCmdRunner from tests for DI-isolated unit testing.
+func New(runner CmdRunner) *Provider { return &Provider{runner: runner} }
 
 // Manifest returns the mas provider metadata.
 //
@@ -56,7 +59,7 @@ func (p *Provider) Manifest() provider.Manifest {
 // signaled via provider.BootstrapRequiredError so the CLI consent
 // flow can surface the install script + --bootstrap remedy.
 func (p *Provider) Bootstrap(_ context.Context) error {
-	if _, err := masBinaryLookup(cliName); err == nil {
+	if err := p.runner.LookPath(); err == nil {
 		return nil
 	}
 	return &provider.BootstrapRequiredError{
@@ -68,13 +71,12 @@ func (p *Provider) Bootstrap(_ context.Context) error {
 
 // Probe queries mas for installed apps.
 func (p *Provider) Probe(ctx context.Context, sf *state.File) ([]provider.ProbeResult, error) {
-	cmd := exec.CommandContext(ctx, cliName, "list")
-	output, err := cmd.Output()
+	output, err := p.runner.List(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("mas list: %w", err)
+		return nil, err
 	}
 
-	installed := parseMasList(string(output))
+	installed := parseMasList(output)
 	var results []provider.ProbeResult
 	for id, r := range sf.Resources {
 		if r.State == state.StateRemoved {
@@ -98,13 +100,13 @@ func (p *Provider) Plan(_ context.Context, desired *hamsfile.File, observed *sta
 // Apply installs a Mac App Store app by numeric ID.
 func (p *Provider) Apply(ctx context.Context, action provider.Action) error {
 	slog.Info("mas install", "app_id", action.ID)
-	return provider.WrapExecPassthrough(ctx, cliName, []string{"install", action.ID}, nil)
+	return p.runner.Install(ctx, action.ID)
 }
 
 // Remove uninstalls a Mac App Store app by numeric ID.
 func (p *Provider) Remove(ctx context.Context, resourceID string) error {
 	slog.Info("mas uninstall", "app_id", resourceID)
-	return provider.WrapExecPassthrough(ctx, cliName, []string{"uninstall", resourceID}, nil)
+	return p.runner.Uninstall(ctx, resourceID)
 }
 
 // List returns installed mas apps with status.
