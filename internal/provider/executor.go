@@ -135,6 +135,41 @@ const (
 	phaseRemove  = "remove"
 )
 
+// phaseGerund returns the "-ing" form of a phase verb for log
+// messages. The naive `phase+"ing"` concat produced "updateing" and
+// "removeing" — neither English nor greppable by ops runbooks that
+// expect "updating"/"removing". This map hard-codes the English
+// spelling changes (drop trailing `e` for -e verbs).
+func phaseGerund(phase string) string {
+	switch phase {
+	case phaseInstall:
+		return "installing"
+	case phaseUpdate:
+		return "updating"
+	case phaseRemove:
+		return "removing"
+	default:
+		return phase + "ing"
+	}
+}
+
+// phasePastTense returns the "-ed" form of a phase verb. The naive
+// `phase+"d"` concat produced "installd" — missing the `e` — which
+// is what the hams apply log currently outputs. Separate helper so
+// tests can assert both tenses independently.
+func phasePastTense(phase string) string {
+	switch phase {
+	case phaseInstall:
+		return "installed"
+	case phaseUpdate:
+		return "updated"
+	case phaseRemove:
+		return "removed"
+	default:
+		return phase + "d"
+	}
+}
+
 // executeAction is the unified helper for install, update, and remove phases.
 // The phase parameter must be one of phaseInstall, phaseUpdate, or phaseRemove.
 func executeAction(ctx context.Context, p Provider, action Action, sf *state.File, result *ExecuteResult, session *otel.Session, phase string) {
@@ -165,7 +200,7 @@ func executeAction(ctx context.Context, p Provider, action Action, sf *state.Fil
 	}
 
 	// Execute the action.
-	slog.Info(phase+"ing", "provider", name, "resource", action.ID)
+	slog.Info(phaseGerund(phase), "provider", name, "resource", action.ID)
 	var execErr error
 	if phase == phaseRemove {
 		execErr = p.Remove(ctx, action.ID)
@@ -186,7 +221,7 @@ func executeAction(ctx context.Context, p Provider, action Action, sf *state.Fil
 		// Action succeeded but hook failed — state is hook-failed.
 		incrementCounter(result, phase)
 		result.Errors = append(result.Errors, fmt.Errorf("%s: post-%s hook %s: %w", name, phase, action.ID, err))
-		slog.Info(phase+"d (hook failed)", "provider", name, "resource", action.ID)
+		slog.Info(phasePastTense(phase)+" (hook failed)", "provider", name, "resource", action.ID)
 		endSpan(session, span, "ok")
 		return
 	}
@@ -198,7 +233,7 @@ func executeAction(ctx context.Context, p Provider, action Action, sf *state.Fil
 		sf.SetResource(action.ID, state.StateOK, action.StateOpts...)
 	}
 	incrementCounter(result, phase)
-	slog.Info(phase+"d", "provider", name, "resource", action.ID)
+	slog.Info(phasePastTense(phase), "provider", name, "resource", action.ID)
 	endSpan(session, span, "ok")
 }
 
