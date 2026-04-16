@@ -110,6 +110,69 @@ func TestIsUpToDate(t *testing.T) {
 	}
 }
 
+// TestIsUpToDate_CurrentNewerThanLatest asserts that a local
+// build ahead of the latest release is still "up-to-date" — the
+// user doesn't need to downgrade. This path was untested and a
+// regression could make `hams self-upgrade` on a dev/pre-release
+// build try to downgrade to an older stable tag.
+func TestIsUpToDate_CurrentNewerThanLatest(t *testing.T) {
+	t.Parallel()
+	if !IsUpToDate("2.0.0", "1.9.9") {
+		t.Error("IsUpToDate(2.0.0, 1.9.9) = false, want true")
+	}
+	if !IsUpToDate("v1.10.0", "1.9.9") {
+		t.Error("IsUpToDate(v1.10.0, 1.9.9) = false, want true")
+	}
+}
+
+// TestIsUpToDate_PreReleaseStripped asserts pre-release suffixes
+// (-rc1, -beta) are ignored when comparing. A user running
+// 1.0.0-rc1 against latest 1.0.0 is still considered up-to-date
+// per the "ignore pre-release suffixes" comment — otherwise
+// `hams self-upgrade` would try to "upgrade" from rc1 to final
+// every time the rc is tagged, producing confusing churn.
+func TestIsUpToDate_PreReleaseStripped(t *testing.T) {
+	t.Parallel()
+	if !IsUpToDate("1.0.0-rc1", "1.0.0") {
+		t.Error("IsUpToDate(1.0.0-rc1, 1.0.0) = false, want true (rc stripped)")
+	}
+	if !IsUpToDate("1.0.0", "1.0.0-rc1") {
+		t.Error("IsUpToDate(1.0.0, 1.0.0-rc1) = false, want true")
+	}
+	if !IsUpToDate("1.0.0+build123", "1.0.0") {
+		t.Error("IsUpToDate with build metadata stripped should be equal")
+	}
+}
+
+// TestIsUpToDate_DifferentLengths asserts versions of different
+// dot-depths compare correctly. `1.0` vs `1.0.0` SHOULD be equal
+// (missing parts default to 0 in the numeric comparator).
+func TestIsUpToDate_DifferentLengths(t *testing.T) {
+	t.Parallel()
+	if !IsUpToDate("1.0", "1.0.0") {
+		t.Error("IsUpToDate(1.0, 1.0.0) = false, want true (missing parts = 0)")
+	}
+	if !IsUpToDate("1.0.0.0", "1.0.0") {
+		t.Error("IsUpToDate(1.0.0.0, 1.0.0) = false, want true")
+	}
+}
+
+// TestIsUpToDate_NonNumericFallback asserts that when normalize
+// strips everything (e.g., "dev" → "dev", which fails numeric
+// parse), the function falls back to string equality. Mixing
+// "dev" with a real version returns false.
+func TestIsUpToDate_NonNumericFallback(t *testing.T) {
+	t.Parallel()
+	// Two "dev" builds compare equal via string fallback.
+	if !IsUpToDate("dev", "dev") {
+		t.Error("IsUpToDate(dev, dev) = false, want true (string equality fallback)")
+	}
+	// dev vs a real version is NOT up-to-date.
+	if IsUpToDate("dev", "1.0.0") {
+		t.Error("IsUpToDate(dev, 1.0.0) = true, want false")
+	}
+}
+
 func TestIsUpToDate_Property(t *testing.T) {
 	t.Parallel()
 	rapid.Check(t, func(t *rapid.T) {
