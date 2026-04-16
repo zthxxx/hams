@@ -66,6 +66,7 @@ Use 'hams apply' to replay all installations from config.`,
 			storeCmd(),
 			listCmd(registry),
 			selfUpgradeCmd(),
+			versionCmd(),
 		},
 		Action: func(_ context.Context, cmd *cli.Command) error {
 			return cli.ShowAppHelp(cmd)

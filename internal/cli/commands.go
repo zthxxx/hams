@@ -21,7 +21,23 @@ import (
 	"github.com/zthxxx/hams/internal/provider"
 	"github.com/zthxxx/hams/internal/selfupdate"
 	"github.com/zthxxx/hams/internal/state"
+	"github.com/zthxxx/hams/internal/version"
 )
+
+// versionCmd exposes the detailed build info (semver, commit, date, OS/arch)
+// via `hams version`. Complements `--version` which returns the brief form;
+// users filing bug reports want the full string. Previously `version.Info()`
+// was defined + unit-tested but had zero callers.
+func versionCmd() *cli.Command {
+	return &cli.Command{
+		Name:  "version",
+		Usage: "Print detailed version information",
+		Action: func(_ context.Context, _ *cli.Command) error {
+			fmt.Println(version.Info())
+			return nil
+		},
+	}
+}
 
 func refreshCmd(registry *provider.Registry) *cli.Command {
 	return &cli.Command{

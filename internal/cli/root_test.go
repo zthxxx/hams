@@ -40,6 +40,18 @@ func TestNewApp_HelpFlag(t *testing.T) {
 	}
 }
 
+// TestNewApp_VersionSubcommandAvailable asserts `hams version`
+// routes to a dedicated subcommand (distinct from --version).
+// Surfaces the detailed build info that --version omits.
+func TestNewApp_VersionSubcommandAvailable(t *testing.T) {
+	registry := provider.NewRegistry()
+	app := NewApp(registry, sudo.NoopAcquirer{})
+
+	if err := app.Run(context.Background(), []string{"hams", "version"}); err != nil {
+		t.Fatalf("`hams version` error: %v", err)
+	}
+}
+
 // TestProviderUsageDescription_NonPackageProvidersHaveSpecificNouns asserts
 // each non-package provider maps to its correct verb/noun, so `hams --help`
 // no longer advertises git-config, defaults, etc. as managing "packages".
