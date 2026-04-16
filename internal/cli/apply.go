@@ -389,6 +389,7 @@ func runApply(ctx context.Context, flags *provider.GlobalFlags, registry *provid
 
 	var allResults []provider.ExecuteResult
 	var skippedProviders []string
+	var stateSaveFailures []string
 	for _, p := range sorted {
 		manifest := p.Manifest()
 		name := manifest.Name
@@ -502,7 +503,13 @@ func runApply(ctx context.Context, flags *provider.GlobalFlags, registry *provid
 		}
 
 		if saveErr := sf.Save(statePath); saveErr != nil {
-			slog.Error("failed to save state", "provider", name, "error", saveErr)
+			// State save failure is non-fatal to the install (the install
+			// succeeded) but DOES invalidate drift tracking until a
+			// successful save. Track it so the final summary surfaces the
+			// inconsistency to the user — previously these failures were
+			// only logged and scripts couldn't detect them.
+			slog.Error("failed to save state", "provider", name, "path", statePath, "error", saveErr)
+			stateSaveFailures = append(stateSaveFailures, name)
 		}
 
 		slog.Info("provider complete", "provider", name,
@@ -544,10 +551,19 @@ func runApply(ctx context.Context, flags *provider.GlobalFlags, registry *provid
 		fmt.Printf("Warning: %d provider(s) skipped due to errors: %s\n",
 			len(skippedProviders), strings.Join(skippedProviders, ", "))
 	}
+	if len(stateSaveFailures) > 0 {
+		// Install succeeded but persisting the record failed. Surface so
+		// the user knows the next apply will re-plan these resources
+		// instead of treating them as already-tracked.
+		fmt.Printf("Warning: %d provider(s) failed to persist state after apply: %s\n",
+			len(stateSaveFailures), strings.Join(stateSaveFailures, ", "))
+		fmt.Println("  Next `hams apply` may re-execute these resources. Check permissions on the store.")
+	}
 
-	if merged.Failed > 0 || len(skippedProviders) > 0 {
+	if merged.Failed > 0 || len(skippedProviders) > 0 || len(stateSaveFailures) > 0 {
 		return hamserr.NewUserError(hamserr.ExitPartialFailure,
-			fmt.Sprintf("%d resources failed, %d providers skipped", merged.Failed, len(skippedProviders)),
+			fmt.Sprintf("%d resources failed, %d providers skipped, %d state saves failed",
+				merged.Failed, len(skippedProviders), len(stateSaveFailures)),
 			"Run 'hams apply' again to retry failed resources",
 			"Use '--debug' for detailed error output",
 		)
