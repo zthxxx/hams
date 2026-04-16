@@ -197,8 +197,14 @@ var sensitiveKeys = map[string]bool{
 }
 
 // sensitivePatterns are substrings that mark a key as sensitive.
+// Per schema-design spec §"Sensitive Config Key Detection" — keys
+// containing any of these substrings auto-route to hams.config.local.yaml.
+// Note on "key": broad by design; any unusual identifier like "monkey_X"
+// would also match, but the spec explicitly requires this pattern
+// because common API-key key names (api_key, openai_key, etc.) should
+// be caught without requiring each integration to pre-register.
 var sensitivePatterns = []string{
-	"token", "secret", "password", "credential",
+	"token", "key", "secret", "password", "credential",
 }
 
 // IsSensitiveKey returns true if the key should be stored in a .local.yaml file.

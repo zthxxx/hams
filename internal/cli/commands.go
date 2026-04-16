@@ -196,10 +196,19 @@ func configCmd() *cli.Command {
 					}
 					key := cmd.Args().Get(0)
 					value := cmd.Args().Get(1)
-					if !config.IsValidConfigKey(key) {
+					// Accept either whitelisted keys OR keys matching a
+					// sensitive pattern (token/secret/password/credential).
+					// The sensitive branch supports deferred integrations
+					// like `notification.bark_token` per schema-design spec
+					// (fix-v1-planning-gaps delta). Without this allowance,
+					// `hams config set notification.bark_token abc` was
+					// rejected despite the spec saying it auto-routes to
+					// hams.config.local.yaml.
+					if !config.IsValidConfigKey(key) && !config.IsSensitiveKey(key) {
 						return hamserr.NewUserError(hamserr.ExitUsageError,
 							fmt.Sprintf("unknown config key %q", key),
 							"Valid keys: "+strings.Join(config.ValidConfigKeys, ", "),
+							"Or use a key containing token/key/secret/password/credential (auto-routes to .local.yaml)",
 						)
 					}
 					flags := globalFlags(cmd)

@@ -159,6 +159,8 @@ func TestIsSensitiveKey_SubstringMatch(t *testing.T) {
 		{"api_secret", true},
 		{"db_password", true},
 		{"oauth_credential", true},
+		{"api_key", true},        // "key" pattern — required by schema-design spec
+		{"openai_api_key", true}, // compound name with "key"
 		{"profile_tag", false},
 		{"machine_id", false},
 		{"store_path", false},
