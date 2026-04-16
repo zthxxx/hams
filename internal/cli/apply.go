@@ -14,6 +14,7 @@ import (
 	"strings"
 
 	"github.com/urfave/cli/v3"
+	"golang.org/x/term"
 	"gopkg.in/yaml.v3"
 
 	"github.com/zthxxx/hams/internal/config"
@@ -159,20 +160,8 @@ func runApply(ctx context.Context, flags *provider.GlobalFlags, registry *provid
 	}
 
 	if cfg.ProfileTag == "" || cfg.MachineID == "" {
-		fmt.Println("Not Found Profile in config, init it at first")
-		tag, mid, promptErr := promptProfileInit()
-		if promptErr != nil {
-			return fmt.Errorf("profile init: %w", promptErr)
-		}
-		cfg.ProfileTag = tag
-		cfg.MachineID = mid
-
-		// Persist prompted values so they survive across runs.
-		if writeErr := config.WriteConfigKey(paths, storePath, "profile_tag", tag); writeErr != nil {
-			slog.Warn("failed to persist profile_tag", "error", writeErr)
-		}
-		if writeErr := config.WriteConfigKey(paths, storePath, "machine_id", mid); writeErr != nil {
-			slog.Warn("failed to persist machine_id", "error", writeErr)
+		if err := ensureProfileConfigured(paths, storePath, cfg); err != nil {
+			return err
 		}
 	}
 
@@ -780,6 +769,49 @@ func printDryRunActions(name, displayName string, actions []provider.Action) {
 	if len(skips) > 0 {
 		fmt.Printf("  (%d resources unchanged)\n", len(skips))
 	}
+}
+
+// ensureProfileConfigured fills in any missing profile_tag / machine_id
+// fields on cfg. Interactive TTYs get the legacy prompt flow; non-TTYs
+// (CI, cloud-init, piped stdin) surface a UserFacingError naming the
+// missing keys + concrete remediation instead of reading EOF.
+//
+// Previously this logic lived inline in runApply and violated
+// golangci-lint nestif (complexity 8). Extracted for testability and
+// clarity — any future "apply on a fresh machine" UX change should
+// touch only this helper.
+func ensureProfileConfigured(paths config.Paths, storePath string, cfg *config.Config) error {
+	if term.IsTerminal(int(os.Stdin.Fd())) { //nolint:gosec // Fd() returns uintptr that fits in int on all supported platforms
+		fmt.Println("Not Found Profile in config, init it at first")
+		tag, mid, promptErr := promptProfileInit()
+		if promptErr != nil {
+			return fmt.Errorf("profile init: %w", promptErr)
+		}
+		cfg.ProfileTag = tag
+		cfg.MachineID = mid
+		if writeErr := config.WriteConfigKey(paths, storePath, "profile_tag", tag); writeErr != nil {
+			slog.Warn("failed to persist profile_tag", "error", writeErr)
+		}
+		if writeErr := config.WriteConfigKey(paths, storePath, "machine_id", mid); writeErr != nil {
+			slog.Warn("failed to persist machine_id", "error", writeErr)
+		}
+		return nil
+	}
+
+	missing := make([]string, 0, 2)
+	if cfg.ProfileTag == "" {
+		missing = append(missing, "profile_tag")
+	}
+	if cfg.MachineID == "" {
+		missing = append(missing, "machine_id")
+	}
+	return hamserr.NewUserError(hamserr.ExitUsageError,
+		fmt.Sprintf("%s not configured and stdin is not a terminal", strings.Join(missing, " and ")),
+		"Set them explicitly (example):",
+		"  hams config set profile_tag macOS",
+		"  hams config set machine_id $(hostname)",
+		"Or pass --profile=<tag> on the command line; machine_id still needs to be configured",
+	)
 }
 
 // SetupLogging initializes logging from global flags and returns the cleanup function.

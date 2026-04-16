@@ -717,3 +717,108 @@ func TestApply_DryRun_SkippedProvider_ReturnsPartialFailure(t *testing.T) {
 		t.Errorf("message should mention dry-run; got %q", ufe.Message)
 	}
 }
+
+// TestRunApply_NonTTYWithoutProfileEmitsUserError asserts cycle 75:
+// when stdin is not a terminal AND profile_tag/machine_id are
+// unconfigured, runApply MUST NOT invoke the interactive prompt
+// (which would read EOF and surface as
+// "profile init: reading profile tag: EOF"). Instead it returns a
+// *UserFacingError with ExitUsageError whose message names the
+// missing keys and whose suggestions show how to set them.
+//
+// This is the CI / cloud-init path: users pipe the command from a
+// script with /dev/null on stdin. Go's test runner also has a
+// non-TTY stdin by default, so this test exercises exactly that
+// environment without additional plumbing.
+func TestRunApply_NonTTYWithoutProfileEmitsUserError(t *testing.T) {
+	configHome := t.TempDir()
+	dataHome := t.TempDir()
+	storeDir := t.TempDir()
+	t.Setenv("HAMS_CONFIG_HOME", configHome)
+	t.Setenv("HAMS_DATA_HOME", dataHome)
+
+	// Empty global config — no profile_tag, no machine_id.
+	writeApplyTestFile(t, filepath.Join(configHome, "hams.config.yaml"), "")
+	// Store exists and points somewhere; keeps runApply past the
+	// earlier "no store" check so the profile-missing branch is
+	// actually reached.
+	writeApplyTestFile(t, filepath.Join(storeDir, "hams.config.yaml"),
+		"store_path: "+storeDir+"\n")
+
+	flags := &provider.GlobalFlags{Store: storeDir}
+	registry := provider.NewRegistry()
+
+	err := runApply(context.Background(), flags, registry,
+		sudo.NoopAcquirer{}, "", true, "", "", false, bootstrapMode{})
+	if err == nil {
+		t.Fatal("expected error when profile_tag/machine_id missing on non-TTY; got nil")
+	}
+	var ufe *hamserr.UserFacingError
+	if !errors.As(err, &ufe) {
+		t.Fatalf("want *UserFacingError, got %T: %v", err, err)
+	}
+	if ufe.Code != hamserr.ExitUsageError {
+		t.Errorf("Code = %d, want ExitUsageError (%d)", ufe.Code, hamserr.ExitUsageError)
+	}
+	// Message must name the missing keys so users know what to fix.
+	if !strings.Contains(ufe.Message, "profile_tag") {
+		t.Errorf("message should name profile_tag; got %q", ufe.Message)
+	}
+	if !strings.Contains(ufe.Message, "machine_id") {
+		t.Errorf("message should name machine_id; got %q", ufe.Message)
+	}
+	if !strings.Contains(ufe.Message, "stdin is not a terminal") {
+		t.Errorf("message should explain non-TTY cause; got %q", ufe.Message)
+	}
+	// Suggestions must teach the fix.
+	joined := strings.Join(ufe.Suggestions, "\n")
+	if !strings.Contains(joined, "config set profile_tag") {
+		t.Errorf("suggestions should recommend `hams config set profile_tag`; got %v", ufe.Suggestions)
+	}
+	if !strings.Contains(joined, "config set machine_id") {
+		t.Errorf("suggestions should recommend `hams config set machine_id`; got %v", ufe.Suggestions)
+	}
+	// And the error MUST NOT contain the confusing EOF surface.
+	if strings.Contains(err.Error(), "EOF") {
+		t.Errorf("error should not leak `EOF`; got %q", err.Error())
+	}
+}
+
+// TestRunApply_NonTTYWithProfileFlagButNoMachineID asserts that
+// --profile alone doesn't bypass the machine_id requirement — the
+// error still surfaces with ExitUsageError and names machine_id.
+// Without this, users would set --profile=macOS, still hit the
+// prompt on the machine_id field, and see the same cryptic EOF
+// error.
+func TestRunApply_NonTTYWithProfileFlagButNoMachineID(t *testing.T) {
+	configHome := t.TempDir()
+	dataHome := t.TempDir()
+	storeDir := t.TempDir()
+	t.Setenv("HAMS_CONFIG_HOME", configHome)
+	t.Setenv("HAMS_DATA_HOME", dataHome)
+
+	// profile_tag set, machine_id missing.
+	writeApplyTestFile(t, filepath.Join(configHome, "hams.config.yaml"),
+		"profile_tag: macOS\n")
+	writeApplyTestFile(t, filepath.Join(storeDir, "hams.config.yaml"),
+		"store_path: "+storeDir+"\n")
+
+	flags := &provider.GlobalFlags{Store: storeDir, Profile: "linux"} // override profile_tag; still no machine_id
+	registry := provider.NewRegistry()
+
+	err := runApply(context.Background(), flags, registry,
+		sudo.NoopAcquirer{}, "", true, "", "", false, bootstrapMode{})
+	if err == nil {
+		t.Fatal("expected error when machine_id missing on non-TTY")
+	}
+	var ufe *hamserr.UserFacingError
+	if !errors.As(err, &ufe) {
+		t.Fatalf("want *UserFacingError, got %T: %v", err, err)
+	}
+	if !strings.Contains(ufe.Message, "machine_id") {
+		t.Errorf("message should name machine_id; got %q", ufe.Message)
+	}
+	if strings.Contains(ufe.Message, "profile_tag") {
+		t.Errorf("message should NOT name profile_tag (user already set it via --profile); got %q", ufe.Message)
+	}
+}
