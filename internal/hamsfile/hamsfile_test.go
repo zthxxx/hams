@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -616,5 +617,40 @@ func TestListApps_EmptyAndMalformed(t *testing.T) {
 	nilRoot := &File{Path: "x.yaml"}
 	if got := nilRoot.ListApps(); got != nil {
 		t.Errorf("nil-root File should return nil apps, got %v", got)
+	}
+}
+
+// TestListApps_SkipsEmptyAndWhitespaceEntries locks in cycle 98:
+// an entry with `app: ""` or `app: "   "` (e.g., from a git merge
+// conflict or a manual YAML edit) MUST NOT flow into the provider
+// install path. Previously ListApps returned the empty string, and
+// downstream `apt install ""` / `brew install ""` failed with
+// cryptic shell errors. Now empty/whitespace values are filtered.
+func TestListApps_SkipsEmptyAndWhitespaceEntries(t *testing.T) {
+	const yamlDoc = `cli:
+  - app: ""
+  - app: "  "
+  - app: valid-pkg
+  - app: another
+`
+	path := writeTempFile(t, yamlDoc)
+	f, err := Read(path)
+	if err != nil {
+		t.Fatalf("Read: %v", err)
+	}
+	got := f.ListApps()
+	want := []string{"valid-pkg", "another"}
+	if len(got) != len(want) {
+		t.Fatalf("ListApps = %v, want %v", got, want)
+	}
+	for _, w := range want {
+		if !slices.Contains(got, w) {
+			t.Errorf("ListApps missing %q", w)
+		}
+	}
+	for _, g := range got {
+		if g == "" || strings.TrimSpace(g) == "" {
+			t.Errorf("ListApps returned empty/whitespace value %q", g)
+		}
 	}
 }
