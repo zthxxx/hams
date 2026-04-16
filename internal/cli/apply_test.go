@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -13,6 +14,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
+	hamserr "github.com/zthxxx/hams/internal/error"
 	"github.com/zthxxx/hams/internal/hamsfile"
 	"github.com/zthxxx/hams/internal/provider"
 	"github.com/zthxxx/hams/internal/state"
@@ -537,5 +539,47 @@ func TestApply_PruneOrphans_HamsfilePresent_DoesNotPrune(t *testing.T) {
 	r := sf.Resources["htop"]
 	if r.State != state.StateOK {
 		t.Errorf("htop.State = %q, want %q (still declared, must not transition)", r.State, state.StateOK)
+	}
+}
+
+// TestApply_DryRun_SkippedProvider_ReturnsPartialFailure locks in the
+// cycle 39 fix: when dry-run planning encounters a broken hamsfile
+// (here, the provider's Plan returns an error), the skipped-providers
+// branch must return ExitPartialFailure — NOT silently exit 0.
+// CI preview scripts depend on this semantic.
+func TestApply_DryRun_SkippedProvider_ReturnsPartialFailure(t *testing.T) {
+	_, profileDir, _, flags := setupApplyTestEnv(t, []string{"apt"})
+	hamsfilePath := filepath.Join(profileDir, "apt.hams.yaml")
+	writeApplyTestFile(t, hamsfilePath, "packages:\n  - app: htop\n")
+
+	registry := provider.NewRegistry()
+	planErr := errors.New("synthesized: plan failed")
+	p := &applyTestProvider{
+		manifest: provider.Manifest{
+			Name: "apt", DisplayName: "apt", FilePrefix: "apt",
+			Platforms: []provider.Platform{provider.PlatformAll},
+		},
+		planFn: func(_ context.Context, _ *hamsfile.File, _ *state.File) ([]provider.Action, error) {
+			return nil, planErr
+		},
+	}
+	if err := registry.Register(p); err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+
+	flags.DryRun = true
+	err := runApply(context.Background(), flags, registry, sudo.NoopAcquirer{}, "", true, "", "", false, bootstrapMode{})
+	if err == nil {
+		t.Fatal("dry-run should return an error when a provider is skipped; got nil")
+	}
+	var ufe *hamserr.UserFacingError
+	if !errors.As(err, &ufe) {
+		t.Fatalf("expected *UserFacingError, got %T: %v", err, err)
+	}
+	if ufe.Code != hamserr.ExitPartialFailure {
+		t.Errorf("Code = %d, want ExitPartialFailure (%d)", ufe.Code, hamserr.ExitPartialFailure)
+	}
+	if !strings.Contains(ufe.Message, "dry-run") {
+		t.Errorf("message should mention dry-run; got %q", ufe.Message)
 	}
 }
