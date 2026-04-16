@@ -187,6 +187,10 @@ Spec corrections:
 
 Total commits in cycle 2: 15+ (still growing — iteration 3 adds hooks+OTel defer).
 
+### Cycle 57 — Regression tests for cycle 56 store status
+
+- [x] `TestStoreStatus_SpecCompliantOutput` asserts the four spec-required lines (store path, profile tag, machine-id, hamsfiles) appear. `TestStoreStatus_WithGitRepo` `git init`s the store, runs status, asserts the Git status line is present with "uncommitted" or "clean". (commit `8c0fe48`)
+
 ### Cycle 56 — `store status` surfaces profile tag, machine-id, git changes
 
 - [x] Spec drift (cli-architecture §"Store command"): spec required `hams store status` to display profile tag, machine-id, and git status; impl only printed store path + derived profile/state dirs + hamsfile count. Added explicit `Profile tag:` / `Machine ID:` lines and a conditional `Git status:` line (clean / N changes / fail-open on non-git stores). 5s timeout on the git call guards against hangs. (commit `979c012`)
