@@ -133,6 +133,63 @@ func TestAssetName(t *testing.T) {
 	}
 }
 
+// TestNewUpdater asserts the constructor returns a non-nil Updater
+// bound to http.DefaultClient. One-liner delegate was 0% covered.
+func TestNewUpdater(t *testing.T) {
+	t.Parallel()
+	got := NewUpdater()
+	if got == nil {
+		t.Fatal("NewUpdater() returned nil")
+	}
+	if got.HTTPClient == nil {
+		t.Error("HTTPClient should default to http.DefaultClient")
+	}
+}
+
+// TestCurrentVersion just verifies delegation to version.Version().
+// Protects against accidental direct reads of the unexported
+// `version` var bypassing the version package.
+func TestCurrentVersion(t *testing.T) {
+	t.Parallel()
+	if got := CurrentVersion(); got == "" {
+		t.Error("CurrentVersion() should never return empty string")
+	}
+}
+
+// TestLatestRelease_SuccessPopulatesAssets is the ReleaseInfo counterpart
+// of TestLatestVersion_Success — asserts the tag_name + assets are
+// both mapped onto ReleaseInfo so the binary-upgrade flow can find
+// the right download URL.
+func TestLatestRelease_SuccessPopulatesAssets(t *testing.T) {
+	t.Parallel()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"tag_name":"v2.0.0","assets":[{"name":"hams-linux-amd64","browser_download_url":"https://example.test/hams-linux-amd64"}]}`) //nolint:errcheck // test handler
+	}))
+	defer srv.Close()
+
+	u := &Updater{HTTPClient: &http.Client{
+		Transport: &rewriteTransport{base: srv.Client().Transport, target: srv.URL},
+	}}
+
+	rel, err := u.LatestRelease(context.Background())
+	if err != nil {
+		t.Fatalf("LatestRelease: %v", err)
+	}
+	if rel.Version != "2.0.0" {
+		t.Errorf("Version = %q, want 2.0.0", rel.Version)
+	}
+	if len(rel.Assets) != 1 {
+		t.Fatalf("Assets len = %d, want 1", len(rel.Assets))
+	}
+	if rel.Assets[0].Name != "hams-linux-amd64" {
+		t.Errorf("asset name = %q", rel.Assets[0].Name)
+	}
+	if rel.Assets[0].DownloadURL != "https://example.test/hams-linux-amd64" {
+		t.Errorf("asset URL = %q", rel.Assets[0].DownloadURL)
+	}
+}
+
 func TestLatestVersion_Success(t *testing.T) {
 	t.Parallel()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
