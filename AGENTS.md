@@ -181,6 +181,11 @@ Spec corrections:
 
 Total commits in cycle 2: 15+ (still growing — iteration 3 adds hooks+OTel defer).
 
+### Cycle 24 — `hams store init` fixes + .gitignore generation
+
+- [x] **Missing `.gitignore`**: spec requires `.state/` + `*.local.*` patterns to prevent state/local overrides leaking into git. Users would commit machine-id + secrets. Added idempotent `.gitignore` creation on init.
+- [x] **Scope violation latent**: initial store config was a marshaled `Config{}` copying `profile_tag`/`machine_id` from the global layer. For users with profile_tag set globally, init wrote a machine-scoped field into the store file, which then failed `validateStoreScope` on next load. Replaced with a commented placeholder explaining the scope rule. Empty-string noise gone. (commit `c3020ce`)
+
 ### Cycle 23 — `hams version` subcommand wires up the detailed build info
 
 - [x] `version.Info()` had zero production callers (scaffolded-but-unwired, same pattern as lucky/TUI/notify but small enough to close fully). Users filing bug reports needed the full "semver (commit) built <date> <goos>/<goarch>" string; `--version` only returned the brief form. Added `hams version` subcommand routing to `version.Info()`. Added `TestNewApp_VersionSubcommandAvailable`. (commit `e3a5d81`)
