@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"strings"
 
+	"github.com/zthxxx/hams/internal/config"
 	hamserr "github.com/zthxxx/hams/internal/error"
 	"github.com/zthxxx/hams/internal/hamsfile"
 	"github.com/zthxxx/hams/internal/provider"
@@ -15,12 +16,16 @@ import (
 
 // Provider implements the uv tool provider.
 type Provider struct {
+	cfg    *config.Config
 	runner CmdRunner
 }
 
 // New creates a new uv provider wired with a real CmdRunner.
+// cfg supplies store/profile paths for the CLI-first auto-record path.
 // Pass NewFakeCmdRunner from tests for DI-isolated unit testing.
-func New(runner CmdRunner) *Provider { return &Provider{runner: runner} }
+func New(cfg *config.Config, runner CmdRunner) *Provider {
+	return &Provider{cfg: cfg, runner: runner}
+}
 
 // Manifest returns the uv provider metadata.
 func (p *Provider) Manifest() provider.Manifest {
@@ -87,32 +92,105 @@ func (p *Provider) List(_ context.Context, desired *hamsfile.File, sf *state.Fil
 }
 
 // HandleCommand processes CLI subcommands for uv.
-func (p *Provider) HandleCommand(ctx context.Context, args []string, _ map[string]string, flags *provider.GlobalFlags) error {
+func (p *Provider) HandleCommand(ctx context.Context, args []string, hamsFlags map[string]string, flags *provider.GlobalFlags) error {
 	verb, remaining := provider.ParseVerb(args)
 
 	switch verb {
 	case "install", "i":
-		if len(remaining) == 0 {
-			return hamserr.NewUserError(hamserr.ExitUsageError,
-				"uv install requires a tool name",
-				"Usage: hams uv install <tool>",
-				"To install all recorded tools, use: hams apply --only=uv",
-			)
-		}
-		if flags.DryRun {
-			fmt.Printf("[dry-run] Would install: uv tool install %s\n", strings.Join(remaining, " "))
-			return nil
-		}
-		return provider.WrapExecPassthrough(ctx, "uv", append([]string{"tool", "install"}, remaining...), nil)
+		return p.handleInstall(ctx, remaining, hamsFlags, flags)
 	case "remove", "uninstall", "rm":
-		if flags.DryRun {
-			fmt.Printf("[dry-run] Would remove: uv tool uninstall %s\n", strings.Join(remaining, " "))
-			return nil
-		}
-		return provider.WrapExecPassthrough(ctx, "uv", append([]string{"tool", "uninstall"}, remaining...), nil)
+		return p.handleRemove(ctx, remaining, hamsFlags, flags)
 	default:
 		return provider.WrapExecPassthrough(ctx, "uv", args, nil)
 	}
+}
+
+// handleInstall runs `uv tool install <tool>` via the CmdRunner seam
+// and, on success, appends each tool to the uv hamsfile. All-or-
+// nothing: any install failure aborts before the hamsfile is touched.
+func (p *Provider) handleInstall(ctx context.Context, args []string, hamsFlags map[string]string, flags *provider.GlobalFlags) error {
+	if len(args) == 0 {
+		return hamserr.NewUserError(hamserr.ExitUsageError,
+			"uv install requires a tool name",
+			"Usage: hams uv install <tool>",
+			"To install all recorded tools, use: hams apply --only=uv",
+		)
+	}
+	tools := toolArgs(args)
+	if len(tools) == 0 {
+		return hamserr.NewUserError(hamserr.ExitUsageError,
+			"uv install requires at least one tool name",
+			"Usage: hams uv install <tool>",
+		)
+	}
+	if flags.DryRun {
+		fmt.Printf("[dry-run] Would install: uv tool install %s\n", strings.Join(args, " "))
+		return nil
+	}
+
+	for _, tool := range tools {
+		if err := p.runner.Install(ctx, tool); err != nil {
+			return err
+		}
+	}
+
+	hf, err := p.loadOrCreateHamsfile(hamsFlags, flags)
+	if err != nil {
+		return err
+	}
+	for _, tool := range tools {
+		hf.AddApp(tagCLI, tool, "")
+	}
+	return hf.Write()
+}
+
+// handleRemove runs `uv tool uninstall <tool>` via the CmdRunner seam
+// and, on success, removes each tool from the uv hamsfile.
+func (p *Provider) handleRemove(ctx context.Context, args []string, hamsFlags map[string]string, flags *provider.GlobalFlags) error {
+	if len(args) == 0 {
+		return hamserr.NewUserError(hamserr.ExitUsageError,
+			"uv remove requires a tool name",
+			"Usage: hams uv remove <tool>",
+		)
+	}
+	tools := toolArgs(args)
+	if len(tools) == 0 {
+		return hamserr.NewUserError(hamserr.ExitUsageError,
+			"uv remove requires at least one tool name",
+			"Usage: hams uv remove <tool>",
+		)
+	}
+	if flags.DryRun {
+		fmt.Printf("[dry-run] Would remove: uv tool uninstall %s\n", strings.Join(args, " "))
+		return nil
+	}
+
+	for _, tool := range tools {
+		if err := p.runner.Uninstall(ctx, tool); err != nil {
+			return err
+		}
+	}
+
+	hf, err := p.loadOrCreateHamsfile(hamsFlags, flags)
+	if err != nil {
+		return err
+	}
+	for _, tool := range tools {
+		hf.RemoveApp(tool)
+	}
+	return hf.Write()
+}
+
+// toolArgs filters positional tokens: flags (leading `-`) are excluded.
+func toolArgs(args []string) []string {
+	out := make([]string, 0, len(args))
+	for _, a := range args {
+		if strings.HasPrefix(a, "-") {
+			continue
+		}
+		out = append(out, a)
+	}
+	return out
 }
 
 // Name returns the CLI name.

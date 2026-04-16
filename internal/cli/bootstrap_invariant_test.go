@@ -49,7 +49,7 @@ func TestBuiltinManifestScriptHostsAreBash(t *testing.T) {
 		apt.New(cfg, apt.NewRealCmdRunner(sudo.DirectBuilder{})),
 		npm.New(cfg, npm.NewFakeCmdRunner()),
 		pnpm.New(cfg, pnpm.NewFakeCmdRunner()),
-		uv.New(uv.NewFakeCmdRunner()),
+		uv.New(cfg, uv.NewFakeCmdRunner()),
 		goinstall.New(goinstall.NewFakeCmdRunner()),
 		cargo.New(cfg, cargo.NewFakeCmdRunner()),
 		git.NewConfigProvider(),

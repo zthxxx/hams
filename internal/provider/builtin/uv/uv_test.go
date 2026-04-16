@@ -8,7 +8,7 @@ import (
 
 func TestManifest(t *testing.T) {
 	t.Parallel()
-	p := New(NewFakeCmdRunner())
+	p := New(nil, NewFakeCmdRunner())
 	m := p.Manifest()
 	if m.Name != "uv" {
 		t.Errorf("Name = %q", m.Name)
@@ -68,7 +68,7 @@ mypy v1.8.0`,
 
 func TestNameDisplayName(t *testing.T) {
 	t.Parallel()
-	p := New(NewFakeCmdRunner())
+	p := New(nil, NewFakeCmdRunner())
 	if p.Name() != "uv" || p.DisplayName() != "uv" {
 		t.Errorf("Name()=%q DisplayName()=%q", p.Name(), p.DisplayName())
 	}

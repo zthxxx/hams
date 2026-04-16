@@ -41,7 +41,7 @@ func registerBuiltins(registry *provider.Registry, sudoCmd sudo.CmdBuilder) {
 		apt.New(builtinCfg, apt.NewRealCmdRunner(sudoCmd)),
 		npm.New(builtinCfg, npm.NewRealCmdRunner()),
 		pnpm.New(builtinCfg, pnpm.NewRealCmdRunner()),
-		uv.New(uv.NewRealCmdRunner()),
+		uv.New(builtinCfg, uv.NewRealCmdRunner()),
 		goinstall.New(goinstall.NewRealCmdRunner()),
 		cargo.New(builtinCfg, cargo.NewRealCmdRunner()),
 		git.NewConfigProvider(),

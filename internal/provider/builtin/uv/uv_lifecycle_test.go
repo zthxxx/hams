@@ -16,7 +16,7 @@ import (
 func TestU1_Apply_InstallsMissingTool(t *testing.T) {
 	t.Parallel()
 	fake := NewFakeCmdRunner()
-	p := New(fake)
+	p := New(nil, fake)
 
 	const tool = "ruff"
 	if err := p.Apply(context.Background(), provider.Action{ID: tool}); err != nil {
@@ -34,7 +34,7 @@ func TestU1_Apply_InstallsMissingTool(t *testing.T) {
 func TestU2_Apply_IdempotentOnReapply(t *testing.T) {
 	t.Parallel()
 	fake := NewFakeCmdRunner()
-	p := New(fake)
+	p := New(nil, fake)
 
 	const tool = "black"
 	for range 3 {
@@ -56,7 +56,7 @@ func TestU3_Apply_FailureNotRecorded(t *testing.T) {
 	t.Parallel()
 	wantErr := errors.New("simulated install failure")
 	fake := NewFakeCmdRunner().WithInstallError("flaky-tool", wantErr)
-	p := New(fake)
+	p := New(nil, fake)
 
 	gotErr := p.Apply(context.Background(), provider.Action{ID: "flaky-tool"})
 	if !errors.Is(gotErr, wantErr) {
@@ -71,7 +71,7 @@ func TestU3_Apply_FailureNotRecorded(t *testing.T) {
 func TestU4_Remove_UninstallsTool(t *testing.T) {
 	t.Parallel()
 	fake := NewFakeCmdRunner().Seed("ruff", "0.3.0")
-	p := New(fake)
+	p := New(nil, fake)
 
 	if err := p.Remove(context.Background(), "ruff"); err != nil {
 		t.Fatalf("Remove error: %v", err)
@@ -89,7 +89,7 @@ func TestU5_Remove_FailureLeavesToolInstalled(t *testing.T) {
 	t.Parallel()
 	wantErr := errors.New("simulated remove failure")
 	fake := NewFakeCmdRunner().Seed("mypy", "1.8.0").WithUninstallError("mypy", wantErr)
-	p := New(fake)
+	p := New(nil, fake)
 
 	gotErr := p.Remove(context.Background(), "mypy")
 	if !errors.Is(gotErr, wantErr) {
@@ -107,7 +107,7 @@ func TestU6_Probe_OKAndFailedClassification(t *testing.T) {
 	fake := NewFakeCmdRunner().
 		Seed("ruff", "0.3.0").
 		Seed("black", "24.2.0")
-	p := New(fake)
+	p := New(nil, fake)
 
 	sf := state.New("uv", "test-machine")
 	sf.SetResource("ruff", state.StateOK)
@@ -140,7 +140,7 @@ func TestU6_Probe_OKAndFailedClassification(t *testing.T) {
 // U7 — Probe skips StateRemoved entries.
 func TestU7_Probe_SkipsRemovedResources(t *testing.T) {
 	t.Parallel()
-	p := New(NewFakeCmdRunner())
+	p := New(nil, NewFakeCmdRunner())
 	sf := state.New("uv", "test-machine")
 	sf.SetResource("removed-tool", state.StateRemoved)
 
@@ -158,7 +158,7 @@ func TestU8_Probe_PropagatesRunnerError(t *testing.T) {
 	t.Parallel()
 	wantErr := errors.New("uv not initialized")
 	fake := &erroringFake{listErr: wantErr}
-	p := New(fake)
+	p := New(nil, fake)
 
 	sf := state.New("uv", "test-machine")
 	sf.SetResource("anything", state.StateOK)
@@ -173,7 +173,7 @@ func TestU9_Bootstrap_DelegatesLookPath(t *testing.T) {
 
 	t.Run("present", func(t *testing.T) {
 		t.Parallel()
-		p := New(NewFakeCmdRunner())
+		p := New(nil, NewFakeCmdRunner())
 		if err := p.Bootstrap(context.Background()); err != nil {
 			t.Errorf("Bootstrap error = %v, want nil", err)
 		}
@@ -182,7 +182,7 @@ func TestU9_Bootstrap_DelegatesLookPath(t *testing.T) {
 	t.Run("missing", func(t *testing.T) {
 		t.Parallel()
 		want := errors.New("uv not on PATH")
-		p := New(NewFakeCmdRunner().WithLookPathError(want))
+		p := New(nil, NewFakeCmdRunner().WithLookPathError(want))
 		if err := p.Bootstrap(context.Background()); !errors.Is(err, want) {
 			t.Errorf("Bootstrap error = %v, want %v", err, want)
 		}
