@@ -150,6 +150,34 @@ tests landed; no integration-test variants (cycle-5 precedent —
 unit tests cover the orchestration branch-by-branch). All gates
 green: `task check` passed. Main spec sync applied manually.
 
+**Post-ship self-reviews surfaced two atomic fixes** (same pattern as
+cycles 4+5 NIT resolution):
+
+- `fix(providers)` commit `00c4a2a` — bash-host coupling bug.
+  pnpm/duti/mas's first-draft `DependsOn` coupled DAG ordering with
+  script host in a single entry (`{Provider: "npm|brew", Script: …}`),
+  but `provider.RunBootstrap` type-asserts the `Script` entry's host
+  to `BashScriptRunner`, which only `bash` implements. A real
+  `hams apply --bootstrap` on fresh Linux with missing pnpm would
+  fail mid-RunBootstrap with "bootstrap host 'npm' does not implement
+  BashScriptRunner." Fix: split into two single-purpose entries
+  (DAG-only + bash-hosted Script). Added framework-level invariant
+  test `TestBuiltinManifestScriptHostsAreBash` catching any future
+  mistargeted host. Spec gained the matching "DependsOn Script
+  entries must target the bash provider" requirement.
+- `fix(test)` commit `9dfa51c` — invariant test platform coverage.
+  First-draft invariant iterated `registry.All()`, but
+  `registry.Register` silently drops darwin-only providers
+  (duti/mas/defaults) on Linux CI. A future mistargeted script on
+  any of them would have escaped detection. Fix: instantiate all
+  15 builtins directly in the test, bypassing the platform filter.
+
+Final critical-architect sweep post-fixes: "No ship-blockers found."
+End-to-end trace verified (pnpm Bootstrap → consent → RunBootstrap
+→ bash.RunScript → retry → nil), invariant catches the revert
+scenario, skip-list providers untouched, DAG handles the two-edge
+design correctly. `task check` green.
+
 Archived earlier on 2026-04-16:
 `homebrew-bootstrap-opt-in` — critical-architect review of the 4
 archived cycles surfaced a real spec/code divergence in the Homebrew
