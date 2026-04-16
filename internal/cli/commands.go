@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/urfave/cli/v3"
+	"golang.org/x/term"
 
 	"github.com/zthxxx/hams/internal/config"
 	hamserr "github.com/zthxxx/hams/internal/error"
@@ -410,6 +411,26 @@ func storeCmd() *cli.Command {
 							"no store directory configured",
 							"Set store_path first: hams config set store_path <path>",
 						)
+					}
+
+					// Prompt for profile tag when missing AND stdin is a
+					// TTY, per schema-design spec §"Initialize a new store".
+					// Non-TTY (CI, tests) falls back to the default so init
+					// stays scriptable. Persist the answer to the global
+					// config so subsequent `hams apply` doesn't re-prompt.
+					if cfg.ProfileTag == "" && term.IsTerminal(int(os.Stdin.Fd())) { //nolint:gosec // Fd() returns uintptr that fits in int on all supported platforms
+						tag, mid, promptErr := promptProfileInit()
+						if promptErr != nil {
+							return fmt.Errorf("profile init: %w", promptErr)
+						}
+						cfg.ProfileTag = tag
+						cfg.MachineID = mid
+						if writeErr := config.WriteConfigKey(paths, "", "profile_tag", tag); writeErr != nil {
+							slog.Warn("failed to persist profile_tag", "error", writeErr)
+						}
+						if writeErr := config.WriteConfigKey(paths, "", "machine_id", mid); writeErr != nil {
+							slog.Warn("failed to persist machine_id", "error", writeErr)
+						}
 					}
 
 					// Create profile directory.
