@@ -134,17 +134,23 @@ This project uses [OpenSpec](https://openspec.dev) for spec-driven development.
 
 ## Current Task
 
-**Filed for next session:** `extend-bootstrap-to-chainable-providers`
-(proposal + design + specs + tasks drafted at
-`openspec/changes/extend-bootstrap-to-chainable-providers/`).
-Critical-architect + power-user Agent-team debate landed on Option
-C narrow extension — 4 providers (pnpm, duti, mas, ansible) adopt
-cycle-5's `BootstrapRequiredError` pattern; 7 skipped with recorded
-reasoning. Architect explicitly recommended: file and stop reactive
-cycling, implement in a fresh session with a clear head. Validated
-clean via `openspec validate --strict`.
+No active change. Archived 2026-04-16 (cycle 6):
+`extend-bootstrap-to-chainable-providers` — applied cycle-5's
+`BootstrapRequiredError` pattern to 4 providers (pnpm, duti, mas,
+ansible) per the architect+user Agent-team debate synthesis (Option
+C narrow extension). Skipped 7 with recorded reasoning:
+npm/cargo/goinstall/uv (language runtime — user-owned decision),
+vscodeext (GUI app), apt/defaults (platform-gated), git (pre-installed
+by the hams curl-installer). pnpm script is `npm install -g pnpm`;
+duti/mas are `brew install …`; ansible is `pipx install --include-deps
+ansible` (pipx over pip due to PEP 668). Each provider gets a
+`{provider}BinaryLookup` DI seam + `{provider}InstallScript` const
+so tests can lock the Script-matches-manifest invariant. 14 new unit
+tests landed; no integration-test variants (cycle-5 precedent —
+unit tests cover the orchestration branch-by-branch). All gates
+green: `task check` passed. Main spec sync applied manually.
 
-Archived 2026-04-16:
+Archived earlier on 2026-04-16:
 `homebrew-bootstrap-opt-in` — critical-architect review of the 4
 archived cycles surfaced a real spec/code divergence in the Homebrew
 provider: `builtin-providers/spec.md:375-378` said hams SHALL

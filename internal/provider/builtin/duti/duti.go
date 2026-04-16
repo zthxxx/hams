@@ -20,6 +20,14 @@ type Provider struct{}
 // New creates a new duti provider.
 func New() *Provider { return &Provider{} }
 
+// dutiInstallScript is the consent-gated install command. brew is the
+// host (already on PATH if the user's fresh-Mac chain went brew →
+// duti). Extracted so unit tests can assert Script-matches-manifest.
+const dutiInstallScript = "brew install duti"
+
+// dutiBinaryLookup is the PATH-check seam Bootstrap uses.
+var dutiBinaryLookup = exec.LookPath
+
 // Manifest returns the duti provider metadata.
 func (p *Provider) Manifest() provider.Manifest {
 	return provider.Manifest{
@@ -27,16 +35,25 @@ func (p *Provider) Manifest() provider.Manifest {
 		DisplayName:   "duti",
 		Platforms:     []provider.Platform{provider.PlatformDarwin},
 		ResourceClass: provider.ClassKVConfig,
-		FilePrefix:    "duti",
+		DependsOn: []provider.DependOn{
+			{Provider: "brew", Script: dutiInstallScript, Platform: provider.PlatformDarwin},
+		},
+		FilePrefix: "duti",
 	}
 }
 
-// Bootstrap checks if duti is available.
+// Bootstrap reports whether duti is installed. A missing binary is
+// signaled via provider.BootstrapRequiredError so the CLI consent
+// flow can surface the install script + --bootstrap remedy.
 func (p *Provider) Bootstrap(_ context.Context) error {
-	if _, err := exec.LookPath("duti"); err != nil {
-		return fmt.Errorf("duti not found in PATH (macOS only; install via: brew install duti)")
+	if _, err := dutiBinaryLookup("duti"); err == nil {
+		return nil
 	}
-	return nil
+	return &provider.BootstrapRequiredError{
+		Provider: "duti",
+		Binary:   "duti",
+		Script:   dutiInstallScript,
+	}
 }
 
 // Probe checks the current default app for each tracked file extension.

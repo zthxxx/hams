@@ -24,6 +24,17 @@ type Provider struct{}
 // New creates a new pnpm provider.
 func New() *Provider { return &Provider{} }
 
+// pnpmInstallScript is the consent-gated install command. npm is the
+// host (already on PATH by the time this runs, since pnpm depends on
+// npm in the DAG). Extracted so unit tests can assert Script-matches-
+// manifest invariants without duplicating the string.
+const pnpmInstallScript = "npm install -g pnpm"
+
+// pnpmBinaryLookup is the PATH-check seam Bootstrap uses. Swapped in
+// tests to simulate "pnpm missing" / "pnpm present" without mutating
+// the host's real PATH. Production value is exec.LookPath.
+var pnpmBinaryLookup = exec.LookPath
+
 // Manifest returns the pnpm provider metadata.
 func (p *Provider) Manifest() provider.Manifest {
 	return provider.Manifest{
@@ -32,18 +43,26 @@ func (p *Provider) Manifest() provider.Manifest {
 		Platforms:     []provider.Platform{provider.PlatformAll},
 		ResourceClass: provider.ClassPackage,
 		DependsOn: []provider.DependOn{
-			{Provider: "npm", Package: "pnpm"},
+			{Provider: "npm", Package: "pnpm", Script: pnpmInstallScript},
 		},
 		FilePrefix: "pnpm",
 	}
 }
 
-// Bootstrap checks if pnpm is available.
+// Bootstrap reports whether pnpm is installed. A missing binary is
+// signaled via provider.BootstrapRequiredError (which wraps
+// provider.ErrBootstrapRequired); the CLI orchestrator decides whether
+// to run the manifest-declared install script based on --bootstrap /
+// TTY prompt. Bootstrap itself NEVER executes a network install.
 func (p *Provider) Bootstrap(_ context.Context) error {
-	if _, err := exec.LookPath("pnpm"); err != nil {
-		return fmt.Errorf("pnpm not found in PATH; install via: npm install -g pnpm")
+	if _, err := pnpmBinaryLookup("pnpm"); err == nil {
+		return nil
 	}
-	return nil
+	return &provider.BootstrapRequiredError{
+		Provider: "pnpm",
+		Binary:   "pnpm",
+		Script:   pnpmInstallScript,
+	}
 }
 
 // Probe queries pnpm for globally installed packages.
