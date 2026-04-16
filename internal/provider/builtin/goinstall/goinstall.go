@@ -99,7 +99,7 @@ func (p *Provider) List(_ context.Context, desired *hamsfile.File, sf *state.Fil
 }
 
 // HandleCommand processes CLI subcommands for goinstall.
-func (p *Provider) HandleCommand(_ context.Context, args []string, _ map[string]string, flags *provider.GlobalFlags) error {
+func (p *Provider) HandleCommand(ctx context.Context, args []string, _ map[string]string, flags *provider.GlobalFlags) error {
 	verb, remaining := provider.ParseVerb(args)
 
 	switch verb {
@@ -119,9 +119,9 @@ func (p *Provider) HandleCommand(_ context.Context, args []string, _ map[string]
 			fmt.Printf("[dry-run] Would install: go install %s\n", strings.Join(pkgs, " "))
 			return nil
 		}
-		return provider.WrapExecPassthrough(context.Background(), "go", append([]string{"install"}, pkgs...), nil)
+		return provider.WrapExecPassthrough(ctx, "go", append([]string{"install"}, pkgs...), nil)
 	default:
-		return provider.WrapExecPassthrough(context.Background(), "go", args, nil)
+		return provider.WrapExecPassthrough(ctx, "go", args, nil)
 	}
 }
 

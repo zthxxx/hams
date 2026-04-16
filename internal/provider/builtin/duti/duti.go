@@ -131,7 +131,7 @@ func (p *Provider) List(_ context.Context, desired *hamsfile.File, sf *state.Fil
 }
 
 // HandleCommand processes CLI subcommands for duti.
-func (p *Provider) HandleCommand(_ context.Context, args []string, _ map[string]string, flags *provider.GlobalFlags) error {
+func (p *Provider) HandleCommand(ctx context.Context, args []string, _ map[string]string, flags *provider.GlobalFlags) error {
 	if len(args) == 0 {
 		return hamserr.NewUserError(hamserr.ExitUsageError,
 			"duti requires arguments",
@@ -145,7 +145,7 @@ func (p *Provider) HandleCommand(_ context.Context, args []string, _ map[string]
 		return nil
 	}
 
-	cmd := exec.CommandContext(context.Background(), "duti", args...) //nolint:gosec // duti args from CLI input
+	cmd := exec.CommandContext(ctx, "duti", args...) //nolint:gosec // duti args from CLI input
 	return cmd.Run()
 }
 

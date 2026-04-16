@@ -101,7 +101,7 @@ func (p *ConfigProvider) List(_ context.Context, desired *hamsfile.File, sf *sta
 }
 
 // HandleCommand processes CLI subcommands for git config.
-func (p *ConfigProvider) HandleCommand(_ context.Context, args []string, _ map[string]string, flags *provider.GlobalFlags) error {
+func (p *ConfigProvider) HandleCommand(ctx context.Context, args []string, _ map[string]string, flags *provider.GlobalFlags) error {
 	if len(args) < 2 {
 		return hamserr.NewUserError(hamserr.ExitUsageError,
 			"git-config requires key and value",
@@ -118,7 +118,7 @@ func (p *ConfigProvider) HandleCommand(_ context.Context, args []string, _ map[s
 		return nil
 	}
 
-	cmd := exec.CommandContext(context.Background(), "git", "config", "--global", key, value) //nolint:gosec // git config args from CLI input
+	cmd := exec.CommandContext(ctx, "git", "config", "--global", key, value) //nolint:gosec // git config args from CLI input
 	return cmd.Run()
 }
 

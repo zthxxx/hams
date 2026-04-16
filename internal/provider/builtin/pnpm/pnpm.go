@@ -139,7 +139,7 @@ func (p *Provider) List(_ context.Context, desired *hamsfile.File, sf *state.Fil
 }
 
 // HandleCommand processes CLI subcommands for pnpm.
-func (p *Provider) HandleCommand(_ context.Context, args []string, _ map[string]string, flags *provider.GlobalFlags) error {
+func (p *Provider) HandleCommand(ctx context.Context, args []string, _ map[string]string, flags *provider.GlobalFlags) error {
 	verb, remaining := provider.ParseVerb(args)
 
 	switch verb {
@@ -155,15 +155,15 @@ func (p *Provider) HandleCommand(_ context.Context, args []string, _ map[string]
 			fmt.Printf("[dry-run] Would install: pnpm add -g %s\n", strings.Join(remaining, " "))
 			return nil
 		}
-		return provider.WrapExecPassthrough(context.Background(), "pnpm", append([]string{"add"}, remaining...), AutoInjectFlags)
+		return provider.WrapExecPassthrough(ctx, "pnpm", append([]string{"add"}, remaining...), AutoInjectFlags)
 	case "remove", "rm", "uninstall":
 		if flags.DryRun {
 			fmt.Printf("[dry-run] Would remove: pnpm remove -g %s\n", strings.Join(remaining, " "))
 			return nil
 		}
-		return provider.WrapExecPassthrough(context.Background(), "pnpm", append([]string{"remove"}, remaining...), AutoInjectFlags)
+		return provider.WrapExecPassthrough(ctx, "pnpm", append([]string{"remove"}, remaining...), AutoInjectFlags)
 	default:
-		return provider.WrapExecPassthrough(context.Background(), "pnpm", args, nil)
+		return provider.WrapExecPassthrough(ctx, "pnpm", args, nil)
 	}
 }
 

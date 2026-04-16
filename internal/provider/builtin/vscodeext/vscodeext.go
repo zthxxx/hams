@@ -103,7 +103,7 @@ func (p *Provider) List(_ context.Context, desired *hamsfile.File, sf *state.Fil
 }
 
 // HandleCommand processes CLI subcommands for code-ext.
-func (p *Provider) HandleCommand(_ context.Context, args []string, _ map[string]string, flags *provider.GlobalFlags) error {
+func (p *Provider) HandleCommand(ctx context.Context, args []string, _ map[string]string, flags *provider.GlobalFlags) error {
 	verb, remaining := provider.ParseVerb(args)
 
 	switch verb {
@@ -123,7 +123,7 @@ func (p *Provider) HandleCommand(_ context.Context, args []string, _ map[string]
 		for _, ext := range remaining {
 			installArgs = append(installArgs, "--install-extension", ext)
 		}
-		return provider.WrapExecPassthrough(context.Background(), "code", installArgs, nil)
+		return provider.WrapExecPassthrough(ctx, "code", installArgs, nil)
 	case "remove", "uninstall", "rm":
 		if flags.DryRun {
 			fmt.Printf("[dry-run] Would remove: code --uninstall-extension %s\n", strings.Join(remaining, " "))
@@ -133,9 +133,9 @@ func (p *Provider) HandleCommand(_ context.Context, args []string, _ map[string]
 		for _, ext := range remaining {
 			uninstallArgs = append(uninstallArgs, "--uninstall-extension", ext)
 		}
-		return provider.WrapExecPassthrough(context.Background(), "code", uninstallArgs, nil)
+		return provider.WrapExecPassthrough(ctx, "code", uninstallArgs, nil)
 	default:
-		return provider.WrapExecPassthrough(context.Background(), "code", args, nil)
+		return provider.WrapExecPassthrough(ctx, "code", args, nil)
 	}
 }
 

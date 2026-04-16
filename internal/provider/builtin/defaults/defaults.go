@@ -110,7 +110,7 @@ func (p *Provider) List(_ context.Context, desired *hamsfile.File, sf *state.Fil
 }
 
 // HandleCommand processes CLI subcommands for defaults.
-func (p *Provider) HandleCommand(_ context.Context, args []string, hamsFlags map[string]string, flags *provider.GlobalFlags) error {
+func (p *Provider) HandleCommand(ctx context.Context, args []string, hamsFlags map[string]string, flags *provider.GlobalFlags) error {
 	if len(args) < 3 {
 		return hamserr.NewUserError(hamserr.ExitUsageError,
 			"defaults requires: write <domain> <key> -<type> <value>",
@@ -123,7 +123,7 @@ func (p *Provider) HandleCommand(_ context.Context, args []string, hamsFlags map
 		return nil
 	}
 
-	cmd := exec.CommandContext(context.Background(), cliName, args...) //nolint:gosec // defaults args from CLI input
+	cmd := exec.CommandContext(ctx, cliName, args...) //nolint:gosec // defaults args from CLI input
 	if err := cmd.Run(); err != nil {
 		return err
 	}
