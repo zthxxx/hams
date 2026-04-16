@@ -130,11 +130,34 @@ func Load(paths Paths, storePath string) (*Config, error) {
 		cfg.StorePath = storePath
 	}
 
+	// Expand `~` in store_path so config entries like
+	// `store_path: ~/Project/hams-store` work the same way users
+	// type them on the CLI. Without this, the literal `~` becomes
+	// a path component that never matches the real home directory,
+	// silently producing "no providers match" on every run.
+	if expanded, expErr := expandHome(cfg.StorePath); expErr == nil {
+		cfg.StorePath = expanded
+	}
+
 	if err := cfg.Validate(); err != nil {
 		return nil, err
 	}
 
 	return cfg, nil
+}
+
+// expandHome expands a leading `~/` to the current user's home
+// directory. Returns the input unchanged when there's no tilde prefix
+// or when home resolution fails.
+func expandHome(path string) (string, error) {
+	if !strings.HasPrefix(path, "~/") {
+		return path, nil
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return path, err
+	}
+	return filepath.Join(home, path[2:]), nil
 }
 
 // ProfileDir returns the absolute path to the active profile directory.
