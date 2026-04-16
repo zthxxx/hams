@@ -187,6 +187,10 @@ Spec corrections:
 
 Total commits in cycle 2: 15+ (still growing — iteration 3 adds hooks+OTel defer).
 
+### Cycle 118 — self-upgrade dry-run branch regression gate
+
+- [x] `runHomebrewUpgrade`'s dry-run branch had zero tests — a future refactor dropping the branch would silently run `brew upgrade` on a user who only asked for a preview. Same "dry-run has side effects" anti-pattern that cycles 39, 41, 84, 86 fixed in apply. Added `TestRunHomebrewUpgrade_DryRun`: asserts dry-run returns nil, stdout contains `"[dry-run] Would run: brew upgrade"`, AND stdout does NOT contain the live-run text "Detected Homebrew install" — if the dry-run branch accidentally falls through to the real exec path, the assertion fails. cli coverage: 64.2% → 64.5%. (commit `41c5ddb`)
+
 ### Cycle 117 — `hams list` text output shows Value for KV-Config
 
 - [x] Sister fix to cycle 116 (which covered the JSON path). `hams list` text output was `<id>  <status> <version>` — for KV-Config providers (defaults/duti/git-config), Version is always empty, so a user who just ran `hams git-config set user.name zthxxx` then `hams list` saw `user.name=zthxxx  ok` with NO way to see the actual stored value without reading the state YAML. Fix: branch on which field is populated — Package rows keep the `<version>` suffix; KV-Config rows emit an `= <value>` suffix. The equals prefix is distinctive so the two classes visually separate in mixed output. Regression test seeds a git-config resource with value=zthxxx and asserts `= zthxxx` in the text output. cli coverage: 63.3% → 64.2%. (commit `bb7a90f`)
