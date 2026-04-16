@@ -986,11 +986,20 @@ func listCmd(registry *provider.Registry) *cli.Command {
 					for _, id := range filteredIDs {
 						r := sf.Resources[id]
 						status := string(r.State)
-						ver := ""
-						if r.Version != "" {
-							ver = " " + r.Version
+						// Show version OR value (mutually exclusive by
+						// resource class — Package sets Version, KV-Config
+						// sets Value). Without this, `hams list` on a
+						// git-config store showed `user.name=zthxxx ok`
+						// with no way to see the actual value without
+						// reading the state YAML.
+						extra := ""
+						switch {
+						case r.Version != "":
+							extra = " " + r.Version
+						case r.Value != "":
+							extra = " = " + r.Value
 						}
-						fmt.Printf("  %-30s %s%s\n", id, status, ver)
+						fmt.Printf("  %-30s %s%s\n", id, status, extra)
 					}
 					printedAny = true
 				}

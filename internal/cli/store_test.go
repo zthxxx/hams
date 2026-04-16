@@ -153,6 +153,48 @@ resources:
 	}
 }
 
+// TestList_TextOutput_ShowsValueForKVConfig locks in cycle 117:
+// text output of `hams list` displays the stored Value for
+// KV-Config resources using ` = <value>` suffix, not just the
+// bare `<id> <status>` that previously hid the actual config
+// value. Package-class rows continue to use ` <version>`.
+func TestList_TextOutput_ShowsValueForKVConfig(t *testing.T) {
+	storeDir, _, stateDir, _ := setupApplyTestEnv(t, []string{"git-config"})
+
+	statePath := filepath.Join(stateDir, "git-config.state.yaml")
+	writeApplyTestFile(t, statePath, `provider: git-config
+machine_id: test-machine
+resources:
+  user.name=zthxxx:
+    state: ok
+    value: zthxxx
+`)
+
+	registry := provider.NewRegistry()
+	p := &applyTestProvider{
+		manifest: provider.Manifest{
+			Name: "git-config", DisplayName: "git config", FilePrefix: "git-config",
+			Platforms: []provider.Platform{provider.PlatformAll},
+		},
+	}
+	if err := registry.Register(p); err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+
+	got := captureStdout(t, func() {
+		app := NewApp(registry, sudo.NoopAcquirer{})
+		if err := app.Run(context.Background(),
+			[]string{"hams", "--store", storeDir, "list"}); err != nil {
+			t.Fatalf("list: %v", err)
+		}
+	})
+
+	// Value MUST appear after the status, using the ` = <value>` format.
+	if !strings.Contains(got, "= zthxxx") {
+		t.Errorf("text output missing value `= zthxxx`; got:\n%s", got)
+	}
+}
+
 // TestList_JSON_IncludesValueAndLastError locks in the cycle-116
 // enhancement: `hams list --json` surfaces the Resource.Value
 // (relevant for KV-Config providers: defaults/duti/git-config) and
