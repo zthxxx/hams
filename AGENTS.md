@@ -187,6 +187,10 @@ Spec corrections:
 
 Total commits in cycle 2: 15+ (still growing — iteration 3 adds hooks+OTel defer).
 
+### Cycle 44 — Regression test for cycle 43 state-corruption fix
+
+- [x] `TestApply_CorruptedStateFile_SkipsProviderNotSilentReset` asserts three invariants: (1) runApply returns `ExitPartialFailure`, not nil; (2) zero apply actions ran against the synthesized-empty state; (3) the corrupt state file is preserved verbatim on disk so users can inspect it. (commit `4c888ee`)
+
 ### Cycle 43 — Silent state-reset on corrupted state file (CRITICAL DATA)
 
 - [x] **Real data-integrity bug**: `state.Load` returns a wrapped error for any read/parse failure. Both `apply.go` and `probe.go` swallowed all errors and substituted `state.New()` — a corrupted state file would silently reset to empty, losing drift tracking for every tracked resource and potentially re-triggering installs. Distinguished `errors.Is(err, fs.ErrNotExist)` (first-run, OK) from other errors (corruption, permission). Corrupt state now skips the provider with a clear ERROR log and surfaces via the cycle 39/40 ExitPartialFailure flow. (commit `5fac677`)
