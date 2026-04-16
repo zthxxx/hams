@@ -442,6 +442,15 @@ func storeCmd() *cli.Command {
 			)
 		}
 
+		// If the configured store_path points at a non-existent
+		// directory, distinguish that from "store exists but profile
+		// subdir missing" — the latter is normal for a fresh store,
+		// the former means the user's config is pointing at nothing.
+		storeDirExists := true
+		if info, statErr := os.Stat(storePath); statErr != nil || !info.IsDir() {
+			storeDirExists = false
+		}
+
 		// Per cli-architecture spec §"Store command", status SHALL
 		// display store path, active profile tag, machine-id, and any
 		// uncommitted changes to Hamsfiles.
@@ -483,20 +492,28 @@ func storeCmd() *cli.Command {
 
 		if flags.JSON {
 			data := map[string]any{
-				"store_path":  storePath,
-				"profile_tag": cfg.ProfileTag,
-				"machine_id":  cfg.MachineID,
-				"profile_dir": cfg.ProfileDir(),
-				"state_dir":   cfg.StateDir(),
-				"hamsfiles":   hamsfiles,
-				"git_status":  gitStatus,
-				"git_changes": gitChanges,
+				"store_path":        storePath,
+				"store_path_exists": storeDirExists,
+				"profile_tag":       cfg.ProfileTag,
+				"machine_id":        cfg.MachineID,
+				"profile_dir":       cfg.ProfileDir(),
+				"state_dir":         cfg.StateDir(),
+				"hamsfiles":         hamsfiles,
+				"git_status":        gitStatus,
+				"git_changes":       gitChanges,
 			}
 			out, mErr := json.MarshalIndent(data, "", "  ")
 			if mErr != nil {
 				return fmt.Errorf("marshaling store status JSON: %w", mErr)
 			}
 			fmt.Println(string(out))
+			return nil
+		}
+
+		if !storeDirExists {
+			fmt.Printf("Store path:    %s  (does NOT exist)\n", logging.TildePath(storePath))
+			fmt.Println("  The configured store_path points at a missing directory.")
+			fmt.Println("  Run 'hams store init' to create it, or fix store_path in hams.config.yaml.")
 			return nil
 		}
 
