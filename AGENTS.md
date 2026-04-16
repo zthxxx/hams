@@ -187,6 +187,10 @@ Spec corrections:
 
 Total commits in cycle 2: 15+ (still growing — iteration 3 adds hooks+OTel defer).
 
+### Cycle 52 — `brew untap` for tap removals (was silently broken)
+
+- [x] **Real UX bug**: Homebrew's `Remove` always called `brew uninstall <id>`. For tap-format IDs (`user/repo`), brew rejects that with "No installed keg or cask" — so a user who deleted `homebrew/cask-fonts` from their hamsfile saw the removal marked as failed forever; the tap stayed registered. Added `Untap` to `CmdRunner` (real + fake) and routed Remove through it when `isTapFormat` is true. Tests U11/U12 lock both branches. (commit `5fab924`)
+
 ### Cycle 51 — Panic recovery in apply loop (data-integrity)
 
 - [x] **Real data-integrity issue** (from agent-assisted audit): if a provider's Apply method panics mid-loop (buggy provider, OOM in runner), in-memory state updates for successful actions were lost because `sf.Save` hadn't run. Next apply would re-attempt already-installed resources. Wrapped each provider's Execute+Save in an IIFE with `defer recover()`: log panic context → best-effort `sf.Save` → re-throw panic. Regression test simulates a provider succeeding on action 1 then panicking on action 2, asserts state contains action 1. (commit `27bbb35`)
