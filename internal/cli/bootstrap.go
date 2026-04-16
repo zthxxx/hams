@@ -134,26 +134,31 @@ func cloneRemoteRepo(repo string, paths config.Paths) (string, error) {
 		Progress: os.Stdout,
 	})
 	if err != nil {
-		// go-git reports missing public repos as "authentication required:
-		// Repository not found" which is confusing (auth is a red
-		// herring — the repo just doesn't exist or is private to the
-		// caller). Detect that specific string and re-phrase to match
-		// reality; otherwise propagate verbatim.
-		errMsg := err.Error()
-		if strings.Contains(errMsg, "Repository not found") {
-			return "", hamserr.NewUserError(hamserr.ExitGeneralError,
-				fmt.Sprintf("repository %s not found or not accessible", repoURL),
-				"Verify the URL is correct (case-sensitive on GitHub)",
-				"For private repos: configure a git credential helper or use SSH URL",
-				"For local paths: use an absolute path starting with / or ~/",
-			)
-		}
-		return "", fmt.Errorf("cloning %s: %w", repoURL, err)
+		return "", transformCloneError(repoURL, err)
 	}
 
 	fmt.Printf("Download Hams Store success\n")
 	fmt.Printf("Profile Store is %s now\n\n", logging.TildePath(clonePath))
 	return clonePath, nil
+}
+
+// transformCloneError re-phrases go-git error messages that would
+// confuse users. Currently catches the "Repository not found"
+// signature (which go-git wraps as "authentication required: ...")
+// and returns a UserFacingError with actionable suggestions. Other
+// errors propagate verbatim with a short "cloning <url>:" prefix.
+// Extracted from cloneRemoteRepo so the error-transform branch is
+// directly unit-testable without network.
+func transformCloneError(repoURL string, err error) error {
+	if strings.Contains(err.Error(), "Repository not found") {
+		return hamserr.NewUserError(hamserr.ExitGeneralError,
+			fmt.Sprintf("repository %s not found or not accessible", repoURL),
+			"Verify the URL is correct (case-sensitive on GitHub)",
+			"For private repos: configure a git credential helper or use SSH URL",
+			"For local paths: use an absolute path starting with / or ~/",
+		)
+	}
+	return fmt.Errorf("cloning %s: %w", repoURL, err)
 }
 
 func resolveClonePath(repo string, paths config.Paths) string {

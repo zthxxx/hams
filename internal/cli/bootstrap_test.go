@@ -2,12 +2,14 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/zthxxx/hams/internal/config"
+	hamserr "github.com/zthxxx/hams/internal/error"
 	"github.com/zthxxx/hams/internal/provider"
 	"github.com/zthxxx/hams/internal/sudo"
 )
@@ -124,6 +126,58 @@ func TestBootstrapFromRepo_LocalPathPriority(t *testing.T) {
 	// Should resolve to local path, NOT try to clone from GitHub.
 	if storePath != localDir {
 		t.Errorf("storePath = %q, want %q", storePath, localDir)
+	}
+}
+
+// TestTransformCloneError_RepositoryNotFound locks in cycle-72:
+// go-git's "authentication required: Repository not found" error
+// is rewritten as a UserFacingError that doesn't mislead users
+// into chasing credential issues when the repo simply doesn't
+// exist.
+func TestTransformCloneError_RepositoryNotFound(t *testing.T) {
+	t.Parallel()
+	goGitErr := errors.New("authentication required: Repository not found")
+	got := transformCloneError("https://github.com/nope/nope", goGitErr)
+
+	var ufe *hamserr.UserFacingError
+	if !errors.As(got, &ufe) {
+		t.Fatalf("expected *UserFacingError, got %T: %v", got, got)
+	}
+	if ufe.Code != hamserr.ExitGeneralError {
+		t.Errorf("Code = %d, want ExitGeneralError", ufe.Code)
+	}
+	// Message MUST NOT mention authentication (that's the whole point).
+	if strings.Contains(ufe.Message, "authentication") {
+		t.Errorf("message leaks 'authentication' confusion: %q", ufe.Message)
+	}
+	if !strings.Contains(ufe.Message, "not found or not accessible") {
+		t.Errorf("message should explain the real cause; got %q", ufe.Message)
+	}
+	if len(ufe.Suggestions) != 3 {
+		t.Errorf("want 3 suggestions (URL / private-repo / local-path); got %d: %v",
+			len(ufe.Suggestions), ufe.Suggestions)
+	}
+}
+
+// TestTransformCloneError_OtherErrorsPassthrough asserts that
+// non-"Repository not found" errors keep the library's original
+// message prefixed with "cloning <url>:" rather than being wrapped
+// in a misleading UserFacingError. Network timeouts, invalid refs,
+// permission denied, etc.
+func TestTransformCloneError_OtherErrorsPassthrough(t *testing.T) {
+	t.Parallel()
+	netErr := errors.New("dial tcp: connection refused")
+	got := transformCloneError("https://example.test/foo", netErr)
+
+	var ufe *hamserr.UserFacingError
+	if errors.As(got, &ufe) {
+		t.Errorf("network errors should NOT be wrapped as UserFacingError; got %T", got)
+	}
+	if !strings.Contains(got.Error(), "connection refused") {
+		t.Errorf("underlying error should propagate; got %q", got.Error())
+	}
+	if !strings.Contains(got.Error(), "https://example.test/foo") {
+		t.Errorf("wrapped message should include URL for context; got %q", got.Error())
 	}
 }
 
