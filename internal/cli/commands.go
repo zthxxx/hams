@@ -999,6 +999,14 @@ func listCmd(registry *provider.Registry) *cli.Command {
 						case r.Value != "":
 							extra = " = " + r.Value
 						}
+						// Surface LastError for failed / hook-failed rows
+						// so a user debugging a broken apply doesn't have
+						// to run `hams list --json` or read state YAML
+						// to see WHY something failed. The (error: ...)
+						// suffix is distinctive and scriptable by sed/awk.
+						if r.LastError != "" {
+							extra += fmt.Sprintf(" (error: %s)", r.LastError)
+						}
 						fmt.Printf("  %-30s %s%s\n", id, status, extra)
 					}
 					printedAny = true

@@ -153,6 +153,45 @@ resources:
 	}
 }
 
+// TestList_TextOutput_ShowsLastErrorForFailed locks in cycle 119:
+// failed / hook-failed resources emit the LastError text inline so
+// debugging doesn't require `--json` or reading state YAML.
+func TestList_TextOutput_ShowsLastErrorForFailed(t *testing.T) {
+	storeDir, _, stateDir, _ := setupApplyTestEnv(t, []string{"apt"})
+
+	statePath := filepath.Join(stateDir, "apt.state.yaml")
+	writeApplyTestFile(t, statePath, `provider: apt
+machine_id: test-machine
+resources:
+  htop:
+    state: failed
+    last_error: "package not found in repository"
+`)
+
+	registry := provider.NewRegistry()
+	p := &applyTestProvider{
+		manifest: provider.Manifest{
+			Name: "apt", DisplayName: "apt", FilePrefix: "apt",
+			Platforms: []provider.Platform{provider.PlatformAll},
+		},
+	}
+	if err := registry.Register(p); err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+
+	got := captureStdout(t, func() {
+		app := NewApp(registry, sudo.NoopAcquirer{})
+		if err := app.Run(context.Background(),
+			[]string{"hams", "--store", storeDir, "list"}); err != nil {
+			t.Fatalf("list: %v", err)
+		}
+	})
+
+	if !strings.Contains(got, "(error: package not found in repository)") {
+		t.Errorf("text output missing last_error suffix; got:\n%s", got)
+	}
+}
+
 // TestList_TextOutput_ShowsValueForKVConfig locks in cycle 117:
 // text output of `hams list` displays the stored Value for
 // KV-Config resources using ` = <value>` suffix, not just the
