@@ -192,8 +192,9 @@ func runRefresh(ctx context.Context, flags *provider.GlobalFlags, registry *prov
 	// misleading "1 providers probed".
 	probed := len(probeResults)
 	planned := len(providers)
+	providersNoun := pluralize(planned, "provider", "providers")
 	if probed == planned && len(saveFailures) == 0 {
-		fmt.Printf("Refresh complete: %d providers probed\n", planned)
+		fmt.Printf("Refresh complete: %d %s probed\n", planned, providersNoun)
 		return nil
 	}
 	// Partial failure: some providers couldn't probe or their state
@@ -202,11 +203,11 @@ func runRefresh(ctx context.Context, flags *provider.GlobalFlags, registry *prov
 	// despite the log line warning of errors — a silent-exit-0 UX
 	// bug matching the apply --dry-run drift fixed in cycle 39.
 	if probed == planned {
-		fmt.Printf("Refresh complete: %d providers probed, but %d state file(s) failed to save: %s\n",
-			planned, len(saveFailures), strings.Join(saveFailures, ", "))
+		fmt.Printf("Refresh complete: %d %s probed, but %d state file(s) failed to save: %s\n",
+			planned, providersNoun, len(saveFailures), strings.Join(saveFailures, ", "))
 	} else {
-		fmt.Printf("Refresh complete: %d/%d providers probed (%d probe error(s); see log for details)\n",
-			probed, planned, planned-probed)
+		fmt.Printf("Refresh complete: %d/%d %s probed (%d probe error(s); see log for details)\n",
+			probed, planned, providersNoun, planned-probed)
 	}
 	if len(saveFailures) > 0 {
 		fmt.Printf("Warning: %d state save failure(s): %s — next run may re-probe these\n",
@@ -833,6 +834,16 @@ func storeCmd() *cli.Command {
 // Used by list --json's `name` field per the cli-architecture spec:
 // consumers that don't care about URN namespacing get just "htop"
 // from "urn:hams:apt:htop".
+// pluralize picks singular/plural based on count. Small helper to
+// avoid the `1 providers probed` / `5 providers probed` grammar
+// bug. Keeps CLI summary output correct regardless of count.
+func pluralize(count int, singular, plural string) string {
+	if count == 1 {
+		return singular
+	}
+	return plural
+}
+
 func shortName(id string) string {
 	const prefix = "urn:hams:"
 	if !strings.HasPrefix(id, prefix) {

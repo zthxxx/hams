@@ -99,6 +99,42 @@ func TestRunRefresh_NoProvidersMatch(t *testing.T) {
 	}
 }
 
+// TestRunRefresh_SingularProviderNoun locks in cycle 125: a single-
+// provider refresh output says "1 provider probed" (singular), not
+// "1 providers probed". The pluralize helper is consistent across
+// the refresh summary's three message variants.
+func TestRunRefresh_SingularProviderNoun(t *testing.T) {
+	_, profileDir, stateDir, flags := setupApplyTestEnv(t, []string{"apt"})
+	// Seed an apt hamsfile so the artifact filter keeps the provider
+	// in scope, and a valid empty state file so ProbeAll can load it.
+	writeApplyTestFile(t, filepath.Join(profileDir, "apt.hams.yaml"), "cli:\n  - app: htop\n")
+	writeApplyTestFile(t, filepath.Join(stateDir, "apt.state.yaml"),
+		"provider: apt\nmachine_id: test-machine\nresources: {}\n")
+
+	registry := provider.NewRegistry()
+	p := &applyTestProvider{
+		manifest: provider.Manifest{
+			Name: "apt", DisplayName: "apt", FilePrefix: "apt",
+			Platforms: []provider.Platform{provider.PlatformAll},
+		},
+	}
+	if err := registry.Register(p); err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+
+	out := captureStdout(t, func() {
+		if err := runRefresh(context.Background(), flags, registry, "", ""); err != nil {
+			t.Fatalf("runRefresh: %v", err)
+		}
+	})
+	if !strings.Contains(out, "1 provider probed") {
+		t.Errorf("expected singular 'provider'; got %q", out)
+	}
+	if strings.Contains(out, "1 providers probed") {
+		t.Errorf("should NOT use plural 'providers' for count=1; got %q", out)
+	}
+}
+
 // TestRunRefresh_SaveFailure_ReturnsPartialFailure drives the cycle-47
 // path: when sf.Save fails after a successful probe, runRefresh
 // returns ExitPartialFailure and surfaces the save failure in the
