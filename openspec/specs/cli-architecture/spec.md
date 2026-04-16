@@ -692,3 +692,37 @@ The `--hams-lucky` flag is a forward-looking opt-out for the LLM-driven enrichme
 - The plumbing (`Enricher` interface, `RunTagPicker(lucky)`, `EnrichAsync`, `EnrichCollector`, `runEnrichPhase`, `llm.Recommend`, config field `LLMCLI`) is end-to-end correct and ready for a provider implementation to plug in.
 - Removing the scaffolding (~250 lines across `internal/llm/`, `internal/tui/`, `internal/provider/`, `internal/cli/`) would force re-implementation in v1.1 with identical structure.
 - The honest architectural call is "documented gap, not dead code" — distinct from the `CLIHandler` interface (which had no plumbing reachable from any production code path and was removed in commit `10de4bd`).
+
+---
+<!-- Merged from change: 2026-04-16-defer-hooks-and-otel -->
+
+# CLI Architecture — Spec Delta (hooks-defer + OTel-defer)
+
+## MODIFIED
+
+### Requirement: Hamsfile Hooks Parsing — Deferred to v1.1
+
+The v1 hamsfile loader does NOT parse `hooks:` blocks. The execution engine at `internal/provider/hooks.go` is fully built but receives no input — no provider's `Plan()` populates `Action.Hooks`, and `internal/hamsfile/` has zero hook-parsing logic.
+
+#### Scenario: v1 silently ignores hooks: blocks
+
+- **WHEN** a user adds a `hooks:` block to an item in their hamsfile
+- **THEN** the v1 hams loader SHALL load the hamsfile without error
+- **AND** `hams apply` SHALL NOT execute any hook
+- **AND** no warning is emitted in v1 (a follow-up change MAY add one).
+
+### Requirement: OTel CLI Integration — Deferred to v1.1
+
+The `internal/otel/` package defines `Session`, `Span`, `LocalFileExporter` with file output to `${HAMS_DATA_HOME}/otel/`. However, no CLI command creates an `otel.NewSession()` — `internal/cli/apply.go:444` calls `provider.Execute(ctx, p, actions, sf)` without the optional `otelSession` variadic, so the executor's per-action span-record calls are no-ops.
+
+#### Scenario: v1 produces no OTel output
+
+- **WHEN** a user runs `hams apply` in v1
+- **THEN** no file SHALL appear under `${HAMS_DATA_HOME}/otel/traces/` or `${HAMS_DATA_HOME}/otel/metrics/`
+- **AND** no error is emitted about missing OTel — the absence is silent.
+
+### Why deferred (not removed)
+
+- Hooks engine: ~200 lines of tested Go (hooks.go + hooks_test.go + executor.go dispatch glue).
+- OTel package: ~300 lines of exporter + span tracking.
+- Both would need full re-implementation if deleted. Documenting the gap matches the `--hams-lucky` precedent (commit `f4c0f20`). The honest architectural call is "documented gap, not dead code."

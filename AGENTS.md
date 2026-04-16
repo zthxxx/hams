@@ -167,16 +167,19 @@ Ralph Loop: Verification cycle 2 — execute deferred follow-ups from `2026-04-1
 Cycle 2 closed both test-coverage tiers — 8 of 8 providers with package-manager semantics now have DI-isolated lifecycle tests. All commits pass `task check` (0 lint, 28/28 PASS). Zero real package-manager invocations from unit tests. First Principle (CLAUDE.md) enforced across the board.
 
 Real bugs found and fixed during cycle:
+
 - `parseExtensionList` silently corrupted diff on `@version`-prefix or tab-containing inputs (commit 3467967).
 
 Architectural decisions documented:
+
 - `--hams-lucky` flag deferred to v1.1; spec rewritten to match shipped reality (commit f4c0f20).
 - DAG zero-indegree tie-breaking is alphabetical (priority list is inert for root-level providers); codified in `TestResolveDAG_ZeroIndegreePriority` + `provider-system/spec.md` delta (commit 10de4bd).
 
 Spec corrections:
+
 - `goinstall`/`code-ext` naming reconciled across 4 spec files + en/zh-CN docs + README variants (commit 6f9e533).
 
-Total commits in cycle 2: 15.
+Total commits in cycle 2: 15+ (still growing — iteration 3 adds hooks+OTel defer).
 
 ## Rules
 
