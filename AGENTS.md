@@ -187,6 +187,10 @@ Spec corrections:
 
 Total commits in cycle 2: 15+ (still growing — iteration 3 adds hooks+OTel defer).
 
+### Cycle 71 — `list --json` adds spec-required `name` field
+
+- [x] **Spec drift**: cli-architecture §"List in JSON format" says each element SHALL contain `provider`, `name`, `status`, `version`. My prior `listResource` had `id` (the full URN like `urn:hams:apt:htop`) but no short `name` — JSON consumers had to parse URNs themselves. Added `name` field via new `shortName(id)` helper that strips the `urn:hams:<provider>:` prefix; `id` retained for scripts that want the unique handle. Regression test covers 7 cases including bare names and malformed URNs. (commit `03dacc2`)
+
 ### Cycle 70 — Regression test for cycle 69 missing-store_path detection
 
 - [x] `TestStoreStatus_MissingStorePath` asserts three invariants after pointing `store_path` at a ghost directory: (1) output contains "does NOT exist", (2) output contains "hams store init" suggestion, (3) the normal "Profile tag:" / "Machine ID:" status block is suppressed (so misleading derived paths don't appear). (commit `1aa47a6`)
