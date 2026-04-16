@@ -165,9 +165,3 @@ type Enricher interface {
 	// Enrich uses an LLM to generate or update tags and intro for a resource.
 	Enrich(ctx context.Context, resourceID string) error
 }
-
-// CLIHandler is an optional interface for providers that handle CLI subcommands.
-type CLIHandler interface {
-	// HandleCLI processes the raw CLI args after the provider name.
-	HandleCLI(ctx context.Context, args []string) error
-}

@@ -22,8 +22,14 @@ import (
 	"github.com/zthxxx/hams/internal/state"
 )
 
-// tagCLI is the default hamsfile tag for CLI (non-cask, non-tap) brew formulas.
-const tagCLI = "cli"
+const (
+	// cliName is the Homebrew provider's manifest + CLI name.
+	cliName = "brew"
+	// brewDisplayName is the human-readable display name.
+	brewDisplayName = "Homebrew"
+	// tagCLI is the default hamsfile tag for CLI (non-cask, non-tap) brew formulas.
+	tagCLI = "cli"
+)
 
 // BrewResource holds provider-specific data for a Homebrew action.
 type BrewResource struct {
@@ -43,8 +49,8 @@ func New(cfg *config.Config) *Provider {
 // Manifest returns the Homebrew provider metadata.
 func (p *Provider) Manifest() provider.Manifest {
 	return provider.Manifest{
-		Name:          "brew",
-		DisplayName:   "Homebrew",
+		Name:          cliName,
+		DisplayName:   brewDisplayName,
 		Platforms:     []provider.Platform{provider.PlatformAll},
 		ResourceClass: provider.ClassPackage,
 		DependsOn: []provider.DependOn{
@@ -53,7 +59,7 @@ func (p *Provider) Manifest() provider.Manifest {
 				Script:   `/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"`,
 			},
 		},
-		FilePrefix: "Homebrew",
+		FilePrefix: brewDisplayName,
 	}
 }
 
@@ -290,10 +296,10 @@ func (p *Provider) HandleCommand(ctx context.Context, args []string, hamsFlags m
 }
 
 // Name returns the CLI name.
-func (p *Provider) Name() string { return "brew" }
+func (p *Provider) Name() string { return cliName }
 
 // DisplayName returns the display name.
-func (p *Provider) DisplayName() string { return "Homebrew" }
+func (p *Provider) DisplayName() string { return brewDisplayName }
 
 func (p *Provider) handleList(hamsFlags map[string]string, flags *provider.GlobalFlags) error {
 	fmt.Println("Homebrew managed packages:")

@@ -14,6 +14,9 @@ import (
 	"github.com/zthxxx/hams/internal/state"
 )
 
+// cliName is the duti provider's manifest + CLI name.
+const cliName = "duti"
+
 // Provider implements the duti default-app association provider.
 type Provider struct{}
 
@@ -37,15 +40,15 @@ var dutiBinaryLookup = exec.LookPath
 // shell layer. Only `bash` implements provider.BashScriptRunner.
 func (p *Provider) Manifest() provider.Manifest {
 	return provider.Manifest{
-		Name:          "duti",
-		DisplayName:   "duti",
+		Name:          cliName,
+		DisplayName:   cliName,
 		Platforms:     []provider.Platform{provider.PlatformDarwin},
 		ResourceClass: provider.ClassKVConfig,
 		DependsOn: []provider.DependOn{
 			{Provider: "brew", Platform: provider.PlatformDarwin},
 			{Provider: "bash", Script: dutiInstallScript, Platform: provider.PlatformDarwin},
 		},
-		FilePrefix: "duti",
+		FilePrefix: cliName,
 	}
 }
 
@@ -144,10 +147,10 @@ func (p *Provider) HandleCommand(_ context.Context, args []string, _ map[string]
 }
 
 // Name returns the CLI name.
-func (p *Provider) Name() string { return "duti" }
+func (p *Provider) Name() string { return cliName }
 
 // DisplayName returns the display name.
-func (p *Provider) DisplayName() string { return "duti" }
+func (p *Provider) DisplayName() string { return cliName }
 
 // parseResourceID splits "<ext>=<bundle-id>" into its components.
 func parseResourceID(id string) (ext, bundleID string, err error) {

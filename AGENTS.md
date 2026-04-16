@@ -134,6 +134,19 @@ This project uses [OpenSpec](https://openspec.dev) for spec-driven development.
 
 ## Current Task
 
+Ralph Loop: Full verification cycle (all shipped specs, user workflow, tests, architecture)
+
+- [x] Fix goconst lint errors across 7 provider files
+- [x] Fix Taskfile bug: `task check` was calling `task test` (includes integration/e2e via act) instead of `task test:unit`
+- [x] Fix markdown lint errors (MD032 blanks-around-lists)
+- [x] Run `task check` — verify build/lint/test all pass (PASSING)
+- [x] Verify all shipped specs match implementation via 4 parallel agents
+- [x] Verify user workflow scenarios end-to-end (Install+record, Bootstrap, Apply, Refresh, Version pin all working)
+- [x] Audit test design (uneven coverage; apt has 38 tests, cargo/npm have 2; no property-based in providers)
+- [x] Audit architecture extensibility (URN module, go-plugin deferred, DI consistent in core)
+- [x] Record findings as OpenSpec change with task breakdown (`openspec/changes/2026-04-16-verification-findings/`)
+- [x] Remove dead CLIHandler interface (unused dead code in provider.go) — zero Go references remain
+- [x] Final `task check` pass (verified 0 issues, all 28 test packages PASS)
 
 ## Rules
 

@@ -115,6 +115,53 @@ func TestResolveDAG_SingleNode(t *testing.T) {
 	}
 }
 
+// TestResolveDAG_ZeroIndegreePriority documents the current behavior that
+// zero-indegree (no-dependency) providers are ordered ALPHABETICALLY by
+// ResolveDAG, NOT by the input slice order.
+//
+// Why it matters: `internal/config/config.go` `DefaultProviderPriority` AND
+// user-supplied `provider_priority` YAML overrides become INERT for root-
+// level providers (those with no DependsOn entries). Only providers that
+// sit inside a dependency chain get ordering sensitivity from the
+// priority list — and even then only via DAG topology, not priority.
+//
+// Ref: `openspec/specs/builtin-providers/spec.md` "Multiple providers at
+// same DAG level" scenario says priority MUST determine order; the
+// implementation contradicts that.
+//
+// This test captures the as-shipped behavior so that a future change can
+// either:
+//
+//	(a) flip the assertion once Kahn's is taught to honor input order
+//	    (fixing the spec violation), or
+//	(b) update the spec to document alphabetical fallback (and explain
+//	    why priority lists become inert for root-level providers).
+//
+// Do not change this assertion without either (a) or (b).
+func TestResolveDAG_ZeroIndegreePriority(t *testing.T) {
+	// Pass providers in "priority order": bash first, then apt, then cargo.
+	// If priority were honored, output would match input order.
+	// If alphabetical, output would be apt, bash, cargo.
+	providers := []Provider{
+		newStubWithDeps("bash"),
+		newStubWithDeps("apt"),
+		newStubWithDeps("cargo"),
+	}
+
+	sorted, err := ResolveDAG(providers)
+	if err != nil {
+		t.Fatalf("ResolveDAG error: %v", err)
+	}
+
+	names := providerNames(sorted)
+	want := []string{"apt", "bash", "cargo"} // ALPHABETICAL, not input order
+	for i, n := range names {
+		if n != want[i] {
+			t.Errorf("position %d: got %q, want %q (zero-indegree nodes ordered alphabetically, NOT by input order)", i, n, want[i])
+		}
+	}
+}
+
 func TestResolveDAG_PlatformFiltering(t *testing.T) {
 	// Dep is platform-conditional: only on "windows" (which won't match in tests).
 	providers := []Provider{

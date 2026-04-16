@@ -301,6 +301,7 @@ func TestDeleteRun(t *testing.T) {
 ```
 
 Conventions:
+
 - `testify/require` for must-fast-fail assertions (mostly `err`);
 - `testify/assert` for non-fatal assertions;
 - `bytes.Buffer` as I/O stand-ins;

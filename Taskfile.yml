@@ -412,7 +412,7 @@ tasks:
     cmds:
       - task: fmt
       - task: lint
-      - task: test
+      - task: test:unit
 
   clean:
     desc: Clean build artifacts
