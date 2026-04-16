@@ -181,6 +181,10 @@ Spec corrections:
 
 Total commits in cycle 2: 15+ (still growing — iteration 3 adds hooks+OTel defer).
 
+### Cycle 25 — `hams store init` prompts for profile tag on TTY
+
+- [x] Spec required prompting for initial profile tag on init; impl silently defaulted to "default". Added TTY-guarded prompt (non-TTY falls through for scriptability). Persists both `profile_tag` and `machine_id` to global config so subsequent apply doesn't re-prompt. Persist-failure degrades to WARN (store still usable). (commit `581575f`)
+
 ### Cycle 24 — `hams store init` fixes + .gitignore generation
 
 - [x] **Missing `.gitignore`**: spec requires `.state/` + `*.local.*` patterns to prevent state/local overrides leaking into git. Users would commit machine-id + secrets. Added idempotent `.gitignore` creation on init.
