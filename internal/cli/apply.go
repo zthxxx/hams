@@ -63,7 +63,7 @@ type bootstrapMode struct {
 	Deny  bool // --no-bootstrap: never run, even on TTY
 }
 
-func runApply(ctx context.Context, flags *provider.GlobalFlags, registry *provider.Registry, sudoAcq sudo.Acquirer, fromRepo string, noRefresh bool, only, except string, pruneOrphans bool, boot bootstrapMode) error {
+func runApply(ctx context.Context, flags *provider.GlobalFlags, registry *provider.Registry, sudoAcq sudo.Acquirer, fromRepo string, noRefresh bool, only, except string, pruneOrphans bool, boot bootstrapMode) (retErr error) {
 	if boot.Allow && boot.Deny {
 		return hamserr.NewUserError(hamserr.ExitUsageError,
 			"--bootstrap and --no-bootstrap are mutually exclusive",
@@ -145,6 +145,21 @@ func runApply(ctx context.Context, flags *provider.GlobalFlags, registry *provid
 	}
 
 	defer sudoAcq.Stop()
+
+	// OTel session is opt-in via HAMS_OTEL=1 (see internal/cli/otel.go).
+	// When enabled, a root "hams.apply" span wraps the entire run and
+	// each provider.Execute call records child spans + per-provider
+	// metrics via the executor's existing span machinery (executor.go).
+	// When disabled, otelSess.Session() returns nil and Execute's
+	// nil-session branches skip the tracing machinery entirely.
+	otelSess := maybeStartOTelSession(paths.DataHome, "hams.apply")
+	defer func() {
+		status := "ok"
+		if retErr != nil {
+			status = "error"
+		}
+		otelSess.End(context.Background(), status)
+	}()
 
 	// Two-stage provider filter:
 	//   Stage 1 — artifact presence: skip providers that have no hamsfile AND
@@ -441,7 +456,7 @@ func runApply(ctx context.Context, flags *provider.GlobalFlags, registry *provid
 			continue
 		}
 
-		result := provider.Execute(ctx, p, actions, sf)
+		result := provider.Execute(ctx, p, actions, sf, otelSess.Session())
 		allResults = append(allResults, result)
 
 		if result.Failed == 0 {

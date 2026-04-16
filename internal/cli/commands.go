@@ -38,7 +38,7 @@ Only resources already tracked in state are probed — no new resources are disc
 	}
 }
 
-func runRefresh(ctx context.Context, flags *provider.GlobalFlags, registry *provider.Registry, only, except string) error {
+func runRefresh(ctx context.Context, flags *provider.GlobalFlags, registry *provider.Registry, only, except string) (retErr error) {
 	paths := resolvePaths(flags)
 	cfg, err := config.Load(paths, flags.Store)
 	if err != nil {
@@ -47,6 +47,21 @@ func runRefresh(ctx context.Context, flags *provider.GlobalFlags, registry *prov
 	if flags.Profile != "" {
 		cfg.ProfileTag = flags.Profile
 	}
+
+	// OTel session is opt-in via HAMS_OTEL=1 (internal/cli/otel.go).
+	// Refresh doesn't invoke provider.Execute, so there are no
+	// per-provider child spans from executor.go — but the root span
+	// + session span machinery still capture the refresh duration
+	// and any RecordMetric calls we add later. Keeps the surface
+	// parallel with runApply.
+	otelSess := maybeStartOTelSession(paths.DataHome, "hams.refresh")
+	defer func() {
+		status := "ok"
+		if retErr != nil {
+			status = "error"
+		}
+		otelSess.End(context.Background(), status)
+	}()
 
 	stateDir := cfg.StateDir()
 	profileDir := cfg.ProfileDir()

@@ -723,18 +723,36 @@ Verification: `internal/provider/hooks_integration_test.go` exercises the full Y
 - **THEN** the inline execution SHALL skip it
 - **AND** the deferred hook SHALL run after all regular installs via `RunDeferredHooks`.
 
-### Requirement: OTel CLI Integration — Deferred to v1.1
+### Requirement: OTel CLI Integration — Opt-in via HAMS_OTEL
 
-The `internal/otel/` package defines `Session`, `Span`, `LocalFileExporter` with file output to `${HAMS_DATA_HOME}/otel/`. However, no CLI command creates an `otel.NewSession()` — `internal/cli/apply.go:444` calls `provider.Execute(ctx, p, actions, sf)` without the optional `otelSession` variadic, so the executor's per-action span-record calls are no-ops.
+The OTel deferral was lifted in cycle 5. Integration is opt-in via the `HAMS_OTEL` env var (loose booleans: `true` / `yes` / `on` / `1`). When enabled:
 
-#### Scenario: v1 produces no OTel output
+- `runApply` wraps the operation in a root `hams.apply` span.
+- `runRefresh` wraps the operation in a root `hams.refresh` span.
+- `provider.Execute` calls receive the session and record per-provider + per-resource child spans (already-existing executor span machinery).
+- The session's `LocalFileExporter` writes JSON trace + metric files under `${HAMS_DATA_HOME}/otel/traces/` and `${HAMS_DATA_HOME}/otel/metrics/` on shutdown.
 
-- **WHEN** a user runs `hams apply` in v1
+Opt-in rather than default-on because the file exporter accumulates JSON on every run; silent file accumulation for users who didn't ask for it is bad UX.
+
+#### Scenario: HAMS_OTEL unset → no OTel output
+
+- **WHEN** a user runs `hams apply` without `HAMS_OTEL=1`
 - **THEN** no file SHALL appear under `${HAMS_DATA_HOME}/otel/traces/` or `${HAMS_DATA_HOME}/otel/metrics/`
-- **AND** no error is emitted about missing OTel — the absence is silent.
+- **AND** the apply SHALL complete with no OTel overhead.
 
-### Why deferred (not removed)
+#### Scenario: HAMS_OTEL=1 → trace files appear
 
-- Hooks engine: ~200 lines of tested Go (hooks.go + hooks_test.go + executor.go dispatch glue).
-- OTel package: ~300 lines of exporter + span tracking.
-- Both would need full re-implementation if deleted. Documenting the gap matches the `--hams-lucky` precedent (commit `f4c0f20`). The honest architectural call is "documented gap, not dead code."
+- **WHEN** a user runs `HAMS_OTEL=1 hams apply`
+- **AND** the apply completes (success or failure)
+- **THEN** a trace JSON file SHALL appear under `${HAMS_DATA_HOME}/otel/traces/`
+- **AND** the root span SHALL have name `hams.apply` with status `ok` (success) or `error` (failure).
+
+#### Scenario: HAMS_OTEL=1 but dataHome is empty → silent disable
+
+- **WHEN** a user runs `HAMS_OTEL=1 hams apply` without a resolvable `HAMS_DATA_HOME`
+- **THEN** no files SHALL be written
+- **AND** no error SHALL be surfaced.
+
+### Remaining deferral: --hams-lucky
+
+The `--hams-lucky` LLM enrichment deferral from the original delta remains in place. `Enricher` interface has zero provider implementations; wiring the flag through requires implementing `Enrich(ctx, resourceID)` on at least one provider (a v1.1 feature-ticket, not a verification task).
