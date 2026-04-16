@@ -187,6 +187,10 @@ Spec corrections:
 
 Total commits in cycle 2: 15+ (still growing — iteration 3 adds hooks+OTel defer).
 
+### Cycle 84 — `hams apply` no longer silently exits 0 after Ctrl+C
+
+- [x] Real user-workflow bug: when the user pressed Ctrl+C (SIGINT) or the process received SIGTERM mid-apply, `provider.Execute` saw ctx.Done and returned with `ctx.Err()` in its Errors slice — but `runApply`'s per-provider for-loop kept iterating, each provider bailing the same way. The final `merged := MergeResults(...)` showed `Failed == 0` because cancellation is accounted for in Errors, not Failed, and the summary print claimed "hams apply complete: 0 installed, ..." followed by exit code 0. A shell running `hams apply && echo ok` would print `ok` after the user hit Ctrl+C. Fix: after the provider loop, check `ctx.Err()`; if non-nil, return `UserFacingError{Code: ExitPartialFailure}` whose message names the interruption and whose suggestions point the user at `hams refresh` + re-run. Partial state was already persisted correctly by cycle 51's per-iteration `sf.Save`; this fix only addresses the silent-success surface. Regression test `TestRunApply_InterruptedContextReturnsPartialFailure` starts with a pre-cancelled context, asserts `Apply` is never called, and verifies the error shape + exit code + suggestions. (commit `1b66482`)
+
 ### Cycles 78–83 — Auto-record gap closed: npm/pnpm/uv/goinstall/mas/vscodeext
 
 Continuing the series from cycle 77 (cargo pilot), six more Package-class providers now satisfy the CP-1 auto-record contract. Every provider wire is the same shape — new `hamsfile.go` helper, `cfg *config.Config` field on `Provider`, `New(cfg, runner)`, `handleInstall` / `handleRemove` loop runner then write hamsfile, 10 `TestHandleCommand_U*` regression tests per provider. Atomic-on-failure semantics keep hamsfile honest; flag filtering (`packageArgs`/`crateArgs`/`toolArgs`/`appIDArgs`/`extensionArgs`) keeps cargo/npm/pnpm/uv/go/mas/code flag tokens out of the recorded resource names.
