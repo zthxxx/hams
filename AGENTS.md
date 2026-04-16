@@ -187,6 +187,10 @@ Spec corrections:
 
 Total commits in cycle 2: 15+ (still growing — iteration 3 adds hooks+OTel defer).
 
+### Cycle 123 — apt `pinStateOpts` direct tests for pin-format detection
+
+- [x] `pinStateOpts` had 40% coverage — 3 branches (version-pin via `pkg=ver`, source-pin via `pkg/src`, bare-no-pin) plus the "explicit empty-version unpin" special case. A regression here would drop pins from state, so the next apply couldn't tell "installed from apt stable" vs "installed with an explicit version pin". 4 table-driven tests cover each branch including the `nginx=` empty-value case that represents "explicit unpin" (matches `strings.CutPrefix` semantics). apt coverage: 76.5% → 77.6%. (commit `f066910`)
+
 ### Cycle 122 — ansible HandleCommand usage-error + dry-run tests
 
 - [x] `ansible.HandleCommand` had 0% coverage. Both the empty-args UserFacingError path and the dry-run preview path are trivially testable without exec-ing real ansible-playbook. Gate against the same class of bug as cycle 118's self-upgrade dry-run gate: a future refactor that drops the dry-run branch would silently run playbooks against the host. ansible coverage: 76.9% → 83.3%. (commit `d74114e`)
