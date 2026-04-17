@@ -3,8 +3,11 @@ package cargo
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io/fs"
 	"log/slog"
+	"path/filepath"
 	"strings"
 
 	"github.com/zthxxx/hams/internal/config"
@@ -148,10 +151,22 @@ func (p *Provider) handleInstall(ctx context.Context, args []string, hamsFlags m
 	if err != nil {
 		return err
 	}
+	sf, err := p.loadOrCreateStateFile(flags)
+	if err != nil {
+		return err
+	}
 	for _, crate := range crates {
 		hf.AddApp(tagCLI, crate, "")
+		// Cycle 203: state write is additive. Without this,
+		// `hams list --only=cargo` returned empty right after a
+		// successful install because `list` reads state only.
+		// Same auto-record gap as cycle 96 (homebrew) / 202 (mas).
+		sf.SetResource(crate, state.StateOK)
 	}
-	return hf.Write()
+	if writeErr := hf.Write(); writeErr != nil {
+		return writeErr
+	}
+	return sf.Save(p.statePath(flags))
 }
 
 // handleRemove runs `cargo uninstall <crate>` via the CmdRunner seam
@@ -187,10 +202,41 @@ func (p *Provider) handleRemove(ctx context.Context, args []string, hamsFlags ma
 	if err != nil {
 		return err
 	}
+	sf, err := p.loadOrCreateStateFile(flags)
+	if err != nil {
+		return err
+	}
 	for _, crate := range crates {
 		hf.RemoveApp(crate)
+		sf.SetResource(crate, state.StateRemoved)
 	}
-	return hf.Write()
+	if writeErr := hf.Write(); writeErr != nil {
+		return writeErr
+	}
+	return sf.Save(p.statePath(flags))
+}
+
+// statePath returns the absolute path to cargo.state.yaml for the
+// active machine. Mirrors homebrew.statePath / mas.statePath.
+func (p *Provider) statePath(flags *provider.GlobalFlags) string {
+	cfg := p.effectiveConfig(flags)
+	return filepath.Join(cfg.StateDir(), p.Manifest().FilePrefix+".state.yaml")
+}
+
+// loadOrCreateStateFile reads the cargo state file or returns a
+// fresh one when the file is absent. Non-ErrNotExist load failures
+// propagate so the CLI handler surfaces a user-facing error instead
+// of silently overwriting unparseable state.
+func (p *Provider) loadOrCreateStateFile(flags *provider.GlobalFlags) (*state.File, error) {
+	cfg := p.effectiveConfig(flags)
+	sf, err := state.Load(p.statePath(flags))
+	if err == nil {
+		return sf, nil
+	}
+	if errors.Is(err, fs.ErrNotExist) {
+		return state.New(p.Name(), cfg.MachineID), nil
+	}
+	return nil, fmt.Errorf("loading cargo state %s: %w", p.statePath(flags), err)
 }
 
 // crateArgs filters the positional tokens from args: any token

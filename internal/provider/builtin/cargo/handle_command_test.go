@@ -10,6 +10,7 @@ import (
 	"github.com/zthxxx/hams/internal/config"
 	"github.com/zthxxx/hams/internal/hamsfile"
 	"github.com/zthxxx/hams/internal/provider"
+	"github.com/zthxxx/hams/internal/state"
 )
 
 // cargoHarness wires a cargo provider against a FakeCmdRunner +
@@ -58,6 +59,20 @@ func (h *cargoHarness) hamsfileApps() []string {
 		h.t.Fatalf("read hamsfile: %v", err)
 	}
 	return f.ListApps()
+}
+
+// stateResource reads the on-disk state file and returns the state of
+// the named resource, or "" if the file or resource doesn't exist.
+func (h *cargoHarness) stateResource(id string) state.ResourceState {
+	h.t.Helper()
+	sf, err := state.Load(h.provider.statePath(h.flags))
+	if err != nil {
+		return ""
+	}
+	if r, ok := sf.Resources[id]; ok {
+		return r.State
+	}
+	return ""
 }
 
 // U1 — first `hams cargo install <crate>` records the crate in the
@@ -241,5 +256,65 @@ func TestHandleCommand_U10_FlagsOnlyReturnsUsage(t *testing.T) {
 	}
 	if h.runner.CallCount(fakeOpInstall, "") != 0 {
 		t.Errorf("runner should not be called on usage error, got %d", h.runner.CallCount(fakeOpInstall, ""))
+	}
+}
+
+// TestHandleCommand_U11_InstallWritesStateFile locks in cycle 203:
+// after a successful `hams cargo install <crate>`, the state file
+// MUST contain a StateOK entry for that crate so `hams list --only=cargo`
+// returns it immediately without needing a separate `hams refresh`.
+// Same auto-record gap as cycle 96 (homebrew) / cycle 202 (mas).
+func TestHandleCommand_U11_InstallWritesStateFile(t *testing.T) {
+	h := newCargoHarness(t)
+	if err := h.provider.HandleCommand(context.Background(), []string{"install", "ripgrep"}, nil, h.flags); err != nil {
+		t.Fatalf("install: %v", err)
+	}
+	if got := h.stateResource("ripgrep"); got != state.StateOK {
+		t.Errorf("state[ripgrep] = %q, want %q", got, state.StateOK)
+	}
+}
+
+// TestHandleCommand_U12_RemoveMarksStateRemoved asserts the symmetric
+// contract: a successful uninstall writes a StateRemoved tombstone so
+// Probe skips the crate on the next refresh cycle. Pre-cycle-203 the
+// state file was never updated by the CLI handler.
+func TestHandleCommand_U12_RemoveMarksStateRemoved(t *testing.T) {
+	h := newCargoHarness(t)
+	if err := h.provider.HandleCommand(context.Background(), []string{"install", "bat"}, nil, h.flags); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+	if err := h.provider.HandleCommand(context.Background(), []string{"remove", "bat"}, nil, h.flags); err != nil {
+		t.Fatalf("remove: %v", err)
+	}
+	if got := h.stateResource("bat"); got != state.StateRemoved {
+		t.Errorf("state[bat] = %q, want %q", got, state.StateRemoved)
+	}
+}
+
+// TestHandleCommand_U13_InstallFailureLeavesStateUntouched ensures the
+// atomic-on-failure contract also holds at the state layer: a runner
+// rejection must NOT produce a spurious StateOK entry.
+func TestHandleCommand_U13_InstallFailureLeavesStateUntouched(t *testing.T) {
+	h := newCargoHarness(t)
+	h.runner.WithInstallError("does-not-exist", errors.New("cargo: not found"))
+	if err := h.provider.HandleCommand(context.Background(), []string{"install", "does-not-exist"}, nil, h.flags); err == nil {
+		t.Fatal("expected install error")
+	}
+	if got := h.stateResource("does-not-exist"); got != "" {
+		t.Errorf("state should not have an entry, got %q", got)
+	}
+}
+
+// TestHandleCommand_U14_DryRunSkipsStateWrite pins the "--dry-run has
+// zero side effects" contract (cycles 39/41/84/86/118) at the state
+// layer: a dry-run install must not produce an on-disk state file.
+func TestHandleCommand_U14_DryRunSkipsStateWrite(t *testing.T) {
+	h := newCargoHarness(t)
+	h.flags.DryRun = true
+	if err := h.provider.HandleCommand(context.Background(), []string{"install", "ripgrep"}, nil, h.flags); err != nil {
+		t.Fatalf("dry-run: %v", err)
+	}
+	if _, err := os.Stat(h.provider.statePath(h.flags)); err == nil {
+		t.Error("dry-run should not create state file")
 	}
 }
