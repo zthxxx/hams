@@ -357,6 +357,19 @@ func (p *Provider) handleTap(ctx context.Context, args []string, hamsFlags map[s
 			"Usage: hams brew tap <user/repo>",
 		)
 	}
+	// Strict arg count — same UX class as cycle 156 (config strict
+	// args). The pre-cycle-163 code only used args[0] and silently
+	// dropped the rest, so `hams brew tap user1/repo user2/repo` only
+	// tapped user1/repo and the second tap was lost. Brew CLI itself
+	// supports multi-tap, but the wrapper didn't forward beyond [0].
+	// Surface the mismatch with a hint about repeating the command.
+	if len(args) != 1 {
+		return hamserr.NewUserError(hamserr.ExitUsageError,
+			fmt.Sprintf("brew tap takes exactly one repository (got %d args: %v)", len(args), args),
+			"Usage: hams brew tap <user/repo>",
+			"To tap multiple repos, run the command once per repo",
+		)
+	}
 
 	repo := args[0]
 	if flags.DryRun {

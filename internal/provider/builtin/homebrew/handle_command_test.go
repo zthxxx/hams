@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/zthxxx/hams/internal/config"
@@ -84,6 +85,44 @@ func (h *brewHarness) stateResources() map[string]state.ResourceState {
 		out[id] = r.State
 	}
 	return out
+}
+
+// TestHandleTap_StrictArgCount locks in cycle 163: the pre-cycle-163
+// implementation only used args[0] of `hams brew tap …` and silently
+// dropped any additional args. So `hams brew tap user1/repo
+// user2/repo` only tapped user1/repo and the second tap was lost
+// — user thought both were tapped because exit was 0. Now: too-many
+// args returns ExitUsageError with a hint to repeat the command per
+// repo. (Multi-tap support belongs in a separate feature change;
+// fixing the silent-drop is the immediate priority.)
+func TestHandleTap_StrictArgCount(t *testing.T) {
+	t.Parallel()
+	cases := [][]string{
+		{"tap", "user1/repo", "user2/repo"},               // two args
+		{"tap", "user1/repo", "user2/repo", "user3/repo"}, // three args
+	}
+	for _, args := range cases {
+		t.Run(strings.Join(args, "_"), func(t *testing.T) {
+			t.Parallel()
+			h := newBrewHarness(t)
+			err := h.provider.HandleCommand(context.Background(), args, nil, h.flags)
+			if err == nil {
+				t.Fatalf("expected error for %v; got nil", args)
+			}
+			// Must NOT have invoked brew.
+			if h.runner.CallCount(fakeOpInstall, "user1/repo") > 0 {
+				t.Errorf("brew install must not be invoked on usage error")
+			}
+			// Must NOT have written hamsfile.
+			if apps := h.hamsfileApps(); len(apps) != 0 {
+				t.Errorf("hamsfile should be empty on usage error, got %v", apps)
+			}
+			// Error should say "exactly one" so the user understands.
+			if !strings.Contains(err.Error(), "exactly one") {
+				t.Errorf("error should say 'exactly one'; got %q", err.Error())
+			}
+		})
+	}
 }
 
 // U1 — install records the package in BOTH hamsfile and state.
