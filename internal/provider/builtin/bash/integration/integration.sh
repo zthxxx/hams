@@ -99,5 +99,27 @@ assert_yaml_field_eq "bash.state.yaml marker.state=removed after hamsfile deleti
 # way. Remove command preservation in state is a separate improvement
 # tracked outside this change.
 
+# --- Step 6: verify logging is emitted ---
+# CLAUDE.md Current Tasks: "Whether logging is emitted — for each
+# provider as well as for hams itself — must be verified in
+# integration tests." Re-apply a small marker workload purely to
+# exercise the log path; assert both the hams-framework session-start
+# line and a provider-tagged log fragment appear on stderr.
+rm -f "$MARKER"
+cat > "$BASH_HAMS" <<YAML
+setup:
+  - urn: "urn:hams:bash:log-check"
+    step: "Re-create marker for log emission assertion"
+    run: "touch ${MARKER}"
+    check: "test -f ${MARKER}"
+    remove: "rm -f ${MARKER}"
+YAML
+assert_stderr_contains "bash: hams itself emits session-start log" \
+  "hams session started" \
+  hams --store="$HAMS_STORE" apply --only=bash
+assert_stderr_contains "bash: provider emits slog line" \
+  "bash" \
+  hams --store="$HAMS_STORE" apply --only=bash
+
 echo ""
 echo "=== bash integration test passed ==="

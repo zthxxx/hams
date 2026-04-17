@@ -30,6 +30,45 @@ assert_output_contains() {
   echo ""
 }
 
+# assert_stderr_contains runs a command, captures ONLY stderr, and asserts
+# that it contains the expected substring. Use this for verifying slog
+# output — hams emits structured logs to stderr by default, so
+# assert_output_contains (which bundles stdout+stderr) works but is noisier.
+# assert_stderr_contains keeps the intent explicit: "this log line MUST fire".
+#
+# Usage:
+#   assert_stderr_contains "desc" "expected-substring" cmd arg1 arg2 ...
+assert_stderr_contains() {
+  local desc="$1"
+  local expected="$2"
+  shift 2
+  echo "Testing: $desc"
+  local stderr_out
+  # Redirect stdout to /dev/null so the captured output is stderr-only.
+  stderr_out=$("$@" 2>&1 1>/dev/null)
+  if ! printf '%s\n' "$stderr_out" | grep -qF "$expected"; then
+    echo "FAIL: $desc"
+    echo "  expected stderr to contain: $expected"
+    echo "  actual stderr: $stderr_out"
+    exit 1
+  fi
+  echo "  ok: stderr contains '$expected'"
+  echo ""
+}
+
+# assert_log_line asserts that a hams command emits a slog line matching the
+# given substring. Thin wrapper around assert_stderr_contains with a label
+# that makes "which provider is logging what" greppable from test output.
+#
+# Usage:
+#   assert_log_line "<provider>" "<substring>" cmd arg1 arg2 ...
+assert_log_line() {
+  local provider="$1"
+  local expected="$2"
+  shift 2
+  assert_stderr_contains "${provider} log emits '${expected}'" "$expected" "$@"
+}
+
 # run_smoke_tests runs CLI framework tests common to all distros.
 run_smoke_tests() {
   echo "--- CLI smoke tests ---"
