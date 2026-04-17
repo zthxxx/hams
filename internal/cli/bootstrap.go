@@ -212,9 +212,48 @@ func transformCloneError(repoURL string, err error) error {
 	return fmt.Errorf("cloning %s: %w", repoURL, err)
 }
 
+// resolveClonePath returns the local cache directory for a remote
+// `--from-repo`. The path includes the HOST component so that two
+// repos with the same `<user>/<repo>` on different forges don't
+// collide. Without the host scoping, `--from-repo=github.com/x/y`
+// and `--from-repo=gitlab.com/x/y` would both resolve to
+// `${DataHome}/repo/x/y` — the second clone would silently
+// inherit the first's `.git` and pull from the wrong origin
+// (or fail with confusing remote errors).
+//
+// Recognized forms:
+//   - `user/repo` shorthand → assumed github.com → `repo/github.com/user/repo`
+//   - `git@host:user/repo[.git]` → `repo/host/user/repo`
+//   - `https://host/user/repo[.git]` → `repo/host/user/repo`
+//   - anything else (defensive fallback): use the trimmed input
+//     verbatim under `repo/`.
 func resolveClonePath(repo string, paths config.Paths) string {
 	repoName := strings.TrimSuffix(repo, ".git")
+
+	// SSH form: git@host:user/repo
+	if rest, ok := strings.CutPrefix(repoName, "git@"); ok {
+		if host, path, found := strings.Cut(rest, ":"); found {
+			return filepath.Join(paths.DataHome, "repo", host, path)
+		}
+	}
+
+	// URL form: scheme://host/user/repo
+	if idx := strings.Index(repoName, "://"); idx >= 0 {
+		afterScheme := repoName[idx+len("://"):]
+		host, path, found := strings.Cut(afterScheme, "/")
+		if found && host != "" && path != "" {
+			return filepath.Join(paths.DataHome, "repo", host, path)
+		}
+	}
+
+	// Shorthand `user/repo` — assume github.com.
 	parts := strings.Split(repoName, "/")
+	if len(parts) == 2 && !strings.Contains(parts[0], ".") {
+		return filepath.Join(paths.DataHome, "repo", "github.com", parts[0], parts[1])
+	}
+
+	// Defensive fallback: use the input verbatim. Same behavior as
+	// the pre-cycle-168 code, modulo the host-prefix scoping.
 	if len(parts) >= 2 {
 		repoName = parts[len(parts)-2] + "/" + parts[len(parts)-1]
 	}
