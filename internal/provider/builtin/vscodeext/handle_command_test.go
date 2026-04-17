@@ -10,6 +10,7 @@ import (
 	"github.com/zthxxx/hams/internal/config"
 	"github.com/zthxxx/hams/internal/hamsfile"
 	"github.com/zthxxx/hams/internal/provider"
+	"github.com/zthxxx/hams/internal/state"
 )
 
 type vscodeextHarness struct {
@@ -55,6 +56,18 @@ func (h *vscodeextHarness) hamsfileApps() []string {
 		h.t.Fatalf("read hamsfile: %v", err)
 	}
 	return f.ListApps()
+}
+
+func (h *vscodeextHarness) stateResource(id string) state.ResourceState {
+	h.t.Helper()
+	sf, err := state.Load(h.provider.statePath(h.flags))
+	if err != nil {
+		return ""
+	}
+	if r, ok := sf.Resources[id]; ok {
+		return r.State
+	}
+	return ""
 }
 
 func TestHandleCommand_U1_InstallAddsExtensionToHamsfile(t *testing.T) {
@@ -203,5 +216,55 @@ func TestHandleCommand_U10_FlagsOnlyReturnsUsage(t *testing.T) {
 	}
 	if h.runner.CallCount(fakeOpInstall, "") != 0 {
 		t.Errorf("runner should not be called")
+	}
+}
+
+// TestHandleCommand_U11_InstallWritesStateFile — cycle 208.
+// Last Package-class provider to gain state-write parity with apt/brew.
+func TestHandleCommand_U11_InstallWritesStateFile(t *testing.T) {
+	h := newVscodeextHarness(t)
+	if err := h.provider.HandleCommand(context.Background(), []string{"install", "golang.go"}, nil, h.flags); err != nil {
+		t.Fatalf("install: %v", err)
+	}
+	if got := h.stateResource("golang.go"); got != state.StateOK {
+		t.Errorf("state[golang.go] = %q, want %q", got, state.StateOK)
+	}
+}
+
+// TestHandleCommand_U12_RemoveMarksStateRemoved — tombstone on uninstall.
+func TestHandleCommand_U12_RemoveMarksStateRemoved(t *testing.T) {
+	h := newVscodeextHarness(t)
+	if err := h.provider.HandleCommand(context.Background(), []string{"install", "esbenp.prettier-vscode"}, nil, h.flags); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+	if err := h.provider.HandleCommand(context.Background(), []string{"remove", "esbenp.prettier-vscode"}, nil, h.flags); err != nil {
+		t.Fatalf("remove: %v", err)
+	}
+	if got := h.stateResource("esbenp.prettier-vscode"); got != state.StateRemoved {
+		t.Errorf("state[esbenp.prettier-vscode] = %q, want %q", got, state.StateRemoved)
+	}
+}
+
+// TestHandleCommand_U13_InstallFailureLeavesStateUntouched.
+func TestHandleCommand_U13_InstallFailureLeavesStateUntouched(t *testing.T) {
+	h := newVscodeextHarness(t)
+	h.runner.WithInstallError("bogus.ext", errors.New("code: ext not found"))
+	if err := h.provider.HandleCommand(context.Background(), []string{"install", "bogus.ext"}, nil, h.flags); err == nil {
+		t.Fatal("expected install error")
+	}
+	if got := h.stateResource("bogus.ext"); got != "" {
+		t.Errorf("state should not have an entry, got %q", got)
+	}
+}
+
+// TestHandleCommand_U14_DryRunSkipsStateWrite.
+func TestHandleCommand_U14_DryRunSkipsStateWrite(t *testing.T) {
+	h := newVscodeextHarness(t)
+	h.flags.DryRun = true
+	if err := h.provider.HandleCommand(context.Background(), []string{"install", "golang.go"}, nil, h.flags); err != nil {
+		t.Fatalf("dry-run: %v", err)
+	}
+	if _, err := os.Stat(h.provider.statePath(h.flags)); err == nil {
+		t.Error("dry-run should not create state file")
 	}
 }
