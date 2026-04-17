@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/zthxxx/hams/internal/config"
@@ -316,5 +317,42 @@ func TestHandleCommand_U14_DryRunSkipsStateWrite(t *testing.T) {
 	}
 	if _, err := os.Stat(h.provider.statePath(h.flags)); err == nil {
 		t.Error("dry-run should not create state file")
+	}
+}
+
+// TestHandleCommand_U15_ListVerbEmitsDiff — cycle 214. `hams cargo
+// list` must route through provider.HandleListCmd to print the
+// hams-tracked diff, not passthrough to `cargo list` (which errors
+// because cargo has no `list` subcommand). Install a crate first so
+// the diff is non-empty; assert the output contains the crate name.
+func TestHandleCommand_U15_ListVerbEmitsDiff(t *testing.T) {
+	h := newCargoHarness(t)
+	// Seed: install ripgrep to populate hamsfile + state.
+	if err := h.provider.HandleCommand(context.Background(), []string{"install", "ripgrep"}, nil, h.flags); err != nil {
+		t.Fatalf("setup install: %v", err)
+	}
+	// Redirect stdout to capture list output.
+	r, w, pipeErr := os.Pipe()
+	if pipeErr != nil {
+		t.Fatalf("pipe: %v", pipeErr)
+	}
+	orig := os.Stdout
+	os.Stdout = w
+	err := h.provider.HandleCommand(context.Background(), []string{"list"}, nil, h.flags)
+	if closeErr := w.Close(); closeErr != nil {
+		t.Logf("close pipe: %v", closeErr)
+	}
+	os.Stdout = orig
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	buf := make([]byte, 4096)
+	n, readErr := r.Read(buf)
+	if readErr != nil && readErr.Error() != "EOF" {
+		t.Fatalf("read pipe: %v", readErr)
+	}
+	got := string(buf[:n])
+	if !strings.Contains(got, "ripgrep") {
+		t.Errorf("list output should mention ripgrep; got %q", got)
 	}
 }

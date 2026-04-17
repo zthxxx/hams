@@ -115,10 +115,19 @@ func (p *Provider) List(_ context.Context, desired *hamsfile.File, sf *state.Fil
 // mutation. Other `defaults` verbs (e.g., `read`, `domains`) are
 // passed through to the real binary without bookkeeping.
 func (p *Provider) HandleCommand(ctx context.Context, args []string, hamsFlags map[string]string, flags *provider.GlobalFlags) error {
+	// Cycle 214: list must be recognized before the len<3 gate below
+	// because `hams defaults list` intentionally takes no further args.
+	// The spec promises diff view for list; pre-cycle-214 the len<3
+	// gate rejected it with a misleading "write <domain> <key>" usage
+	// error.
+	if len(args) == 1 && args[0] == "list" { //nolint:gosec // len(args)==1 guards the index
+		return provider.HandleListCmd(ctx, p, p.effectiveConfig(flags))
+	}
 	if len(args) < 3 {
 		return hamserr.NewUserError(hamserr.ExitUsageError,
 			"defaults requires: write <domain> <key> -<type> <value>",
 			"Usage: hams defaults write com.apple.dock autohide -bool true",
+			"       hams defaults list",
 		)
 	}
 

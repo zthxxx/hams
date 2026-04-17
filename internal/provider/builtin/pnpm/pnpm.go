@@ -206,6 +206,11 @@ func (p *Provider) HandleCommand(ctx context.Context, args []string, hamsFlags m
 		return p.handleInstall(ctx, remaining, hamsFlags, flags)
 	case "remove", "rm", "uninstall":
 		return p.handleRemove(ctx, remaining, hamsFlags, flags)
+	case "list":
+		// Cycle 214: route `hams pnpm list` to the hams-tracked diff.
+		// `pnpm list -g` prints the full dependency tree, not hams's
+		// recorded packages.
+		return provider.HandleListCmd(ctx, p, p.effectiveConfig(flags))
 	default:
 		return provider.WrapExecPassthrough(ctx, "pnpm", args, nil)
 	}

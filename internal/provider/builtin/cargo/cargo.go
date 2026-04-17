@@ -106,6 +106,13 @@ func (p *Provider) HandleCommand(ctx context.Context, args []string, hamsFlags m
 		return p.handleInstall(ctx, remaining, hamsFlags, flags)
 	case "remove", "uninstall", "rm":
 		return p.handleRemove(ctx, remaining, hamsFlags, flags)
+	case "list":
+		// Cycle 214: spec promises "Diff view" for `hams cargo list`.
+		// Pre-cycle-214 this fell through to `cargo list` which is
+		// not a valid cargo subcommand (cargo errors with "no such
+		// command: list"). HandleListCmd prints the hams-tracked
+		// desired-vs-observed diff, matching `hams list --only=cargo`.
+		return provider.HandleListCmd(ctx, p, p.effectiveConfig(flags))
 	default:
 		return provider.WrapExecPassthrough(ctx, "cargo", args, nil)
 	}

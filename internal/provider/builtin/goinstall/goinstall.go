@@ -113,6 +113,13 @@ func (p *Provider) HandleCommand(ctx context.Context, args []string, hamsFlags m
 	switch verb {
 	case "install", "i":
 		return p.handleInstall(ctx, remaining, hamsFlags, flags)
+	case "list":
+		// Cycle 214: route `hams goinstall list` to the hams-tracked
+		// diff. `go list` is a real subcommand of the go toolchain
+		// but it prints Go package info, not installed binaries —
+		// wrong affordance for the user who just ran
+		// `hams goinstall install github.com/…`.
+		return provider.HandleListCmd(ctx, p, p.effectiveConfig(flags))
 	default:
 		return provider.WrapExecPassthrough(ctx, "go", args, nil)
 	}

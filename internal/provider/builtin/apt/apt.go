@@ -205,6 +205,13 @@ func (p *Provider) HandleCommand(ctx context.Context, args []string, hamsFlags m
 		return p.handleInstall(ctx, remaining, hamsFlags, flags)
 	case "remove":
 		return p.handleRemove(ctx, remaining, hamsFlags, flags)
+	case "list":
+		// Cycle 214: route `hams apt list` to the hams-tracked diff.
+		// `apt list` is a real apt subcommand but dumps the entire
+		// system package catalog (thousands of lines) — wrong
+		// affordance for the user who ran `hams apt install foo`
+		// and now wants to see what hams is tracking.
+		return provider.HandleListCmd(ctx, p, p.effectiveConfig(flags))
 	default:
 		return provider.WrapExecPassthrough(ctx, "apt-get", args, nil)
 	}

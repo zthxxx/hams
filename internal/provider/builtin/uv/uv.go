@@ -156,6 +156,11 @@ func (p *Provider) HandleCommand(ctx context.Context, args []string, hamsFlags m
 		return p.handleInstall(ctx, remaining, hamsFlags, flags)
 	case "remove", "uninstall", "rm":
 		return p.handleRemove(ctx, remaining, hamsFlags, flags)
+	case "list":
+		// Cycle 214: route `hams uv list` to the hams-tracked diff.
+		// `uv tool list` exists but only shows tools installed via
+		// `uv tool`, not the hams-tracked diff against the hamsfile.
+		return provider.HandleListCmd(ctx, p, p.effectiveConfig(flags))
 	default:
 		return provider.WrapExecPassthrough(ctx, "uv", args, nil)
 	}

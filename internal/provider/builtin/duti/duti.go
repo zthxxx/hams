@@ -145,8 +145,18 @@ func (p *Provider) HandleCommand(ctx context.Context, args []string, hamsFlags m
 		return hamserr.NewUserError(hamserr.ExitUsageError,
 			"duti requires arguments",
 			"Usage: hams duti <ext>=<bundle-id>",
+			"       hams duti list",
 			"Example: hams duti pdf=com.adobe.acrobat.pdf",
 		)
+	}
+
+	// Cycle 214: `hams duti list` returns the hams-tracked diff. Must
+	// be checked before the canonical-shape and passthrough branches
+	// because `list` is a bare token (no `=`, no leading `-`), which
+	// would otherwise fall through to `duti list` passthrough — and
+	// duti has no `list` subcommand, so the user gets a duti error.
+	if len(args) == 1 && args[0] == "list" {
+		return provider.HandleListCmd(ctx, p, p.effectiveConfig(flags))
 	}
 
 	// Canonical shape: a single `<ext>=<bundle-id>` argument. Anything

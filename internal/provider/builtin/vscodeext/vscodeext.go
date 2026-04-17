@@ -171,6 +171,12 @@ func (p *Provider) HandleCommand(ctx context.Context, args []string, hamsFlags m
 		return p.handleInstall(ctx, remaining, hamsFlags, flags)
 	case "remove", "uninstall", "rm":
 		return p.handleRemove(ctx, remaining, hamsFlags, flags)
+	case "list":
+		// Cycle 214: route `hams code-ext list` to the hams-tracked
+		// diff. `code list` is not a valid VS Code CLI subcommand
+		// (ext listing is `code --list-extensions`), so passthrough
+		// produced a cryptic VS Code error.
+		return provider.HandleListCmd(ctx, p, p.effectiveConfig(flags))
 	default:
 		return provider.WrapExecPassthrough(ctx, "code", args, nil)
 	}
