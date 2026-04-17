@@ -303,6 +303,10 @@ func runRefresh(ctx context.Context, flags *provider.GlobalFlags, registry *prov
 				"planned":     planned,
 				"interrupted": true,
 				"success":     false,
+				// Cycle 229: surface dry_run on the interrupted-ctx
+				// path too so the JSON shape stays consistent across
+				// branches.
+				"dry_run": flags.DryRun,
 			}
 			out, mErr := json.MarshalIndent(data, "", "  ")
 			if mErr != nil {
@@ -324,6 +328,11 @@ func runRefresh(ctx context.Context, flags *provider.GlobalFlags, registry *prov
 	// that run `hams refresh` in a loop need to detect partial
 	// failures programmatically rather than parsing the prose output.
 	// The non-JSON branches print the same fields in human form.
+	//
+	// Cycle 229: include `dry_run` so machine consumers can
+	// distinguish a real refresh from a preview without re-parsing
+	// the original argv. Cycle 226's comment promised this field
+	// existed; this commit makes it true.
 	if flags.JSON {
 		data := map[string]any{
 			"probed":         probed,
@@ -331,6 +340,7 @@ func runRefresh(ctx context.Context, flags *provider.GlobalFlags, registry *prov
 			"save_failures":  saveFailures,
 			"probe_failures": planned - probed,
 			"success":        probed == planned && len(saveFailures) == 0,
+			"dry_run":        flags.DryRun,
 		}
 		if saveFailures == nil {
 			data["save_failures"] = []string{}

@@ -216,7 +216,7 @@ func TestRunRefresh_JSONOutput(t *testing.T) {
 		t.Fatalf("output not valid JSON: %v\nraw: %q", err, out)
 	}
 
-	for _, key := range []string{"probed", "planned", "save_failures", "probe_failures", "success"} {
+	for _, key := range []string{"probed", "planned", "save_failures", "probe_failures", "success", "dry_run"} {
 		if _, ok := data[key]; !ok {
 			t.Errorf("JSON missing required key %q; got: %v", key, data)
 		}
@@ -229,8 +229,53 @@ func TestRunRefresh_JSONOutput(t *testing.T) {
 	if sf, ok := data["save_failures"].([]any); !ok || len(sf) != 0 {
 		t.Errorf("save_failures = %v, want []", data["save_failures"])
 	}
+	// Cycle 229: dry_run defaults to false on a real refresh.
+	if dr, ok := data["dry_run"].(bool); !ok || dr {
+		t.Errorf("dry_run = %v (ok=%v), want false on a real refresh", data["dry_run"], ok)
+	}
 
 	_ = storeDir
+}
+
+// TestRunRefresh_JSONOutput_DryRunFlagSurfacesTrue — cycle 229.
+// `hams --json refresh --dry-run` must emit `dry_run: true` so CI
+// scripts can distinguish a preview from a real run without
+// re-parsing argv. Cycle 226's comment promised this field; cycle
+// 229 makes it real.
+func TestRunRefresh_JSONOutput_DryRunFlagSurfacesTrue(t *testing.T) {
+	_, profileDir, _, flags := setupApplyTestEnv(t, []string{"alpha"})
+	flags.JSON = true
+	flags.DryRun = true
+	writeApplyTestFile(t, filepath.Join(profileDir, "alpha.hams.yaml"),
+		"packages:\n  - app: pkg-a\n")
+
+	registry := provider.NewRegistry()
+	p := &applyTestProvider{
+		manifest: provider.Manifest{
+			Name: "alpha", DisplayName: "alpha", FilePrefix: "alpha",
+			Platforms: []provider.Platform{provider.PlatformAll},
+		},
+		probeFn: func(_ context.Context, _ *state.File) ([]provider.ProbeResult, error) {
+			return []provider.ProbeResult{{ID: "pkg-a", State: state.StateOK}}, nil
+		},
+	}
+	if err := registry.Register(p); err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+
+	out := captureStdout(t, func() {
+		if err := runRefresh(context.Background(), flags, registry, "", ""); err != nil {
+			t.Fatalf("refresh: %v", err)
+		}
+	})
+
+	var data map[string]any
+	if err := json.Unmarshal([]byte(out), &data); err != nil {
+		t.Fatalf("output not valid JSON: %v\nraw: %q", err, out)
+	}
+	if dr, ok := data["dry_run"].(bool); !ok || !dr {
+		t.Errorf("dry_run = %v (ok=%v), want true", data["dry_run"], ok)
+	}
 }
 
 // TestRunRefresh_SaveFailureListIsAlphabetical locks in cycle 151:
