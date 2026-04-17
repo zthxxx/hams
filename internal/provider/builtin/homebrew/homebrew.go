@@ -382,12 +382,28 @@ func (p *Provider) Name() string { return cliName }
 func (p *Provider) DisplayName() string { return brewDisplayName }
 
 func (p *Provider) handleList(hamsFlags map[string]string, flags *provider.GlobalFlags) error {
+	cfg := p.effectiveConfig(flags)
+
+	// Cycle 220: validate the resolved profile dir exists. `hams brew
+	// list --profile=Typo` on an invalid profile previously printed
+	// "Homebrew managed packages:\nNo entries tracked..." — silent
+	// success despite the user's obvious typo. Match the top-level
+	// `hams list --profile=Typo` (cycle 217) and HandleListCmd
+	// (cycle 220) behavior: fail hard with actionable error.
+	profileDir := cfg.ProfileDir()
+	if info, statErr := os.Stat(profileDir); statErr != nil || !info.IsDir() {
+		return hamserr.NewUserError(hamserr.ExitUsageError,
+			fmt.Sprintf("profile %q not found at %s", cfg.ProfileTag, profileDir),
+			"Check available profiles: ls "+cfg.StorePath,
+			"Or create this profile: mkdir -p "+profileDir,
+		)
+	}
+
 	hf, err := p.loadOrCreateHamsfile(hamsFlags, flags)
 	if err != nil {
 		return err
 	}
 
-	cfg := p.effectiveConfig(flags)
 	statePath := filepath.Join(cfg.StateDir(), "brew.state.yaml")
 	sf, err := state.Load(statePath)
 	if err != nil {
