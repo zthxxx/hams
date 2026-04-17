@@ -1149,7 +1149,7 @@ func TestRunApply_JSONOutput(t *testing.T) {
 	if err := json.Unmarshal([]byte(out), &data); err != nil {
 		t.Fatalf("output not valid JSON: %v\nraw: %q", err, out)
 	}
-	for _, key := range []string{"installed", "updated", "removed", "skipped", "failed", "skipped_providers", "state_save_errors", "success", "dry_run"} {
+	for _, key := range []string{"installed", "updated", "removed", "skipped", "failed", "failed_providers", "skipped_providers", "state_save_errors", "success", "dry_run"} {
 		if _, ok := data[key]; !ok {
 			t.Errorf("JSON missing required key %q; got: %v", key, data)
 		}
@@ -1160,6 +1160,11 @@ func TestRunApply_JSONOutput(t *testing.T) {
 	// Cycle 230: dry_run must always be present and false on a real apply.
 	if dr, ok := data["dry_run"].(bool); !ok || dr {
 		t.Errorf("dry_run = %v (ok=%v), want false on a real apply", data["dry_run"], ok)
+	}
+	// Cycle 231: failed_providers should be an empty array (NOT null)
+	// on a happy-path apply so consumers can iterate without nil-checking.
+	if fp, ok := data["failed_providers"].([]any); !ok || len(fp) != 0 {
+		t.Errorf("failed_providers = %v, want []", data["failed_providers"])
 	}
 	// nil-safety: empty arrays should be [] not null.
 	if sp, ok := data["skipped_providers"].([]any); !ok || len(sp) != 0 {
@@ -1225,6 +1230,79 @@ func TestRunApply_ProfileMismatchClearErrorMessage(t *testing.T) {
 	}
 	if !strings.Contains(out, "hams config set profile_tag") {
 		t.Errorf("output should suggest config fix; got:\n%s", out)
+	}
+}
+
+// TestRunApply_JSONOutput_FailedProvidersNamesFailures — cycle 231.
+// Pre-cycle-231 the JSON summary said `"failed": N` but didn't name
+// WHICH providers failed — a CI script that wanted to retry only the
+// failed subset (`hams apply --only=$(jq -r '.failed_providers | join(",")')`)
+// had to fall back to grepping slog output. Add `failed_providers`
+// (list of provider names with at least one failed action). Empty
+// array on happy path; populated on partial failure.
+func TestRunApply_JSONOutput_FailedProvidersNamesFailures(t *testing.T) {
+	_, profileDir, _, flags := setupApplyTestEnv(t, []string{"alpha", "beta"})
+	flags.JSON = true
+	writeApplyTestFile(t, filepath.Join(profileDir, "alpha.hams.yaml"), "cli:\n  - app: pkg-good\n")
+	writeApplyTestFile(t, filepath.Join(profileDir, "beta.hams.yaml"), "cli:\n  - app: pkg-bad\n")
+
+	registry := provider.NewRegistry()
+	good := &applyTestProvider{
+		manifest: provider.Manifest{
+			Name: "alpha", DisplayName: "alpha", FilePrefix: "alpha",
+			Platforms: []provider.Platform{provider.PlatformAll},
+		},
+		planFn: func(_ context.Context, _ *hamsfile.File, _ *state.File) ([]provider.Action, error) {
+			return []provider.Action{{ID: "pkg-good", Type: provider.ActionInstall}}, nil
+		},
+		applyFn: func(_ context.Context, _ provider.Action) error { return nil },
+	}
+	bad := &applyTestProvider{
+		manifest: provider.Manifest{
+			Name: "beta", DisplayName: "beta", FilePrefix: "beta",
+			Platforms: []provider.Platform{provider.PlatformAll},
+		},
+		planFn: func(_ context.Context, _ *hamsfile.File, _ *state.File) ([]provider.Action, error) {
+			return []provider.Action{{ID: "pkg-bad", Type: provider.ActionInstall}}, nil
+		},
+		applyFn: func(_ context.Context, _ provider.Action) error {
+			return fmt.Errorf("simulated install failure")
+		},
+	}
+	if err := registry.Register(good); err != nil {
+		t.Fatalf("Register good: %v", err)
+	}
+	if err := registry.Register(bad); err != nil {
+		t.Fatalf("Register bad: %v", err)
+	}
+
+	out := captureStdout(t, func() {
+		// runApply returns ExitPartialFailure on any failed action; we
+		// expect that here.
+		if err := runApply(context.Background(), flags, registry, sudo.NoopAcquirer{}, "", true, "", "", false, bootstrapMode{}); err == nil {
+			t.Fatal("expected ExitPartialFailure due to bad provider")
+		}
+	})
+
+	var data map[string]any
+	if err := json.Unmarshal([]byte(out), &data); err != nil {
+		t.Fatalf("output not valid JSON: %v\nraw: %q", err, out)
+	}
+	failedCount, ok := data["failed"].(float64)
+	if !ok || failedCount < 1 {
+		t.Errorf("failed = %v, want >=1", data["failed"])
+	}
+	failedProviders, ok := data["failed_providers"].([]any)
+	if !ok {
+		t.Fatalf("failed_providers missing or wrong type; got %v", data["failed_providers"])
+	}
+	if len(failedProviders) != 1 {
+		t.Errorf("failed_providers = %v, want exactly [beta]", failedProviders)
+	}
+	if len(failedProviders) >= 1 {
+		if name, ok := failedProviders[0].(string); !ok || name != "beta" {
+			t.Errorf("failed_providers[0] = %v, want \"beta\"", failedProviders[0])
+		}
 	}
 }
 

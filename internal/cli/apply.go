@@ -449,6 +449,7 @@ func runApply(ctx context.Context, flags *provider.GlobalFlags, registry *provid
 	var allResults []provider.ExecuteResult
 	var skippedProviders []string
 	var stateSaveFailures []string
+	var failedProviders []string // cycle 231: per-provider failure attribution
 
 	if !noRefresh {
 		slog.Info("refreshing state")
@@ -647,6 +648,16 @@ func runApply(ctx context.Context, flags *provider.GlobalFlags, registry *provid
 			result := provider.Execute(ctx, p, actions, sf, otelSess.Session())
 			allResults = append(allResults, result)
 
+			// Cycle 231: track which provider had any failed action so
+			// the final JSON summary can surface failed_providers (a list
+			// of names) alongside the existing `failed` count. Pre-cycle
+			// 231 the summary said `"failed": N` but didn't name WHICH
+			// providers failed — CI scripts couldn't retry just the
+			// failed subset, they had to grep slog output.
+			if result.Failed > 0 {
+				failedProviders = append(failedProviders, name)
+			}
+
 			if result.Failed == 0 {
 				sf.ConfigHash = currentHash
 			}
@@ -758,12 +769,20 @@ func runApply(ctx context.Context, flags *provider.GlobalFlags, registry *provid
 		// (presence == dry-run because the dry-run path uses
 		// emitDryRunJSON). Always-present `dry_run` field gives
 		// machine consumers a stable schema across modes.
+		// Cycle 231: failed_providers names which providers had any
+		// failed action so retry scripts can target just the failed
+		// subset (e.g. `hams apply --only=$(jq .failed_providers)`).
+		failedNorm := failedProviders
+		if failedNorm == nil {
+			failedNorm = []string{}
+		}
 		data := map[string]any{
 			"installed":         merged.Installed,
 			"updated":           merged.Updated,
 			"removed":           merged.Removed,
 			"skipped":           merged.Skipped,
 			"failed":            merged.Failed,
+			"failed_providers":  failedNorm,
 			"skipped_providers": skippedNorm,
 			"state_save_errors": saveFailNorm,
 			"success":           merged.Failed == 0 && len(skippedProviders) == 0 && len(stateSaveFailures) == 0,
