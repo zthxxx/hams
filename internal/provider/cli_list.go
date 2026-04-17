@@ -1,0 +1,68 @@
+package provider
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"io/fs"
+	"path/filepath"
+
+	"github.com/zthxxx/hams/internal/config"
+	hamserr "github.com/zthxxx/hams/internal/error"
+	"github.com/zthxxx/hams/internal/hamsfile"
+	"github.com/zthxxx/hams/internal/state"
+)
+
+// HandleListCmd is the shared implementation of the `hams <provider>
+// list` CLI verb. It loads the provider's hamsfile + state file
+// (tolerating absent files by creating empty in-memory doubles),
+// invokes p.List, and prints the human-readable diff to stdout.
+// Mirrors the output of `hams list --only=<provider>` so users reach
+// the same information through either entry point.
+//
+// The builtin-providers spec table for every Package-class (and many
+// non-Package-class) providers promises "Diff view" for `hams
+// <provider> list`, but pre-cycle-214 the CLI dispatchers fell through
+// to WrapExecPassthrough, which tried to exec the underlying tool's
+// `list` subcommand. That either errored (cargo, vscodeext, goinstall)
+// or emitted raw unrelated output (apt, mas) instead of the
+// hams-tracked diff. Cycle 213 fixed ansible inline; cycle 214 pulled
+// the logic out here so the rest of the providers can adopt the fix
+// by adding one `case "list"` branch.
+//
+// No JSON output — callers wanting machine-parseable output should use
+// `hams --json list --only=<provider>` which already honors the --json
+// flag at the top-level list command.
+func HandleListCmd(ctx context.Context, p Provider, cfg *config.Config) error {
+	if cfg == nil || cfg.StorePath == "" {
+		return hamserr.NewUserError(hamserr.ExitUsageError,
+			"no store directory configured",
+			"Set store_path in hams config or pass --store",
+		)
+	}
+
+	manifest := p.Manifest()
+	prefix := manifest.FilePrefix
+
+	hfPath := filepath.Join(cfg.ProfileDir(), prefix+".hams.yaml")
+	hf, err := hamsfile.LoadOrCreateEmpty(hfPath)
+	if err != nil {
+		return fmt.Errorf("loading %s hamsfile: %w", manifest.Name, err)
+	}
+
+	statePath := filepath.Join(cfg.StateDir(), prefix+".state.yaml")
+	sf, loadErr := state.Load(statePath)
+	if loadErr != nil {
+		if !errors.Is(loadErr, fs.ErrNotExist) {
+			return fmt.Errorf("loading %s state: %w", manifest.Name, loadErr)
+		}
+		sf = state.New(manifest.Name, cfg.MachineID)
+	}
+
+	output, listErr := p.List(ctx, hf, sf)
+	if listErr != nil {
+		return listErr
+	}
+	fmt.Print(output)
+	return nil
+}
