@@ -65,7 +65,13 @@ func resolveFromRepoStorePath(ctx context.Context, repo string, paths config.Pat
 	if preview, ok := previewExistingStoreFromRepo(repo, paths); ok {
 		return preview, false, nil
 	}
-	fmt.Printf("[dry-run] Would clone %s. Re-run without --dry-run to clone and preview the plan.\n", repo)
+	// Cycle 250: dry-run preview text goes to stderr, not stdout.
+	// Symmetric with the real-clone progress (above) — stdout stays
+	// reserved for the apply's primary output (the JSON summary in
+	// --json mode). CI scripts running `hams --json --dry-run apply
+	// --from-repo=X | jq .` would otherwise see this prose on stdout
+	// before the summary, breaking JSON parsing.
+	fmt.Fprintf(os.Stderr, "[dry-run] Would clone %s. Re-run without --dry-run to clone and preview the plan.\n", repo)
 	return "", true, nil
 }
 
@@ -176,17 +182,29 @@ func cloneRemoteRepo(ctx context.Context, repo string, paths config.Paths) (stri
 	// initial clone aborts promptly instead of waiting for network
 	// timeout. Previously users saw hams appear hung during
 	// --from-repo clones even after SIGINT.
-	fmt.Printf("Downloading Hams Store to %s\n", logging.TildePath(clonePath))
+	//
+	// Cycle 250: progress / status messages go to stderr, not stdout.
+	// Pre-cycle-250 `fmt.Printf(...)` and `Progress: os.Stdout`
+	// interleaved clone progress into stdout — which made
+	// `hams --json apply --from-repo=<X> | jq .` fail on invalid
+	// JSON (progress lines appeared before the final summary object).
+	// Standard UNIX convention: stdout is for the command's primary
+	// output (the JSON summary), stderr is for diagnostics / progress
+	// (status messages, git transfer progress). git itself writes
+	// progress to stderr. This also makes `hams apply --from-repo=X
+	// > out.log` leave progress on the user's terminal while routing
+	// the final output to the file.
+	fmt.Fprintf(os.Stderr, "Downloading Hams Store to %s\n", logging.TildePath(clonePath))
 	_, err := gogit.PlainCloneContext(ctx, clonePath, false, &gogit.CloneOptions{
 		URL:      repoURL,
-		Progress: os.Stdout,
+		Progress: os.Stderr,
 	})
 	if err != nil {
 		return "", transformCloneError(repoURL, err)
 	}
 
-	fmt.Printf("Download Hams Store success\n")
-	fmt.Printf("Profile Store is %s now\n\n", logging.TildePath(clonePath))
+	fmt.Fprintf(os.Stderr, "Download Hams Store success\n")
+	fmt.Fprintf(os.Stderr, "Profile Store is %s now\n\n", logging.TildePath(clonePath))
 	return clonePath, nil
 }
 
