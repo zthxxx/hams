@@ -3,7 +3,9 @@ package cli
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io/fs"
 	"log/slog"
 	"os"
 	"os/exec"
@@ -1408,6 +1410,21 @@ func listCmd(registry *provider.Registry) *cli.Command {
 
 				sf, loadErr := state.Load(statePath)
 				if loadErr != nil {
+					// Cycle 236: distinguish "state file doesn't exist"
+					// (normal for never-touched providers) from "state
+					// file unreadable" (corrupt YAML, permission denied).
+					// Pre-cycle-236 all errors were silently swallowed
+					// via bare `continue`, so a user whose state.yaml was
+					// corrupted by a mid-write crash saw the misleading
+					// "No managed resources found" message and had no
+					// way to know hams couldn't read their existing
+					// state. Warn loudly so the user can fix or remove
+					// the broken file; the loop continues so healthy
+					// providers still surface.
+					if !errors.Is(loadErr, fs.ErrNotExist) {
+						slog.Warn("skipping provider: state file unreadable",
+							"provider", manifest.Name, "path", statePath, "error", loadErr)
+					}
 					continue
 				}
 

@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -642,5 +643,62 @@ resources:
 				t.Errorf("ok-resource entry should NOT emit last_error; entry:\n%s", slice)
 			}
 		}
+	}
+}
+
+// TestList_CorruptStateFileEmitsWarning locks in cycle 236: a state
+// file that exists but fails to parse (corrupt YAML, permission
+// denied) previously caused `hams list` to silently skip the
+// provider and print "No managed resources found" — indistinguishable
+// from a fresh empty store to the user whose state had been
+// corrupted mid-write or by an editor crash. Now: slog.Warn names
+// the provider + path + underlying error before the loop continues.
+// Healthy providers in the same store still surface in the list.
+func TestList_CorruptStateFileEmitsWarning(t *testing.T) {
+	storeDir, _, stateDir, _ := setupApplyTestEnv(t, []string{"apt"})
+
+	// setupApplyTestEnv doesn't create stateDir (apply/refresh's lazy
+	// mkdir does that on first write). For this test we need the dir
+	// up front so we can drop a corrupt state file in place.
+	if err := os.MkdirAll(stateDir, 0o750); err != nil {
+		t.Fatalf("mkdir state: %v", err)
+	}
+	// Write garbage YAML to the apt state path. state.Load will error.
+	statePath := filepath.Join(stateDir, "apt.state.yaml")
+	if err := os.WriteFile(statePath, []byte("not: valid: yaml: here\n"), 0o600); err != nil {
+		t.Fatalf("write corrupt state: %v", err)
+	}
+
+	registry := provider.NewRegistry()
+	p := &applyTestProvider{
+		manifest: provider.Manifest{
+			Name: "apt", DisplayName: "apt", FilePrefix: "apt",
+			Platforms: []provider.Platform{provider.PlatformAll},
+		},
+	}
+	if err := registry.Register(p); err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+
+	// Redirect slog to capture the warn line.
+	origDefault := slog.Default()
+	t.Cleanup(func() { slog.SetDefault(origDefault) })
+	var buf strings.Builder
+	slog.SetDefault(slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelWarn})))
+
+	app := NewApp(registry, sudo.NoopAcquirer{})
+	if err := app.Run(context.Background(), []string{"hams", "--store", storeDir, "list"}); err != nil {
+		t.Fatalf("list: %v", err)
+	}
+
+	got := buf.String()
+	if !strings.Contains(got, "state file unreadable") {
+		t.Errorf("expected 'state file unreadable' warning; got:\n%s", got)
+	}
+	if !strings.Contains(got, "apt") {
+		t.Errorf("warning should name the provider; got:\n%s", got)
+	}
+	if !strings.Contains(got, statePath) {
+		t.Errorf("warning should name the state file path; got:\n%s", got)
 	}
 }
