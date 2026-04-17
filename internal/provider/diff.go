@@ -93,7 +93,20 @@ func DiffDesiredVsState(desired *hamsfile.File, observed *state.File) DiffResult
 }
 
 // FormatDiff renders a DiffResult as a human-readable string with +/-/~ markers.
+//
+// Cycle 210: when the diff has zero entries across all four categories,
+// emit a user-facing "No entries tracked" hint instead of an empty
+// string. Previously `hams <provider> list` on a fresh/empty store
+// printed NOTHING and exited 0 — indistinguishable from a silent
+// failure (e.g. provider crashed before writing any output). JSON
+// consumers use FormatDiffJSON (which still emits the empty-arrays
+// shape) and are unaffected.
 func FormatDiff(diff *DiffResult) string {
+	if len(diff.Additions) == 0 && len(diff.Diverged) == 0 &&
+		len(diff.Matched) == 0 && len(diff.Removals) == 0 {
+		return "No entries tracked. Run 'hams <provider> install <name>' to add one.\n"
+	}
+
 	var sb strings.Builder
 
 	for _, e := range diff.Additions {
