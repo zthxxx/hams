@@ -158,6 +158,45 @@ func TestRunStorePush_CommitErrorShortCircuits(t *testing.T) {
 	}
 }
 
+// TestConfigEditDryRun_SkipsMutationsAndEditor locks in cycle
+// 146: `hams --dry-run config edit` prints "Would open <path> in
+// <editor>" and returns without (a) creating the config dir, (b)
+// creating the stub config file, or (c) exec-ing the editor.
+// Previously --dry-run was ignored: the edit command performed
+// the MkdirAll + WriteFile stub + editor exec regardless.
+func TestConfigEditDryRun_SkipsMutationsAndEditor(t *testing.T) {
+	configHome := t.TempDir()
+	dataHome := t.TempDir()
+	t.Setenv("HAMS_CONFIG_HOME", configHome)
+	t.Setenv("HAMS_DATA_HOME", dataHome)
+	// Point EDITOR at a bogus binary so that if the dry-run
+	// accidentally fell through to exec, the test would fail loudly
+	// with "executable file not found" instead of silently passing
+	// by running a random editor in CI.
+	t.Setenv("EDITOR", "this-editor-must-not-be-exec")
+
+	configPath := filepath.Join(configHome, "hams.config.yaml")
+
+	out := captureStdout(t, func() {
+		app := NewApp(provider.NewRegistry(), sudo.NoopAcquirer{})
+		if err := app.Run(context.Background(),
+			[]string{"hams", "--dry-run", "config", "edit"}); err != nil {
+			t.Fatalf("dry-run config edit: %v", err)
+		}
+	})
+
+	if !strings.Contains(out, "[dry-run]") {
+		t.Errorf("dry-run output missing [dry-run] prefix; got:\n%s", out)
+	}
+	if !strings.Contains(out, "this-editor-must-not-be-exec") {
+		t.Errorf("dry-run output should echo the editor name; got:\n%s", out)
+	}
+	// Config file MUST NOT have been created by the dry-run.
+	if _, err := os.Stat(configPath); err == nil {
+		t.Errorf("dry-run created config file %q; should have been untouched", configPath)
+	}
+}
+
 // TestConfigSetDryRun_SkipsWrite locks in cycle 145: `hams
 // --dry-run config set <key> <val>` prints the intent-level
 // preview and returns without invoking WriteConfigKey. Previously

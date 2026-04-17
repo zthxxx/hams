@@ -416,6 +416,29 @@ func configCmd() *cli.Command {
 					paths := resolvePaths(flags)
 					configPath := paths.GlobalConfigPath()
 
+					editor := os.Getenv("EDITOR")
+					if editor == "" {
+						editor = os.Getenv("VISUAL")
+					}
+					if editor == "" {
+						editor = "vi"
+					}
+
+					// --dry-run: preview the target path + editor
+					// without creating any directory/file or exec-ing
+					// the editor. Completes the dry-run consistency
+					// sweep (cycles 143-146) across all destructive
+					// commands: apply, refresh, store push/pull/init,
+					// config set/unset, and now config edit.
+					if flags.DryRun {
+						fmt.Printf("[dry-run] Would open %s in %s\n",
+							logging.TildePath(configPath), editor)
+						if _, statErr := os.Stat(configPath); os.IsNotExist(statErr) {
+							fmt.Printf("[dry-run]   (file does not exist; would be created with a stub header)\n")
+						}
+						return nil
+					}
+
 					// Ensure the config file exists.
 					if _, statErr := os.Stat(configPath); os.IsNotExist(statErr) {
 						if mkdirErr := os.MkdirAll(filepath.Dir(configPath), 0o750); mkdirErr != nil {
@@ -424,14 +447,6 @@ func configCmd() *cli.Command {
 						if writeErr := os.WriteFile(configPath, []byte("# hams global configuration\n"), 0o600); writeErr != nil {
 							return fmt.Errorf("creating config file: %w", writeErr)
 						}
-					}
-
-					editor := os.Getenv("EDITOR")
-					if editor == "" {
-						editor = os.Getenv("VISUAL")
-					}
-					if editor == "" {
-						editor = "vi"
 					}
 
 					editorCmd := exec.CommandContext(ctx, editor, configPath) //nolint:gosec // editor is user-specified via $EDITOR
