@@ -387,12 +387,25 @@ func runRefresh(ctx context.Context, flags *provider.GlobalFlags, registry *prov
 	// detect the anomaly; previously refresh returned nil (exit 0)
 	// despite the log line warning of errors — a silent-exit-0 UX
 	// bug matching the apply --dry-run drift fixed in cycle 39.
+	//
+	// Cycle 234: name the probe-failed providers in the text output
+	// (symmetric with cycle 232's JSON probe_failed_providers list
+	// and the existing save-failure naming below). Pre-cycle-234
+	// the text said "(N probe error(s); see log for details)" and
+	// users had to grep slog output to find WHICH providers failed.
 	if probed == planned {
 		fmt.Printf("Refresh complete: %d %s probed, but %d state file(s) failed to save: %s\n",
 			planned, providersNoun, len(saveFailures), strings.Join(saveFailures, ", "))
 	} else {
-		fmt.Printf("Refresh complete: %d/%d %s probed (%d probe error(s); see log for details)\n",
-			probed, planned, providersNoun, planned-probed)
+		probeFailedNames := make([]string, 0, planned-probed)
+		for _, p := range providers {
+			if _, ok := probeResults[p.Manifest().Name]; !ok {
+				probeFailedNames = append(probeFailedNames, p.Manifest().Name)
+			}
+		}
+		sort.Strings(probeFailedNames)
+		fmt.Printf("Refresh complete: %d/%d %s probed (%d probe error(s) in: %s; see log for details)\n",
+			probed, planned, providersNoun, planned-probed, strings.Join(probeFailedNames, ", "))
 	}
 	if len(saveFailures) > 0 {
 		fmt.Printf("Warning: %d state save failure(s): %s — next run may re-probe these\n",

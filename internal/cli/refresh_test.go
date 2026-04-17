@@ -306,6 +306,61 @@ func TestRunRefresh_JSONOutput_NamesProbeFailedProviders(t *testing.T) {
 	}
 }
 
+// TestRunRefresh_TextOutput_NamesProbeFailedProviders — cycle 234.
+// Symmetric with cycle 232's JSON probe_failed_providers list.
+// Pre-cycle-234 the text output for partial probe failures said
+// "(N probe error(s); see log for details)" without naming WHICH
+// providers failed. Interactive users had to grep slog. Test seeds
+// alpha (probe succeeds) + beta (probe errors) and asserts the
+// stdout summary mentions "beta" inline.
+func TestRunRefresh_TextOutput_NamesProbeFailedProviders(t *testing.T) {
+	_, profileDir, _, flags := setupApplyTestEnv(t, []string{"alpha", "beta"})
+	writeApplyTestFile(t, filepath.Join(profileDir, "alpha.hams.yaml"),
+		"packages:\n  - app: pkg-a\n")
+	writeApplyTestFile(t, filepath.Join(profileDir, "beta.hams.yaml"),
+		"packages:\n  - app: pkg-b\n")
+
+	registry := provider.NewRegistry()
+	good := &applyTestProvider{
+		manifest: provider.Manifest{
+			Name: "alpha", DisplayName: "alpha", FilePrefix: "alpha",
+			Platforms: []provider.Platform{provider.PlatformAll},
+		},
+		probeFn: func(_ context.Context, _ *state.File) ([]provider.ProbeResult, error) {
+			return []provider.ProbeResult{{ID: "pkg-a", State: state.StateOK}}, nil
+		},
+	}
+	bad := &applyTestProvider{
+		manifest: provider.Manifest{
+			Name: "beta", DisplayName: "beta", FilePrefix: "beta",
+			Platforms: []provider.Platform{provider.PlatformAll},
+		},
+		probeFn: func(_ context.Context, _ *state.File) ([]provider.ProbeResult, error) {
+			return nil, errors.New("simulated probe failure")
+		},
+	}
+	if err := registry.Register(good); err != nil {
+		t.Fatalf("Register good: %v", err)
+	}
+	if err := registry.Register(bad); err != nil {
+		t.Fatalf("Register bad: %v", err)
+	}
+
+	out := captureStdout(t, func() {
+		// runRefresh returns ExitPartialFailure on probe failures; expected.
+		if err := runRefresh(context.Background(), flags, registry, "", ""); err == nil {
+			t.Fatal("expected ExitPartialFailure (1 probe failure)")
+		}
+	})
+
+	if !strings.Contains(out, "beta") {
+		t.Errorf("text output should name 'beta' as probe-failed; got %q", out)
+	}
+	if !strings.Contains(out, "probe error(s) in:") {
+		t.Errorf("text output should use cycle-234 phrase 'probe error(s) in:'; got %q", out)
+	}
+}
+
 // TestRunRefresh_JSONOutput_DryRunFlagSurfacesTrue — cycle 229.
 // `hams --json refresh --dry-run` must emit `dry_run: true` so CI
 // scripts can distinguish a preview from a real run without
