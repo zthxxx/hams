@@ -485,23 +485,25 @@ func (p *Provider) handleInstall(ctx context.Context, args []string, hamsFlags m
 	if tag == tagCLI && caskFlag {
 		tag = tagCask
 	}
-	// Cycle 176: reject tap-format args in `brew install`. A user
+	// Cycle 176/179: reject tap-format args in `brew install`. A user
 	// typing `hams brew install user/repo` almost always intends a
 	// tap, but `brew install user/repo` actually triggers a `brew
 	// tap` as a side effect THEN tries to install a formula named
 	// "repo" from that tap (which usually doesn't exist) — leaving
-	// the host tapped but with no hamsfile/state record of it. The
-	// pre-cycle-176 auto-tag-as-"tap" code at this point was a
-	// no-op safety net that recorded under "tap" tag IF the install
-	// somehow succeeded; in practice it nearly always failed and
-	// the tap leaked. Send the user at the dedicated `brew tap`
-	// verb (handleTap) which auto-records cleanly.
-	if len(packages) > 0 && isTapFormat(packages[0]) {
-		return hamserr.NewUserError(hamserr.ExitUsageError,
-			fmt.Sprintf("brew install does not support tap-format args (%q looks like user/repo)", packages[0]),
-			"Use `hams brew tap "+packages[0]+"` instead — it taps the repo AND auto-records it",
-			"To install a formula from a tap, first tap it then install: hams brew tap user/repo && hams brew install <formula>",
-		)
+	// the host tapped but with no hamsfile/state record of it.
+	//
+	// Cycle 179: scan ALL packages, not just packages[0]. Pre-cycle-179
+	// the guard only fired when the FIRST arg was tap-format; a mixed
+	// invocation like `hams brew install htop user/repo` slipped past
+	// the guard and the user/repo arg leaked the tap as before.
+	for _, pkg := range packages {
+		if isTapFormat(pkg) {
+			return hamserr.NewUserError(hamserr.ExitUsageError,
+				fmt.Sprintf("brew install does not support tap-format args (%q looks like user/repo)", pkg),
+				"Use `hams brew tap "+pkg+"` instead — it taps the repo AND auto-records it",
+				"To install a formula from a tap, first tap it then install: hams brew tap user/repo && hams brew install <formula>",
+			)
+		}
 	}
 	if len(packages) == 0 {
 		return hamserr.NewUserError(hamserr.ExitUsageError,

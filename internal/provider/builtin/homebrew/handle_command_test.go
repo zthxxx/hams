@@ -186,6 +186,36 @@ func TestHandleCommand_TapFormatInInstallErrors(t *testing.T) {
 	}
 }
 
+// TestHandleCommand_TapFormatInMixedInstallErrors locks in cycle 179:
+// the cycle-176 guard only checked packages[0]. A mixed invocation
+// like `hams brew install htop user/repo` slipped past — runner
+// would install htop, then runner.Install("user/repo") would tap as
+// a side effect and fail on the formula install, leaking the tap.
+// Now: scan ALL args for tap-format.
+func TestHandleCommand_TapFormatInMixedInstallErrors(t *testing.T) {
+	t.Parallel()
+	h := newBrewHarness(t)
+
+	err := h.provider.HandleCommand(context.Background(),
+		[]string{"install", "htop", "homebrew/cask-fonts"}, nil, h.flags)
+	if err == nil {
+		t.Fatal("expected error for tap-format arg in mixed install")
+	}
+	if !strings.Contains(err.Error(), "tap-format") {
+		t.Errorf("error should mention 'tap-format'; got %q", err.Error())
+	}
+	if !strings.Contains(err.Error(), "homebrew/cask-fonts") {
+		t.Errorf("error should name the offending arg 'homebrew/cask-fonts'; got %q", err.Error())
+	}
+	// Brew MUST NOT have been invoked for ANY arg (early-return).
+	if h.runner.CallCount(fakeOpInstall, "htop") > 0 {
+		t.Errorf("brew install must not be invoked when any arg is tap-format")
+	}
+	if h.runner.CallCount(fakeOpInstall, "homebrew/cask-fonts") > 0 {
+		t.Errorf("brew install must not be invoked for tap-format arg")
+	}
+}
+
 // TestHandleCommand_FormulaInstallStillWorks asserts the cycle-176
 // fix doesn't break legitimate non-tap formula installs (regression
 // gate: ensure `hams brew install htop` still works).
