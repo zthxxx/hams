@@ -3,12 +3,16 @@ package ansible
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io/fs"
 	"log/slog"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 
+	"github.com/zthxxx/hams/internal/config"
 	hamserr "github.com/zthxxx/hams/internal/error"
 	"github.com/zthxxx/hams/internal/hamsfile"
 	"github.com/zthxxx/hams/internal/provider"
@@ -17,12 +21,16 @@ import (
 
 // Provider implements the Ansible provider.
 type Provider struct {
+	cfg    *config.Config
 	runner CmdRunner
 }
 
 // New creates a new Ansible provider wired with a real CmdRunner.
+// cfg supplies store/profile paths used by the `list` CLI subcommand
+// to locate the hamsfile and state file. Apply-from-hamsfile does not
+// read cfg — it goes through CmdRunner alone.
 // Pass NewFakeCmdRunner from tests for DI-isolated unit testing.
-func New(runner CmdRunner) *Provider { return &Provider{runner: runner} }
+func New(cfg *config.Config, runner CmdRunner) *Provider { return &Provider{cfg: cfg, runner: runner} }
 
 // ansibleInstallScript is the consent-gated install command. pipx is
 // chosen over pip because PEP 668 flags system-pip installs on modern
@@ -116,11 +124,44 @@ func (p *Provider) List(_ context.Context, desired *hamsfile.File, sf *state.Fil
 }
 
 // HandleCommand processes CLI subcommands for ansible.
+//
+// Per builtin-providers.md §"Ansible Provider" the spec-mandated
+// subcommands are:
+//
+//   - `hams ansible run <urn-id>` — run a single hamsfile-tracked playbook.
+//   - `hams ansible list` — show tracked playbooks with status.
+//   - `hams ansible remove <urn-id>` — delete from hamsfile (no rollback).
+//
+// Cycle 213 wires `list` end-to-end via the same diff helper the
+// top-level `hams list --only=ansible` uses. `run` and `remove`
+// require hamsfile-edit support that v1 has not yet shipped — they
+// return an ExitUsageError pointing the user at `hams apply --only=ansible`
+// (which reads the same URN-shaped entries via Plan) or hand-editing
+// the hamsfile.
+//
+// For backward compatibility with the pre-cycle-213 ad-hoc passthrough
+// (`hams ansible <playbook.yml>` exec'd ansible-playbook directly), any
+// first-arg that isn't one of the three verbs still falls through to
+// the exec path. Users relying on ad-hoc invocations keep working.
 func (p *Provider) HandleCommand(ctx context.Context, args []string, _ map[string]string, flags *provider.GlobalFlags) error {
 	if len(args) == 0 {
 		return hamserr.NewUserError(hamserr.ExitUsageError,
-			"ansible requires a playbook path",
-			"Usage: hams ansible <playbook.yml>",
+			"ansible requires a playbook path or subcommand",
+			"Usage: hams ansible list",
+			"       hams ansible <playbook.yml>            (ad-hoc passthrough)",
+			"       hams ansible run <urn-id>              (planned v1.1)",
+			"       hams ansible remove <urn-id>           (planned v1.1)",
+		)
+	}
+
+	switch args[0] {
+	case "list":
+		return p.handleList(flags)
+	case "run", "remove":
+		return hamserr.NewUserError(hamserr.ExitUsageError,
+			fmt.Sprintf("ansible %s is planned for v1.1 (URN-editing on the CLI is not yet wired)", args[0]),
+			"Use 'hams apply --only=ansible' to run all tracked playbooks",
+			"Or hand-edit the ansible hamsfile: <profile-dir>/ansible.hams.yaml",
 		)
 	}
 
@@ -133,6 +174,64 @@ func (p *Provider) HandleCommand(ctx context.Context, args []string, _ map[strin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	return cmd.Run()
+}
+
+// handleList loads the hamsfile + state for ansible and prints the
+// DiffDesiredVsState output. Mirrors what `hams list --only=ansible`
+// prints for a user who went directly to the provider subcommand
+// instead of the top-level list. JSON mode unsupported here — the
+// top-level `hams --json list --only=ansible` is the machine-parseable
+// entrypoint.
+func (p *Provider) handleList(flags *provider.GlobalFlags) error {
+	cfg := p.effectiveConfig(flags)
+	if cfg.StorePath == "" {
+		return hamserr.NewUserError(hamserr.ExitUsageError,
+			"no store directory configured",
+			"Set store_path in hams config or pass --store",
+		)
+	}
+
+	hfPath := filepath.Join(cfg.ProfileDir(), "ansible.hams.yaml")
+	hf, err := hamsfile.LoadOrCreateEmpty(hfPath)
+	if err != nil {
+		return fmt.Errorf("loading ansible hamsfile: %w", err)
+	}
+
+	statePath := filepath.Join(cfg.StateDir(), "ansible.state.yaml")
+	sf, err := state.Load(statePath)
+	if err != nil {
+		if !errors.Is(err, fs.ErrNotExist) {
+			return fmt.Errorf("loading ansible state: %w", err)
+		}
+		sf = state.New(p.Name(), cfg.MachineID)
+	}
+
+	output, listErr := p.List(context.Background(), hf, sf)
+	if listErr != nil {
+		return listErr
+	}
+	fmt.Print(output)
+	return nil
+}
+
+// effectiveConfig returns the provider's config overlaid with any
+// per-invocation flags (--store, --profile). Mirrors the helper used
+// by other providers' CLI paths.
+func (p *Provider) effectiveConfig(flags *provider.GlobalFlags) *config.Config {
+	if p.cfg == nil {
+		p.cfg = &config.Config{}
+	}
+	cfg := *p.cfg
+	if flags == nil {
+		return &cfg
+	}
+	if flags.Store != "" {
+		cfg.StorePath = flags.Store
+	}
+	if flags.Profile != "" {
+		cfg.ProfileTag = flags.Profile
+	}
+	return &cfg
 }
 
 // Name returns the CLI name.

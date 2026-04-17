@@ -7,6 +7,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
+	"github.com/zthxxx/hams/internal/config"
 	"github.com/zthxxx/hams/internal/hamsfile"
 	"github.com/zthxxx/hams/internal/provider"
 	"github.com/zthxxx/hams/internal/state"
@@ -18,7 +19,7 @@ import (
 func TestU1_Apply_RunsPlaybook(t *testing.T) {
 	t.Parallel()
 	fake := NewFakeCmdRunner()
-	p := New(fake)
+	p := New(&config.Config{}, fake)
 
 	const playbook = "/etc/playbooks/site.yml"
 	action := provider.Action{ID: playbook, Resource: playbook}
@@ -39,7 +40,7 @@ func TestU1_Apply_RunsPlaybook(t *testing.T) {
 func TestU2_Apply_RejectsNonStringResource(t *testing.T) {
 	t.Parallel()
 	fake := NewFakeCmdRunner()
-	p := New(fake)
+	p := New(&config.Config{}, fake)
 
 	err := p.Apply(context.Background(), provider.Action{ID: "x", Resource: 42})
 	if err == nil {
@@ -56,7 +57,7 @@ func TestU3_Apply_FailurePropagated(t *testing.T) {
 	wantErr := errors.New("simulated playbook failure")
 	const playbook = "/etc/playbooks/flaky.yml"
 	fake := NewFakeCmdRunner().WithPlaybookError(playbook, wantErr)
-	p := New(fake)
+	p := New(&config.Config{}, fake)
 
 	gotErr := p.Apply(context.Background(), provider.Action{ID: playbook, Resource: playbook})
 	if !errors.Is(gotErr, wantErr) {
@@ -70,7 +71,7 @@ func TestU3_Apply_FailurePropagated(t *testing.T) {
 func TestU4_Remove_IsNoOp(t *testing.T) {
 	t.Parallel()
 	fake := NewFakeCmdRunner()
-	p := New(fake)
+	p := New(&config.Config{}, fake)
 
 	if err := p.Remove(context.Background(), "/etc/playbooks/site.yml"); err != nil {
 		t.Errorf("Remove should always return nil; got %v", err)
@@ -84,7 +85,7 @@ func TestU4_Remove_IsNoOp(t *testing.T) {
 // have a "is this playbook applied" probe; the state IS the truth).
 func TestU5_Probe_ReflectsStateVerbatim(t *testing.T) {
 	t.Parallel()
-	p := New(NewFakeCmdRunner())
+	p := New(&config.Config{}, NewFakeCmdRunner())
 	sf := state.New("ansible", "test-machine")
 	sf.SetResource("/play1.yml", state.StateOK)
 	sf.SetResource("/play2.yml", state.StateFailed)
@@ -111,7 +112,7 @@ func TestU5_Probe_ReflectsStateVerbatim(t *testing.T) {
 // U6 — Probe skips StateRemoved.
 func TestU6_Probe_SkipsRemovedResources(t *testing.T) {
 	t.Parallel()
-	p := New(NewFakeCmdRunner())
+	p := New(&config.Config{}, NewFakeCmdRunner())
 	sf := state.New("ansible", "test-machine")
 	sf.SetResource("/removed.yml", state.StateRemoved)
 
@@ -127,7 +128,7 @@ func TestU6_Probe_SkipsRemovedResources(t *testing.T) {
 // U7 — Bootstrap returns nil when ansible-playbook is on PATH.
 func TestU7_Bootstrap_AnsiblePresentReturnsNil(t *testing.T) {
 	t.Parallel()
-	p := New(NewFakeCmdRunner())
+	p := New(&config.Config{}, NewFakeCmdRunner())
 	if err := p.Bootstrap(context.Background()); err != nil {
 		t.Errorf("Bootstrap = %v, want nil", err)
 	}
@@ -148,7 +149,7 @@ playbooks:
 	}
 	hf := &hamsfile.File{Path: "test.yaml", Root: &root}
 
-	p := New(NewFakeCmdRunner())
+	p := New(&config.Config{}, NewFakeCmdRunner())
 	observed := state.New("ansible", "test")
 	actions, err := p.Plan(context.Background(), hf, observed)
 	if err != nil {
@@ -170,7 +171,7 @@ playbooks:
 func TestU8_Bootstrap_AnsibleMissingReturnsStructuredError(t *testing.T) {
 	t.Parallel()
 	fake := NewFakeCmdRunner().WithLookPathError(errors.New("not found"))
-	p := New(fake)
+	p := New(&config.Config{}, fake)
 
 	err := p.Bootstrap(context.Background())
 	var brerr *provider.BootstrapRequiredError
