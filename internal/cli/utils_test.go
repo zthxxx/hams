@@ -191,6 +191,39 @@ func TestPrintError_PlainErrorIsWrapped(t *testing.T) {
 	}
 }
 
+// TestPrintError_JSONMode_PlainErrorIncludesErrorCode locks in cycle 245:
+// PrintError's fallback path (non-UserFacingError) must still emit a
+// populated error_code field in JSON mode. Previously the fallback
+// constructed a bare &UserFacingError{Code, Message} leaving ErrorCode
+// at its zero value; json:"error_code,omitempty" then stripped the
+// field from output. CI scripts parsing error_code per the
+// cli-architecture spec §"Error in JSON mode" saw no field on plain
+// errors while UserFacingError errors carried "GENERAL_ERROR" — a
+// silent shape divergence between call sites. Now every JSON error
+// carries error_code.
+func TestPrintError_JSONMode_PlainErrorIncludesErrorCode(t *testing.T) {
+	got := captureStderr(t, func() {
+		PrintError(errors.New("network blew up"), true)
+	})
+
+	var data map[string]any
+	if err := json.Unmarshal([]byte(got), &data); err != nil {
+		t.Fatalf("output is not valid JSON: %v\nraw: %q", err, got)
+	}
+
+	if data["error_code"] != string(hamserr.CodeGeneralError) {
+		t.Errorf("error_code = %v, want %q (fallback plain-error path should map ExitGeneralError → GENERAL_ERROR)",
+			data["error_code"], hamserr.CodeGeneralError)
+	}
+	if code, ok := data["code"].(float64); !ok || int(code) != hamserr.ExitGeneralError {
+		t.Errorf("code = %v (ok=%v), want %d",
+			data["code"], ok, hamserr.ExitGeneralError)
+	}
+	if !strings.Contains(got, "network blew up") {
+		t.Errorf("message should surface the plain error text; got %q", got)
+	}
+}
+
 // TestShortName_ExtractsURNSuffix asserts cycle-71: shortName
 // strips the `urn:hams:<provider>:` prefix to yield just the
 // resource name used by `hams list --json`'s `name` field per
