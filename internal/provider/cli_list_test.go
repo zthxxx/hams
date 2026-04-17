@@ -196,19 +196,21 @@ func fmtErr(err error) string {
 	return err.Error()
 }
 
-// TestHandleListCmd_ReadOnlyAgainstMissingProfileDir — cycle 216 guard.
-// `hams <provider> list` must not create the profile directory as a
-// side effect when the hamsfile is absent. Pre-cycle-216 the helper
-// went through hamsfile.LoadOrCreateEmpty which calls os.MkdirAll on
-// the profile dir, so a virgin `hams cargo list --store=/tmp/fresh`
-// silently materialized /tmp/fresh/<profile>/ even though list is a
-// read-only query.
-func TestHandleListCmd_ReadOnlyAgainstMissingProfileDir(t *testing.T) {
+// TestHandleListCmd_MissingProfileDirIsUsageErrorAndReadOnly — cycle
+// 216 (read-only invariant) + cycle 220 (typo'd profile fails fast)
+// together. When the resolved profile dir doesn't exist:
+//
+//  1. HandleListCmd MUST return ExitUsageError naming the missing
+//     profile (cycle 220 guard — symmetric with top-level
+//     `hams list --profile=Typo` from cycle 217).
+//  2. HandleListCmd MUST NOT mkdir the profile dir as a side effect
+//     (cycle 216 guard — keeps the "list is read-only" promise even
+//     though the typo path now short-circuits before the hamsfile
+//     load).
+func TestHandleListCmd_MissingProfileDirIsUsageErrorAndReadOnly(t *testing.T) {
 	p := &fakeListProvider{name: "cargo", prefix: "cargo", listOutput: "ok"}
 	root := t.TempDir()
 	storeDir := filepath.Join(root, "store")
-	// Create store dir but NOT the profile dir. cfg.ProfileDir()
-	// will resolve to storeDir/nonexistent.
 	if err := os.MkdirAll(storeDir, 0o750); err != nil {
 		t.Fatalf("mkdir store: %v", err)
 	}
@@ -219,14 +221,22 @@ func TestHandleListCmd_ReadOnlyAgainstMissingProfileDir(t *testing.T) {
 	}
 	profileDir := filepath.Join(storeDir, "nonexistent")
 
-	if _, err := captureHandleListCmd(t, p, cfg); err != nil {
-		t.Fatalf("list: %v", err)
+	_, err := captureHandleListCmd(t, p, cfg)
+	if err == nil {
+		t.Fatal("expected ExitUsageError for missing profile dir")
+	}
+	var ufe *hamserr.UserFacingError
+	if !errors.As(err, &ufe) || ufe.Code != hamserr.ExitUsageError {
+		t.Fatalf("expected ExitUsageError, got %v (%T)", err, err)
+	}
+	if !strings.Contains(ufe.Message, "nonexistent") {
+		t.Errorf("error should name the missing profile; got %q", ufe.Message)
 	}
 
-	if _, err := os.Stat(profileDir); err == nil {
+	if _, statErr := os.Stat(profileDir); statErr == nil {
 		t.Errorf("list created profile dir %q as a side effect; must be read-only", profileDir)
-	} else if !os.IsNotExist(err) {
-		t.Errorf("unexpected stat err on profile dir: %v", err)
+	} else if !os.IsNotExist(statErr) {
+		t.Errorf("unexpected stat err on profile dir: %v", statErr)
 	}
 }
 
