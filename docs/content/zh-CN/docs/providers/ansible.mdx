@@ -11,11 +11,15 @@ import { Callout } from 'nextra/components'
 ## 怎么用
 
 ```bash
-# 跑一个 urn 对应的 Ansible 任务
-hams ansible run "urn:hams:ansible:setup-dev-env"
+# 直接通过 hams 跑 playbook（参数透传给 ansible-playbook）。
+# playbook 路径是相对于 store 根目录的。
+hams ansible playbooks/dev-env.yml
 
-# 列出被管的 Ansible 资源
-hams ansible list
+# 或者让 apply 自动跑 ansible.hams.yaml 里声明的 playbook
+hams apply --only=ansible
+
+# 查看被管资源（顶层 list，可按 provider 过滤）
+hams list --only=ansible
 ```
 
 ## Hamsfile 长什么样
