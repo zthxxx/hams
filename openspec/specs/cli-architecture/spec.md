@@ -182,22 +182,37 @@ The CLI SHALL use standardized exit codes to communicate result status to caller
 
 ### Requirement: AI-agent friendly error format
 
-All error messages SHALL be structured to be parseable by AI agents. Each error SHALL include: (1) a machine-readable error code string (e.g., `LOCK_CONFLICT`, `PROVIDER_NOT_FOUND`, `PACKAGE_NOT_SPECIFIED`), (2) a human-readable description of what went wrong, (3) zero or more suggested fix commands that the user (or AI agent) can run to resolve the issue. Error output SHALL be written to stderr. When `--json` global flag is set, errors SHALL be output as JSON objects with fields `code`, `message`, and `suggestions` (array of strings).
+All error messages SHALL be structured to be parseable by AI agents. Each error SHALL include: (1) a numeric exit code, (2) a coarse machine-readable error-code string (e.g., `USAGE_ERROR`, `LOCK_CONFLICT`, `PARTIAL_FAILURE`, `GENERAL_ERROR`) derived from the exit code via `errorCodeFromExit` in `internal/error/error.go`, (3) a human-readable description of what went wrong, (4) zero or more suggested fix commands that the user (or AI agent) can run to resolve the issue. Error output SHALL be written to stderr.
+
+When `--json` global flag is set, errors SHALL be output as a JSON object matching the `UserFacingError` Go struct in `internal/error/error.go`:
+
+```json
+{
+  "code": <numeric exit code>,
+  "error_code": "<COARSE_CATEGORY>",
+  "message": "<human-readable sentence>",
+  "suggestions": ["<fix 1>", "<fix 2>"]
+}
+```
+
+The `error_code` field is the coarse category (one of the `Code*` constants in `internal/error/error.go`). Fine-grained codes (e.g., `PACKAGE_NOT_SPECIFIED`, `PROVIDER_NOT_FOUND`) are NOT emitted today — every caller uses the default `errorCodeFromExit` mapping, so the `error_code` value reflects the exit-code category rather than the specific failure mode. Fine-grained codes are reserved for v1.1 via the existing `NewUserErrorWithCode` constructor once the callers have been updated.
 
 #### Scenario: Error with suggested fix in text mode
 
 - **WHEN** the user runs `hams pnpm install` (missing package name) without `--json`
-- **THEN** stderr SHALL contain the error code, a description like "Package name is required for pnpm install", and a suggestion like "Try: hams pnpm install <package-name>"
+- **THEN** stderr SHALL contain `Error: pnpm install requires a package name` followed by lines of the form `  suggestion: <text>` (one per suggestion)
+- **AND** the process SHALL exit with the numeric exit code from the underlying `UserFacingError` (ExitUsageError = 2 for this case).
 
 #### Scenario: Error in JSON mode
 
 - **WHEN** the user runs `hams --json pnpm install`
-- **THEN** stderr SHALL contain a JSON object: `{"code": "PACKAGE_NOT_SPECIFIED", "message": "Package name is required for pnpm install", "suggestions": ["hams pnpm install <package-name>", "hams apply (for bulk install from Hamsfile)"]}`
+- **THEN** stderr SHALL contain a JSON object: `{"code": 2, "error_code": "USAGE_ERROR", "message": "pnpm install requires a package name", "suggestions": ["Usage: hams pnpm add <package>", "To install all recorded packages, use: hams apply --only=pnpm"]}`
+- **AND** the process SHALL exit 2.
 
 #### Scenario: Provider not found error
 
-- **WHEN** the user runs `hams foo install bar` and no provider named `foo` is registered
-- **THEN** the error SHALL include code `PROVIDER_NOT_FOUND`, a message naming the unknown provider, and suggestions listing available providers
+- **WHEN** the user runs `hams apply --only=foo` (or `hams foo install bar`) and no provider named `foo` is registered
+- **THEN** the error SHALL carry `code = 2` / `error_code = USAGE_ERROR`, a message naming the unknown provider(s), and suggestions listing available providers
 
 ### Requirement: Self-upgrade command
 
