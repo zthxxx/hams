@@ -60,6 +60,17 @@ func (p *CloneProvider) Probe(_ context.Context, sf *state.File) ([]provider.Pro
 			continue
 		}
 
+		// Expand leading `~/` so hamsfiles shared across machines work
+		// out-of-the-box — each user's $HOME is resolved per-invocation
+		// rather than hard-coded into the YAML. Without this, a hamsfile
+		// with `path: ~/repos/foo` would make os.Stat check a literal
+		// `~/repos/foo` directory (typically non-existent), flagging
+		// every tracked clone as StateFailed on machines where the user
+		// didn't explicitly materialize a `~` subdirectory.
+		if expanded, expErr := config.ExpandHome(localPath); expErr == nil {
+			localPath = expanded
+		}
+
 		if _, err := os.Stat(localPath); os.IsNotExist(err) {
 			results = append(results, provider.ProbeResult{ID: id, State: state.StateFailed})
 		} else {
@@ -114,6 +125,15 @@ func (p *CloneProvider) Apply(ctx context.Context, action provider.Action) error
 
 	if remote == "" || localPath == "" {
 		return fmt.Errorf("git-clone: resource must have remote and path")
+	}
+
+	// Expand `~/` in the destination so git clone targets the real
+	// home directory instead of creating a literal `~` subdirectory
+	// in CWD. The hamsfile intentionally keeps the unexpanded form so
+	// it remains portable across machines (see Probe for the same
+	// expansion on the read-side).
+	if expanded, expErr := config.ExpandHome(localPath); expErr == nil {
+		localPath = expanded
 	}
 
 	slog.Info("git clone", "remote", remote, "path", localPath)
@@ -186,12 +206,21 @@ func (p *CloneProvider) handleAdd(ctx context.Context, args []string, hamsFlags 
 		)
 	}
 
+	// Expand `~/` for the git clone invocation but keep `localPath`
+	// unexpanded for the hamsfile record — the stored form is what
+	// ships to another machine, so a literal `~/` there is a feature
+	// (each machine's $HOME resolves per-invocation in Apply/Probe).
+	cloneTarget := localPath
+	if expanded, expErr := config.ExpandHome(localPath); expErr == nil {
+		cloneTarget = expanded
+	}
+
 	if flags.DryRun {
-		fmt.Printf("[dry-run] Would clone: git clone %s %s\n", remote, localPath)
+		fmt.Printf("[dry-run] Would clone: git clone %s %s\n", remote, cloneTarget)
 		return nil
 	}
 
-	cmd := exec.CommandContext(ctx, "git", "clone", remote, localPath) //nolint:gosec // git clone from CLI input
+	cmd := exec.CommandContext(ctx, "git", "clone", remote, cloneTarget) //nolint:gosec // git clone from CLI input
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	if err := cmd.Run(); err != nil {
@@ -270,6 +299,14 @@ func (p *CloneProvider) handleList(ctx context.Context, hamsFlags map[string]str
 func (p *CloneProvider) clonePassthrough(ctx context.Context, args []string, flags *provider.GlobalFlags) error {
 	remote := args[0]
 	localPath := args[1]
+
+	// Expand `~/` for parity with the recorded add path and with
+	// Apply/Probe — without this, `hams git-clone <remote> "~/repos/foo"`
+	// would create a literal `~` subdirectory in CWD rather than
+	// cloning under $HOME.
+	if expanded, expErr := config.ExpandHome(localPath); expErr == nil {
+		localPath = expanded
+	}
 
 	if flags.DryRun {
 		fmt.Printf("[dry-run] Would clone: git clone %s %s\n", remote, localPath)

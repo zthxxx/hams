@@ -68,6 +68,61 @@ func TestProbe_StateOKWhenLocalPathExists(t *testing.T) {
 	}
 }
 
+// TestProbe_ExpandsTildeInLocalPath asserts Probe expands a leading
+// `~/` in the stored local path before os.Stat. Without this, a
+// hamsfile recording `path: ~/repos/foo` would always report
+// StateFailed on any machine lacking a literal `~` subdirectory —
+// which breaks the core "share one hamsfile across machines,
+// each user's $HOME resolves per-invocation" promise.
+//
+// Scenario: set HOME to a tempdir that contains /repos/foo. A
+// resource id "...remote... -> ~/repos/foo" must resolve to
+// $HOME/repos/foo on each machine.
+func TestProbe_ExpandsTildeInLocalPath(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	repoDir := filepath.Join(home, "repos", "foo")
+	if err := os.MkdirAll(repoDir, 0o755); err != nil {
+		t.Fatalf("mkdir repo: %v", err)
+	}
+
+	p := NewCloneProvider(nil)
+	sf := state.New("git-clone", "test-machine")
+	sf.SetResource("git@github.com:foo/bar -> ~/repos/foo", state.StateOK)
+
+	results, err := p.Probe(context.Background(), sf)
+	if err != nil {
+		t.Fatalf("Probe error: %v", err)
+	}
+	if len(results) != 1 {
+		t.Fatalf("Probe returned %d results, want 1", len(results))
+	}
+	if results[0].State != state.StateOK {
+		t.Errorf("tilde-prefixed existing path: state = %v, want StateOK", results[0].State)
+	}
+}
+
+// TestProbe_TildeStillFailsWhenDirectoryMissing gates the other side:
+// an ~/-prefixed id whose expanded path doesn't exist must produce
+// StateFailed (not accidentally pass just because the ~/ expansion
+// hit some unrelated directory).
+func TestProbe_TildeStillFailsWhenDirectoryMissing(t *testing.T) {
+	t.Setenv("HOME", t.TempDir()) // empty home — nothing under ~/
+
+	p := NewCloneProvider(nil)
+	sf := state.New("git-clone", "test-machine")
+	sf.SetResource("git@github.com:foo/absent -> ~/repos/absent", state.StateOK)
+
+	results, err := p.Probe(context.Background(), sf)
+	if err != nil {
+		t.Fatalf("Probe error: %v", err)
+	}
+	if len(results) != 1 || results[0].State != state.StateFailed {
+		t.Errorf("missing tilde path: state = %v, want StateFailed", results[0].State)
+	}
+}
+
 // TestProbe_SkipsRemovedResources asserts that resources marked
 // StateRemoved do NOT appear in Probe output. This is critical: a
 // removed resource that re-emits as StateFailed would trip a re-clone
