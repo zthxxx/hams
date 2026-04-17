@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"slices"
+	"sort"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -201,9 +202,19 @@ func (p *CloneProvider) Remove(_ context.Context, resourceID string) error {
 
 // List returns cloned repos with status.
 func (p *CloneProvider) List(_ context.Context, _ *hamsfile.File, sf *state.File) (string, error) {
+	// Sort IDs before iteration so `hams git-clone list` produces stable
+	// alphabetical row order across invocations. Without the sort, Go's
+	// non-deterministic map iteration shuffled the rows on every call —
+	// breaks grep/diff/snapshot workflows over the output. Symmetric
+	// with cycles 148-153.
+	ids := make([]string, 0, len(sf.Resources))
+	for id := range sf.Resources {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
 	var sb strings.Builder
-	for id, r := range sf.Resources {
-		fmt.Fprintf(&sb, "  %-60s %s\n", id, r.State)
+	for _, id := range ids {
+		fmt.Fprintf(&sb, "  %-60s %s\n", id, sf.Resources[id].State)
 	}
 	return sb.String(), nil
 }
@@ -368,6 +379,13 @@ func (p *CloneProvider) handleRemove(args []string, hamsFlags map[string]string,
 				tracked = append(tracked, id)
 			}
 		}
+		// Sort the tracked-IDs suggestion list so the user sees the same
+		// "Tracked IDs: …" text on each typo retry. hf.ListApps preserves
+		// hamsfile source order; the state-only IDs from the loop above
+		// were appended in non-deterministic map-iteration order. Sorting
+		// the merged list gives a single deterministic surface. Symmetric
+		// with cycles 148-153.
+		sort.Strings(tracked)
 		suggestions := []string{"Run 'hams git-clone list' to see tracked repos"}
 		if len(tracked) > 0 {
 			suggestions = append(suggestions, "Tracked IDs: "+strings.Join(tracked, ", "))

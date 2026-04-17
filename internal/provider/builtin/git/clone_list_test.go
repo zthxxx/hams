@@ -315,6 +315,128 @@ func TestHandleAdd_ExistingValidRepoRecordsWithoutCloning(t *testing.T) {
 	}
 }
 
+// TestHandleCommand_List_DeterministicOrder locks in cycle 155:
+// `hams git-clone list` previously iterated sf.Resources directly
+// (Go map iteration is non-deterministic), so each invocation
+// shuffled the rows of tracked repos. Now: sort.Strings before
+// emit so the output is byte-identical across runs and IDs appear
+// alphabetically. Symmetric with cycles 148/149.
+func TestHandleCommand_List_DeterministicOrder(t *testing.T) {
+	t.Parallel()
+	p, flags, stateDir := newCloneHarness(t)
+
+	// 5 tracked resources whose alphabetical order is unrelated to
+	// insertion order.
+	sf := state.New(p.Manifest().Name, "test-machine")
+	insertOrder := []string{
+		"git@github.com:zeta/repo -> /tmp/zeta",
+		"git@github.com:alpha/repo -> /tmp/alpha",
+		"git@github.com:mu/repo -> /tmp/mu",
+		"git@github.com:beta/repo -> /tmp/beta",
+		"git@github.com:omega/repo -> /tmp/omega",
+	}
+	for _, id := range insertOrder {
+		sf.SetResource(id, state.StateOK)
+	}
+	if err := sf.Save(filepath.Join(stateDir, "git-clone.state.yaml")); err != nil {
+		t.Fatalf("save state: %v", err)
+	}
+
+	runOnce := func() string {
+		return captureStdoutForClone(t, func() {
+			if err := p.HandleCommand(context.Background(), []string{"list"}, nil, flags); err != nil {
+				t.Fatalf("HandleCommand list: %v", err)
+			}
+		})
+	}
+
+	first := runOnce()
+	for range 20 {
+		got := runOnce()
+		if got != first {
+			t.Errorf("output differs across runs:\nfirst:\n%s\n\nlater:\n%s", first, got)
+			break
+		}
+	}
+
+	// Assert alphabetical: alpha < beta < mu < omega < zeta.
+	wantOrder := []string{"alpha", "beta", "mu", "omega", "zeta"}
+	last := -1
+	for _, name := range wantOrder {
+		idx := strings.Index(first, "github.com:"+name)
+		if idx < 0 {
+			t.Errorf("output missing %q; got:\n%s", name, first)
+			continue
+		}
+		if idx <= last {
+			t.Errorf("output not alphabetical: %q at idx %d should come after previous (idx %d)", name, idx, last)
+		}
+		last = idx
+	}
+}
+
+// TestHandleRemove_UnknownIDErrors_TrackedListIsAlphabetical locks in
+// cycle 155's second fix: when `hams git-clone remove <typo>` errors
+// with "no tracked resource", the suggestion text "Tracked IDs: …"
+// must list the IDs in stable alphabetical order. Previously the
+// iteration over sf.Resources to merge orphan IDs was non-
+// deterministic, so each typo-retry showed the IDs in different order.
+func TestHandleRemove_UnknownIDErrors_TrackedListIsAlphabetical(t *testing.T) {
+	t.Parallel()
+	p, flags, stateDir := newCloneHarness(t)
+
+	// Seed 4 tracked resources whose alphabetical order ≠ insertion order.
+	sf := state.New(p.Manifest().Name, "test-machine")
+	for _, id := range []string{
+		"git@github.com:zeta/repo -> /tmp/zeta",
+		"git@github.com:alpha/repo -> /tmp/alpha",
+		"git@github.com:mu/repo -> /tmp/mu",
+		"git@github.com:beta/repo -> /tmp/beta",
+	} {
+		sf.SetResource(id, state.StateOK)
+	}
+	if err := sf.Save(filepath.Join(stateDir, "git-clone.state.yaml")); err != nil {
+		t.Fatalf("save state: %v", err)
+	}
+
+	runOnce := func() string {
+		err := p.HandleCommand(context.Background(),
+			[]string{"remove", "git@github.com:nonexistent/repo -> /tmp/nope"},
+			nil, flags)
+		if err == nil {
+			t.Fatal("expected error for nonexistent ID")
+		}
+		var ufe *hamserr.UserFacingError
+		if !errors.As(err, &ufe) {
+			t.Fatalf("expected *UserFacingError, got %T: %v", err, err)
+		}
+		return strings.Join(ufe.Suggestions, " ")
+	}
+
+	first := runOnce()
+	for range 10 {
+		if got := runOnce(); got != first {
+			t.Errorf("Tracked IDs list differs across runs:\nfirst: %q\nlater: %q", first, got)
+			break
+		}
+	}
+
+	// Assert alphabetical positioning of the 4 tracked names.
+	wantOrder := []string{"alpha", "beta", "mu", "zeta"}
+	last := -1
+	for _, name := range wantOrder {
+		idx := strings.Index(first, "github.com:"+name)
+		if idx < 0 {
+			t.Errorf("suggestion missing %q; got: %q", name, first)
+			continue
+		}
+		if idx <= last {
+			t.Errorf("Tracked IDs not alphabetical: %q at idx %d should come after previous (idx %d)", name, idx, last)
+		}
+		last = idx
+	}
+}
+
 // TestHandleRemove_UnknownIDErrors locks in cycle 140: `hams
 // git-clone remove <typo>` against a tracked-ID set that doesn't
 // contain the typo surfaces a UserFacingError instead of silently
