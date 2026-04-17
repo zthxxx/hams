@@ -82,8 +82,23 @@ func (p *CloneProvider) Probe(_ context.Context, sf *state.File) ([]provider.Pro
 		// uses at the CLI layer: either `.git` (non-bare repo) or
 		// `HEAD` (bare repo). Absence of both flips the resource to
 		// StateFailed so the next apply re-clones.
+		//
+		// Cycle 239: attach a descriptive ErrorMsg so `hams list
+		// --json` and the text output can surface WHY the clone
+		// failed. Pre-cycle-239 the state's `last_error` stayed
+		// whatever it was (often empty for a successfully-installed
+		// clone the user later deleted), so users saw `failed` with
+		// no reason. Distinguish the two disappearance modes: path
+		// fully gone ("local path missing") vs path-exists-but-not-
+		// a-git-repo ("clone directory still exists but .git is
+		// gone") so users can tell "I deleted the whole dir" from
+		// "I accidentally nuked just .git".
 		if !isGitRepoPath(localPath) {
-			results = append(results, provider.ProbeResult{ID: id, State: state.StateFailed})
+			msg := "local path missing: " + localPath
+			if _, err := os.Stat(localPath); err == nil {
+				msg = "clone directory still exists but .git/HEAD marker is gone: " + localPath
+			}
+			results = append(results, provider.ProbeResult{ID: id, State: state.StateFailed, ErrorMsg: msg})
 		} else {
 			results = append(results, provider.ProbeResult{ID: id, State: state.StateOK})
 		}

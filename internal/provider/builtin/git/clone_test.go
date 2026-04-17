@@ -166,6 +166,48 @@ func TestProbe_PathExistsButNotGitRepoFlagsFailed(t *testing.T) {
 	if len(results) != 1 || results[0].State != state.StateFailed {
 		t.Errorf("dir-without-.git: state = %v, want StateFailed", results[0].State)
 	}
+	// Cycle 239: ErrorMsg must distinguish "path exists but not a
+	// git repo" from "path missing entirely" so users can tell
+	// "I accidentally rm -rf'd .git/" apart from "I deleted the
+	// whole repo directory".
+	if results[0].ErrorMsg == "" {
+		t.Error("ErrorMsg should explain why StateFailed; got empty string")
+	}
+	if !strings.Contains(results[0].ErrorMsg, ".git") && !strings.Contains(results[0].ErrorMsg, "HEAD") {
+		t.Errorf("ErrorMsg should mention .git/HEAD marker; got %q", results[0].ErrorMsg)
+	}
+	if !strings.Contains(results[0].ErrorMsg, brokenRepo) {
+		t.Errorf("ErrorMsg should name the path; got %q", results[0].ErrorMsg)
+	}
+}
+
+// TestProbe_PathMissingEmitsDistinctErrorMsg — cycle 239: the
+// ErrorMsg for a fully-missing local path ("local path missing: X")
+// distinguishes from the "dir exists but not a repo" case. Users
+// reading `hams list --json` can triage accordingly.
+func TestProbe_PathMissingEmitsDistinctErrorMsg(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	p := NewCloneProvider(nil)
+
+	missingRepo := filepath.Join(dir, "never-existed") // NOT created
+	sf := state.New("git-clone", "test-machine")
+	sf.SetResource("git@github.com:foo/missing -> "+missingRepo, state.StateOK)
+
+	results, err := p.Probe(context.Background(), sf)
+	if err != nil {
+		t.Fatalf("Probe error: %v", err)
+	}
+	if len(results) != 1 || results[0].State != state.StateFailed {
+		t.Errorf("missing-path: state = %v, want StateFailed", results[0].State)
+	}
+	if !strings.Contains(results[0].ErrorMsg, "local path missing") {
+		t.Errorf("ErrorMsg should say 'local path missing'; got %q", results[0].ErrorMsg)
+	}
+	// Must NOT claim the dir "still exists" when it doesn't.
+	if strings.Contains(results[0].ErrorMsg, "still exists") {
+		t.Errorf("ErrorMsg should not claim dir 'still exists'; got %q", results[0].ErrorMsg)
+	}
 }
 
 // TestProbe_BareRepoHEADFileTreatedAsValid asserts a bare repo
