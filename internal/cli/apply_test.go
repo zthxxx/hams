@@ -1306,6 +1306,62 @@ func TestRunApply_JSONOutput_FailedProvidersNamesFailures(t *testing.T) {
 	}
 }
 
+// TestRunApply_TextOutput_NamesFailedProviders — cycle 235.
+// Symmetric with cycle 231's JSON failed_providers and cycle 234's
+// refresh text naming. Pre-cycle-235 the prose summary said
+// `... %d failed` (count only) — interactive users had to grep slog
+// to find WHICH providers failed. Asserts stdout contains the
+// failing provider name with the new "had failed actions:" phrase.
+func TestRunApply_TextOutput_NamesFailedProviders(t *testing.T) {
+	_, profileDir, _, flags := setupApplyTestEnv(t, []string{"alpha", "beta"})
+	writeApplyTestFile(t, filepath.Join(profileDir, "alpha.hams.yaml"), "cli:\n  - app: pkg-good\n")
+	writeApplyTestFile(t, filepath.Join(profileDir, "beta.hams.yaml"), "cli:\n  - app: pkg-bad\n")
+
+	registry := provider.NewRegistry()
+	good := &applyTestProvider{
+		manifest: provider.Manifest{
+			Name: "alpha", DisplayName: "alpha", FilePrefix: "alpha",
+			Platforms: []provider.Platform{provider.PlatformAll},
+		},
+		planFn: func(_ context.Context, _ *hamsfile.File, _ *state.File) ([]provider.Action, error) {
+			return []provider.Action{{ID: "pkg-good", Type: provider.ActionInstall}}, nil
+		},
+		applyFn: func(_ context.Context, _ provider.Action) error { return nil },
+	}
+	bad := &applyTestProvider{
+		manifest: provider.Manifest{
+			Name: "beta", DisplayName: "beta", FilePrefix: "beta",
+			Platforms: []provider.Platform{provider.PlatformAll},
+		},
+		planFn: func(_ context.Context, _ *hamsfile.File, _ *state.File) ([]provider.Action, error) {
+			return []provider.Action{{ID: "pkg-bad", Type: provider.ActionInstall}}, nil
+		},
+		applyFn: func(_ context.Context, _ provider.Action) error {
+			return fmt.Errorf("simulated install failure")
+		},
+	}
+	if err := registry.Register(good); err != nil {
+		t.Fatalf("Register good: %v", err)
+	}
+	if err := registry.Register(bad); err != nil {
+		t.Fatalf("Register bad: %v", err)
+	}
+
+	out := captureStdout(t, func() {
+		// runApply returns ExitPartialFailure on any failed action; expected.
+		if err := runApply(context.Background(), flags, registry, sudo.NoopAcquirer{}, "", true, "", "", false, bootstrapMode{}); err == nil {
+			t.Fatal("expected ExitPartialFailure due to bad provider")
+		}
+	})
+
+	if !strings.Contains(out, "beta") {
+		t.Errorf("text output should name 'beta' as failed; got %q", out)
+	}
+	if !strings.Contains(out, "had failed actions:") {
+		t.Errorf("text output should use cycle-235 phrase 'had failed actions:'; got %q", out)
+	}
+}
+
 // TestRunApply_DryRunJSONHasNoProse locks in cycle 187: `hams
 // --json --dry-run apply` previously printed multiple prose lines
 // ("[dry-run] Would apply configurations", "[dry-run] Provider

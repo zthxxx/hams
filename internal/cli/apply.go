@@ -808,6 +808,18 @@ func runApply(ctx context.Context, flags *provider.GlobalFlags, registry *provid
 	fmt.Printf("\nhams apply complete: %d installed, %d updated, %d removed, %d skipped, %d failed\n",
 		merged.Installed, merged.Updated, merged.Removed, merged.Skipped, merged.Failed)
 
+	// Cycle 235: name the providers whose Apply produced any failed
+	// action. Symmetric with cycle 231's JSON failed_providers list
+	// and cycle 234's refresh text naming. Pre-cycle-235 the prose
+	// summary said `... %d failed` (count only) — interactive users
+	// had to grep slog to find WHICH providers failed.
+	if len(failedProviders) > 0 {
+		sortedFailed := append([]string(nil), failedProviders...)
+		sort.Strings(sortedFailed)
+		fmt.Printf("Warning: %d provider(s) had failed actions: %s\n",
+			len(sortedFailed), strings.Join(sortedFailed, ", "))
+		fmt.Println("  Re-run with --debug for the underlying error from each provider's runner.")
+	}
 	if len(skippedProviders) > 0 {
 		fmt.Printf("Warning: %d provider(s) skipped due to errors: %s\n",
 			len(skippedProviders), strings.Join(skippedProviders, ", "))
