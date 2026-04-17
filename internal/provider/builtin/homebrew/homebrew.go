@@ -92,13 +92,26 @@ var brewInstallLocations = []string{
 // post-install-sh brew onto the process $PATH. Swapped in tests to
 // assert path augmentation without mutating the test harness's env.
 // Production value mutates the live process env via os.Setenv.
+//
+// Cycle 169: membership check splits PATH on the OS path-separator
+// and compares each entry exactly. The pre-cycle-169 strings.Contains
+// check incorrectly skipped augmentation when an UNRELATED PATH entry
+// shared a prefix with a brew install location — e.g. user PATH
+// containing `/usr/local/bin-old` falsely matched `/usr/local/bin`,
+// so brew never made it onto $PATH and Bootstrap kept failing.
+// Same sibling-substring bug class as cycle 161 (TildePath).
 var envPathAugment = func(additions []string) {
 	existing := os.Getenv("PATH")
+	already := make(map[string]bool)
+	for entry := range strings.SplitSeq(existing, string(os.PathListSeparator)) {
+		already[entry] = true
+	}
 	for _, dir := range additions {
-		if strings.Contains(existing, dir) {
+		if already[dir] {
 			continue
 		}
 		existing = dir + string(os.PathListSeparator) + existing
+		already[dir] = true
 	}
 	if err := os.Setenv("PATH", existing); err != nil {
 		slog.Warn("failed to set PATH for brew lookup", "error", err)
