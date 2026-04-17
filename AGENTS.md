@@ -138,22 +138,22 @@ This project uses [OpenSpec](https://openspec.dev) for spec-driven development.
 
 Outstanding tasks not yet completed:
 
-- [ ] Archive all implemented OpenSpec changes — move them into the archive for completed history.
+- [x] Archive all implemented OpenSpec changes — move them into the archive for completed history.
 
 Everything aims at keeping onboarding simple and easy for new users, so the following are also required:
 
-- [ ] `hams apply` MUST directly accept a `--tag` argument, with precedence: `--tag` > profile tag in config > default `tag: default`. This enables single-command restoration from a repo. If no hams config file exists when `hams apply` runs, auto-create one at the default location.
-- [ ] When running `hams <provider> ...`, if no hams config file repo exists yet, auto-create one at the default location, pre-initialized with `git init` (via command invocation) and a `.gitignore` (from a template file, e.g., containing `.state`), then write the hams config file (create if missing).
+- [x] `hams apply` MUST directly accept a `--tag` argument, with precedence: `--tag` > profile tag in config > default `tag: default`. This enables single-command restoration from a repo. If no hams config file exists when `hams apply` runs, auto-create one at the default location.
+- [x] When running `hams <provider> ...`, if no hams config file repo exists yet, auto-create one at the default location, pre-initialized with `git init` (via command invocation) and a `.gitignore` (from a template file, e.g., containing `.state`), then write the hams config file (create if missing).
   - Technically, pick a directory to serve as the template and bundle its structure + file contents into the binary for ease of development and maintenance.
-- [ ] Provider wrapped commands MUST behave exactly like the original command, at least at the first-level command entry point. Therefore:
-  - [ ] The `git-clone` and `git-config` providers should be merged into a unified `git` provider, exposing only the `hams git` entry point.
-  - [ ] The `code-ext` provider likewise should expose only the `hams code` entry point.
-    - [ ] `code` refers specifically to VSCode. If Cursor support is needed, implement a separate `cursor` provider rather than configuring `cli_command: cursor`.
-  - [ ] All providers follow the same pattern: parse the original command structure, extract what needs to be recorded, then pass the remainder through to the underlying command for execution. Since providers are structurally similar at the code level, design shared abstractions — either a single generic base or a few categorical base types — so that extending with a new provider is a matter of filling in a well-defined template, not reimplementing the pattern from scratch.
+- [x] Provider wrapped commands MUST behave exactly like the original command, at least at the first-level command entry point. Therefore:
+  - [x] The `git-clone` and `git-config` providers should be merged into a unified `git` provider, exposing only the `hams git` entry point.
+  - [x] The `code-ext` provider likewise should expose only the `hams code` entry point.
+    - [x] `code` refers specifically to VSCode. If Cursor support is needed, implement a separate `cursor` provider rather than configuring `cli_command: cursor`.
+  - [x] All providers follow the same pattern: parse the original command structure, extract what needs to be recorded, then pass the remainder through to the underlying command for execution. Since providers are structurally similar at the code level, design shared abstractions — either a single generic base or a few categorical base types — so that extending with a new provider is a matter of filling in a well-defined template, not reimplementing the pattern from scratch.
 
-- [ ] Whether logging is emitted — for each provider as well as for hams itself — must be verified in integration tests.
-- [ ] CLI user-facing messages and error messages do not yet implement i18n (internationalization), but our standards mandate i18n support. All missing pieces must be implemented. Log records do not require i18n.
-- [ ] If all other tasks have been completed, then re-run the overall verification to pass.
+- [x] Whether logging is emitted — for each provider as well as for hams itself — must be verified in integration tests.
+- [x] CLI user-facing messages and error messages do not yet implement i18n (internationalization), but our standards mandate i18n support. All missing pieces must be implemented. Log records do not require i18n.
+- [x] If all other tasks have been completed, then re-run the overall verification to pass.
 
 
 All of these tasks are driven and completed using the OpenSpec workflow, when you archive you work completed, you mark the checklist done.

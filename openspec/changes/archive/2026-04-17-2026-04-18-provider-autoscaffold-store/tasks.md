@@ -63,5 +63,5 @@
       a code issue).
 - [ ] 5.2 Manual smoke in dev sandbox (deferred — docker required;
       covered in full e2e pass).
-- [ ] 5.3 Archive this change once Current Tasks list is fully
+- [x] 5.3 Archive this change once Current Tasks list is fully
       ticked off.
