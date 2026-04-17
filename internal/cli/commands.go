@@ -733,6 +733,27 @@ func storeCmd() *cli.Command {
 						)
 					}
 
+					// --dry-run must skip all side effects per the global
+					// flag contract: no TTY prompt (prompt's answer would
+					// be persisted via config.WriteConfigKey), no mkdir,
+					// no YAML/gitignore writes. Print the intent-level
+					// preview showing what WOULD be created. Previously
+					// `hams --dry-run store init` performed the real
+					// init — matches cycle 143's push/pull fix.
+					if flags.DryRun {
+						fmt.Printf("[dry-run] Would initialize store at %s\n", logging.TildePath(storePath))
+						fmt.Printf("  Would create profile dir:    %s\n", logging.TildePath(cfg.ProfileDir()))
+						fmt.Printf("  Would create state dir:      %s\n", logging.TildePath(cfg.StateDir()))
+						fmt.Printf("  Would create %s/hams.config.yaml (if missing)\n",
+							logging.TildePath(storePath))
+						fmt.Printf("  Would create %s/.gitignore (if missing)\n",
+							logging.TildePath(storePath))
+						if cfg.ProfileTag == "" && term.IsTerminal(int(os.Stdin.Fd())) { //nolint:gosec // Fd() returns uintptr that fits in int on all supported platforms
+							fmt.Println("  Would prompt for profile_tag + machine_id (TTY detected)")
+						}
+						return nil
+					}
+
 					// Prompt for profile tag when missing AND stdin is a
 					// TTY, per schema-design spec §"Initialize a new store".
 					// Non-TTY (CI, tests) falls back to the default so init

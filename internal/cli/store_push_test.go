@@ -158,6 +158,42 @@ func TestRunStorePush_CommitErrorShortCircuits(t *testing.T) {
 	}
 }
 
+// TestStoreInitDryRun_SkipsAllSideEffects locks in cycle 144:
+// `hams --dry-run store init` prints the intent-level preview and
+// returns without creating any directory or writing any file.
+// Previously --dry-run was ignored: init performed the real
+// mkdir + yaml/gitignore writes regardless, contradicting the
+// global flag's "no changes" contract.
+func TestStoreInitDryRun_SkipsAllSideEffects(t *testing.T) {
+	configHome := t.TempDir()
+	dataHome := t.TempDir()
+	storeDir := filepath.Join(t.TempDir(), "fresh-store") // intentionally non-existent
+	t.Setenv("HAMS_CONFIG_HOME", configHome)
+	t.Setenv("HAMS_DATA_HOME", dataHome)
+	writeApplyTestFile(t, filepath.Join(configHome, "hams.config.yaml"),
+		"profile_tag: dev\nmachine_id: sandbox\nstore_path: "+storeDir+"\n")
+
+	out := captureStdout(t, func() {
+		app := NewApp(provider.NewRegistry(), sudo.NoopAcquirer{})
+		if err := app.Run(context.Background(),
+			[]string{"hams", "--dry-run", "store", "init"}); err != nil {
+			t.Fatalf("dry-run store init: %v", err)
+		}
+	})
+
+	if !strings.Contains(out, "[dry-run]") {
+		t.Errorf("dry-run output missing [dry-run] prefix; got:\n%s", out)
+	}
+	if !strings.Contains(out, "Would create profile dir") {
+		t.Errorf("dry-run output should preview profile dir creation; got:\n%s", out)
+	}
+	// The store_path (and profile/state subdirs) MUST NOT have been
+	// created by the dry-run.
+	if _, err := os.Stat(storeDir); err == nil {
+		t.Errorf("dry-run created storeDir %q; should have been untouched", storeDir)
+	}
+}
+
 // TestStorePushDryRun_SkipsAllSideEffects locks in cycle 143:
 // `hams --dry-run store push` prints the intent-level preview and
 // returns without invoking any git operation. Previously --dry-run
