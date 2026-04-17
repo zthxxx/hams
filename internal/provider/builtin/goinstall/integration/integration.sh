@@ -41,7 +41,7 @@ goinstall_installed_check() {
 export -f goinstall_installed_check
 export POST_INSTALL_CHECK=goinstall_installed_check
 
-# hey (load gen) + revive (lint). Revive pulls in Go 1.25 via the
+# hey (load gen) + revive (lint). Revive pulls in Go 1.26 via the
 # embedded toolchain directive — slower than hey but still sub-minute
 # on a warm cache.
 standard_cli_flow goinstall install "github.com/rakyll/hey@latest" "github.com/mgechev/revive@latest"

@@ -147,7 +147,7 @@ Tests that exercise real `sudo(8)` behavior SHALL live in source files guarded b
 
 The repository SHALL provide a Docker-based target that exercises the real-sudo test suite across all three privilege scenarios (root, non-root with NOPASSWD, non-root without sudo).
 
-- `e2e/sudo/Dockerfile` SHALL pin a reproducible base image (e.g., `golang:1.25-bookworm`), install `sudo`, and provision three identities:
+- `e2e/sudo/Dockerfile` SHALL pin a reproducible base image (e.g., `golang:1.26-bookworm`), install `sudo`, and provision three identities:
   - `root` (default uid 0).
   - `testuser`, a non-root user with `NOPASSWD: ALL` sudoers entry.
   - `nosudouser`, a non-root user with no sudoers entry at all.

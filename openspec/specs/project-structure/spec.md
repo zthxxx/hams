@@ -62,7 +62,7 @@ hams/
 
 ### Requirement: Go Module Identity and Version
 
-The Go module SHALL be named `github.com/zthxxx/hams` and SHALL require Go 1.24 or later as specified in `go.mod`. The module path MUST match the GitHub repository URL to enable standard `go get` and `go install` workflows.
+The Go module SHALL be named `github.com/zthxxx/hams` and SHALL require Go 1.26 or later as specified in `go.mod`. The module path MUST match the GitHub repository URL to enable standard `go get` and `go install` workflows.
 
 #### Scenario: Module path matches repository
 
@@ -505,7 +505,7 @@ The CI workflow SHALL define the following jobs:
 | `integration` | `ubuntu-latest` | Run integration tests | `task ci:integration` |
 | `e2e` | `ubuntu-latest` | Run Docker-based e2e tests | `task ci:e2e` |
 
-All jobs SHALL install `task` via `go-task/setup-task@v2` before invoking any task command. The action SHALL be pinned to `@v2` (major version), not `@latest`. A workflow-level variable SHALL define the Go version (`1.24`) to match `go.mod`.
+All jobs SHALL install `task` via `go-task/setup-task@v2` before invoking any task command. The action SHALL be pinned to `@v2` (major version), not `@latest`. A workflow-level variable SHALL define the Go version (`1.26`) to match `go.mod`.
 
 #### Scenario: Lint job catches Go code issues via Taskfile
 
@@ -539,7 +539,7 @@ All jobs SHALL install `task` via `go-task/setup-task@v2` before invoking any ta
 #### Scenario: CI uses consistent Go version
 
 - **WHEN** any CI job sets up Go
-- **THEN** it SHALL use Go version `1.24` matching the `go.mod` requirement
+- **THEN** it SHALL use Go version `1.26` matching the `go.mod` requirement
 - **AND** the Go version SHALL be defined as a workflow-level variable or matrix parameter to avoid drift.
 
 #### Scenario: Local `task ci:integration` and CI `task ci:integration` are identical

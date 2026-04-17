@@ -11,7 +11,7 @@ into YAML config files ("Hamsfiles"), enabling one-command environment restorati
 | Key | Value |
 |-----|-------|
 | Go module | `github.com/zthxxx/hams` |
-| Go version | 1.24 |
+| Go version | 1.26 |
 | DI framework | [Uber Fx](https://github.com/uber-go/fx) |
 | Entry point | `cmd/hams/main.go` |
 | JS runtime | Bun (not Node.js) |
