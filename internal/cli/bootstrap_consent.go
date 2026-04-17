@@ -79,9 +79,9 @@ func resolveBootstrapConsent(boot bootstrapMode, brerr *provider.BootstrapRequir
 func interactiveBootstrapPrompt(brerr *provider.BootstrapRequiredError) bootDecision {
 	// Prompt output is best-effort: a broken stderr while prompting for
 	// consent is a non-recoverable UX bug, not a flow error to surface.
-	pl := func(args ...any) { fmt.Fprintln(bootstrapPromptOut, args...) }                       //nolint:errcheck // prompt output is best-effort
-	pf := func(format string, args ...any) { fmt.Fprintf(bootstrapPromptOut, format, args...) } //nolint:errcheck // prompt output is best-effort
-	pp := func(s string) { fmt.Fprint(bootstrapPromptOut, s) }                                  //nolint:errcheck // prompt output is best-effort
+	pl := func(args ...any) { fmt.Fprintln(bootstrapPromptOut, args...) }
+	pf := func(format string, args ...any) { fmt.Fprintf(bootstrapPromptOut, format, args...) }
+	pp := func(s string) { fmt.Fprint(bootstrapPromptOut, s) }
 
 	pl()
 	pf("hams: %s is required by provider %q but not installed.\n",
