@@ -99,7 +99,7 @@ When hams reaches a provider whose prerequisite is absent, it stops and does one
 hams NEVER auto-executes a remote install script without an explicit opt-in. This is the same
 pattern as `--prune-orphans`: destructive or remote-executing defaults are always behind a flag.
 
-The brew → {duti, mas} chain resolves in one `hams apply --bootstrap` run because the DAG
+The brew → \{duti, mas\} chain resolves in one `hams apply --bootstrap` run because the DAG
 orders brew first; once brew is installed, `brew install duti` works seamlessly.
 
 <Callout type="warning">

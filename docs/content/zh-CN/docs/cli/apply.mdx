@@ -91,7 +91,7 @@ hams apply --except=ansible
 hams **永远不会**在没有你明确授权的情况下，从网上跑 install 脚本。这和 `--prune-orphans` 一脉相承：
 凡是有破坏性或者会访问外部网络的默认行为，一律要显式 opt-in。
 
-brew → {duti, mas} 的链一条 `hams apply --bootstrap` 就能跑完 —— DAG 保证 brew 先装，
+brew → \{duti, mas\} 的链一条 `hams apply --bootstrap` 就能跑完 —— DAG 保证 brew 先装，
 brew 装好之后 `brew install duti` 能顺利走下去。
 
 <Callout type="warning">
