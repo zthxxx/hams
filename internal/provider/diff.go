@@ -3,6 +3,7 @@ package provider
 import (
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/zthxxx/hams/internal/hamsfile"
@@ -75,6 +76,18 @@ func DiffDesiredVsState(desired *hamsfile.File, observed *state.File) DiffResult
 			result.Removals = append(result.Removals, DiffEntry{ID: id, Type: DiffRemoval, Status: string(r.State)})
 		}
 	}
+
+	// Sort each category by ID so `hams <provider> list` output is
+	// stable across invocations. Without this, Go's non-deterministic
+	// map iteration order shuffles the rows on every call, breaking
+	// grep/diff/snapshot workflows over the output.
+	sortByID := func(entries []DiffEntry) {
+		sort.Slice(entries, func(i, j int) bool { return entries[i].ID < entries[j].ID })
+	}
+	sortByID(result.Additions)
+	sortByID(result.Removals)
+	sortByID(result.Matched)
+	sortByID(result.Diverged)
 
 	return result
 }
