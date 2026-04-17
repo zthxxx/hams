@@ -71,13 +71,36 @@ func (p *CloneProvider) Probe(_ context.Context, sf *state.File) ([]provider.Pro
 			localPath = expanded
 		}
 
-		if _, err := os.Stat(localPath); os.IsNotExist(err) {
+		// A bare path-exists check is not enough: if the user removes
+		// `.git/` (or the bare-repo HEAD file) but leaves sibling files,
+		// Stat still succeeds, Probe said StateOK, and the next apply
+		// would skip the resource despite the clone being semantically
+		// broken. Require the same markers that ensureStoreIsGitRepo
+		// uses at the CLI layer: either `.git` (non-bare repo) or
+		// `HEAD` (bare repo). Absence of both flips the resource to
+		// StateFailed so the next apply re-clones.
+		if !isGitRepoPath(localPath) {
 			results = append(results, provider.ProbeResult{ID: id, State: state.StateFailed})
 		} else {
 			results = append(results, provider.ProbeResult{ID: id, State: state.StateOK})
 		}
 	}
 	return results, nil
+}
+
+// isGitRepoPath reports whether path contains either a `.git` entry
+// (non-bare repo) or a `HEAD` file (bare repo). Distinguishes
+// "directory exists AND is still a git repo" from "directory exists
+// but no longer a repo" — the latter used to probe as StateOK,
+// masking drift that a subsequent apply would silently skip.
+func isGitRepoPath(path string) bool {
+	if _, err := os.Stat(filepath.Join(path, ".git")); err == nil {
+		return true
+	}
+	if _, err := os.Stat(filepath.Join(path, "HEAD")); err == nil {
+		return true
+	}
+	return false
 }
 
 // cloneResource holds parsed fields from a git-clone hamsfile entry.
@@ -227,6 +250,19 @@ func (p *CloneProvider) handleAdd(ctx context.Context, args []string, hamsFlags 
 		return err
 	}
 
+	return p.recordAdd(remote, localPath, hamsFlags, flags)
+}
+
+// recordAdd persists the just-cloned resource to the hamsfile (with
+// the unexpanded path so the YAML is portable across machines) and
+// the state file (StateOK). Extracted from handleAdd so the auto-record
+// bookkeeping is unit-testable independently of the git clone exec
+// call. Failure writing either file is surfaced with a wrapped
+// error — a half-recorded state where hamsfile has the entry but
+// state doesn't (or vice versa) is worse than reporting the failure
+// because the user would then see drift on the next apply without
+// understanding why.
+func (p *CloneProvider) recordAdd(remote, localPath string, hamsFlags map[string]string, flags *provider.GlobalFlags) error {
 	// Record in hamsfile using "remote -> local-path" as the resource ID.
 	resourceID := remote + " -> " + localPath
 	hf, err := p.loadOrCreateHamsfile(hamsFlags, flags)
@@ -236,6 +272,18 @@ func (p *CloneProvider) handleAdd(ctx context.Context, args []string, hamsFlags 
 	hf.AddApp("repos", resourceID, "")
 	if err := hf.Write(); err != nil {
 		return fmt.Errorf("git-clone: failed to write hamsfile: %w", err)
+	}
+
+	// Mirror CP-1 auto-record: write state as well so `hams list`
+	// immediately reflects the new resource without requiring a
+	// separate `hams refresh`. Same contract satisfied by apt,
+	// homebrew, git-config, defaults, duti, and the 7 Package-class
+	// providers covered by the 2026-04-16-package-provider-auto-record-gap
+	// change.
+	sf := p.loadOrCreateStateFile(flags)
+	sf.SetResource(resourceID, state.StateOK)
+	if saveErr := sf.Save(p.statePath(flags)); saveErr != nil {
+		return fmt.Errorf("git-clone: failed to write state: %w", saveErr)
 	}
 
 	slog.Info("git-clone: cloned and recorded", "remote", remote, "path", localPath)

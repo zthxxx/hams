@@ -42,6 +42,12 @@ func TestProbe_StateOKWhenLocalPathExists(t *testing.T) {
 	if err := os.Mkdir(existing, 0o755); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
+	// Cycle 135: Probe now requires a `.git` entry (or bare-repo `HEAD`)
+	// to report StateOK. Seed `.git` so this test represents a
+	// legitimately-cloned repo.
+	if err := os.Mkdir(filepath.Join(existing, ".git"), 0o755); err != nil {
+		t.Fatalf("mkdir .git: %v", err)
+	}
 	missing := filepath.Join(dir, "absent")
 
 	sf := state.New("git-clone", "test-machine")
@@ -86,6 +92,11 @@ func TestProbe_ExpandsTildeInLocalPath(t *testing.T) {
 	if err := os.MkdirAll(repoDir, 0o755); err != nil {
 		t.Fatalf("mkdir repo: %v", err)
 	}
+	// Cycle 135: Probe requires `.git` to see the directory as a
+	// valid git repo. Seed it alongside the tilde-expansion fixture.
+	if err := os.Mkdir(filepath.Join(repoDir, ".git"), 0o755); err != nil {
+		t.Fatalf("mkdir .git: %v", err)
+	}
 
 	p := NewCloneProvider(nil)
 	sf := state.New("git-clone", "test-machine")
@@ -120,6 +131,65 @@ func TestProbe_TildeStillFailsWhenDirectoryMissing(t *testing.T) {
 	}
 	if len(results) != 1 || results[0].State != state.StateFailed {
 		t.Errorf("missing tilde path: state = %v, want StateFailed", results[0].State)
+	}
+}
+
+// TestProbe_PathExistsButNotGitRepoFlagsFailed locks in cycle 135:
+// if the user manually deleted `.git/` (or never fully cloned), the
+// directory exists on disk but is NOT a git repo. Probe MUST flip
+// to StateFailed so the next apply re-clones — previously the
+// probe called os.Stat() only and reported StateOK, so apply would
+// see no drift and skip, leaving the user with a broken-repo
+// directory forever.
+func TestProbe_PathExistsButNotGitRepoFlagsFailed(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	p := NewCloneProvider(nil)
+
+	// Directory exists but has no .git and no HEAD — not a git repo.
+	brokenRepo := filepath.Join(dir, "broken")
+	if err := os.Mkdir(brokenRepo, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+
+	sf := state.New("git-clone", "test-machine")
+	sf.SetResource("git@github.com:foo/broken -> "+brokenRepo, state.StateOK)
+
+	results, err := p.Probe(context.Background(), sf)
+	if err != nil {
+		t.Fatalf("Probe error: %v", err)
+	}
+	if len(results) != 1 || results[0].State != state.StateFailed {
+		t.Errorf("dir-without-.git: state = %v, want StateFailed", results[0].State)
+	}
+}
+
+// TestProbe_BareRepoHEADFileTreatedAsValid asserts a bare repo
+// (HEAD file at the path root, no .git subdir) is still StateOK.
+// Mirrors ensureStoreIsGitRepo's logic at the CLI layer.
+func TestProbe_BareRepoHEADFileTreatedAsValid(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	p := NewCloneProvider(nil)
+
+	bareRepo := filepath.Join(dir, "bare")
+	if err := os.Mkdir(bareRepo, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	// Bare-repo marker: HEAD file at the root (no .git subdir).
+	if err := os.WriteFile(filepath.Join(bareRepo, "HEAD"), []byte("ref: refs/heads/main\n"), 0o600); err != nil {
+		t.Fatalf("write HEAD: %v", err)
+	}
+
+	sf := state.New("git-clone", "test-machine")
+	sf.SetResource("git@github.com:foo/bare -> "+bareRepo, state.StateOK)
+
+	results, err := p.Probe(context.Background(), sf)
+	if err != nil {
+		t.Fatalf("Probe error: %v", err)
+	}
+	if len(results) != 1 || results[0].State != state.StateOK {
+		t.Errorf("bare-repo HEAD: state = %v, want StateOK", results[0].State)
 	}
 }
 

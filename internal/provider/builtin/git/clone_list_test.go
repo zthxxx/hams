@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -155,8 +156,8 @@ func TestHandleCommand_Remove_MarksStateAsRemoved(t *testing.T) {
 		t.Fatalf("load hamsfile: %v", err)
 	}
 	hf.AddApp("repos", resourceID, "")
-	if err := hf.Write(); err != nil {
-		t.Fatalf("write hamsfile: %v", err)
+	if writeErr := hf.Write(); writeErr != nil {
+		t.Fatalf("write hamsfile: %v", writeErr)
 	}
 
 	err = p.HandleCommand(context.Background(), []string{"remove", resourceID}, nil, flags)
@@ -187,6 +188,56 @@ func TestHandleCommand_Remove_MarksStateAsRemoved(t *testing.T) {
 			t.Errorf("hamsfile still contains removed entry %q", resourceID)
 		}
 	}
+}
+
+// TestRecordAdd_WritesBothHamsfileAndState asserts recordAdd (the
+// extracted post-clone bookkeeping from handleAdd) persists to
+// hamsfile AND state. Before the CP-1 auto-record fix, handleAdd
+// only wrote the hamsfile — `hams list` showed nothing for the
+// just-cloned repo until the user ran `hams refresh` separately.
+// This gates against regression of that contract: the state file
+// MUST have the resource as StateOK right after a successful add.
+func TestRecordAdd_WritesBothHamsfileAndState(t *testing.T) {
+	t.Parallel()
+	p, flags, stateDir := newCloneHarness(t)
+
+	remote := "git@github.com:foo/new"
+	localPath := "/tmp/new-clone"
+	if err := p.recordAdd(remote, localPath, nil, flags); err != nil {
+		t.Fatalf("recordAdd: %v", err)
+	}
+
+	// Hamsfile should have the entry.
+	hf, err := p.loadOrCreateHamsfile(nil, flags)
+	if err != nil {
+		t.Fatalf("load hamsfile: %v", err)
+	}
+	resourceID := remote + " -> " + localPath
+	if !slices.Contains(hf.ListApps(), resourceID) {
+		t.Errorf("hamsfile missing resource %q — got %v", resourceID, hf.ListApps())
+	}
+
+	// State file should have the resource at StateOK.
+	sf, err := state.Load(filepath.Join(stateDir, "git-clone.state.yaml"))
+	if err != nil {
+		t.Fatalf("load state: %v", err)
+	}
+	r, ok := sf.Resources[resourceID]
+	if !ok {
+		t.Fatalf("state missing resource %q — got keys %v", resourceID, keysOf(sf.Resources))
+	}
+	if r.State != state.StateOK {
+		t.Errorf("state = %v, want StateOK", r.State)
+	}
+}
+
+// keysOf is a tiny helper for the state-assertion error message.
+func keysOf(m map[string]*state.Resource) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	return out
 }
 
 // TestHandleCommand_List_NoStoreConfiguredErrors asserts list fails
