@@ -142,6 +142,38 @@ func TestStateDir(t *testing.T) {
 	}
 }
 
+// TestWriteConfigKey_RejectsInvalidPathSegment locks in cycle 197:
+// `hams config set profile_tag ../etc` previously wrote the invalid
+// value to ~/.config/hams/hams.config.yaml. Cycle 195 sanitized at
+// runtime (apply used "default"), but `hams config get profile_tag`
+// still showed "../etc" — a confusing discrepancy. Now: reject at
+// write time so the persisted YAML stays honest.
+func TestWriteConfigKey_RejectsInvalidPathSegment(t *testing.T) {
+	t.Parallel()
+	paths := Paths{ConfigHome: t.TempDir(), DataHome: t.TempDir()}
+	storeDir := t.TempDir()
+
+	invalidValues := []string{"../etc", "..", ".", "/etc/passwd", "foo/bar", "foo\\bar", ""}
+	for _, field := range []string{"profile_tag", "machine_id"} {
+		for _, v := range invalidValues {
+			err := WriteConfigKey(paths, storeDir, field, v)
+			if err == nil {
+				t.Errorf("WriteConfigKey(%s=%q) should reject invalid value; got nil", field, v)
+			}
+			if err != nil && !strings.Contains(err.Error(), "invalid value") {
+				t.Errorf("WriteConfigKey(%s=%q) error should say 'invalid value'; got %v", field, v, err)
+			}
+		}
+	}
+
+	// Valid values still accepted.
+	for _, v := range []string{"macOS", "linux-arm64", "team_alpha", "prod.v2"} {
+		if err := WriteConfigKey(paths, storeDir, "profile_tag", v); err != nil {
+			t.Errorf("WriteConfigKey(profile_tag=%q) should succeed; got %v", v, err)
+		}
+	}
+}
+
 // TestProfileDir_RejectsPathTraversal locks in cycle 195: a
 // profile_tag like "../foo" used to escape StorePath via
 // filepath.Join's path cleaning. Now: sanitizePathSegment
