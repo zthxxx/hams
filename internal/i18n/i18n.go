@@ -8,6 +8,7 @@ import (
 	"os"
 	"sort"
 	"strings"
+	"sync"
 
 	"github.com/nicksnyder/go-i18n/v2/i18n"
 	"golang.org/x/text/language"
@@ -171,10 +172,27 @@ func (l Locale) IsSupported() bool {
 	return resolveLocaleFile(l) != ""
 }
 
+// ensureInitialized lazily calls Init() when no localizer exists yet.
+// Tests, short-lived commands, and early-bootstrap code paths can
+// reach T() without going through Execute(), which is the only site
+// that calls Init() explicitly today. Without this lazy path, T()
+// returned the raw key ID instead of the English default — which
+// breaks every assertion that expects the actual message text.
+//
+// The one-shot guard is cheap: Init() itself embeds the locale FS
+// and parses each YAML file (~a few KB). Doing it on first T() call
+// is harmless for tests and negligible for the CLI path.
+var initOnce sync.Once
+
+func ensureInitialized() {
+	initOnce.Do(Init)
+}
+
 // T returns the translated string for the given message ID.
 // Falls back to English if the active locale has no translation for this key.
 // Falls back to the key itself if English also has no translation.
 func T(msgID string) string {
+	ensureInitialized()
 	if localizer == nil {
 		return msgID
 	}
@@ -188,6 +206,7 @@ func T(msgID string) string {
 // Tf returns the translated string with template data interpolation.
 // Falls back the same way as T.
 func Tf(msgID string, data map[string]any) string {
+	ensureInitialized()
 	if localizer == nil {
 		return msgID
 	}

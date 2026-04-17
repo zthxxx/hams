@@ -23,6 +23,7 @@ import (
 	"github.com/zthxxx/hams/internal/config"
 	hamserr "github.com/zthxxx/hams/internal/error"
 	"github.com/zthxxx/hams/internal/hamsfile"
+	"github.com/zthxxx/hams/internal/i18n"
 	"github.com/zthxxx/hams/internal/logging"
 	"github.com/zthxxx/hams/internal/provider"
 	"github.com/zthxxx/hams/internal/provider/builtin/bash"
@@ -93,7 +94,7 @@ func runApply(ctx context.Context, flags *provider.GlobalFlags, registry *provid
 
 	if boot.Allow && boot.Deny {
 		return hamserr.NewUserError(hamserr.ExitUsageError,
-			"--bootstrap and --no-bootstrap are mutually exclusive",
+			i18n.T(i18n.CLIErrBootstrapConflict),
 			"Pick one: --bootstrap to auto-run, --no-bootstrap to fail fast",
 		)
 	}
@@ -106,7 +107,7 @@ func runApply(ctx context.Context, flags *provider.GlobalFlags, registry *provid
 	// loudly so the user picks one or the other.
 	if fromRepo != "" && flags.Store != "" {
 		return hamserr.NewUserError(hamserr.ExitUsageError,
-			"--from-repo and --store are mutually exclusive",
+			i18n.T(i18n.CLIErrFromRepoVsStore),
 			"--from-repo clones into ${HAMS_DATA_HOME}/repo/<user>/<name>/ — hams cannot honor a custom --store at the same time",
 			"Pick one: --from-repo=<user/repo> to clone, OR --store=<path> to use an existing local directory",
 		)
@@ -117,7 +118,7 @@ func runApply(ctx context.Context, flags *provider.GlobalFlags, registry *provid
 	// filterProviders, but the exclusion check is pure args validation.
 	if only != "" && except != "" {
 		return hamserr.NewUserError(hamserr.ExitUsageError,
-			"--only and --except are mutually exclusive",
+			i18n.T(i18n.CLIErrOnlyExceptExclusive),
 			"Use --only to include specific providers, or --except to exclude them",
 		)
 	}
@@ -128,7 +129,7 @@ func runApply(ctx context.Context, flags *provider.GlobalFlags, registry *provid
 		// `jq` / `json.Unmarshal`. The same guard applies to the
 		// per-provider dry-run previews (printDryRunActions) and the
 		// "No changes made" / execution-order lines.
-		fmt.Println("[dry-run] Would apply configurations. No changes will be made.")
+		fmt.Println(i18n.T(i18n.ApplyStatusDryRunPreview))
 	}
 
 	paths := resolvePaths(flags)
@@ -1467,6 +1468,11 @@ func ensureProfileConfigured(paths config.Paths, storePath string, cfg *config.C
 		if writeErr := config.WriteConfigKey(paths, storePath, "machine_id", mid); writeErr != nil {
 			slog.Warn("failed to persist machine_id", "error", writeErr)
 		}
+		// Log records stay in English (per CLAUDE.md: "Log records
+		// do not require i18n"). i18n.T use here would route the
+		// operator-facing log through the user's UI locale, which
+		// breaks grep'ing across CI log streams that aggregate logs
+		// from multi-locale boxes.
 		slog.Info("auto-initialized global config", "profile_tag", cliTag, "machine_id", mid)
 		return nil
 	}
@@ -1475,7 +1481,7 @@ func ensureProfileConfigured(paths config.Paths, storePath string, cfg *config.C
 		// Cycle 252: diagnostic notice goes to stderr, symmetric with
 		// promptProfileInit's stderr prompts. Keeps stdout reserved
 		// for the primary output (apply summary / JSON).
-		fmt.Fprintln(os.Stderr, "Not Found Profile in config, init it at first")
+		fmt.Fprintln(os.Stderr, i18n.T(i18n.BootstrapStatusProfileMissing))
 		tag, mid, promptErr := promptProfileInit()
 		if promptErr != nil {
 			return fmt.Errorf("profile init: %w", promptErr)
@@ -1499,7 +1505,9 @@ func ensureProfileConfigured(paths config.Paths, storePath string, cfg *config.C
 		missing = append(missing, "machine_id")
 	}
 	return hamserr.NewUserError(hamserr.ExitUsageError,
-		fmt.Sprintf("%s not configured and stdin is not a terminal", strings.Join(missing, " and ")),
+		i18n.Tf(i18n.BootstrapErrNotConfigured, map[string]any{
+			"Missing": strings.Join(missing, " and "),
+		}),
 		"Set them explicitly (example):",
 		"  hams config set profile_tag macOS",
 		"  hams config set machine_id $(hostname)",

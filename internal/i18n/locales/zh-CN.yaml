@@ -1,2 +1,68 @@
 - id: app.title
   other: "hams — 声明式工作站环境管理工具"
+
+# ---------------------------------------------------------------------------
+# CLI 框架错误
+# ---------------------------------------------------------------------------
+- id: cli.err.tag-profile-conflict
+  other: "--tag 与 --profile 为别名，只能指定其一"
+
+- id: cli.err.no-store
+  other: "尚未配置 store 目录"
+
+- id: cli.err.bootstrap-conflict
+  other: "--bootstrap 与 --no-bootstrap 互斥"
+
+- id: cli.err.from-repo-vs-store
+  other: "--from-repo 与 --store 互斥"
+
+- id: cli.err.only-except
+  other: "--only 与 --except 互斥"
+
+# ---------------------------------------------------------------------------
+# Apply / refresh 状态
+# ---------------------------------------------------------------------------
+- id: apply.status.dry-run-preview
+  other: "[dry-run] 将要执行 apply 操作。此次运行不会进行任何实际变更。"
+
+- id: apply.status.no-providers-match
+  other: "没有 provider 匹配 --only/--except 过滤条件。"
+
+- id: apply.status.session-started
+  other: "hams 会话已开始"
+
+# ---------------------------------------------------------------------------
+# Bootstrap / profile 初始化
+# ---------------------------------------------------------------------------
+- id: bootstrap.status.profile-missing
+  other: "配置中未找到 Profile，请先初始化"
+
+- id: bootstrap.err.not-configured
+  other: "{{.Missing}} 未配置，且标准输入不是终端"
+
+- id: bootstrap.status.auto-initialized
+  other: "全局配置已自动初始化"
+
+# ---------------------------------------------------------------------------
+# Store 状态标签（`hams store status` 文本输出）
+# ---------------------------------------------------------------------------
+- id: store.status.label.path
+  other: "Store 路径："
+
+- id: store.status.label.profile
+  other: "Profile 标签："
+
+- id: store.status.label.machine
+  other: "机器 ID："
+
+- id: store.status.label.profile-dir
+  other: "Profile 目录："
+
+- id: store.status.label.state-dir
+  other: "State 目录："
+
+- id: store.status.label.hamsfiles
+  other: "Hamsfile 数量："
+
+- id: store.status.label.git
+  other: "Git 状态："

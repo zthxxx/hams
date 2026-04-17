@@ -1,2 +1,68 @@
 - id: app.title
   other: "hams — declarative workstation environment management"
+
+# ---------------------------------------------------------------------------
+# CLI framework errors
+# ---------------------------------------------------------------------------
+- id: cli.err.tag-profile-conflict
+  other: "--tag and --profile are aliases; pass only one"
+
+- id: cli.err.no-store
+  other: "no store directory configured"
+
+- id: cli.err.bootstrap-conflict
+  other: "--bootstrap and --no-bootstrap are mutually exclusive"
+
+- id: cli.err.from-repo-vs-store
+  other: "--from-repo and --store are mutually exclusive"
+
+- id: cli.err.only-except
+  other: "--only and --except are mutually exclusive"
+
+# ---------------------------------------------------------------------------
+# Apply / refresh status
+# ---------------------------------------------------------------------------
+- id: apply.status.dry-run-preview
+  other: "[dry-run] Would apply configurations. No changes will be made."
+
+- id: apply.status.no-providers-match
+  other: "No providers match the --only/--except filters."
+
+- id: apply.status.session-started
+  other: "hams session started"
+
+# ---------------------------------------------------------------------------
+# Bootstrap / profile init
+# ---------------------------------------------------------------------------
+- id: bootstrap.status.profile-missing
+  other: "Not Found Profile in config, init it at first"
+
+- id: bootstrap.err.not-configured
+  other: "{{.Missing}} not configured and stdin is not a terminal"
+
+- id: bootstrap.status.auto-initialized
+  other: "auto-initialized global config"
+
+# ---------------------------------------------------------------------------
+# Store status labels (shown in `hams store status` text output)
+# ---------------------------------------------------------------------------
+- id: store.status.label.path
+  other: "Store path:"
+
+- id: store.status.label.profile
+  other: "Profile tag:"
+
+- id: store.status.label.machine
+  other: "Machine ID:"
+
+- id: store.status.label.profile-dir
+  other: "Profile dir:"
+
+- id: store.status.label.state-dir
+  other: "State dir:"
+
+- id: store.status.label.hamsfiles
+  other: "Hamsfiles:"
+
+- id: store.status.label.git
+  other: "Git status:"

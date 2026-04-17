@@ -4,6 +4,7 @@ import (
 	"os"
 
 	hamserr "github.com/zthxxx/hams/internal/error"
+	"github.com/zthxxx/hams/internal/i18n"
 )
 
 // defaultProfileTag is returned when no CLI flag, config value, or
@@ -29,7 +30,7 @@ const defaultProfileTag = "default"
 func ResolveCLITagOverride(cliTag, cliProfile string) (string, error) {
 	if cliTag != "" && cliProfile != "" && cliTag != cliProfile {
 		return "", hamserr.NewUserError(hamserr.ExitUsageError,
-			"--tag and --profile are aliases; pass only one",
+			i18n.T(i18n.CLIErrTagProfileConflict),
 			"Remove either --tag="+cliTag+" or --profile="+cliProfile,
 		)
 	}
