@@ -195,3 +195,66 @@ func fmtErr(err error) string {
 	}
 	return err.Error()
 }
+
+// TestHandleListCmd_ReadOnlyAgainstMissingProfileDir — cycle 216 guard.
+// `hams <provider> list` must not create the profile directory as a
+// side effect when the hamsfile is absent. Pre-cycle-216 the helper
+// went through hamsfile.LoadOrCreateEmpty which calls os.MkdirAll on
+// the profile dir, so a virgin `hams cargo list --store=/tmp/fresh`
+// silently materialized /tmp/fresh/<profile>/ even though list is a
+// read-only query.
+func TestHandleListCmd_ReadOnlyAgainstMissingProfileDir(t *testing.T) {
+	p := &fakeListProvider{name: "cargo", prefix: "cargo", listOutput: "ok"}
+	root := t.TempDir()
+	storeDir := filepath.Join(root, "store")
+	// Create store dir but NOT the profile dir. cfg.ProfileDir()
+	// will resolve to storeDir/nonexistent.
+	if err := os.MkdirAll(storeDir, 0o750); err != nil {
+		t.Fatalf("mkdir store: %v", err)
+	}
+	cfg := &config.Config{
+		StorePath:  storeDir,
+		ProfileTag: "nonexistent",
+		MachineID:  "m1",
+	}
+	profileDir := filepath.Join(storeDir, "nonexistent")
+
+	if _, err := captureHandleListCmd(t, p, cfg); err != nil {
+		t.Fatalf("list: %v", err)
+	}
+
+	if _, err := os.Stat(profileDir); err == nil {
+		t.Errorf("list created profile dir %q as a side effect; must be read-only", profileDir)
+	} else if !os.IsNotExist(err) {
+		t.Errorf("unexpected stat err on profile dir: %v", err)
+	}
+}
+
+// TestHandleListCmd_ReadOnlyAgainstMissingStateDir: symmetric guard
+// for the state side. state.Load on a missing path returns
+// fs.ErrNotExist, and HandleListCmd's fallback uses state.New which
+// is an in-memory constructor — so state dir creation is already
+// side-effect-free by design. This test nails it down as an invariant.
+func TestHandleListCmd_ReadOnlyAgainstMissingStateDir(t *testing.T) {
+	p := &fakeListProvider{name: "cargo", prefix: "cargo", listOutput: "ok"}
+	root := t.TempDir()
+	storeDir := filepath.Join(root, "store")
+	profileDir := filepath.Join(storeDir, "test")
+	if err := os.MkdirAll(profileDir, 0o750); err != nil {
+		t.Fatalf("mkdir profile: %v", err)
+	}
+	cfg := &config.Config{
+		StorePath:  storeDir,
+		ProfileTag: "test",
+		MachineID:  "never-seen",
+	}
+	stateDir := filepath.Join(storeDir, ".state", "never-seen")
+
+	if _, err := captureHandleListCmd(t, p, cfg); err != nil {
+		t.Fatalf("list: %v", err)
+	}
+
+	if _, err := os.Stat(stateDir); err == nil {
+		t.Errorf("list created state dir %q as a side effect; must be read-only", stateDir)
+	}
+}

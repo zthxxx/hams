@@ -44,10 +44,19 @@ func HandleListCmd(ctx context.Context, p Provider, cfg *config.Config) error {
 	manifest := p.Manifest()
 	prefix := manifest.FilePrefix
 
+	// Cycle 216: read-only load. hamsfile.LoadOrCreateEmpty would call
+	// os.MkdirAll for the profile directory when the hamsfile is
+	// missing — fine for install/remove (first-use bootstrap) but a
+	// surprising side effect for `list`, which users expect to be a
+	// pure query. Use hamsfile.Read + fallback to NewEmpty so a list
+	// call against a fresh store never writes to disk.
 	hfPath := filepath.Join(cfg.ProfileDir(), prefix+".hams.yaml")
-	hf, err := hamsfile.LoadOrCreateEmpty(hfPath)
+	hf, err := hamsfile.Read(hfPath)
 	if err != nil {
-		return fmt.Errorf("loading %s hamsfile: %w", manifest.Name, err)
+		if !errors.Is(err, fs.ErrNotExist) {
+			return fmt.Errorf("loading %s hamsfile: %w", manifest.Name, err)
+		}
+		hf = hamsfile.NewEmpty(hfPath)
 	}
 
 	statePath := filepath.Join(cfg.StateDir(), prefix+".state.yaml")
