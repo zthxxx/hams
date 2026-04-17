@@ -244,11 +244,15 @@ func (p *Provider) handleInstall(ctx context.Context, args []string, hamsFlags m
 		return err
 	}
 
-	// Dry-run flags executed apt-get but didn't change host state, so
-	// post-hoc bookkeeping cannot represent the invocation truthfully.
-	// Skip the auto-record entirely and warn the user.
+	// apt-get's OWN simulate flags (--simulate, -s, --no-act, etc.)
+	// run apt-get without changing host state, so post-hoc bookkeeping
+	// cannot represent the invocation truthfully. Skip the auto-record
+	// entirely and warn the user. Note: this is distinct from hams's
+	// own `--dry-run` flag (gated above at the flags.DryRun check) —
+	// the previous wording "(dry-run flag detected)" conflated the
+	// two and confused users who hadn't passed --dry-run.
 	if isComplexAptInvocation(args) {
-		slog.Warn("hams apt install completed but did not auto-record (dry-run flag detected). To declare these resources, edit the apt hamsfile and run `hams apply`.", "args", args)
+		slog.Warn("hams apt install completed but did not auto-record (apt-get simulate flag detected). To declare these resources, edit the apt hamsfile and run `hams apply`.", "args", args)
 		return nil
 	}
 
@@ -329,7 +333,7 @@ func (p *Provider) handleRemove(ctx context.Context, args []string, hamsFlags ma
 	// Same dry-run guard as install: dry-run flags execute apt-get but
 	// don't change host state, so the remove bookkeeping would lie.
 	if isComplexAptInvocation(args) {
-		slog.Warn("hams apt remove completed but did not auto-record (dry-run flag detected). To declare these resources, edit the apt hamsfile and run `hams apply`.", "args", args)
+		slog.Warn("hams apt remove completed but did not auto-record (apt-get simulate flag detected). To remove these resources from the hamsfile, edit it and run `hams apply`.", "args", args)
 		return nil
 	}
 
