@@ -216,7 +216,7 @@ func TestRunRefresh_JSONOutput(t *testing.T) {
 		t.Fatalf("output not valid JSON: %v\nraw: %q", err, out)
 	}
 
-	for _, key := range []string{"probed", "planned", "save_failures", "probe_failures", "success", "dry_run"} {
+	for _, key := range []string{"probed", "planned", "save_failures", "probe_failures", "probe_failed_providers", "success", "dry_run"} {
 		if _, ok := data[key]; !ok {
 			t.Errorf("JSON missing required key %q; got: %v", key, data)
 		}
@@ -235,6 +235,75 @@ func TestRunRefresh_JSONOutput(t *testing.T) {
 	}
 
 	_ = storeDir
+}
+
+// TestRunRefresh_JSONOutput_NamesProbeFailedProviders — cycle 232.
+// Pre-cycle-232 the JSON exposed `"probe_failures": N` (count only)
+// but didn't name WHICH providers failed to probe — a CI script
+// retrying just the failed subset (`hams refresh --only=...`) had
+// to grep slog output. Add `probe_failed_providers` (sorted list of
+// names whose probeFn returned an error / panicked / timed out).
+// Asserts the named entry against a seeded failing provider.
+func TestRunRefresh_JSONOutput_NamesProbeFailedProviders(t *testing.T) {
+	_, profileDir, _, flags := setupApplyTestEnv(t, []string{"alpha", "beta"})
+	flags.JSON = true
+	writeApplyTestFile(t, filepath.Join(profileDir, "alpha.hams.yaml"),
+		"packages:\n  - app: pkg-a\n")
+	writeApplyTestFile(t, filepath.Join(profileDir, "beta.hams.yaml"),
+		"packages:\n  - app: pkg-b\n")
+
+	registry := provider.NewRegistry()
+	good := &applyTestProvider{
+		manifest: provider.Manifest{
+			Name: "alpha", DisplayName: "alpha", FilePrefix: "alpha",
+			Platforms: []provider.Platform{provider.PlatformAll},
+		},
+		probeFn: func(_ context.Context, _ *state.File) ([]provider.ProbeResult, error) {
+			return []provider.ProbeResult{{ID: "pkg-a", State: state.StateOK}}, nil
+		},
+	}
+	bad := &applyTestProvider{
+		manifest: provider.Manifest{
+			Name: "beta", DisplayName: "beta", FilePrefix: "beta",
+			Platforms: []provider.Platform{provider.PlatformAll},
+		},
+		probeFn: func(_ context.Context, _ *state.File) ([]provider.ProbeResult, error) {
+			return nil, errors.New("simulated probe failure")
+		},
+	}
+	if err := registry.Register(good); err != nil {
+		t.Fatalf("Register good: %v", err)
+	}
+	if err := registry.Register(bad); err != nil {
+		t.Fatalf("Register bad: %v", err)
+	}
+
+	out := captureStdout(t, func() {
+		// runRefresh returns ExitPartialFailure on probe failures; that's expected.
+		if err := runRefresh(context.Background(), flags, registry, "", ""); err == nil {
+			t.Fatal("expected ExitPartialFailure (1 probe failure)")
+		}
+	})
+
+	var data map[string]any
+	if err := json.Unmarshal([]byte(out), &data); err != nil {
+		t.Fatalf("output not valid JSON: %v\nraw: %q", err, out)
+	}
+	if pf, ok := data["probe_failures"].(float64); !ok || pf < 1 {
+		t.Errorf("probe_failures = %v (ok=%v), want >=1", data["probe_failures"], ok)
+	}
+	failedNames, ok := data["probe_failed_providers"].([]any)
+	if !ok {
+		t.Fatalf("probe_failed_providers missing or wrong type; got %v", data["probe_failed_providers"])
+	}
+	if len(failedNames) != 1 {
+		t.Errorf("probe_failed_providers = %v, want exactly [beta]", failedNames)
+	}
+	if len(failedNames) >= 1 {
+		if name, ok := failedNames[0].(string); !ok || name != "beta" {
+			t.Errorf("probe_failed_providers[0] = %v, want \"beta\"", failedNames[0])
+		}
+	}
 }
 
 // TestRunRefresh_JSONOutput_DryRunFlagSurfacesTrue — cycle 229.

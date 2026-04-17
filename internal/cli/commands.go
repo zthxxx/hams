@@ -333,14 +333,31 @@ func runRefresh(ctx context.Context, flags *provider.GlobalFlags, registry *prov
 	// distinguish a real refresh from a preview without re-parsing
 	// the original argv. Cycle 226's comment promised this field
 	// existed; this commit makes it true.
+	//
+	// Cycle 232 — symmetric to apply's cycle-231 fix. Pre-cycle-232
+	// the JSON exposed `"probe_failures": N` (count only) but didn't
+	// name WHICH providers failed to probe — a CI script that wanted
+	// to retry only the failed subset (`hams refresh --only=...`)
+	// had to grep slog output. Compute the set-difference of
+	// `providers` (all attempted) minus `probeResults` keys (succeeded)
+	// and emit the names alongside the count.
 	if flags.JSON {
+		probeFailedProviders := make([]string, 0, planned-probed)
+		for _, p := range providers {
+			name := p.Manifest().Name
+			if _, ok := probeResults[name]; !ok {
+				probeFailedProviders = append(probeFailedProviders, name)
+			}
+		}
+		sort.Strings(probeFailedProviders)
 		data := map[string]any{
-			"probed":         probed,
-			"planned":        planned,
-			"save_failures":  saveFailures,
-			"probe_failures": planned - probed,
-			"success":        probed == planned && len(saveFailures) == 0,
-			"dry_run":        flags.DryRun,
+			"probed":                 probed,
+			"planned":                planned,
+			"save_failures":          saveFailures,
+			"probe_failures":         planned - probed,
+			"probe_failed_providers": probeFailedProviders,
+			"success":                probed == planned && len(saveFailures) == 0,
+			"dry_run":                flags.DryRun,
 		}
 		if saveFailures == nil {
 			data["save_failures"] = []string{}
