@@ -1397,7 +1397,10 @@ func printDryRunActions(name, displayName string, actions []provider.Action) {
 // touch only this helper.
 func ensureProfileConfigured(paths config.Paths, storePath string, cfg *config.Config) error {
 	if term.IsTerminal(int(os.Stdin.Fd())) { //nolint:gosec // Fd() returns uintptr that fits in int on all supported platforms
-		fmt.Println("Not Found Profile in config, init it at first")
+		// Cycle 252: diagnostic notice goes to stderr, symmetric with
+		// promptProfileInit's stderr prompts. Keeps stdout reserved
+		// for the primary output (apply summary / JSON).
+		fmt.Fprintln(os.Stderr, "Not Found Profile in config, init it at first")
 		tag, mid, promptErr := promptProfileInit()
 		if promptErr != nil {
 			return fmt.Errorf("profile init: %w", promptErr)

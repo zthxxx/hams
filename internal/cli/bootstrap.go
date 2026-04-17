@@ -328,14 +328,22 @@ func resolveClonePath(repo string, paths config.Paths) string {
 func promptProfileInit() (tag, machineID string, err error) {
 	reader := bufio.NewReader(os.Stdin)
 
-	fmt.Print("Profile tag: ")
+	// Cycle 252: prompts go to stderr, not stdout. Pre-cycle-252
+	// `fmt.Print("Profile tag: ")` wrote to stdout — so an
+	// interactive `hams --json apply` on a fresh machine (TTY
+	// stdin, profile missing) interleaved "Profile tag: " into the
+	// primary JSON output surface. Stderr is the conventional
+	// channel for prompts / diagnostics; interactive users still
+	// see them on the terminal, and CI consumers redirecting stdout
+	// no longer get prose mixed with JSON.
+	fmt.Fprint(os.Stderr, "Profile tag: ")
 	tag, err = reader.ReadString('\n')
 	if err != nil {
 		return "", "", fmt.Errorf("reading profile tag: %w", err)
 	}
 	tag = strings.TrimSpace(tag)
 
-	fmt.Print("Profile Machine-ID: ")
+	fmt.Fprint(os.Stderr, "Profile Machine-ID: ")
 	machineID, err = reader.ReadString('\n')
 	if err != nil {
 		return "", "", fmt.Errorf("reading machine ID: %w", err)
