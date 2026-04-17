@@ -1758,3 +1758,100 @@ func TestOnlyMissingArtifacts(t *testing.T) {
 		})
 	}
 }
+
+// TestRunApply_SudoPromptWhenBashHamsfileHasSudoEntry locks in
+// cycle 232: a bash-only profile whose hamsfile has at least one
+// `sudo: true` entry MUST trigger the upfront sudoAcq.Acquire.
+// Pre-cycle-232 the cycle-227 gate only checked Manifest.RequiresSudo
+// (bash's Manifest can't declare sudo statically — it depends on
+// per-entry `sudo: true` fields), so bash's runtime sudo scripts
+// prompted independently during Execute instead of reusing the
+// cached credential. Now: runApply peeks into bash.hams.yaml via
+// bash.HamsfileHasSudoEntries and surfaces it as a sudo-needing
+// provider.
+func TestRunApply_SudoPromptWhenBashHamsfileHasSudoEntry(t *testing.T) {
+	_, profileDir, _, flags := setupApplyTestEnv(t, []string{"bash"})
+	// Seed a bash hamsfile with ONE sudo:true entry. cycle 229's
+	// URN-warning path will also fire, but doesn't affect the sudo
+	// decision.
+	bashHamsfile := filepath.Join(profileDir, "bash.hams.yaml")
+	writeApplyTestFile(t, bashHamsfile, `install:
+  - urn: "urn:hams:bash:needs-sudo"
+    run: "apt-get install -y nix"
+    sudo: true
+`)
+
+	p := &applyTestProvider{
+		manifest: provider.Manifest{
+			Name:        "bash",
+			DisplayName: "Bash",
+			Platforms:   []provider.Platform{provider.PlatformAll},
+			FilePrefix:  "bash",
+			// RequiresSudo intentionally false — the dynamic check
+			// reading the hamsfile is what we're exercising.
+		},
+		planFn: func(_ context.Context, _ *hamsfile.File, _ *state.File) ([]provider.Action, error) {
+			return []provider.Action{{
+				ID:       "urn:hams:bash:needs-sudo",
+				Type:     provider.ActionInstall,
+				Resource: "dummy",
+			}}, nil
+		},
+		applyFn: func(_ context.Context, _ provider.Action) error { return nil },
+	}
+
+	registry := provider.NewRegistry()
+	if err := registry.Register(p); err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+
+	spy := &sudo.SpyAcquirer{}
+	if err := runApply(context.Background(), flags, registry, spy, "", true, "", "", false, bootstrapMode{}); err != nil {
+		t.Fatalf("runApply: %v", err)
+	}
+
+	if spy.AcquireCalls != 1 {
+		t.Errorf("Acquire calls = %d, want 1 (bash hamsfile has sudo:true entry)", spy.AcquireCalls)
+	}
+}
+
+// TestRunApply_NoSudoPromptWhenBashHamsfileHasNoSudoEntry is the
+// negative case for cycle 232: a bash profile whose hamsfile lacks
+// any `sudo: true` entries MUST NOT prompt. The cycle-227 spirit
+// (don't prompt when not needed) is preserved when bash scripts
+// run unprivileged.
+func TestRunApply_NoSudoPromptWhenBashHamsfileHasNoSudoEntry(t *testing.T) {
+	_, profileDir, _, flags := setupApplyTestEnv(t, []string{"bash"})
+	bashHamsfile := filepath.Join(profileDir, "bash.hams.yaml")
+	writeApplyTestFile(t, bashHamsfile, `install:
+  - urn: "urn:hams:bash:no-sudo"
+    run: "echo hello"
+`)
+
+	p := &applyTestProvider{
+		manifest: provider.Manifest{
+			Name:        "bash",
+			DisplayName: "Bash",
+			Platforms:   []provider.Platform{provider.PlatformAll},
+			FilePrefix:  "bash",
+		},
+		planFn: func(_ context.Context, _ *hamsfile.File, _ *state.File) ([]provider.Action, error) {
+			return nil, nil
+		},
+		applyFn: func(_ context.Context, _ provider.Action) error { return nil },
+	}
+
+	registry := provider.NewRegistry()
+	if err := registry.Register(p); err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+
+	spy := &sudo.SpyAcquirer{}
+	if err := runApply(context.Background(), flags, registry, spy, "", true, "", "", false, bootstrapMode{}); err != nil {
+		t.Fatalf("runApply: %v", err)
+	}
+
+	if spy.AcquireCalls != 0 {
+		t.Errorf("Acquire calls = %d, want 0 (bash hamsfile has no sudo:true entry)", spy.AcquireCalls)
+	}
+}
