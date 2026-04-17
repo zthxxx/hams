@@ -127,6 +127,68 @@ func TestHandleCommand_List_PopulatedStateEnumeratesResources(t *testing.T) {
 	}
 }
 
+// TestHandleCommand_Remove_MarksStateAsRemoved asserts `hams
+// git-clone remove <id>` updates BOTH the hamsfile (entry deleted)
+// AND the state file (resource marked StateRemoved). Previously only
+// the hamsfile was updated — the state resource stayed at its prior
+// value (typically StateOK), so `hams list` and the next apply's
+// drift-detection saw a phantom resource that was actually
+// user-removed. Mirrors the symmetric fix git-config's doRemove
+// already satisfies (cycle 104).
+func TestHandleCommand_Remove_MarksStateAsRemoved(t *testing.T) {
+	t.Parallel()
+	p, flags, stateDir := newCloneHarness(t)
+
+	// Seed: pre-existing state with the resource as StateOK (as if a
+	// prior apply cloned it successfully) AND a hamsfile entry.
+	resourceID := "git@github.com:foo/bar -> /tmp/bar"
+	sf := state.New(p.Manifest().Name, "test-machine")
+	sf.SetResource(resourceID, state.StateOK)
+	if err := sf.Save(filepath.Join(stateDir, "git-clone.state.yaml")); err != nil {
+		t.Fatalf("seed state: %v", err)
+	}
+	// Force hamsfile creation by running handleAdd via HandleCommand —
+	// but handleAdd would shell out to real git, so shortcut via
+	// loadOrCreateHamsfile + AddApp directly.
+	hf, err := p.loadOrCreateHamsfile(nil, flags)
+	if err != nil {
+		t.Fatalf("load hamsfile: %v", err)
+	}
+	hf.AddApp("repos", resourceID, "")
+	if err := hf.Write(); err != nil {
+		t.Fatalf("write hamsfile: %v", err)
+	}
+
+	err = p.HandleCommand(context.Background(), []string{"remove", resourceID}, nil, flags)
+	if err != nil {
+		t.Fatalf("HandleCommand remove: %v", err)
+	}
+
+	// State file should now show StateRemoved for the resource.
+	sfAfter, err := state.Load(filepath.Join(stateDir, "git-clone.state.yaml"))
+	if err != nil {
+		t.Fatalf("reload state: %v", err)
+	}
+	r, ok := sfAfter.Resources[resourceID]
+	if !ok {
+		t.Fatalf("resource %q missing from state after remove — expected StateRemoved tombstone", resourceID)
+	}
+	if r.State != state.StateRemoved {
+		t.Errorf("state = %v, want StateRemoved", r.State)
+	}
+
+	// Hamsfile should also have the entry removed.
+	hfAfter, err := p.loadOrCreateHamsfile(nil, flags)
+	if err != nil {
+		t.Fatalf("reload hamsfile: %v", err)
+	}
+	for _, app := range hfAfter.ListApps() {
+		if app == resourceID {
+			t.Errorf("hamsfile still contains removed entry %q", resourceID)
+		}
+	}
+}
+
 // TestHandleCommand_List_NoStoreConfiguredErrors asserts list fails
 // fast with a UserFacingError when no store is configured — we need
 // a store path to locate the hamsfile/state. Without this guard

@@ -265,6 +265,18 @@ func (p *CloneProvider) handleRemove(args []string, hamsFlags map[string]string,
 		return fmt.Errorf("git-clone: failed to write hamsfile: %w", err)
 	}
 
+	// Mirror git-config's doRemove: mark the state resource as
+	// StateRemoved so `hams list` / `hams refresh` see a tombstone
+	// rather than a stale StateOK that would look orphaned (or worse
+	// re-clone on next apply). Matches the auto-record contract other
+	// CLI-writing providers (apt, homebrew, git-config, defaults,
+	// duti) satisfy for their remove paths.
+	sf := p.loadOrCreateStateFile(flags)
+	sf.SetResource(resourceID, state.StateRemoved)
+	if err := sf.Save(p.statePath(flags)); err != nil {
+		return fmt.Errorf("git-clone: failed to write state: %w", err)
+	}
+
 	slog.Warn("git-clone: entry removed from Hamsfile. Local directory was NOT deleted.", "resource", resourceID)
 	return nil
 }
