@@ -1,0 +1,14 @@
+# hams store .gitignore — keep private state + local overrides out of the repo.
+# These patterns mirror the schema-design spec §Store Layout.
+
+# Per-machine state: never shared, regenerated on every apply.
+.state/
+
+# Local overrides: machine-specific secrets, auth tokens, API keys.
+*.local.yaml
+*.local.*
+
+# Common editor / OS cruft users shouldn't have to add manually.
+.DS_Store
+*.swp
+*.swo
