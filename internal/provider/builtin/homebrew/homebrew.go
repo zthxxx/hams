@@ -573,7 +573,20 @@ func (p *Provider) handleRemove(ctx context.Context, args []string, hamsFlags ma
 		return nil
 	}
 
+	// Cycle 177: route tap-format IDs through Untap so `hams brew
+	// remove user/repo` works symmetrically with the apply path
+	// (Provider.Remove already does this routing). Pre-cycle-177 the
+	// CLI handler always called runner.Uninstall, which fails with
+	// "No installed keg or cask" for tap names — user couldn't
+	// remove a tap via the CLI without going through `hams apply`
+	// (forcing a full reconcile just to drop one tap).
 	for _, pkg := range packages {
+		if isTapFormat(pkg) {
+			if err := p.runner.Untap(ctx, pkg); err != nil {
+				return err
+			}
+			continue
+		}
 		if err := p.runner.Uninstall(ctx, pkg); err != nil {
 			return err
 		}

@@ -88,6 +88,70 @@ func (h *brewHarness) stateResources() map[string]state.ResourceState {
 	return out
 }
 
+// TestHandleRemove_TapFormatRoutesToUntap locks in cycle 177:
+// `hams brew remove user/repo` (tap-format) previously called
+// `brew uninstall user/repo` which fails with "No installed keg
+// or cask". Provider.Remove (the apply-path handler) correctly
+// routes tap-format IDs through Untap; the CLI handler was the
+// asymmetry. Now: handleRemove also routes, so users can drop a
+// tap via CLI without reaching for `hams apply`.
+func TestHandleRemove_TapFormatRoutesToUntap(t *testing.T) {
+	t.Parallel()
+	h := newBrewHarness(t)
+
+	// Pre-seed hamsfile with a tap entry so the Remove path has
+	// something to remove. Bypass handleTap (which exec's brew).
+	hf, err := hamsfile.LoadOrCreateEmpty(h.hamsfilePath)
+	if err != nil {
+		t.Fatalf("seed hamsfile: %v", err)
+	}
+	hf.AddApp("tap", "homebrew/cask-fonts", "")
+	if err := hf.Write(); err != nil {
+		t.Fatalf("write hamsfile: %v", err)
+	}
+
+	if err := h.provider.HandleCommand(context.Background(),
+		[]string{"remove", "homebrew/cask-fonts"}, nil, h.flags); err != nil {
+		t.Fatalf("remove tap: %v", err)
+	}
+
+	// Must have invoked runner.Untap (NOT Uninstall).
+	if h.runner.CallCount(fakeOpUntap, "homebrew/cask-fonts") != 1 {
+		t.Errorf("runner.Untap calls = %d, want 1", h.runner.CallCount(fakeOpUntap, "homebrew/cask-fonts"))
+	}
+	if h.runner.CallCount(fakeOpUninstall, "homebrew/cask-fonts") != 0 {
+		t.Errorf("runner.Uninstall must NOT be called for tap-format ID")
+	}
+	// Hamsfile cleared.
+	if apps := h.hamsfileApps(); len(apps) != 0 {
+		t.Errorf("hamsfile should be empty after tap remove, got %v", apps)
+	}
+}
+
+// TestHandleRemove_FormulaStillUsesUninstall is the regression gate
+// for cycle 177's routing change: non-tap-format IDs continue to
+// route through Uninstall (NOT Untap) as before.
+func TestHandleRemove_FormulaStillUsesUninstall(t *testing.T) {
+	t.Parallel()
+	h := newBrewHarness(t)
+
+	if err := h.provider.HandleCommand(context.Background(),
+		[]string{"install", "htop"}, nil, h.flags); err != nil {
+		t.Fatalf("install setup: %v", err)
+	}
+	if err := h.provider.HandleCommand(context.Background(),
+		[]string{"remove", "htop"}, nil, h.flags); err != nil {
+		t.Fatalf("remove formula: %v", err)
+	}
+
+	if h.runner.CallCount(fakeOpUninstall, "htop") != 1 {
+		t.Errorf("runner.Uninstall(htop) calls = %d, want 1", h.runner.CallCount(fakeOpUninstall, "htop"))
+	}
+	if h.runner.CallCount(fakeOpUntap, "htop") != 0 {
+		t.Errorf("runner.Untap must NOT be called for formula name")
+	}
+}
+
 // TestHandleCommand_TapFormatInInstallErrors locks in cycle 176:
 // `hams brew install user/repo` previously had a quirky path —
 // `brew install user/repo` triggers a `brew tap` as a side effect
