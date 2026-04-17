@@ -70,8 +70,18 @@ func (p *Provider) Probe(ctx context.Context, sf *state.File) ([]provider.ProbeR
 		if r.State == state.StateRemoved {
 			continue
 		}
-		// Extension IDs are case-insensitive.
+		// Cycle 188: strip the optional `@version` suffix from the
+		// state ID before matching against the `installed` map (which
+		// keys on bare publisher.extension only — parseExtensionList
+		// drops the version from the key). Pre-cycle-188 a state
+		// entry like "foo.bar@1.2.3" NEVER matched — Probe always
+		// reported StateFailed, drift detection was broken for any
+		// user who pinned a version via `hams code-ext install
+		// publisher.ext@1.2.3`. Extension IDs are case-insensitive.
 		lowerID := strings.ToLower(id)
+		if idx := strings.Index(lowerID, "@"); idx >= 0 {
+			lowerID = lowerID[:idx]
+		}
 		if ver, ok := installed[lowerID]; ok {
 			results = append(results, provider.ProbeResult{ID: id, State: state.StateOK, Version: ver})
 		} else {
