@@ -51,6 +51,60 @@ func TestSplitHamsFlags_BooleanFlags(t *testing.T) {
 	}
 }
 
+// TestSplitHamsFlags_ExplicitFalseDisablesFlag locks in cycle 162:
+// `--hams-local=false` previously added the "local" key with value
+// "false"; downstream presence-checks (`if _, ok := hamsFlags["local"]`)
+// interpreted it as truthy — so `=false` did the opposite of what
+// the user asked. Now: hamsFlagFalsey strips false-y values from
+// the map entirely, so the presence-check correctly returns ok=false.
+func TestSplitHamsFlags_ExplicitFalseDisablesFlag(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name string
+		args []string
+		key  string
+	}{
+		{"local-false", []string{"--hams-local=false"}, "local"},
+		{"local-zero", []string{"--hams-local=0"}, "local"},
+		{"local-FALSE-uppercase", []string{"--hams-local=FALSE"}, "local"},
+		{"lucky-false", []string{"--hams-lucky=false"}, "lucky"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			hams, _ := splitHamsFlags(tc.args)
+			if _, ok := hams[tc.key]; ok {
+				t.Errorf("hams[%q] should NOT exist after =false; got value %q", tc.key, hams[tc.key])
+			}
+		})
+	}
+}
+
+// TestSplitHamsFlags_ExplicitTrueKeepsFlag asserts the truthy-value
+// branch still routes through correctly. `--hams-local=true` and
+// `--hams-local=1` keep the key in the map.
+func TestSplitHamsFlags_ExplicitTrueKeepsFlag(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name string
+		args []string
+		key  string
+	}{
+		{"local-true", []string{"--hams-local=true"}, "local"},
+		{"local-1", []string{"--hams-local=1"}, "local"},
+		{"local-yes", []string{"--hams-local=yes"}, "local"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			hams, _ := splitHamsFlags(tc.args)
+			if _, ok := hams[tc.key]; !ok {
+				t.Errorf("hams[%q] should exist after truthy value; got map %v", tc.key, hams)
+			}
+		})
+	}
+}
+
 func TestSplitHamsFlags_ForceForward(t *testing.T) {
 	t.Parallel()
 	hams, pass := splitHamsFlags([]string{"install", "--", "--hams-tag=foo", "--cask"})
@@ -99,14 +153,22 @@ func TestSplitHamsFlags_Property_PartitionInvariants(t *testing.T) {
 			}
 		}
 
-		// Invariant 1: all --hams- flags before the first -- are captured.
+		// Invariant 1: all --hams- flags before the first -- are captured,
+		// EXCEPT explicit-false-y values (cycle 162: `--hams-X=false`/`=0`
+		// disables the flag, leaving the key absent from the map).
 		beforeSep := args
 		if firstSep >= 0 {
 			beforeSep = args[:firstSep]
 		}
 		for _, a := range beforeSep {
 			if strings.HasPrefix(a, hamsFlagPrefix) {
-				key, _ := parseHamsFlag(a[7:])
+				key, value := parseHamsFlag(a[7:])
+				if hamsFlagFalsey(value) {
+					if _, ok := hams[key]; ok {
+						t.Errorf("hams flag %q with false-y value should NOT be captured", a)
+					}
+					continue
+				}
 				if _, ok := hams[key]; !ok {
 					t.Errorf("hams flag %q before separator not captured", a)
 				}

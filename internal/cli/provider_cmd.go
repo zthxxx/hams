@@ -84,6 +84,10 @@ func parseProviderArgs(args []string, flags *provider.GlobalFlags) (hamsFlags ma
 		// --hams- prefixed flags.
 		if strings.HasPrefix(arg, hamsFlagPrefix) {
 			key, value := parseHamsFlag(arg[len(hamsFlagPrefix):])
+			if hamsFlagFalsey(value) {
+				// Cycle 162: explicit false-y values disable the flag.
+				continue
+			}
 			hamsFlags[key] = value
 			continue
 		}
