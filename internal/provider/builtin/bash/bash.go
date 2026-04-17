@@ -9,7 +9,6 @@ import (
 	"os/exec"
 	"strings"
 
-	"github.com/bitfield/script"
 	"gopkg.in/yaml.v3"
 
 	"github.com/zthxxx/hams/internal/hamsfile"
@@ -184,25 +183,32 @@ func (p *Provider) List(_ context.Context, desired *hamsfile.File, sf *state.Fil
 }
 
 // RunCheck executes a check command and returns (stdout, exit code 0 = ok).
-// Uses bitfield/script for shell execution.
-// NOTE: ctx is accepted for interface consistency but not yet propagated
-// because script.Exec does not support context cancellation.
-func RunCheck(_ context.Context, checkCmd string) (string, bool) {
+// Now uses exec.CommandContext (was bitfield/script before cycle 160) so
+// SIGINT/SIGTERM cancels the check promptly. Without this, a check
+// command that hangs (e.g. `curl https://slow.example.com`) would
+// keep running after Ctrl+C had unwound the rest of the apply.
+func RunCheck(ctx context.Context, checkCmd string) (string, bool) {
 	if checkCmd == "" {
 		return "", false
 	}
-
-	output, err := script.Exec(checkCmd).String()
+	cmd := exec.CommandContext(ctx, "/bin/bash", "-c", checkCmd) //nolint:gosec // hamsfile-declared check command
+	out, err := cmd.Output()
 	if err != nil {
-		return output, false
+		return string(out), false
 	}
-	return strings.TrimSpace(output), true
+	return strings.TrimSpace(string(out)), true
 }
 
-func runBash(_ context.Context, command string) error {
-	p := script.Exec(command).WithStdout(os.Stdout).WithStderr(os.Stderr)
-	_, err := p.String()
-	if err != nil {
+// runBash executes a bash command, streaming stdout/stderr to the
+// user's terminal. Now uses exec.CommandContext (was bitfield/script
+// before cycle 160) so SIGINT/SIGTERM cancels the script promptly —
+// previously a hanging install/check kept running after Ctrl+C
+// because script.Exec didn't honor context cancellation.
+func runBash(ctx context.Context, command string) error {
+	cmd := exec.CommandContext(ctx, "/bin/bash", "-c", command) //nolint:gosec // hamsfile-declared run/remove command
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("bash command failed: %w\n  command: %s", err, command)
 	}
 	return nil

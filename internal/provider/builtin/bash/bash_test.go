@@ -5,6 +5,7 @@ import (
 	"os/exec"
 	"strings"
 	"testing"
+	"time"
 
 	"gopkg.in/yaml.v3"
 
@@ -209,6 +210,51 @@ func TestRunCheck_Failure(t *testing.T) {
 	_, ok := RunCheck(context.Background(), "exit 1")
 	if ok {
 		t.Error("RunCheck should fail for 'exit 1'")
+	}
+}
+
+// TestRunCheck_HonorsContext locks in cycle 160: RunCheck previously
+// used bitfield/script which doesn't honor context cancellation, so
+// a hanging check command (e.g. `sleep 30`) kept running after the
+// caller's context was canceled. Now: switched to exec.CommandContext
+// so SIGINT/SIGTERM aborts the check promptly.
+//
+// Test pre-cancels the context, runs `sleep 30` as a check, asserts
+// the call returns much faster than the 30s sleep would take if the
+// process weren't being killed.
+func TestRunCheck_HonorsContext(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // pre-cancel: exec.CommandContext kills the process before/during start
+
+	start := time.Now()
+	_, ok := RunCheck(ctx, "sleep 30")
+	elapsed := time.Since(start)
+
+	if ok {
+		t.Errorf("canceled check should NOT report ok=true")
+	}
+	// Even with start-up overhead, 1s is way under the 30s sleep.
+	if elapsed > 1*time.Second {
+		t.Errorf("RunCheck with canceled ctx took %v; want < 1s (context not honored)", elapsed)
+	}
+}
+
+// TestRunBash_HonorsContext: same as TestRunCheck_HonorsContext but
+// for runBash, which is the entry point bash.Apply uses for
+// `run:` commands in the hamsfile.
+func TestRunBash_HonorsContext(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	start := time.Now()
+	err := runBash(ctx, "sleep 30")
+	elapsed := time.Since(start)
+
+	if err == nil {
+		t.Errorf("canceled runBash should return non-nil error")
+	}
+	if elapsed > 1*time.Second {
+		t.Errorf("runBash with canceled ctx took %v; want < 1s (context not honored)", elapsed)
 	}
 }
 
