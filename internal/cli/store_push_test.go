@@ -158,6 +158,77 @@ func TestRunStorePush_CommitErrorShortCircuits(t *testing.T) {
 	}
 }
 
+// TestConfigSetDryRun_SkipsWrite locks in cycle 145: `hams
+// --dry-run config set <key> <val>` prints the intent-level
+// preview and returns without invoking WriteConfigKey. Previously
+// dry-run was ignored: the real config file got mutated.
+func TestConfigSetDryRun_SkipsWrite(t *testing.T) {
+	configHome := t.TempDir()
+	dataHome := t.TempDir()
+	t.Setenv("HAMS_CONFIG_HOME", configHome)
+	t.Setenv("HAMS_DATA_HOME", dataHome)
+	// Start without a config file so we can assert none was
+	// created by the dry-run invocation.
+	configPath := filepath.Join(configHome, "hams.config.yaml")
+
+	out := captureStdout(t, func() {
+		app := NewApp(provider.NewRegistry(), sudo.NoopAcquirer{})
+		if err := app.Run(context.Background(),
+			[]string{"hams", "--dry-run", "config", "set", "profile_tag", "linux"}); err != nil {
+			t.Fatalf("dry-run config set: %v", err)
+		}
+	})
+
+	if !strings.Contains(out, "[dry-run]") {
+		t.Errorf("dry-run output missing [dry-run] prefix; got:\n%s", out)
+	}
+	if !strings.Contains(out, "profile_tag = linux") {
+		t.Errorf("dry-run output should echo the set key=value; got:\n%s", out)
+	}
+	// Config file MUST NOT exist — dry-run didn't mutate anything.
+	if _, err := os.Stat(configPath); err == nil {
+		t.Errorf("dry-run created config file %q; should have been untouched", configPath)
+	}
+}
+
+// TestConfigUnsetDryRun_SkipsUnset locks in cycle 145's mirror
+// fix: `hams --dry-run config unset <key>` doesn't mutate the
+// config file.
+func TestConfigUnsetDryRun_SkipsUnset(t *testing.T) {
+	configHome := t.TempDir()
+	dataHome := t.TempDir()
+	t.Setenv("HAMS_CONFIG_HOME", configHome)
+	t.Setenv("HAMS_DATA_HOME", dataHome)
+	// Seed a config file with profile_tag set so "unset" has
+	// something to potentially remove.
+	configPath := filepath.Join(configHome, "hams.config.yaml")
+	writeApplyTestFile(t, configPath, "profile_tag: keep-me\nmachine_id: sandbox\n")
+
+	out := captureStdout(t, func() {
+		app := NewApp(provider.NewRegistry(), sudo.NoopAcquirer{})
+		if err := app.Run(context.Background(),
+			[]string{"hams", "--dry-run", "config", "unset", "profile_tag"}); err != nil {
+			t.Fatalf("dry-run config unset: %v", err)
+		}
+	})
+
+	if !strings.Contains(out, "[dry-run]") {
+		t.Errorf("dry-run output missing [dry-run] prefix; got:\n%s", out)
+	}
+	if !strings.Contains(out, "Would unset profile_tag") {
+		t.Errorf("dry-run output should echo the unset key; got:\n%s", out)
+	}
+	// Config file MUST still have profile_tag set — dry-run didn't
+	// mutate anything.
+	body, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatalf("read config: %v", err)
+	}
+	if !strings.Contains(string(body), "profile_tag: keep-me") {
+		t.Errorf("dry-run removed profile_tag from config; should have been untouched; file:\n%s", string(body))
+	}
+}
+
 // TestStoreInitDryRun_SkipsAllSideEffects locks in cycle 144:
 // `hams --dry-run store init` prints the intent-level preview and
 // returns without creating any directory or writing any file.

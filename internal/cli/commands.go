@@ -345,12 +345,22 @@ func configCmd() *cli.Command {
 					}
 					flags := globalFlags(cmd)
 					paths := resolvePaths(flags)
-					if err := config.WriteConfigKey(paths, flags.Store, key, value); err != nil {
-						return fmt.Errorf("writing config: %w", err)
-					}
 					target := "global config"
 					if config.IsSensitiveKey(key) {
 						target = "local config"
+					}
+					// --dry-run: preview the target routing + value
+					// without mutating the YAML file. Previously
+					// `hams --dry-run config set ...` performed a real
+					// WriteConfigKey, contradicting the global flag's
+					// "no changes" contract. Same fix pattern as
+					// cycles 143/144 (store push/pull/init).
+					if flags.DryRun {
+						fmt.Printf("[dry-run] Would set %s = %s (in %s)\n", key, value, target)
+						return nil
+					}
+					if err := config.WriteConfigKey(paths, flags.Store, key, value); err != nil {
+						return fmt.Errorf("writing config: %w", err)
 					}
 					fmt.Printf("Set %s = %s (in %s)\n", key, value, target)
 					return nil
@@ -381,12 +391,18 @@ func configCmd() *cli.Command {
 					}
 					flags := globalFlags(cmd)
 					paths := resolvePaths(flags)
-					if err := config.UnsetConfigKey(paths, flags.Store, key); err != nil {
-						return fmt.Errorf("unsetting config: %w", err)
-					}
 					target := "global config"
 					if config.IsSensitiveKey(key) {
 						target = "local config"
+					}
+					// Mirror cycle 145's set dry-run guard: preview
+					// without mutating.
+					if flags.DryRun {
+						fmt.Printf("[dry-run] Would unset %s (from %s)\n", key, target)
+						return nil
+					}
+					if err := config.UnsetConfigKey(paths, flags.Store, key); err != nil {
+						return fmt.Errorf("unsetting config: %w", err)
 					}
 					fmt.Printf("Unset %s (from %s)\n", key, target)
 					return nil
