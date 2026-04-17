@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/zthxxx/hams/internal/provider"
 	"github.com/zthxxx/hams/internal/sudo"
@@ -105,6 +106,47 @@ func TestStoreStatus_WithGitRepo(t *testing.T) {
 	// Store has hamsfile + state dirs, so status should be non-clean.
 	if !strings.Contains(got, "uncommitted") && !strings.Contains(got, "clean") {
 		t.Errorf("git status line should say 'uncommitted' or 'clean'; got:\n%s", got)
+	}
+}
+
+// TestStoreStatus_CanceledContextAbortsPromptly locks in cycle 157:
+// `hams store status` on a git repo previously used context.Background()
+// for the inner `git status --short` probe (with a 5s timeout), so
+// SIGINT/SIGTERM during the probe was ignored and the user had to
+// wait up to 5s for the timeout. Now: derives from the request ctx
+// so cancellation propagates immediately. Asserts: pre-canceling
+// the context returns from the action much faster than the 5s
+// timeout (using a 2s upper bound for noisy CI environments).
+func TestStoreStatus_CanceledContextAbortsPromptly(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not available")
+	}
+	storeDir, _, _, _ := setupApplyTestEnv(t, []string{"apt"})
+
+	if err := exec.CommandContext(context.Background(), "git", "-C", storeDir, "init", "-q").Run(); err != nil {
+		t.Fatalf("git init: %v", err)
+	}
+
+	// Pre-cancel the context. exec.CommandContext fires the kill
+	// signal on cancel, so the git status invocation should abort
+	// nearly immediately instead of running the full ~ms timeout
+	// budget. Even with timing noise on CI, 2s should be plenty.
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	start := time.Now()
+	registry := provider.NewRegistry()
+	app := NewApp(registry, sudo.NoopAcquirer{})
+	// Errors from the captureStdout body are intentionally swallowed
+	// here — we only care about cancellation timing for this test.
+	captureStdout(t, func() {
+		if err := app.Run(ctx, []string{"hams", "--store", storeDir, "store", "status"}); err != nil {
+			t.Logf("store status (expected possibly-error on cancel): %v", err)
+		}
+	})
+	elapsed := time.Since(start)
+	if elapsed > 2*time.Second {
+		t.Errorf("store status with canceled ctx took %v; want < 2s (5s timeout was being honored, ignoring ctx)", elapsed)
 	}
 }
 

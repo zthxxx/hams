@@ -654,7 +654,7 @@ func printConfigKey(cfg *config.Config, paths config.Paths, storePath, key strin
 }
 
 func storeCmd() *cli.Command {
-	storeStatusAction := func(_ context.Context, cmd *cli.Command) error {
+	storeStatusAction := func(ctx context.Context, cmd *cli.Command) error {
 		flags := globalFlags(cmd)
 		paths := resolvePaths(flags)
 		cfg, err := config.Load(paths, flags.Store)
@@ -704,7 +704,11 @@ func storeCmd() *cli.Command {
 		gitStatus := ""
 		gitChanges := 0
 		if _, err := os.Stat(filepath.Join(storePath, ".git")); err == nil {
-			cmdCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			// Derive from request ctx (not Background) so SIGINT/SIGTERM
+			// cancels the probe immediately. Without this, Ctrl+C during
+			// `hams store status` had to wait up to the 5s timeout
+			// because the cancel signal was never wired.
+			cmdCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 			defer cancel()
 			gs := exec.CommandContext(cmdCtx, "git", "-C", storePath, "status", "--short") //nolint:gosec // storePath is user-configured
 			out, gsErr := gs.Output()
