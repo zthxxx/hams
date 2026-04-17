@@ -474,8 +474,19 @@ func runApply(ctx context.Context, flags *provider.GlobalFlags, registry *provid
 			probeNames = append(probeNames, name)
 		}
 		sort.Strings(probeNames)
+		// Cycle 241: skip sf.Save under --dry-run so the probe phase is
+		// side-effect-free. Pre-cycle-241, `hams apply --dry-run` on a
+		// fresh store would CREATE `.state/<machine>/<provider>.state.yaml`
+		// for every probe-succeeded provider — violating the global
+		// --dry-run flag's "no changes" contract and leaving persistent
+		// artifacts the user didn't ask for. The fresh probe data is
+		// discarded; the next non-dry-run apply will re-probe. Matches
+		// runRefresh's cycle-226 "--dry-run skips state write" behavior.
 		for _, filePrefix := range probeNames {
 			sf := probeResults[filePrefix]
+			if flags.DryRun {
+				continue
+			}
 			statePath := filepath.Join(stateDir, filePrefix+".state.yaml")
 			if saveErr := sf.Save(statePath); saveErr != nil {
 				slog.Error("failed to save probed state", "provider", sf.Provider, "path", statePath, "error", saveErr)

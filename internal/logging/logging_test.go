@@ -28,6 +28,63 @@ func TestSetup_CreatesLogFile(t *testing.T) {
 	}
 }
 
+// TestSetupDebugOnly_DebugLevelEmitsDebugLines — cycle 241. With
+// debug=true, slog.Debug calls SHOULD reach stderr. Pre-cycle-241
+// the global default level was INFO so debug-level lines were
+// silently dropped for short commands like `hams cargo install foo
+// --debug`. Captures stderr around a Debug + Info call and asserts
+// both appear; then re-runs with debug=false and asserts only Info
+// appears.
+func TestSetupDebugOnly_DebugLevelEmitsDebugLines(t *testing.T) {
+	// Save and restore the global default logger so this test doesn't
+	// leak slog state into siblings.
+	original := slog.Default()
+	t.Cleanup(func() { slog.SetDefault(original) })
+
+	captureStderr := func(fn func()) string {
+		r, w, pipeErr := os.Pipe()
+		if pipeErr != nil {
+			t.Fatalf("pipe: %v", pipeErr)
+		}
+		origStderr := os.Stderr
+		os.Stderr = w
+		fn()
+		if closeErr := w.Close(); closeErr != nil {
+			t.Logf("close pipe: %v", closeErr)
+		}
+		os.Stderr = origStderr
+		var buf bytes.Buffer
+		if _, copyErr := io.Copy(&buf, r); copyErr != nil {
+			t.Fatalf("copy stderr: %v", copyErr)
+		}
+		return buf.String()
+	}
+
+	debugOut := captureStderr(func() {
+		SetupDebugOnly(true)
+		slog.Debug("debug-line", "phase", "cycle-241")
+		slog.Info("info-line", "phase", "cycle-241")
+	})
+	if !strings.Contains(debugOut, "debug-line") {
+		t.Errorf("debug=true should emit debug-line; got %q", debugOut)
+	}
+	if !strings.Contains(debugOut, "info-line") {
+		t.Errorf("debug=true should still emit info-line; got %q", debugOut)
+	}
+
+	infoOut := captureStderr(func() {
+		SetupDebugOnly(false)
+		slog.Debug("debug-line-suppressed", "phase", "cycle-241")
+		slog.Info("info-line-kept", "phase", "cycle-241")
+	})
+	if strings.Contains(infoOut, "debug-line-suppressed") {
+		t.Errorf("debug=false should suppress debug-line; got %q", infoOut)
+	}
+	if !strings.Contains(infoOut, "info-line-kept") {
+		t.Errorf("debug=false should still emit info-line; got %q", infoOut)
+	}
+}
+
 func TestLogPath(t *testing.T) {
 	path := LogPath("/home/user/.local/share/hams")
 	now := time.Now()

@@ -11,6 +11,31 @@ import (
 	"time"
 )
 
+// SetupDebugOnly is a lightweight slog initializer for short commands
+// (per-provider CLI dispatch, `hams config get`, `hams version`, etc.)
+// that don't justify a per-invocation log file. Routes slog to stderr
+// only and sets the level based on the --debug flag. No disk write,
+// no monthly rotation — just makes `--debug` produce visible output
+// for debug-level slog calls (e.g. wrap.go's "executing wrapped
+// command" line that's useful when debugging `hams cargo install foo
+// --debug`).
+//
+// Pre-cycle-241 only Setup (full logging with file rotation) honored
+// --debug. Short commands parsed --debug into flags.Debug but never
+// applied it, so the user got no extra output despite asking for it.
+//
+// Cycle 241.
+func SetupDebugOnly(debug bool) {
+	level := slog.LevelInfo
+	if debug {
+		level = slog.LevelDebug
+	}
+	handler := slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
+		Level: level,
+	})
+	slog.SetDefault(slog.New(handler))
+}
+
 // Setup initializes the global slog logger with file AND stderr output.
 // Creates the monthly log directory and log file if they don't exist.
 // Writing to both destinations means:

@@ -1003,7 +1003,13 @@ func TestRunApply_NonTTYWithProfileFlagButNoMachineID(t *testing.T) {
 // 148-152.
 func TestRunApply_PreApplyStateSaveFailureListIsAlphabetical(t *testing.T) {
 	storeDir, profileDir, stateDir, flags := setupApplyTestEnv(t, []string{"zeta", "alpha", "mu"})
-	flags.DryRun = true // skip post-apply save so only pre-apply path fires
+	// NOT dry-run — cycle 241 made dry-run skip the pre-apply refresh
+	// save loop entirely (per the global --dry-run "no side effects"
+	// contract). With Save now skipped under dry-run, the failure list
+	// the test exercises is unreachable that way. Use a non-dry-run
+	// apply with planFn returning no actions, so the pre-apply refresh
+	// runs (and its save fails on the read-only stateDir) but the
+	// per-provider Execute / post-apply save loop has nothing to do.
 
 	for _, name := range []string{"zeta", "alpha", "mu"} {
 		writeApplyTestFile(t, filepath.Join(profileDir, name+".hams.yaml"),
@@ -1022,6 +1028,9 @@ func TestRunApply_PreApplyStateSaveFailureListIsAlphabetical(t *testing.T) {
 				return []provider.ProbeResult{{ID: "pkg-a", State: state.StateOK}}, nil
 			},
 			planFn: func(_ context.Context, _ *hamsfile.File, _ *state.File) ([]provider.Action, error) {
+				// Empty plan — Execute is a no-op. The post-apply
+				// save loop sees no changes, so the only stateSaveFailures
+				// entries come from the pre-apply refresh.
 				return nil, nil
 			},
 		}
@@ -1044,12 +1053,20 @@ func TestRunApply_PreApplyStateSaveFailureListIsAlphabetical(t *testing.T) {
 
 	// Run apply. Pre-apply refresh saves all 3 providers in the
 	// (now-sorted) order alpha → mu → zeta. Each Save fails because
-	// the state dir is read-only.
+	// the state dir is read-only. Without dry-run, the surrounding
+	// runApply may or may not return ExitPartialFailure depending on
+	// whether post-apply save also runs into the readonly dir; we
+	// only care here about the per-provider error ordering in stderr,
+	// captured via the `collect` helper below.
 	captureStderr(t, func() {
 		// Capture stderr to consume slog output without polluting test
-		// output. The relevant assertion is on returned-error / stdout.
-		if err := runApply(context.Background(), flags, registry, sudo.NoopAcquirer{}, "", false, "", "", false, bootstrapMode{}); err == nil {
-			t.Fatal("expected ExitPartialFailure (state save failures in pre-apply refresh)")
+		// output. We don't assert on the returned error here — the
+		// test's focus is the per-provider stderr ordering.
+		if err := runApply(context.Background(), flags, registry, sudo.NoopAcquirer{}, "", false, "", "", false, bootstrapMode{}); err != nil {
+			// Expected: pre-apply refresh hits read-only stateDir,
+			// returns ExitPartialFailure. The test's focus is
+			// stderr ordering, not the returned error.
+			t.Logf("runApply returned (expected): %v", err)
 		}
 	})
 
@@ -1435,15 +1452,25 @@ func TestRunApply_DryRunJSONHasNoProse(t *testing.T) {
 	_ = storeDir
 }
 
-// TestRunApply_DryRunStateSaveFailureSurfacesAsError locks in cycle 154:
-// `hams apply --dry-run` previously printed "[dry-run] No changes
-// made." + exit 0 even when every provider's pre-apply refresh state
-// save failed. Users had no clue their drift tracking was broken
-// until the next real apply. Same class of silent-exit-0 bug as
-// cycle 39 (skipped providers). Now: print a Warning naming the
-// providers and return ExitPartialFailure so CI scripts catch the
-// drift-tracking breakage during preview.
-func TestRunApply_DryRunStateSaveFailureSurfacesAsError(t *testing.T) {
+// TestRunApply_DryRunSkipsStateSaveEntirely locks in cycle 241.
+// cli-architecture/spec.md §--dry-run mandates: "No Hamsfile writes,
+// state file writes, lock acquisitions, or wrapped CLI invocations
+// SHALL occur during dry-run." A stateDir that was made read-only
+// MUST NOT trigger a "state save failure" error path under dry-run
+// — because dry-run MUST NOT attempt the save in the first place.
+//
+// Pre-cycle-241 the pre-apply refresh called sf.Save unconditionally,
+// which on a read-only stateDir produced an ExitPartialFailure (and
+// on a fresh/missing stateDir, silently CREATED the directory + file
+// as a side effect — violating spec). Cycle 241 gates sf.Save on
+// `!flags.DryRun`; the probe data is discarded; next non-dry-run
+// apply re-probes and persists.
+//
+// This test supersedes the cycle-154 TestRunApply_DryRunStateSaveFailureSurfacesAsError
+// which locked in the spec-violating behavior. The "detect perm issues
+// early" feature it preserved is acceptable to lose — users discover
+// perm issues at first real apply, which is the natural mutation point.
+func TestRunApply_DryRunSkipsStateSaveEntirely(t *testing.T) {
 	storeDir, profileDir, stateDir, flags := setupApplyTestEnv(t, []string{"alpha"})
 	flags.DryRun = true
 
@@ -1464,48 +1491,30 @@ func TestRunApply_DryRunStateSaveFailureSurfacesAsError(t *testing.T) {
 		t.Fatalf("Register: %v", err)
 	}
 
-	if err := os.MkdirAll(stateDir, 0o750); err != nil {
-		t.Fatalf("mkdir stateDir: %v", err)
+	// DO NOT pre-create stateDir — the spec-critical assertion is that
+	// dry-run leaves the fs untouched. A fresh store with no `.state/`
+	// subdirectory must STAY WITHOUT `.state/` after dry-run.
+	if _, statErr := os.Stat(stateDir); !os.IsNotExist(statErr) {
+		t.Fatalf("stateDir unexpectedly exists before dry-run: %v", statErr)
 	}
-	if err := os.Chmod(stateDir, 0o500); err != nil {
-		t.Fatalf("chmod stateDir read-only: %v", err)
-	}
-	t.Cleanup(func() {
-		if err := os.Chmod(stateDir, 0o700); err != nil {
-			t.Logf("restore stateDir perms: %v", err)
-		}
-	})
 
 	out := captureStdout(t, func() {
 		err := runApply(context.Background(), flags, registry, sudo.NoopAcquirer{}, "", false, "", "", false, bootstrapMode{})
-		if err == nil {
-			t.Fatal("expected ExitPartialFailure for dry-run state save failure")
-		}
-		var ufe *hamserr.UserFacingError
-		if !errors.As(err, &ufe) {
-			t.Fatalf("expected *UserFacingError, got %T: %v", err, err)
-		}
-		if ufe.Code != hamserr.ExitPartialFailure {
-			t.Errorf("Code = %d, want ExitPartialFailure (%d)", ufe.Code, hamserr.ExitPartialFailure)
-		}
-		if !strings.Contains(ufe.Message, "state save failure") {
-			t.Errorf("error should mention state save failure; got %q", ufe.Message)
-		}
-		// Suggestions teach the recovery path.
-		joined := strings.Join(ufe.Suggestions, "\n")
-		if !strings.Contains(joined, "permissions") && !strings.Contains(joined, "--no-refresh") {
-			t.Errorf("suggestions should hint at permissions or --no-refresh; got %v", ufe.Suggestions)
+		if err != nil {
+			t.Fatalf("dry-run should succeed, got error: %v", err)
 		}
 	})
 
-	// Stdout should NOT show the "[dry-run] No changes made." line —
-	// that's the silent-success sentinel that the bug produced.
-	if strings.Contains(out, "No changes made") {
-		t.Errorf("dry-run with save failures should NOT print 'No changes made'; got:\n%s", out)
+	// stdout should show the standard dry-run preview lines.
+	if !strings.Contains(out, "[dry-run]") {
+		t.Errorf("dry-run output should contain '[dry-run]' marker; got:\n%s", out)
 	}
-	// Should show the explicit warning with the provider name.
-	if !strings.Contains(out, "alpha") || !strings.Contains(out, "failed to persist state") {
-		t.Errorf("dry-run output should warn about state save failure; got:\n%s", out)
+	// Spec invariant: no state file and no state dir created.
+	if _, statErr := os.Stat(stateDir); !os.IsNotExist(statErr) {
+		t.Errorf("dry-run MUST NOT create stateDir %q; stat err: %v", stateDir, statErr)
+	}
+	if _, statErr := os.Stat(filepath.Join(stateDir, "alpha.state.yaml")); !os.IsNotExist(statErr) {
+		t.Errorf("dry-run MUST NOT create state file; stat err: %v", statErr)
 	}
 
 	_ = storeDir

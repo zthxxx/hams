@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"strings"
 
+	"github.com/zthxxx/hams/internal/logging"
 	"github.com/zthxxx/hams/internal/provider"
 )
 
@@ -40,6 +41,15 @@ func routeToProvider(ctx context.Context, handler ProviderHandler, args []string
 		// --help was found.
 		return showProviderHelp(handler)
 	}
+	// Cycle 241: honor --debug for per-provider CLI invocations.
+	// Pre-cycle-241 only apply / refresh applied flags.Debug to slog
+	// (via logging.Setup), so `hams cargo install foo --debug` parsed
+	// the flag into flags.Debug but never raised the slog level →
+	// the user got no extra output despite asking for it. Use the
+	// stderr-only SetupDebugOnly so short commands don't open a per-
+	// invocation log file (apply/refresh still call full Setup with
+	// file rotation).
+	logging.SetupDebugOnly(flags.Debug)
 	// Surface v1.1-deferred --hams-lucky usage so users who pass the
 	// flag are not surprised by a silent no-op. See
 	// openspec/specs/cli-architecture/spec.md (lucky-defer delta) for
