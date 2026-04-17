@@ -154,8 +154,7 @@ func (p *CloneProvider) HandleCommand(ctx context.Context, args []string, hamsFl
 	case "remove":
 		return p.handleRemove(remaining, hamsFlags, flags)
 	case "list":
-		fmt.Println("git clone managed repositories:")
-		return nil
+		return p.handleList(ctx, hamsFlags, flags)
 	default:
 		// Passthrough: treat as raw git clone.
 		if len(args) < 2 {
@@ -241,6 +240,33 @@ func (p *CloneProvider) handleRemove(args []string, hamsFlags map[string]string,
 	return nil
 }
 
+// handleList loads the hamsfile + state and prints the enumerated
+// managed repositories. Previously `case "list":` printed only the
+// header — users ran the command and saw nothing below it, giving
+// no hint whether state existed or was empty. Now: header + either
+// the tracked repositories (id, state) or an actionable empty-state
+// hint pointing at `git-clone add`.
+func (p *CloneProvider) handleList(ctx context.Context, hamsFlags map[string]string, flags *provider.GlobalFlags) error {
+	hf, err := p.loadOrCreateHamsfile(hamsFlags, flags)
+	if err != nil {
+		return err
+	}
+	sf := p.loadOrCreateStateFile(flags)
+
+	output, err := p.List(ctx, hf, sf)
+	if err != nil {
+		return err
+	}
+
+	fmt.Println("git clone managed repositories:")
+	if output == "" {
+		fmt.Println("  (no clones tracked yet — add one with: hams git-clone add <remote> --hams-path=<path>)")
+		return nil
+	}
+	fmt.Print(output)
+	return nil
+}
+
 func (p *CloneProvider) clonePassthrough(ctx context.Context, args []string, flags *provider.GlobalFlags) error {
 	remote := args[0]
 	localPath := args[1]
@@ -285,6 +311,29 @@ func (p *CloneProvider) hamsfilePath(hamsFlags map[string]string, flags *provide
 	}
 
 	return filepath.Join(cfg.ProfileDir(), p.Manifest().FilePrefix+suffix), nil
+}
+
+// statePath returns the absolute path to git-clone's state file for
+// the currently active machine under the active profile. Mirrors
+// ConfigProvider.statePath from hamsfile.go.
+func (p *CloneProvider) statePath(flags *provider.GlobalFlags) string {
+	cfg := p.effectiveConfig(flags)
+	return filepath.Join(cfg.StateDir(), p.Manifest().FilePrefix+".state.yaml")
+}
+
+// loadOrCreateStateFile reads git-clone's state file for the active
+// machine, returning a fresh empty document when the file does not
+// yet exist OR is unreadable. Fail-open matches ConfigProvider's
+// behavior: the next Save() will replace a corrupted file rather
+// than blocking the user on a disk/permission issue unrelated to
+// what they're trying to do.
+func (p *CloneProvider) loadOrCreateStateFile(flags *provider.GlobalFlags) *state.File {
+	cfg := p.effectiveConfig(flags)
+	sf, err := state.Load(p.statePath(flags))
+	if err != nil {
+		return state.New(p.Manifest().Name, cfg.MachineID)
+	}
+	return sf
 }
 
 func (p *CloneProvider) effectiveConfig(flags *provider.GlobalFlags) *config.Config {
