@@ -751,6 +751,13 @@ func runApply(ctx context.Context, flags *provider.GlobalFlags, registry *provid
 		if saveFailNorm == nil {
 			saveFailNorm = []string{}
 		}
+		// Cycle 230: include dry_run = false so the apply JSON shape
+		// matches refresh's (cycle 229). Without this, the only way
+		// for a CI consumer to tell apart a dry-run preview from a
+		// real run is to check whether `dry_run` is present at all
+		// (presence == dry-run because the dry-run path uses
+		// emitDryRunJSON). Always-present `dry_run` field gives
+		// machine consumers a stable schema across modes.
 		data := map[string]any{
 			"installed":         merged.Installed,
 			"updated":           merged.Updated,
@@ -760,6 +767,7 @@ func runApply(ctx context.Context, flags *provider.GlobalFlags, registry *provid
 			"skipped_providers": skippedNorm,
 			"state_save_errors": saveFailNorm,
 			"success":           merged.Failed == 0 && len(skippedProviders) == 0 && len(stateSaveFailures) == 0,
+			"dry_run":           false,
 		}
 		out, mErr := json.MarshalIndent(data, "", "  ")
 		if mErr != nil {

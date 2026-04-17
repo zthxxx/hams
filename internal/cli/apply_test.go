@@ -1149,13 +1149,17 @@ func TestRunApply_JSONOutput(t *testing.T) {
 	if err := json.Unmarshal([]byte(out), &data); err != nil {
 		t.Fatalf("output not valid JSON: %v\nraw: %q", err, out)
 	}
-	for _, key := range []string{"installed", "updated", "removed", "skipped", "failed", "skipped_providers", "state_save_errors", "success"} {
+	for _, key := range []string{"installed", "updated", "removed", "skipped", "failed", "skipped_providers", "state_save_errors", "success", "dry_run"} {
 		if _, ok := data[key]; !ok {
 			t.Errorf("JSON missing required key %q; got: %v", key, data)
 		}
 	}
 	if data["success"] != true {
 		t.Errorf("success = %v, want true on happy-path apply", data["success"])
+	}
+	// Cycle 230: dry_run must always be present and false on a real apply.
+	if dr, ok := data["dry_run"].(bool); !ok || dr {
+		t.Errorf("dry_run = %v (ok=%v), want false on a real apply", data["dry_run"], ok)
 	}
 	// nil-safety: empty arrays should be [] not null.
 	if sp, ok := data["skipped_providers"].([]any); !ok || len(sp) != 0 {
