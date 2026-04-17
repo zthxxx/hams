@@ -992,6 +992,78 @@ func TestHandleCommand_U29_BareToPinnedUpgrade(t *testing.T) {
 	}
 }
 
+// TestHandleCommand_BareInstallClearsPriorPin locks in cycle 173:
+// `hams apt install nginx` (bare) AFTER a prior `hams apt install
+// nginx=1.24.0` (pinned) MUST clear the version pin from BOTH the
+// hamsfile AND the state file. Otherwise:
+//
+//   - Hamsfile keeps `version: 1.24.0` even though the user asked
+//     for "no pin".
+//   - State.RequestedVersion stays "1.24.0".
+//   - apt-get itself installed the LATEST version (no `=ver` arg).
+//   - Next `hams refresh` + `hams apply` sees the pin mismatch and
+//     tries to downgrade the freshly-installed latest version back
+//     to 1.24.0 — exact opposite of the user's intent.
+//
+// Pre-cycle-173: `AddAppWithFields` skipped empty values during merge,
+// so the version field stayed; state's WithRequestedVersion was only
+// added when non-empty, so RequestedVersion stayed too.
+func TestHandleCommand_BareInstallClearsPriorPin(t *testing.T) {
+	h := newHarness(t)
+	if err := os.MkdirAll(h.profileDir, 0o750); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	// Pre-seed hamsfile with a pinned entry (simulates prior pinned
+	// install).
+	if err := os.WriteFile(h.hamsfilePath,
+		[]byte("cli:\n  - app: nginx\n    version: 1.24.0\n"), 0o600); err != nil {
+		t.Fatalf("seed hamsfile: %v", err)
+	}
+	// Pre-seed state too.
+	sfSeed := state.New("apt", "test-machine")
+	sfSeed.SetResource("nginx", state.StateOK,
+		state.WithVersion("1.24.0"),
+		state.WithRequestedVersion("1.24.0"))
+	if err := sfSeed.Save(h.statePath); err != nil {
+		t.Fatalf("seed state: %v", err)
+	}
+
+	// Re-run install WITHOUT a pin — user explicitly intends to drop
+	// the pin and accept whatever apt-get installs.
+	if err := h.provider.HandleCommand(context.Background(),
+		[]string{"install", "nginx"}, nil, h.flags); err != nil {
+		t.Fatalf("bare re-install: %v", err)
+	}
+
+	// Hamsfile MUST no longer contain `version: 1.24.0` for nginx.
+	body, err := os.ReadFile(h.hamsfilePath)
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	if strings.Contains(string(body), "1.24.0") {
+		t.Errorf("hamsfile still contains stale pin '1.24.0'; got:\n%s", string(body))
+	}
+	if strings.Contains(string(body), "version") {
+		t.Errorf("hamsfile still has 'version' key after bare install; got:\n%s", string(body))
+	}
+
+	// State.RequestedVersion MUST be cleared.
+	sf, err := state.Load(h.statePath)
+	if err != nil {
+		t.Fatalf("state.Load: %v", err)
+	}
+	r := sf.Resources["nginx"]
+	if r == nil {
+		t.Fatalf("nginx state resource missing after bare re-install")
+	}
+	if r.RequestedVersion != "" {
+		t.Errorf("nginx.RequestedVersion = %q after bare install, want empty (unpinned)", r.RequestedVersion)
+	}
+	if r.RequestedSource != "" {
+		t.Errorf("nginx.RequestedSource = %q after bare install, want empty (unpinned)", r.RequestedSource)
+	}
+}
+
 // U30: Plan on a fresh machine (state has no nginx entry) replays
 // the hamsfile-declared pin via action.Resource. Locks in finding I.
 func TestPlan_HamsfilePinReplaysOnFreshMachine(t *testing.T) {

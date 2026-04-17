@@ -148,6 +148,61 @@ func TestRemoveApp(t *testing.T) {
 	}
 }
 
+// TestRemoveAppField_RemovesExistingField locks in cycle 173:
+// RemoveAppField clears a single key/value pair from an app's
+// mapping node. Used by CLI handlers (e.g. apt's bare-install
+// auto-record) to UNPIN a previously-pinned resource — without
+// it, AddAppWithFields' merge-skip-empty semantic would leave
+// the stale pin in the hamsfile.
+func TestRemoveAppField_RemovesExistingField(t *testing.T) {
+	tmpDir := t.TempDir()
+	path := filepath.Join(tmpDir, "hams.yaml")
+	if err := os.WriteFile(path,
+		[]byte("cli:\n  - app: nginx\n    version: 1.24.0\n    source: stable\n"), 0o600); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	f, err := Read(path)
+	if err != nil {
+		t.Fatalf("Read: %v", err)
+	}
+
+	if removed := f.RemoveAppField("nginx", "version"); !removed {
+		t.Error("RemoveAppField('nginx', 'version') = false, want true")
+	}
+
+	// version field cleared, source preserved.
+	fields := f.AppFields("nginx")
+	if v, present := fields["version"]; present {
+		t.Errorf("version field still present: %q", v)
+	}
+	if fields["source"] != "stable" {
+		t.Errorf("source field clobbered: got %q, want 'stable'", fields["source"])
+	}
+}
+
+// TestRemoveAppField_IdempotentOnAbsent: calling RemoveAppField on a
+// missing key (or a missing app) is a safe no-op so callers don't
+// need to pre-check.
+func TestRemoveAppField_IdempotentOnAbsent(t *testing.T) {
+	tmpDir := t.TempDir()
+	path := filepath.Join(tmpDir, "hams.yaml")
+	if err := os.WriteFile(path,
+		[]byte("cli:\n  - app: nginx\n"), 0o600); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	f, err := Read(path)
+	if err != nil {
+		t.Fatalf("Read: %v", err)
+	}
+
+	if removed := f.RemoveAppField("nginx", "version"); removed {
+		t.Error("RemoveAppField on missing field should return false")
+	}
+	if removed := f.RemoveAppField("nonexistent-app", "version"); removed {
+		t.Error("RemoveAppField on missing app should return false")
+	}
+}
+
 func TestRemoveApp_NotFound(t *testing.T) {
 	path := writeTempFile(t, sampleYAML)
 	f, err := Read(path)
