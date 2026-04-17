@@ -1008,6 +1008,70 @@ func TestRunApply_JSONOutput(t *testing.T) {
 	_ = storeDir
 }
 
+// TestRunApply_DryRunJSONHasNoProse locks in cycle 187: `hams
+// --json --dry-run apply` previously printed multiple prose lines
+// ("[dry-run] Would apply configurations", "[dry-run] Provider
+// execution order", per-provider previews, "[dry-run] No changes
+// made") BEFORE/AFTER the JSON, making the output unparseable.
+// Now: all dry-run prose is suppressed in JSON mode; only the
+// JSON summary is emitted.
+func TestRunApply_DryRunJSONHasNoProse(t *testing.T) {
+	storeDir, profileDir, _, flags := setupApplyTestEnv(t, []string{"alpha"})
+	flags.JSON = true
+	flags.DryRun = true
+
+	writeApplyTestFile(t, filepath.Join(profileDir, "alpha.hams.yaml"),
+		"packages:\n  - app: pkg-a\n")
+
+	registry := provider.NewRegistry()
+	p := &applyTestProvider{
+		manifest: provider.Manifest{
+			Name: "alpha", DisplayName: "alpha", FilePrefix: "alpha",
+			Platforms: []provider.Platform{provider.PlatformAll},
+		},
+		planFn: func(_ context.Context, _ *hamsfile.File, _ *state.File) ([]provider.Action, error) {
+			return []provider.Action{{ID: "pkg-a", Type: provider.ActionInstall}}, nil
+		},
+	}
+	if err := registry.Register(p); err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+
+	out := captureStdout(t, func() {
+		if err := runApply(context.Background(), flags, registry, sudo.NoopAcquirer{}, "", true, "", "", false, bootstrapMode{}); err != nil {
+			t.Fatalf("apply --json --dry-run: %v", err)
+		}
+	})
+
+	// Output must NOT contain any of the prose dry-run markers.
+	proseMarkers := []string{
+		"[dry-run] Would apply",
+		"[dry-run] Provider execution order",
+		"[dry-run] No changes made",
+		"no changes (",
+		"+ install",
+	}
+	for _, marker := range proseMarkers {
+		if strings.Contains(out, marker) {
+			t.Errorf("JSON mode output contains prose marker %q; got:\n%s", marker, out)
+		}
+	}
+
+	// Must be parseable as JSON.
+	var data map[string]any
+	if err := json.Unmarshal([]byte(strings.TrimSpace(out)), &data); err != nil {
+		t.Fatalf("JSON mode output not parseable: %v\nraw: %q", err, out)
+	}
+	if data["dry_run"] != true {
+		t.Errorf("dry_run = %v, want true", data["dry_run"])
+	}
+	if data["success"] != true {
+		t.Errorf("success = %v, want true on happy dry-run", data["success"])
+	}
+
+	_ = storeDir
+}
+
 // TestRunApply_DryRunStateSaveFailureSurfacesAsError locks in cycle 154:
 // `hams apply --dry-run` previously printed "[dry-run] No changes
 // made." + exit 0 even when every provider's pre-apply refresh state
