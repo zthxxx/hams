@@ -73,7 +73,7 @@ func TestIntegration_BootstrapFromRepo_LocalGitRepo(t *testing.T) {
 	}
 
 	// Verify the store config can be loaded.
-	cfg, err := config.Load(paths, storePath)
+	cfg, err := config.Load(paths, storePath, "")
 	if err != nil {
 		t.Fatalf("config.Load: %v", err)
 	}
@@ -155,7 +155,7 @@ func TestIntegration_BootstrapFromRepo_CloneLocal(t *testing.T) {
 	}
 
 	// Verify config can be loaded from the cloned store.
-	cfg, err := config.Load(paths, storePath)
+	cfg, err := config.Load(paths, storePath, "")
 	if err != nil {
 		t.Fatalf("config.Load from clone: %v", err)
 	}

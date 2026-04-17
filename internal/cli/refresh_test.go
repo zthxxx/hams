@@ -481,6 +481,13 @@ func TestRunRefresh_NoProvidersMatch_JSONMode(t *testing.T) {
 // broke log-grep / diff tooling that compared two refresh runs.
 // Symmetric with cycles 148/149/150.
 func TestRunRefresh_SaveFailureListIsAlphabetical(t *testing.T) {
+	if os.Getuid() == 0 {
+		// chmod 0o500 does not block writes for root (e.g. CI containers),
+		// so Save cannot be induced to fail this way. The test's intent —
+		// alphabetical ordering of the save-failure warning — is covered
+		// on non-root developer machines where chmod is enforced.
+		t.Skip("chmod-based failure injection does not block root")
+	}
 	storeDir, profileDir, stateDir, flags := setupApplyTestEnv(t, []string{"zeta", "alpha", "mu"})
 
 	// Seed each provider's hamsfile so the artifact filter keeps them
