@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	hamserr "github.com/zthxxx/hams/internal/error"
 	"github.com/zthxxx/hams/internal/provider"
 	"github.com/zthxxx/hams/internal/sudo"
 )
@@ -265,6 +266,121 @@ func TestConfigUnsetDryRun_SkipsUnset(t *testing.T) {
 	}
 	if !strings.Contains(string(body), "profile_tag: keep-me") {
 		t.Errorf("dry-run removed profile_tag from config; should have been untouched; file:\n%s", string(body))
+	}
+}
+
+// TestConfigSet_StrictArgCount locks in cycle 156: `hams config set`
+// previously accepted >= 2 args and silently dropped extras. Critical
+// failure mode: `hams config set notification.bark_token abc def ghi`
+// (forgot to quote a token containing spaces) silently stored only
+// "abc". Far worse than a typo: users believed the token was set
+// correctly. Now: surface the mismatch with a hint about quoting.
+func TestConfigSet_StrictArgCount(t *testing.T) {
+	configHome := t.TempDir()
+	dataHome := t.TempDir()
+	t.Setenv("HAMS_CONFIG_HOME", configHome)
+	t.Setenv("HAMS_DATA_HOME", dataHome)
+
+	cases := []struct {
+		name string
+		args []string
+	}{
+		{"too-few-zero-args", []string{"hams", "config", "set"}},
+		{"too-few-one-arg", []string{"hams", "config", "set", "profile_tag"}},
+		{"too-many-three-args", []string{"hams", "config", "set", "notification.bark_token", "abc", "def"}},
+		{"too-many-four-args", []string{"hams", "config", "set", "key", "abc", "def", "ghi"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			app := NewApp(provider.NewRegistry(), sudo.NoopAcquirer{})
+			err := app.Run(context.Background(), tc.args)
+			if err == nil {
+				t.Fatalf("expected error for %v; got nil", tc.args)
+			}
+			var ufe *hamserr.UserFacingError
+			if !errors.As(err, &ufe) {
+				t.Fatalf("expected *UserFacingError, got %T: %v", err, err)
+			}
+			if ufe.Code != hamserr.ExitUsageError {
+				t.Errorf("Code = %d, want ExitUsageError", ufe.Code)
+			}
+			if !strings.Contains(ufe.Message, "exactly one key") {
+				t.Errorf("error message should say 'exactly one key'; got %q", ufe.Message)
+			}
+		})
+	}
+
+	// Quoting-hint suggestion must appear in too-many-args case so the
+	// user understands they may have forgotten to quote a value with
+	// spaces.
+	app := NewApp(provider.NewRegistry(), sudo.NoopAcquirer{})
+	err := app.Run(context.Background(),
+		[]string{"hams", "config", "set", "notification.bark_token", "abc", "def"})
+	var ufe *hamserr.UserFacingError
+	if !errors.As(err, &ufe) {
+		t.Fatalf("expected *UserFacingError, got %T", err)
+	}
+	joined := strings.Join(ufe.Suggestions, " | ")
+	if !strings.Contains(joined, "Quote") {
+		t.Errorf("suggestions should hint about quoting; got: %q", joined)
+	}
+}
+
+// TestConfigGet_StrictArgCount locks in cycle 156: silent extra-arg
+// drop hides typos.
+func TestConfigGet_StrictArgCount(t *testing.T) {
+	configHome := t.TempDir()
+	t.Setenv("HAMS_CONFIG_HOME", configHome)
+	t.Setenv("HAMS_DATA_HOME", t.TempDir())
+
+	cases := [][]string{
+		{"hams", "config", "get"},                          // zero args
+		{"hams", "config", "get", "profile_tag", "extra"},  // extra arg
+		{"hams", "config", "get", "profile_tag", "a", "b"}, // extra args
+	}
+	for _, args := range cases {
+		app := NewApp(provider.NewRegistry(), sudo.NoopAcquirer{})
+		err := app.Run(context.Background(), args)
+		if err == nil {
+			t.Errorf("expected error for %v; got nil", args)
+			continue
+		}
+		var ufe *hamserr.UserFacingError
+		if !errors.As(err, &ufe) {
+			t.Errorf("expected *UserFacingError for %v, got %T", args, err)
+			continue
+		}
+		if !strings.Contains(ufe.Message, "exactly one key") {
+			t.Errorf("error message should say 'exactly one key'; got %q", ufe.Message)
+		}
+	}
+}
+
+// TestConfigUnset_StrictArgCount locks in cycle 156's mirror.
+func TestConfigUnset_StrictArgCount(t *testing.T) {
+	configHome := t.TempDir()
+	t.Setenv("HAMS_CONFIG_HOME", configHome)
+	t.Setenv("HAMS_DATA_HOME", t.TempDir())
+
+	cases := [][]string{
+		{"hams", "config", "unset"},                         // zero args
+		{"hams", "config", "unset", "profile_tag", "extra"}, // extra arg
+	}
+	for _, args := range cases {
+		app := NewApp(provider.NewRegistry(), sudo.NoopAcquirer{})
+		err := app.Run(context.Background(), args)
+		if err == nil {
+			t.Errorf("expected error for %v; got nil", args)
+			continue
+		}
+		var ufe *hamserr.UserFacingError
+		if !errors.As(err, &ufe) {
+			t.Errorf("expected *UserFacingError for %v, got %T", args, err)
+			continue
+		}
+		if !strings.Contains(ufe.Message, "exactly one key") {
+			t.Errorf("error message should say 'exactly one key'; got %q", ufe.Message)
+		}
 	}
 }
 

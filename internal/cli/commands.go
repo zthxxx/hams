@@ -311,9 +311,14 @@ func configCmd() *cli.Command {
 				Usage:     "Get a configuration value",
 				ArgsUsage: "<key>",
 				Action: func(_ context.Context, cmd *cli.Command) error {
-					if cmd.Args().Len() < 1 {
+					// Strict arg count — without this, `hams config get
+					// profile_tag extra_arg` silently dropped extra_arg
+					// (the user might have meant "extra_arg" as the key,
+					// or had a typo in their script). Surface the
+					// mismatch immediately.
+					if cmd.Args().Len() != 1 {
 						return hamserr.NewUserError(hamserr.ExitUsageError,
-							"config get requires a key",
+							fmt.Sprintf("config get requires exactly one key (got %d args)", cmd.Args().Len()),
 							"Usage: hams config get <key>",
 						)
 					}
@@ -331,10 +336,18 @@ func configCmd() *cli.Command {
 				Usage:     "Set a configuration value",
 				ArgsUsage: "<key> <value>",
 				Action: func(_ context.Context, cmd *cli.Command) error {
-					if cmd.Args().Len() < 2 { //nolint:mnd // exactly 2 args required: key and value
+					// Strict arg count. The previous `< 2` check accepted
+					// 2 OR MORE args and silently dropped the rest — so
+					// `hams config set notification.bark_token abc def ghi`
+					// (user forgot to quote a token containing spaces)
+					// silently stored only "abc". Far worse than a typo:
+					// users believed their token was set correctly. Now:
+					// surface the mismatch with a hint about quoting.
+					if cmd.Args().Len() != 2 { //nolint:mnd // exactly 2 args required: key and value
 						return hamserr.NewUserError(hamserr.ExitUsageError,
-							"config set requires a key and value",
+							fmt.Sprintf("config set requires exactly one key and one value (got %d args)", cmd.Args().Len()),
 							"Usage: hams config set <key> <value>",
+							"Quote values containing spaces: hams config set <key> \"<value with spaces>\"",
 							"Valid keys: "+strings.Join(config.ValidConfigKeys, ", "),
 						)
 					}
@@ -383,9 +396,12 @@ func configCmd() *cli.Command {
 				Usage:     "Remove a configuration value",
 				ArgsUsage: "<key>",
 				Action: func(_ context.Context, cmd *cli.Command) error {
-					if cmd.Args().Len() < 1 {
+					// Strict arg count — same rationale as `config get`
+					// and `config set`: silent excess-arg drop hides
+					// typos and quoting mistakes.
+					if cmd.Args().Len() != 1 {
 						return hamserr.NewUserError(hamserr.ExitUsageError,
-							"config unset requires a key",
+							fmt.Sprintf("config unset requires exactly one key (got %d args)", cmd.Args().Len()),
 							"Usage: hams config unset <key>",
 							"Valid keys: "+strings.Join(config.ValidConfigKeys, ", "),
 						)
