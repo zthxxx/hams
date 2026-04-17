@@ -245,9 +245,9 @@ func (p *CloneProvider) HandleCommand(ctx context.Context, args []string, hamsFl
 	switch verb {
 	case "add":
 		return p.handleAdd(ctx, remaining, hamsFlags, flags)
-	case "remove":
+	case verbRemove:
 		return p.handleRemove(remaining, hamsFlags, flags)
-	case "list":
+	case verbList:
 		return p.handleList(ctx, hamsFlags, flags)
 	default:
 		// Passthrough: treat as raw git clone.

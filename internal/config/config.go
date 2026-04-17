@@ -36,7 +36,7 @@ type Config struct {
 // Names must match provider Manifest().Name (lowercased by registry).
 var DefaultProviderPriority = []string{
 	"brew", "apt", "pnpm", "npm", "uv", "goinstall", "cargo",
-	"code-ext", "mas", "git-config", "git-clone", "defaults", "duti", "bash", "ansible",
+	"code", "mas", "git-config", "git-clone", "defaults", "duti", "bash", "ansible",
 }
 
 // Paths holds the resolved directory paths for hams.

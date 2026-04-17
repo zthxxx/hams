@@ -28,7 +28,7 @@ extensions:
 	hf := &hamsfile.File{Path: "test.yaml", Root: &root}
 
 	p := New(nil, NewFakeCmdRunner())
-	observed := state.New("code-ext", "test")
+	observed := state.New("code", "test")
 	actions, err := p.Plan(context.Background(), hf, observed)
 	if err != nil {
 		t.Fatalf("Plan: %v", err)

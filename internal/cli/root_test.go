@@ -156,11 +156,12 @@ func TestProviderUsageDescription_NonPackageProvidersHaveSpecificNouns(t *testin
 	}{
 		{"git-config", "git-config", "git config entries"},
 		{"git-clone", "git-clone", "cloned git repositories"},
+		{"git", "git", "config + clones"},
 		{"defaults", "defaults", "macOS defaults"},
 		{"duti", "duti", "default-app associations"},
 		{"bash", "bash", "bash provisioning"},
 		{"ansible", "ansible", "Ansible playbooks"},
-		{"code-ext", "code-ext", "VS Code extensions"},
+		{"code", "VS Code Extensions", "VS Code extensions"},
 	}
 	for _, tc := range cases {
 		got := providerUsageDescription(tc.name, tc.displayName)

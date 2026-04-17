@@ -19,8 +19,20 @@ import (
 
 const (
 	// cliName is the vscodeext provider's manifest + CLI name.
-	cliName = "code-ext"
-	// displayName is the human-readable display name.
+	// Per CLAUDE.md Current Tasks: "The code-ext provider likewise
+	// should expose only the `hams code` entry point." `code` is
+	// VSCode-specific; a Cursor provider would be separate.
+	cliName = "code"
+	// filePrefix stays as `code` so new scaffolded hamsfiles read
+	// `code.hams.yaml`, matching the CLI verb rather than the pre-
+	// rename `vscodeext.hams.yaml`. Existing stores carrying the old
+	// file name will need a one-time rename — pre-v1, breaking the
+	// on-disk name is acceptable since the CLI verb itself is the
+	// documented identity of the provider.
+	filePrefix = "code"
+	// displayName shows "VS Code Extensions" in help and errors, the
+	// product-branded form (with the space; older spec wrote
+	// "VSCode Extension" without).
 	displayName = "VS Code Extensions"
 )
 
@@ -51,7 +63,7 @@ func (p *Provider) Manifest() provider.Manifest {
 				Package:  "visual-studio-code",
 			},
 		},
-		FilePrefix: "vscodeext",
+		FilePrefix: filePrefix,
 	}
 }
 
@@ -79,7 +91,7 @@ func (p *Provider) Probe(ctx context.Context, sf *state.File) ([]provider.ProbeR
 		// drops the version from the key). Pre-cycle-188 a state
 		// entry like "foo.bar@1.2.3" NEVER matched — Probe always
 		// reported StateFailed, drift detection was broken for any
-		// user who pinned a version via `hams code-ext install
+		// user who pinned a version via `hams code install
 		// publisher.ext@1.2.3`. Extension IDs are case-insensitive.
 		lowerID := stripExtensionVersionPin(strings.ToLower(id))
 		if ver, ok := installed[lowerID]; ok {
@@ -188,16 +200,16 @@ func (p *Provider) HandleCommand(ctx context.Context, args []string, hamsFlags m
 func (p *Provider) handleInstall(ctx context.Context, args []string, hamsFlags map[string]string, flags *provider.GlobalFlags) error {
 	if len(args) == 0 {
 		return hamserr.NewUserError(hamserr.ExitUsageError,
-			"code-ext install requires an extension ID",
-			"Usage: hams code-ext install <publisher.extension>",
-			"To install all recorded extensions, use: hams apply --only=code-ext",
+			"code install requires an extension ID",
+			"Usage: hams code install <publisher.extension>",
+			"To install all recorded extensions, use: hams apply --only=code",
 		)
 	}
 	exts := extensionArgs(args)
 	if len(exts) == 0 {
 		return hamserr.NewUserError(hamserr.ExitUsageError,
-			"code-ext install requires at least one extension ID",
-			"Usage: hams code-ext install <publisher.extension>",
+			"code install requires at least one extension ID",
+			"Usage: hams code install <publisher.extension>",
 		)
 	}
 	if flags.DryRun {
@@ -206,7 +218,7 @@ func (p *Provider) handleInstall(ctx context.Context, args []string, hamsFlags m
 	}
 
 	// Cycle 222: acquire single-writer state lock per cli-architecture spec.
-	release, lockErr := provider.AcquireMutationLockFromCfg(p.effectiveConfig(flags), flags, "code-ext install")
+	release, lockErr := provider.AcquireMutationLockFromCfg(p.effectiveConfig(flags), flags, "code install")
 	if lockErr != nil {
 		return lockErr
 	}
@@ -244,15 +256,15 @@ func (p *Provider) handleInstall(ctx context.Context, args []string, hamsFlags m
 func (p *Provider) handleRemove(ctx context.Context, args []string, hamsFlags map[string]string, flags *provider.GlobalFlags) error {
 	if len(args) == 0 {
 		return hamserr.NewUserError(hamserr.ExitUsageError,
-			"code-ext remove requires an extension ID",
-			"Usage: hams code-ext remove <publisher.extension>",
+			"code remove requires an extension ID",
+			"Usage: hams code remove <publisher.extension>",
 		)
 	}
 	exts := extensionArgs(args)
 	if len(exts) == 0 {
 		return hamserr.NewUserError(hamserr.ExitUsageError,
-			"code-ext remove requires at least one extension ID",
-			"Usage: hams code-ext remove <publisher.extension>",
+			"code remove requires at least one extension ID",
+			"Usage: hams code remove <publisher.extension>",
 		)
 	}
 	if flags.DryRun {
@@ -261,7 +273,7 @@ func (p *Provider) handleRemove(ctx context.Context, args []string, hamsFlags ma
 	}
 
 	// Cycle 222: acquire single-writer state lock per cli-architecture spec.
-	release, lockErr := provider.AcquireMutationLockFromCfg(p.effectiveConfig(flags), flags, "code-ext remove")
+	release, lockErr := provider.AcquireMutationLockFromCfg(p.effectiveConfig(flags), flags, "code remove")
 	if lockErr != nil {
 		return lockErr
 	}
