@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"io"
 	"os"
@@ -278,6 +279,54 @@ func TestPrintConfigKey_SensitiveKey_NoFile(t *testing.T) {
 	})
 	if got != "" {
 		t.Errorf("output should be empty for unset sensitive key, got %q", got)
+	}
+}
+
+// TestPrintConfigKeyMode_JSONShape — cycle 236. `hams --json config
+// get <key>` previously fell through to plain text (config get
+// didn't honor --json), so CI consumers had to special-case it. The
+// new printConfigKeyMode emits a stable structured object with key,
+// value, and a `set` boolean that distinguishes "set to empty
+// string" from "unset". Asserts the four representative cases.
+func TestPrintConfigKeyMode_JSONShape(t *testing.T) {
+	t.Parallel()
+	paths := config.Paths{ConfigHome: t.TempDir(), DataHome: t.TempDir()}
+
+	cases := []struct {
+		name    string
+		cfg     *config.Config
+		key     string
+		wantSet bool
+		wantVal string
+	}{
+		{"unset profile_tag", &config.Config{}, "profile_tag", false, ""},
+		{"set profile_tag", &config.Config{ProfileTag: "macOS"}, "profile_tag", true, "macOS"},
+		{"unset machine_id", &config.Config{}, "machine_id", false, ""},
+		{"set machine_id", &config.Config{MachineID: "laptop-01"}, "machine_id", true, "laptop-01"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got := captureStdout(t, func() {
+				if err := printConfigKeyMode(tc.cfg, paths, "", tc.key, true); err != nil {
+					t.Fatalf("printConfigKeyMode: %v", err)
+				}
+			})
+			var data map[string]any
+			if err := json.Unmarshal([]byte(got), &data); err != nil {
+				t.Fatalf("output not valid JSON: %v\nraw: %q", err, got)
+			}
+			if data["key"] != tc.key {
+				t.Errorf("key = %v, want %q", data["key"], tc.key)
+			}
+			if data["value"] != tc.wantVal {
+				t.Errorf("value = %v, want %q", data["value"], tc.wantVal)
+			}
+			if data["set"] != tc.wantSet {
+				t.Errorf("set = %v, want %v", data["set"], tc.wantSet)
+			}
+		})
 	}
 }
 

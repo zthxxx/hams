@@ -3,7 +3,9 @@ package cli
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io/fs"
 	"log/slog"
 	"os"
 	"os/exec"
@@ -92,6 +94,15 @@ Only resources already tracked in state are probed — no new resources are disc
 }
 
 func runRefresh(ctx context.Context, flags *provider.GlobalFlags, registry *provider.Registry, only, except string) (retErr error) {
+	// Cycle 238: capture wall-clock start so the user-facing summary
+	// (text + JSON) can surface total elapsed time. Pre-cycle-238 only
+	// the probe phase was timed (via OTel-only `hams.probe.duration`).
+	// Users debugging slow refreshes had to scrape slog timestamps;
+	// CI scripts had no way to alert on regression. The OTel metric
+	// stays where it is — the summary number is the user-facing
+	// equivalent.
+	refreshStart := time.Now()
+
 	// Same --only/--except exclusion as runApply — check before config
 	// load so a misconfigured store doesn't mask the args error.
 	if only != "" && except != "" {
@@ -108,15 +119,16 @@ func runRefresh(ctx context.Context, flags *provider.GlobalFlags, registry *prov
 	cleanupLog := SetupLogging(flags)
 	defer cleanupLog()
 
-	cfg, err := config.Load(paths, flags.Store)
+	cfg, err := config.Load(paths, flags.Store, flags.Profile)
 	if err != nil {
 		return fmt.Errorf("loading config: %w", err)
 	}
 	if flags.Profile != "" {
-		cfg.ProfileTag = flags.Profile
-		// Symmetric to cycle 92: when --profile is explicit, validate
-		// the profile dir exists. Same "silent no-op on typo" problem
-		// that cycle 92 fixed for apply.
+		// Cycle 219 puts the --profile overlay inside config.Load, so
+		// cfg.ProfileTag already reflects the override. Refresh still
+		// hard-fails when the resulting profile dir doesn't exist
+		// (cycle 93's no-silent-typo guarantee), so the validation
+		// stays in place.
 		profileDir := cfg.ProfileDir()
 		if info, statErr := os.Stat(profileDir); statErr != nil || !info.IsDir() {
 			return hamserr.NewUserError(hamserr.ExitUsageError,
@@ -130,7 +142,8 @@ func runRefresh(ctx context.Context, flags *provider.GlobalFlags, registry *prov
 	// here; cycle 91 promoted that guarantee into `config.Load` itself
 	// (explicitStoreOverride), so the override now fires for every
 	// config.Load caller (apply / refresh / list / store-status /
-	// config-* / register) without duplication.
+	// config-* / register) without duplication. Cycle 219 did the
+	// same for `--profile`.
 
 	// Validate the configured/supplied store path exists as a directory.
 	// Without this, refresh against a typo'd store_path silently reported
@@ -165,6 +178,29 @@ func runRefresh(ctx context.Context, flags *provider.GlobalFlags, registry *prov
 
 	stateDir := cfg.StateDir()
 	profileDir := cfg.ProfileDir()
+
+	// Cycle 221: refresh writes state files (one per probed provider),
+	// so per the cli-architecture spec it MUST acquire the
+	// single-writer lock for the duration. Pre-cycle-221 only runApply
+	// did this, so a `hams refresh` could race with an in-flight
+	// `hams apply` (or another refresh) and clobber state. Skip the
+	// lock under --dry-run because dry-run has zero side effects;
+	// taking the lock would itself write the .lock file. The lock
+	// must come AFTER store_path/profile validation so a typo'd flag
+	// surfaces as a usage error rather than a confusing lock-file
+	// touch on a non-existent stateDir.
+	//
+	// Indirected through `acquireMutationLock` (see commands_seams.go)
+	// so DI-isolated tests that exercise sub-paths (e.g., the
+	// save-failure-ordering test) can inject a no-op lock without
+	// touching the real .lock file under the test's tempdir.
+	if !flags.DryRun {
+		release, lockErr := acquireMutationLock(stateDir, "hams refresh")
+		if lockErr != nil {
+			return lockErr
+		}
+		defer release()
+	}
 
 	// Two-stage provider filter (same shape as runApply):
 	//   Stage 1 — artifact presence (hamsfile OR state file).
@@ -212,12 +248,35 @@ func runRefresh(ctx context.Context, flags *provider.GlobalFlags, registry *prov
 	}
 	sort.Strings(probeNames)
 	var saveFailures []string
-	for _, name := range probeNames {
-		sf := probeResults[name]
-		statePath := filepath.Join(stateDir, name+".state.yaml")
-		if saveErr := sf.Save(statePath); saveErr != nil {
-			slog.Error("failed to save probed state", "provider", name, "path", statePath, "error", saveErr)
-			saveFailures = append(saveFailures, name)
+	switch {
+	case flags.DryRun:
+		// Cycle 226: --dry-run is a pure preview per the global flag's
+		// "no side effects" contract. Pre-cycle-226 refresh probed
+		// providers (read-only, fine) AND then unconditionally called
+		// sf.Save on every result — writing state files and bumping
+		// timestamps. CI scripts running `hams refresh --dry-run` to
+		// check planned drift were silently mutating state.
+		//
+		// Preview the writes instead of executing them. The non-JSON
+		// branch prints a per-provider "would write" line; the JSON
+		// summary further down already reports `dry_run: true` (see
+		// cycle 182's --json refresh shape) so machine consumers
+		// distinguish dry-run from real runs without grepping prose.
+		if !flags.JSON {
+			fmt.Printf("[dry-run] Would write state for %d %s:\n",
+				len(probeNames), pluralize(len(probeNames), "provider", "providers"))
+			for _, name := range probeNames {
+				fmt.Printf("  %s\n", logging.TildePath(filepath.Join(stateDir, name+".state.yaml")))
+			}
+		}
+	default:
+		for _, name := range probeNames {
+			sf := probeResults[name]
+			statePath := filepath.Join(stateDir, name+".state.yaml")
+			if saveErr := sf.Save(statePath); saveErr != nil {
+				slog.Error("failed to save probed state", "provider", name, "path", statePath, "error", saveErr)
+				saveFailures = append(saveFailures, name)
+			}
 		}
 	}
 
@@ -240,17 +299,87 @@ func runRefresh(ctx context.Context, flags *provider.GlobalFlags, registry *prov
 	planned := len(providers)
 	providersNoun := pluralize(planned, "provider", "providers")
 
+	// Cycle 209: if ctx was canceled (Ctrl+C / SIGTERM), distinguish
+	// the user interruption from genuine probe errors. Without this,
+	// a canceled refresh reported "Refresh complete: 0/N providers
+	// probed (N probe error(s); see log for details)" — misleading
+	// because (a) "Refresh complete" is wrong, and (b) the N "probe
+	// error(s)" are all the same ctx.Canceled, not separate failures.
+	// Matches runApply's cycle-84 behavior (which also surfaces a
+	// distinct "interrupted" message on ctx cancellation).
+	if ctx.Err() != nil {
+		if flags.JSON {
+			data := map[string]any{
+				"probed":      probed,
+				"planned":     planned,
+				"interrupted": true,
+				"success":     false,
+				// Cycle 229: surface dry_run on the interrupted-ctx
+				// path too so the JSON shape stays consistent across
+				// branches.
+				"dry_run": flags.DryRun,
+				// Cycle 238: total elapsed time so CI alerting can
+				// trigger on regression. Same field name + units as
+				// the completion-branch summary below.
+				"elapsed_ms": time.Since(refreshStart).Milliseconds(),
+			}
+			out, mErr := json.MarshalIndent(data, "", "  ")
+			if mErr != nil {
+				return fmt.Errorf("marshaling refresh JSON: %w", mErr)
+			}
+			fmt.Println(string(out))
+		} else {
+			// Cycle 239: append elapsed even on the interrupted path
+			// so users know how long the run took before they Ctrl+C'd.
+			// Useful for "did the probe just hang?" debugging.
+			fmt.Printf("Refresh interrupted: %d/%d %s probed before cancellation (took %dms)\n",
+				probed, planned, providersNoun, time.Since(refreshStart).Milliseconds())
+		}
+		return hamserr.NewUserError(hamserr.ExitPartialFailure,
+			fmt.Sprintf("refresh interrupted by signal (%v) after probing %d/%d providers",
+				ctx.Err(), probed, planned),
+			"Re-run 'hams refresh' to complete the probe",
+		)
+	}
+
 	// Cycle 182: emit a JSON summary when --json is set. CI scripts
 	// that run `hams refresh` in a loop need to detect partial
 	// failures programmatically rather than parsing the prose output.
 	// The non-JSON branches print the same fields in human form.
+	//
+	// Cycle 229: include `dry_run` so machine consumers can
+	// distinguish a real refresh from a preview without re-parsing
+	// the original argv. Cycle 226's comment promised this field
+	// existed; this commit makes it true.
+	//
+	// Cycle 232 — symmetric to apply's cycle-231 fix. Pre-cycle-232
+	// the JSON exposed `"probe_failures": N` (count only) but didn't
+	// name WHICH providers failed to probe — a CI script that wanted
+	// to retry only the failed subset (`hams refresh --only=...`)
+	// had to grep slog output. Compute the set-difference of
+	// `providers` (all attempted) minus `probeResults` keys (succeeded)
+	// and emit the names alongside the count.
 	if flags.JSON {
+		probeFailedProviders := make([]string, 0, planned-probed)
+		for _, p := range providers {
+			name := p.Manifest().Name
+			if _, ok := probeResults[name]; !ok {
+				probeFailedProviders = append(probeFailedProviders, name)
+			}
+		}
+		sort.Strings(probeFailedProviders)
 		data := map[string]any{
-			"probed":         probed,
-			"planned":        planned,
-			"save_failures":  saveFailures,
-			"probe_failures": planned - probed,
-			"success":        probed == planned && len(saveFailures) == 0,
+			"probed":                 probed,
+			"planned":                planned,
+			"save_failures":          saveFailures,
+			"probe_failures":         planned - probed,
+			"probe_failed_providers": probeFailedProviders,
+			"success":                probed == planned && len(saveFailures) == 0,
+			"dry_run":                flags.DryRun,
+			// Cycle 238: total elapsed wall-clock time. Helps CI
+			// dashboards spot regressions; complements the
+			// per-probe `hams.probe.duration` OTel metric.
+			"elapsed_ms": time.Since(refreshStart).Milliseconds(),
 		}
 		if saveFailures == nil {
 			data["save_failures"] = []string{}
@@ -272,7 +401,10 @@ func runRefresh(ctx context.Context, flags *provider.GlobalFlags, registry *prov
 	}
 
 	if probed == planned && len(saveFailures) == 0 {
-		fmt.Printf("Refresh complete: %d %s probed\n", planned, providersNoun)
+		// Cycle 238: append "(took Xms)" so interactive users can
+		// spot slowdowns without grepping slog timestamps.
+		fmt.Printf("Refresh complete: %d %s probed (took %dms)\n",
+			planned, providersNoun, time.Since(refreshStart).Milliseconds())
 		return nil
 	}
 	// Partial failure: some providers couldn't probe or their state
@@ -280,12 +412,29 @@ func runRefresh(ctx context.Context, flags *provider.GlobalFlags, registry *prov
 	// detect the anomaly; previously refresh returned nil (exit 0)
 	// despite the log line warning of errors — a silent-exit-0 UX
 	// bug matching the apply --dry-run drift fixed in cycle 39.
+	//
+	// Cycle 234: name the probe-failed providers in the text output
+	// (symmetric with cycle 232's JSON probe_failed_providers list
+	// and the existing save-failure naming below). Pre-cycle-234
+	// the text said "(N probe error(s); see log for details)" and
+	// users had to grep slog output to find WHICH providers failed.
+	// Cycle 239: every Refresh-complete branch includes elapsed time
+	// so users can spot regressions whether the run succeeded fully,
+	// hit save failures, or hit probe failures.
+	elapsedMs := time.Since(refreshStart).Milliseconds()
 	if probed == planned {
-		fmt.Printf("Refresh complete: %d %s probed, but %d state file(s) failed to save: %s\n",
-			planned, providersNoun, len(saveFailures), strings.Join(saveFailures, ", "))
+		fmt.Printf("Refresh complete: %d %s probed, but %d state file(s) failed to save: %s (took %dms)\n",
+			planned, providersNoun, len(saveFailures), strings.Join(saveFailures, ", "), elapsedMs)
 	} else {
-		fmt.Printf("Refresh complete: %d/%d %s probed (%d probe error(s); see log for details)\n",
-			probed, planned, providersNoun, planned-probed)
+		probeFailedNames := make([]string, 0, planned-probed)
+		for _, p := range providers {
+			if _, ok := probeResults[p.Manifest().Name]; !ok {
+				probeFailedNames = append(probeFailedNames, p.Manifest().Name)
+			}
+		}
+		sort.Strings(probeFailedNames)
+		fmt.Printf("Refresh complete: %d/%d %s probed (%d probe error(s) in: %s; see log for details) (took %dms)\n",
+			probed, planned, providersNoun, planned-probed, strings.Join(probeFailedNames, ", "), elapsedMs)
 	}
 	if len(saveFailures) > 0 {
 		fmt.Printf("Warning: %d state save failure(s): %s — next run may re-probe these\n",
@@ -310,7 +459,7 @@ func configCmd() *cli.Command {
 				Action: func(_ context.Context, cmd *cli.Command) error {
 					flags := globalFlags(cmd)
 					paths := resolvePaths(flags)
-					cfg, loadErr := config.Load(paths, flags.Store)
+					cfg, loadErr := config.Load(paths, flags.Store, flags.Profile)
 					if loadErr != nil {
 						return fmt.Errorf("loading config: %w", loadErr)
 					}
@@ -379,11 +528,16 @@ func configCmd() *cli.Command {
 					}
 					flags := globalFlags(cmd)
 					paths := resolvePaths(flags)
-					cfg, loadErr := config.Load(paths, flags.Store)
+					cfg, loadErr := config.Load(paths, flags.Store, flags.Profile)
 					if loadErr != nil {
 						return fmt.Errorf("loading config: %w", loadErr)
 					}
-					return printConfigKey(cfg, paths, flags.Store, cmd.Args().First())
+					// Cycle 236: respect --json. The legacy printConfigKey
+					// helper emits plain text; the new printConfigKeyMode
+					// switches to a structured object when flags.JSON is
+					// set so machine consumers can distinguish "set to
+					// empty" from "unset".
+					return printConfigKeyMode(cfg, paths, flags.Store, cmd.Args().First(), flags.JSON)
 				},
 			},
 			{
@@ -545,6 +699,23 @@ func configCmd() *cli.Command {
 						}
 					}
 
+					// Cycle 228: pre-check the editor binary exists on PATH
+					// (or is an absolute path that stat's cleanly). Without
+					// this, a missing $EDITOR surfaces as the opaque
+					// "fork/exec <editor>: no such file or directory"
+					// error from exec.Run. Replace with an actionable UFE
+					// that names the missing editor AND how to fix it.
+					// LookPath handles both bare names (searches PATH) and
+					// absolute paths (just stats) so both `EDITOR=nvim`
+					// and `EDITOR=/usr/bin/nvim` surface the same error.
+					if _, lookErr := exec.LookPath(editorParts[0]); lookErr != nil {
+						return hamserr.NewUserError(hamserr.ExitNotFound,
+							fmt.Sprintf("editor %q not found (from $EDITOR/$VISUAL or the 'vi' fallback)", editorParts[0]),
+							"Install the editor, or set $EDITOR to a different one: export EDITOR=vim",
+							"Edit the config file directly: "+logging.TildePath(configPath),
+						)
+					}
+
 					editorArgs := make([]string, 0, len(editorParts))
 					editorArgs = append(editorArgs, editorParts[1:]...)
 					editorArgs = append(editorArgs, configPath)
@@ -678,28 +849,59 @@ func localConfigPath(paths config.Paths, storePath string) string {
 }
 
 func printConfigKey(cfg *config.Config, paths config.Paths, storePath, key string) error {
+	return printConfigKeyMode(cfg, paths, storePath, key, false)
+}
+
+// printConfigKeyMode is the JSON-aware variant of printConfigKey.
+// Cycle 236: when jsonMode is true, emit `{"key":"...", "value":"...",
+// "set": true|false}` so CI consumers can distinguish "key set to
+// empty string" from "key unset" — pre-cycle-236 both produced an
+// empty stdout line, indistinguishable to a downstream pipeline.
+// The "set" field is true when the key has a value (struct field
+// non-empty OR sensitive key resolved via ReadRawConfigKey); false
+// when the slot exists but is unset.
+func printConfigKeyMode(cfg *config.Config, paths config.Paths, storePath, key string, jsonMode bool) error {
+	emit := func(value string, isSet bool) error {
+		if jsonMode {
+			data := map[string]any{
+				"key":   key,
+				"value": value,
+				"set":   isSet,
+			}
+			out, err := json.MarshalIndent(data, "", "  ")
+			if err != nil {
+				return fmt.Errorf("marshaling config get JSON: %w", err)
+			}
+			fmt.Println(string(out))
+			return nil
+		}
+		// Text mode: preserve the pre-cycle-236 contract that unset
+		// keys produce zero stdout (no value, no trailing newline).
+		// CI scripts pipe the output and check `[[ -n "$value" ]]` to
+		// detect set-vs-unset; an extra newline would break that
+		// idiom by giving every key a non-empty 1-character value.
+		if !isSet {
+			return nil
+		}
+		fmt.Println(value)
+		return nil
+	}
+
 	switch key {
 	case "profile_tag":
-		fmt.Println(cfg.ProfileTag)
-		return nil
+		return emit(cfg.ProfileTag, cfg.ProfileTag != "")
 	case "machine_id":
-		fmt.Println(cfg.MachineID)
-		return nil
+		return emit(cfg.MachineID, cfg.MachineID != "")
 	case "store_path":
-		fmt.Println(logging.TildePath(cfg.StorePath))
-		return nil
+		return emit(logging.TildePath(cfg.StorePath), cfg.StorePath != "")
 	case "store_repo":
-		fmt.Println(cfg.StoreRepo)
-		return nil
+		return emit(cfg.StoreRepo, cfg.StoreRepo != "")
 	case "llm_cli":
-		fmt.Println(cfg.LLMCLI)
-		return nil
+		return emit(cfg.LLMCLI, cfg.LLMCLI != "")
 	case "config_home":
-		fmt.Println(logging.TildePath(paths.ConfigHome))
-		return nil
+		return emit(logging.TildePath(paths.ConfigHome), paths.ConfigHome != "")
 	case "data_home":
-		fmt.Println(logging.TildePath(paths.DataHome))
-		return nil
+		return emit(logging.TildePath(paths.DataHome), paths.DataHome != "")
 	}
 
 	// Arbitrary sensitive keys (e.g., notification.bark_token) aren't
@@ -710,11 +912,7 @@ func printConfigKey(cfg *config.Config, paths config.Paths, storePath, key strin
 		if err != nil {
 			return err
 		}
-		if !ok {
-			return nil // key unset → empty output, exit 0 (scripting-friendly)
-		}
-		fmt.Println(value)
-		return nil
+		return emit(value, ok)
 	}
 
 	return hamserr.NewUserError(hamserr.ExitUsageError,
@@ -728,11 +926,17 @@ func storeCmd() *cli.Command {
 	storeStatusAction := func(ctx context.Context, cmd *cli.Command) error {
 		flags := globalFlags(cmd)
 		paths := resolvePaths(flags)
-		cfg, err := config.Load(paths, flags.Store)
+		cfg, err := config.Load(paths, flags.Store, flags.Profile)
 		if err != nil {
 			return fmt.Errorf("loading config: %w", err)
 		}
 
+		// Cycle 219 makes `--profile` overlay live inside config.Load,
+		// so the value is already on cfg.ProfileTag. Status does NOT
+		// fail hard when the overridden profile dir is absent — a
+		// missing profile dir is a legitimate status observation
+		// (fresh store) and the hamsfiles count sentinel (-1) already
+		// surfaces "(profile dir not found)" in JSON + text output.
 		storePath := cfg.StorePath
 		if storePath == "" {
 			return hamserr.NewUserError(hamserr.ExitUsageError,
@@ -854,7 +1058,7 @@ func storeCmd() *cli.Command {
 				Action: func(_ context.Context, cmd *cli.Command) error {
 					flags := globalFlags(cmd)
 					paths := resolvePaths(flags)
-					cfg, err := config.Load(paths, flags.Store)
+					cfg, err := config.Load(paths, flags.Store, flags.Profile)
 					if err != nil {
 						return fmt.Errorf("loading config: %w", err)
 					}
@@ -972,7 +1176,7 @@ func storeCmd() *cli.Command {
 				Action: func(ctx context.Context, cmd *cli.Command) error {
 					flags := globalFlags(cmd)
 					paths := resolvePaths(flags)
-					cfg, err := config.Load(paths, flags.Store)
+					cfg, err := config.Load(paths, flags.Store, flags.Profile)
 					if err != nil {
 						return fmt.Errorf("loading config: %w", err)
 					}
@@ -1017,7 +1221,7 @@ func storeCmd() *cli.Command {
 				Action: func(ctx context.Context, cmd *cli.Command) error {
 					flags := globalFlags(cmd)
 					paths := resolvePaths(flags)
-					cfg, err := config.Load(paths, flags.Store)
+					cfg, err := config.Load(paths, flags.Store, flags.Profile)
 					if err != nil {
 						return fmt.Errorf("loading config: %w", err)
 					}
@@ -1131,9 +1335,48 @@ func listCmd(registry *provider.Registry) *cli.Command {
 			}
 			flags := globalFlags(cmd)
 			paths := resolvePaths(flags)
-			cfg, err := config.Load(paths, flags.Store)
+			cfg, err := config.Load(paths, flags.Store, flags.Profile)
 			if err != nil {
 				return fmt.Errorf("loading config: %w", err)
+			}
+
+			// Cycle 217 fixed the silent --profile drop in list; cycle
+			// 219 promoted the overlay into config.Load itself, so
+			// cfg.ProfileTag already reflects the override here. Keep
+			// the per-command stat: list still hard-fails on a
+			// missing/typo'd --profile so users don't see the
+			// misleading "No managed resources found" fallback.
+			if flags.Profile != "" {
+				profileDir := cfg.ProfileDir()
+				if info, statErr := os.Stat(profileDir); statErr != nil || !info.IsDir() {
+					return hamserr.NewUserError(hamserr.ExitUsageError,
+						fmt.Sprintf("profile %q not found at %s", flags.Profile, profileDir),
+						"Check available profiles: ls "+cfg.StorePath,
+						"Or create this profile: mkdir -p "+profileDir,
+					)
+				}
+			}
+
+			// Cycle 211: symmetric with cycle 87 (apply) and cycle 88
+			// (refresh) — when store_path is missing or not a directory,
+			// list previously printed "No managed resources found. Run
+			// 'hams <provider> install <package>' ..." which incorrectly
+			// pointed the user at installing packages when the real
+			// issue was a misaimed store_path. Now: surface the typo'd
+			// path with the same recovery hints apply/refresh show.
+			// Empty store_path is still allowed — some users may run
+			// `hams list` before a store is set up and we don't want
+			// to block that exploratory case; the empty-state message
+			// below still fires.
+			if cfg.StorePath != "" {
+				if info, statErr := os.Stat(cfg.StorePath); statErr != nil || !info.IsDir() {
+					return hamserr.NewUserError(hamserr.ExitUsageError,
+						fmt.Sprintf("store_path %q does not exist or is not a directory", cfg.StorePath),
+						"Fix store_path in ~/.config/hams/hams.config.yaml",
+						"Or clone a store: hams apply --from-repo=<user/repo>",
+						"Or initialize one: hams store init",
+					)
+				}
 			}
 
 			providers, filterErr := filterProviders(
@@ -1194,6 +1437,21 @@ func listCmd(registry *provider.Registry) *cli.Command {
 
 				sf, loadErr := state.Load(statePath)
 				if loadErr != nil {
+					// Cycle 236: distinguish "state file doesn't exist"
+					// (normal for never-touched providers) from "state
+					// file unreadable" (corrupt YAML, permission denied).
+					// Pre-cycle-236 all errors were silently swallowed
+					// via bare `continue`, so a user whose state.yaml was
+					// corrupted by a mid-write crash saw the misleading
+					// "No managed resources found" message and had no
+					// way to know hams couldn't read their existing
+					// state. Warn loudly so the user can fix or remove
+					// the broken file; the loop continues so healthy
+					// providers still surface.
+					if !errors.Is(loadErr, fs.ErrNotExist) {
+						slog.Warn("skipping provider: state file unreadable",
+							"provider", manifest.Name, "path", statePath, "error", loadErr)
+					}
 					continue
 				}
 

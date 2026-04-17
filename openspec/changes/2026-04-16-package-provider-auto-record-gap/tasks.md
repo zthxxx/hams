@@ -44,11 +44,23 @@ Each provider gets an atomic commit wiring auto-record + a regression test suite
 
 - [x] Mirror cargo's 1.1-1.14 on `internal/provider/builtin/vscodeext/` — tag: `"cli"`, per-extension recording. 10 TestHandleCommand_U tests. Coverage 69.1% → 80.6%.
 
-## 8. Spec delta
+## 8. State-file parity (added after cycles 96/202–208 exposed the `hams list --only=<provider>` gap)
+
+- [x] homebrew — CLI install/remove now writes state (cycle 96).
+- [x] mas — CLI install/remove now writes state (cycle 202, commit `ff138f9`).
+- [x] cargo — CLI install/remove now writes state (cycle 203, commit `2a51372`).
+- [x] npm — CLI install/remove now writes state (cycle 204, commit `f5952c7`).
+- [x] pnpm — CLI install/remove now writes state (cycle 205, commit `9eafebb`).
+- [x] uv — CLI install/remove now writes state (cycle 206, commit `cb7ebee`).
+- [x] goinstall — CLI install writes state; no symmetric remove (cycle 207, commit `16612ce`).
+- [x] vscodeext — CLI install/remove now writes state (cycle 208, commit `e376fbf`).
+- [x] Spec delta rewritten to require BOTH hamsfile AND state writes on the CLI path.
+
+## 9. Spec delta archive
 
 - [ ] Deploy-time step: archive this change folder into `openspec/archive/` and merge the CP-1 auto-record Requirement into `openspec/specs/builtin-providers/spec.md` using `openspec archive 2026-04-16-package-provider-auto-record-gap`.
 
-## 9. Close-out
+## 10. Close-out
 
 - [x] Final `task check` across the full change (each cycle verified independently; final green after cycle 83).
 - [x] Update AGENTS.md progress log with the cycle summary.

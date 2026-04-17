@@ -82,8 +82,23 @@ func (p *CloneProvider) Probe(_ context.Context, sf *state.File) ([]provider.Pro
 		// uses at the CLI layer: either `.git` (non-bare repo) or
 		// `HEAD` (bare repo). Absence of both flips the resource to
 		// StateFailed so the next apply re-clones.
+		//
+		// Cycle 239: attach a descriptive ErrorMsg so `hams list
+		// --json` and the text output can surface WHY the clone
+		// failed. Pre-cycle-239 the state's `last_error` stayed
+		// whatever it was (often empty for a successfully-installed
+		// clone the user later deleted), so users saw `failed` with
+		// no reason. Distinguish the two disappearance modes: path
+		// fully gone ("local path missing") vs path-exists-but-not-
+		// a-git-repo ("clone directory still exists but .git is
+		// gone") so users can tell "I deleted the whole dir" from
+		// "I accidentally nuked just .git".
 		if !isGitRepoPath(localPath) {
-			results = append(results, provider.ProbeResult{ID: id, State: state.StateFailed})
+			msg := "local path missing: " + localPath
+			if _, err := os.Stat(localPath); err == nil {
+				msg = "clone directory still exists but .git/HEAD marker is gone: " + localPath
+			}
+			results = append(results, provider.ProbeResult{ID: id, State: state.StateFailed, ErrorMsg: msg})
 		} else {
 			results = append(results, provider.ProbeResult{ID: id, State: state.StateOK})
 		}
@@ -290,6 +305,13 @@ func (p *CloneProvider) handleAdd(ctx context.Context, args []string, hamsFlags 
 		return nil
 	}
 
+	// Cycle 222: acquire single-writer state lock per cli-architecture spec.
+	release, lockErr := provider.AcquireMutationLockFromCfg(p.effectiveConfig(flags), flags, "git-clone add")
+	if lockErr != nil {
+		return lockErr
+	}
+	defer release()
+
 	// Mirror Apply's cycle-136 guard: detect non-git-but-existing dir
 	// and already-a-valid-repo cases before shelling out to git.
 	// Without this, users of `hams git-clone add` hit the same cryptic
@@ -372,6 +394,13 @@ func (p *CloneProvider) handleRemove(args []string, hamsFlags map[string]string,
 		return nil
 	}
 
+	// Cycle 222: acquire single-writer state lock per cli-architecture spec.
+	release, lockErr := provider.AcquireMutationLockFromCfg(p.effectiveConfig(flags), flags, "git-clone remove")
+	if lockErr != nil {
+		return lockErr
+	}
+	defer release()
+
 	hf, err := p.loadOrCreateHamsfile(hamsFlags, flags)
 	if err != nil {
 		return err
@@ -443,6 +472,13 @@ func (p *CloneProvider) handleRemove(args []string, hamsFlags map[string]string,
 // scripts that need to enumerate tracked repos had to grep the
 // prose, which broke on the empty-state hint line.
 func (p *CloneProvider) handleList(ctx context.Context, hamsFlags map[string]string, flags *provider.GlobalFlags) error {
+	// Cycle 222: fail fast on typo'd --profile. Symmetric with the
+	// shared HandleListCmd (cycle 220) and every other custom-list
+	// path (homebrew, git-config).
+	if _, err := provider.ValidateProfileDirExists(p.effectiveConfig(flags)); err != nil {
+		return err
+	}
+
 	hf, err := p.loadOrCreateHamsfile(hamsFlags, flags)
 	if err != nil {
 		return err

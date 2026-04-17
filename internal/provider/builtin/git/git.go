@@ -177,6 +177,13 @@ func (p *ConfigProvider) doSet(ctx context.Context, key, value string, hamsFlags
 		return nil
 	}
 
+	// Cycle 222: acquire single-writer state lock per cli-architecture spec.
+	release, lockErr := provider.AcquireMutationLockFromCfg(p.effectiveConfig(flags), flags, "git-config set")
+	if lockErr != nil {
+		return lockErr
+	}
+	defer release()
+
 	if err := p.runner.SetGlobal(ctx, key, value); err != nil {
 		return err
 	}
@@ -191,6 +198,13 @@ func (p *ConfigProvider) doRemove(ctx context.Context, key string, hamsFlags map
 		fmt.Printf("[dry-run] Would unset: git config --global --unset %s\n", key)
 		return nil
 	}
+
+	// Cycle 222: acquire single-writer state lock per cli-architecture spec.
+	release, lockErr := provider.AcquireMutationLockFromCfg(p.effectiveConfig(flags), flags, "git-config remove")
+	if lockErr != nil {
+		return lockErr
+	}
+	defer release()
 
 	if err := p.runner.UnsetGlobal(ctx, key); err != nil {
 		return err
@@ -225,7 +239,13 @@ func (p *ConfigProvider) doRemove(ctx context.Context, key string, hamsFlags map
 
 // doList prints the desired-vs-observed diff for the git-config
 // provider (same output as `hams list --only=git-config`).
+//
+// Cycle 222: fail fast on typo'd --profile via the shared helper.
 func (p *ConfigProvider) doList(ctx context.Context, flags *provider.GlobalFlags) error {
+	if _, err := provider.ValidateProfileDirExists(p.effectiveConfig(flags)); err != nil {
+		return err
+	}
+
 	hf, err := p.loadOrCreateHamsfile(nil, flags)
 	if err != nil {
 		return err

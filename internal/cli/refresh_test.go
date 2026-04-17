@@ -216,10 +216,14 @@ func TestRunRefresh_JSONOutput(t *testing.T) {
 		t.Fatalf("output not valid JSON: %v\nraw: %q", err, out)
 	}
 
-	for _, key := range []string{"probed", "planned", "save_failures", "probe_failures", "success"} {
+	for _, key := range []string{"probed", "planned", "save_failures", "probe_failures", "probe_failed_providers", "success", "dry_run", "elapsed_ms"} {
 		if _, ok := data[key]; !ok {
 			t.Errorf("JSON missing required key %q; got: %v", key, data)
 		}
+	}
+	// Cycle 238: elapsed_ms must be a non-negative number.
+	if elapsed, ok := data["elapsed_ms"].(float64); !ok || elapsed < 0 {
+		t.Errorf("elapsed_ms = %v (ok=%v), want non-negative number", data["elapsed_ms"], ok)
 	}
 	if data["success"] != true {
 		t.Errorf("success = %v, want true", data["success"])
@@ -229,8 +233,177 @@ func TestRunRefresh_JSONOutput(t *testing.T) {
 	if sf, ok := data["save_failures"].([]any); !ok || len(sf) != 0 {
 		t.Errorf("save_failures = %v, want []", data["save_failures"])
 	}
+	// Cycle 229: dry_run defaults to false on a real refresh.
+	if dr, ok := data["dry_run"].(bool); !ok || dr {
+		t.Errorf("dry_run = %v (ok=%v), want false on a real refresh", data["dry_run"], ok)
+	}
 
 	_ = storeDir
+}
+
+// TestRunRefresh_JSONOutput_NamesProbeFailedProviders — cycle 232.
+// Pre-cycle-232 the JSON exposed `"probe_failures": N` (count only)
+// but didn't name WHICH providers failed to probe — a CI script
+// retrying just the failed subset (`hams refresh --only=...`) had
+// to grep slog output. Add `probe_failed_providers` (sorted list of
+// names whose probeFn returned an error / panicked / timed out).
+// Asserts the named entry against a seeded failing provider.
+func TestRunRefresh_JSONOutput_NamesProbeFailedProviders(t *testing.T) {
+	_, profileDir, _, flags := setupApplyTestEnv(t, []string{"alpha", "beta"})
+	flags.JSON = true
+	writeApplyTestFile(t, filepath.Join(profileDir, "alpha.hams.yaml"),
+		"packages:\n  - app: pkg-a\n")
+	writeApplyTestFile(t, filepath.Join(profileDir, "beta.hams.yaml"),
+		"packages:\n  - app: pkg-b\n")
+
+	registry := provider.NewRegistry()
+	good := &applyTestProvider{
+		manifest: provider.Manifest{
+			Name: "alpha", DisplayName: "alpha", FilePrefix: "alpha",
+			Platforms: []provider.Platform{provider.PlatformAll},
+		},
+		probeFn: func(_ context.Context, _ *state.File) ([]provider.ProbeResult, error) {
+			return []provider.ProbeResult{{ID: "pkg-a", State: state.StateOK}}, nil
+		},
+	}
+	bad := &applyTestProvider{
+		manifest: provider.Manifest{
+			Name: "beta", DisplayName: "beta", FilePrefix: "beta",
+			Platforms: []provider.Platform{provider.PlatformAll},
+		},
+		probeFn: func(_ context.Context, _ *state.File) ([]provider.ProbeResult, error) {
+			return nil, errors.New("simulated probe failure")
+		},
+	}
+	if err := registry.Register(good); err != nil {
+		t.Fatalf("Register good: %v", err)
+	}
+	if err := registry.Register(bad); err != nil {
+		t.Fatalf("Register bad: %v", err)
+	}
+
+	out := captureStdout(t, func() {
+		// runRefresh returns ExitPartialFailure on probe failures; that's expected.
+		if err := runRefresh(context.Background(), flags, registry, "", ""); err == nil {
+			t.Fatal("expected ExitPartialFailure (1 probe failure)")
+		}
+	})
+
+	var data map[string]any
+	if err := json.Unmarshal([]byte(out), &data); err != nil {
+		t.Fatalf("output not valid JSON: %v\nraw: %q", err, out)
+	}
+	if pf, ok := data["probe_failures"].(float64); !ok || pf < 1 {
+		t.Errorf("probe_failures = %v (ok=%v), want >=1", data["probe_failures"], ok)
+	}
+	failedNames, ok := data["probe_failed_providers"].([]any)
+	if !ok {
+		t.Fatalf("probe_failed_providers missing or wrong type; got %v", data["probe_failed_providers"])
+	}
+	if len(failedNames) != 1 {
+		t.Errorf("probe_failed_providers = %v, want exactly [beta]", failedNames)
+	}
+	if len(failedNames) >= 1 {
+		if name, ok := failedNames[0].(string); !ok || name != "beta" {
+			t.Errorf("probe_failed_providers[0] = %v, want \"beta\"", failedNames[0])
+		}
+	}
+}
+
+// TestRunRefresh_TextOutput_NamesProbeFailedProviders — cycle 234.
+// Symmetric with cycle 232's JSON probe_failed_providers list.
+// Pre-cycle-234 the text output for partial probe failures said
+// "(N probe error(s); see log for details)" without naming WHICH
+// providers failed. Interactive users had to grep slog. Test seeds
+// alpha (probe succeeds) + beta (probe errors) and asserts the
+// stdout summary mentions "beta" inline.
+func TestRunRefresh_TextOutput_NamesProbeFailedProviders(t *testing.T) {
+	_, profileDir, _, flags := setupApplyTestEnv(t, []string{"alpha", "beta"})
+	writeApplyTestFile(t, filepath.Join(profileDir, "alpha.hams.yaml"),
+		"packages:\n  - app: pkg-a\n")
+	writeApplyTestFile(t, filepath.Join(profileDir, "beta.hams.yaml"),
+		"packages:\n  - app: pkg-b\n")
+
+	registry := provider.NewRegistry()
+	good := &applyTestProvider{
+		manifest: provider.Manifest{
+			Name: "alpha", DisplayName: "alpha", FilePrefix: "alpha",
+			Platforms: []provider.Platform{provider.PlatformAll},
+		},
+		probeFn: func(_ context.Context, _ *state.File) ([]provider.ProbeResult, error) {
+			return []provider.ProbeResult{{ID: "pkg-a", State: state.StateOK}}, nil
+		},
+	}
+	bad := &applyTestProvider{
+		manifest: provider.Manifest{
+			Name: "beta", DisplayName: "beta", FilePrefix: "beta",
+			Platforms: []provider.Platform{provider.PlatformAll},
+		},
+		probeFn: func(_ context.Context, _ *state.File) ([]provider.ProbeResult, error) {
+			return nil, errors.New("simulated probe failure")
+		},
+	}
+	if err := registry.Register(good); err != nil {
+		t.Fatalf("Register good: %v", err)
+	}
+	if err := registry.Register(bad); err != nil {
+		t.Fatalf("Register bad: %v", err)
+	}
+
+	out := captureStdout(t, func() {
+		// runRefresh returns ExitPartialFailure on probe failures; expected.
+		if err := runRefresh(context.Background(), flags, registry, "", ""); err == nil {
+			t.Fatal("expected ExitPartialFailure (1 probe failure)")
+		}
+	})
+
+	if !strings.Contains(out, "beta") {
+		t.Errorf("text output should name 'beta' as probe-failed; got %q", out)
+	}
+	if !strings.Contains(out, "probe error(s) in:") {
+		t.Errorf("text output should use cycle-234 phrase 'probe error(s) in:'; got %q", out)
+	}
+}
+
+// TestRunRefresh_JSONOutput_DryRunFlagSurfacesTrue — cycle 229.
+// `hams --json refresh --dry-run` must emit `dry_run: true` so CI
+// scripts can distinguish a preview from a real run without
+// re-parsing argv. Cycle 226's comment promised this field; cycle
+// 229 makes it real.
+func TestRunRefresh_JSONOutput_DryRunFlagSurfacesTrue(t *testing.T) {
+	_, profileDir, _, flags := setupApplyTestEnv(t, []string{"alpha"})
+	flags.JSON = true
+	flags.DryRun = true
+	writeApplyTestFile(t, filepath.Join(profileDir, "alpha.hams.yaml"),
+		"packages:\n  - app: pkg-a\n")
+
+	registry := provider.NewRegistry()
+	p := &applyTestProvider{
+		manifest: provider.Manifest{
+			Name: "alpha", DisplayName: "alpha", FilePrefix: "alpha",
+			Platforms: []provider.Platform{provider.PlatformAll},
+		},
+		probeFn: func(_ context.Context, _ *state.File) ([]provider.ProbeResult, error) {
+			return []provider.ProbeResult{{ID: "pkg-a", State: state.StateOK}}, nil
+		},
+	}
+	if err := registry.Register(p); err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+
+	out := captureStdout(t, func() {
+		if err := runRefresh(context.Background(), flags, registry, "", ""); err != nil {
+			t.Fatalf("refresh: %v", err)
+		}
+	})
+
+	var data map[string]any
+	if err := json.Unmarshal([]byte(out), &data); err != nil {
+		t.Fatalf("output not valid JSON: %v\nraw: %q", err, out)
+	}
+	if dr, ok := data["dry_run"].(bool); !ok || !dr {
+		t.Errorf("dry_run = %v (ok=%v), want true", data["dry_run"], ok)
+	}
 }
 
 // TestRunRefresh_SaveFailureListIsAlphabetical locks in cycle 151:
@@ -273,6 +446,20 @@ func TestRunRefresh_SaveFailureListIsAlphabetical(t *testing.T) {
 	// must be read-only so AtomicWrite's CreateTemp + Rename both fail
 	// with EACCES → sf.Save returns an error → the provider lands in
 	// the saveFailures slice.
+	//
+	// Cycle 221 added single-writer lock acquisition to runRefresh,
+	// which would also fail on a read-only stateDir and short-circuit
+	// the test before it reaches the save-failure branch under test.
+	// Stub the package-level acquireMutationLock seam to a no-op so
+	// the read-only chmod still selectively breaks Save while the
+	// "lock" succeeds. The lock semantics themselves are covered by
+	// TestAcquireMutationLock_* in internal/provider.
+	originalLock := acquireMutationLock
+	t.Cleanup(func() { acquireMutationLock = originalLock })
+	acquireMutationLock = func(_, _ string) (func(), error) {
+		return func() {}, nil
+	}
+
 	if err := os.MkdirAll(stateDir, 0o750); err != nil {
 		t.Fatalf("mkdir stateDir: %v", err)
 	}
@@ -322,6 +509,12 @@ func TestRunRefresh_SaveFailureListIsAlphabetical(t *testing.T) {
 		extractFailureLine := func(s string) string {
 			for line := range strings.SplitSeq(s, "\n") {
 				if strings.Contains(line, "alpha") && strings.Contains(line, "mu") && strings.Contains(line, "zeta") {
+					// Cycle 239: strip the trailing "(took Xms)" suffix
+					// because Xms varies per run and is not part of the
+					// alphabetical-failure-list invariant under test.
+					if idx := strings.LastIndex(line, "(took "); idx > 0 {
+						return strings.TrimRight(line[:idx], " ")
+					}
 					return line
 				}
 			}
@@ -336,6 +529,228 @@ func TestRunRefresh_SaveFailureListIsAlphabetical(t *testing.T) {
 
 	// Silence unused-var warnings on storeDir.
 	_ = storeDir
+}
+
+// TestRunRefresh_AcquiresMutationLock — cycle 221 guard. Per the
+// cli-architecture spec §"Lock file for single-writer enforcement",
+// refresh MUST acquire the single-writer lock for the duration of
+// its mutation. Pre-cycle-221 only runApply did this. We use the
+// acquireMutationLock seam to record that exactly one acquire +
+// matching release happened, with the canonical "hams refresh"
+// command label going into the lock file.
+func TestRunRefresh_AcquiresMutationLock(t *testing.T) {
+	_, profileDir, _, flags := setupApplyTestEnv(t, []string{"apt"})
+	writeApplyTestFile(t, filepath.Join(profileDir, "apt.hams.yaml"), "cli:\n  - app: htop\n")
+
+	var acquireCount, releaseCount int
+	var gotCmd string
+	originalLock := acquireMutationLock
+	t.Cleanup(func() { acquireMutationLock = originalLock })
+	acquireMutationLock = func(_, cmd string) (func(), error) {
+		acquireCount++
+		gotCmd = cmd
+		return func() { releaseCount++ }, nil
+	}
+
+	registry := provider.NewRegistry()
+	p := &applyTestProvider{
+		manifest: provider.Manifest{
+			Name: "apt", DisplayName: "apt", FilePrefix: "apt",
+			Platforms: []provider.Platform{provider.PlatformAll},
+		},
+	}
+	if err := registry.Register(p); err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+
+	if err := runRefresh(context.Background(), flags, registry, "", ""); err != nil {
+		t.Fatalf("runRefresh: %v", err)
+	}
+	if acquireCount != 1 {
+		t.Errorf("acquireCount = %d, want 1", acquireCount)
+	}
+	if releaseCount != 1 {
+		t.Errorf("releaseCount = %d, want 1 (deferred release must fire)", releaseCount)
+	}
+	if gotCmd != "hams refresh" {
+		t.Errorf("lock cmd label = %q, want %q", gotCmd, "hams refresh")
+	}
+}
+
+// TestRunRefresh_DryRunSkipsStateWrites — cycle 226 guard. `hams
+// refresh --dry-run` was unconditionally calling sf.Save on every
+// probed provider before this fix, mutating state files and bumping
+// timestamps despite the user's explicit --dry-run. Asserts:
+//
+//  1. probeFn IS called (refresh still surfaces the would-be plan).
+//  2. NO state file ends up on disk afterward.
+//  3. Stdout contains the "[dry-run] Would write state" preview.
+func TestRunRefresh_DryRunSkipsStateWrites(t *testing.T) {
+	_, profileDir, stateDir, flags := setupApplyTestEnv(t, []string{"alpha"})
+	flags.DryRun = true
+	writeApplyTestFile(t, filepath.Join(profileDir, "alpha.hams.yaml"), "cli:\n  - app: pkg-a\n")
+
+	registry := provider.NewRegistry()
+	probeCalls := 0
+	p := &applyTestProvider{
+		manifest: provider.Manifest{
+			Name: "alpha", DisplayName: "alpha", FilePrefix: "alpha",
+			Platforms: []provider.Platform{provider.PlatformAll},
+		},
+		probeFn: func(_ context.Context, _ *state.File) ([]provider.ProbeResult, error) {
+			probeCalls++
+			return []provider.ProbeResult{{ID: "pkg-a", State: state.StateOK}}, nil
+		},
+	}
+	if err := registry.Register(p); err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+
+	out := captureStdout(t, func() {
+		if err := runRefresh(context.Background(), flags, registry, "", ""); err != nil {
+			t.Fatalf("runRefresh: %v", err)
+		}
+	})
+
+	if probeCalls == 0 {
+		t.Error("dry-run refresh should still call Probe (preview the plan)")
+	}
+	statePath := filepath.Join(stateDir, "alpha.state.yaml")
+	if _, err := os.Stat(statePath); err == nil {
+		t.Errorf("dry-run refresh wrote state file %q; must be a pure preview", statePath)
+	}
+	if !strings.Contains(out, "[dry-run] Would write state") {
+		t.Errorf("dry-run output missing 'Would write state' preview; got %q", out)
+	}
+}
+
+// TestRunRefresh_DryRunSkipsLock — cycle 221 invariant: dry-run is
+// a pure preview per the global flag's "no side effects" contract,
+// so refresh MUST NOT acquire the lock under --dry-run (acquiring
+// would itself write the .lock file).
+func TestRunRefresh_DryRunSkipsLock(t *testing.T) {
+	_, profileDir, _, flags := setupApplyTestEnv(t, []string{"apt"})
+	flags.DryRun = true
+	writeApplyTestFile(t, filepath.Join(profileDir, "apt.hams.yaml"), "cli:\n  - app: htop\n")
+
+	var acquireCount int
+	originalLock := acquireMutationLock
+	t.Cleanup(func() { acquireMutationLock = originalLock })
+	acquireMutationLock = func(_, _ string) (func(), error) {
+		acquireCount++
+		return func() {}, nil
+	}
+
+	registry := provider.NewRegistry()
+	p := &applyTestProvider{
+		manifest: provider.Manifest{
+			Name: "apt", DisplayName: "apt", FilePrefix: "apt",
+			Platforms: []provider.Platform{provider.PlatformAll},
+		},
+	}
+	if err := registry.Register(p); err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+
+	if err := runRefresh(context.Background(), flags, registry, "", ""); err != nil {
+		t.Fatalf("runRefresh dry-run: %v", err)
+	}
+	if acquireCount != 0 {
+		t.Errorf("dry-run must NOT acquire the lock; acquireCount = %d", acquireCount)
+	}
+}
+
+// TestRunRefresh_InterruptedContextReportsExplicitly locks in cycle
+// 209: when the root context is canceled mid-refresh (user pressed
+// Ctrl+C), the summary output MUST say "Refresh interrupted" — not
+// the misleading "Refresh complete: 0/N providers probed (N probe
+// error(s); see log for details)" which made it look like N
+// independent probe failures instead of one user cancellation.
+// Matches cycle 84's behavior for runApply.
+func TestRunRefresh_InterruptedContextReportsExplicitly(t *testing.T) {
+	_, profileDir, _, flags := setupApplyTestEnv(t, []string{"apt"})
+	writeApplyTestFile(t, filepath.Join(profileDir, "apt.hams.yaml"), "cli:\n  - app: htop\n")
+
+	registry := provider.NewRegistry()
+	p := &applyTestProvider{
+		manifest: provider.Manifest{
+			Name: "apt", DisplayName: "apt", FilePrefix: "apt",
+			Platforms: []provider.Platform{provider.PlatformAll},
+		},
+		probeFn: func(ctx context.Context, _ *state.File) ([]provider.ProbeResult, error) {
+			return nil, ctx.Err()
+		},
+	}
+	if err := registry.Register(p); err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	out := captureStdout(t, func() {
+		err := runRefresh(ctx, flags, registry, "", "")
+		if err == nil {
+			t.Fatal("expected ExitPartialFailure for interrupted ctx")
+		}
+		var ufe *hamserr.UserFacingError
+		if !errors.As(err, &ufe) || ufe.Code != hamserr.ExitPartialFailure {
+			t.Fatalf("expected ExitPartialFailure, got %v (%T)", err, err)
+		}
+		if !strings.Contains(ufe.Message, "interrupted") {
+			t.Errorf("error message should mention 'interrupted'; got %q", ufe.Message)
+		}
+	})
+	if !strings.Contains(out, "Refresh interrupted") {
+		t.Errorf("expected 'Refresh interrupted' in stdout; got %q", out)
+	}
+	if strings.Contains(out, "Refresh complete") {
+		t.Errorf("stdout should NOT say 'Refresh complete' on ctx cancellation; got %q", out)
+	}
+}
+
+// TestRunRefresh_InterruptedContextEmitsJSONFlag asserts the JSON
+// variant of cycle 209. `hams --json refresh` with a canceled ctx
+// produces {"interrupted": true, "success": false} instead of the
+// probe_failures/save_failures shape, so CI scripts can branch on
+// the interrupted flag rather than parsing text.
+func TestRunRefresh_InterruptedContextEmitsJSONFlag(t *testing.T) {
+	_, profileDir, _, flags := setupApplyTestEnv(t, []string{"apt"})
+	flags.JSON = true
+	writeApplyTestFile(t, filepath.Join(profileDir, "apt.hams.yaml"), "cli:\n  - app: htop\n")
+
+	registry := provider.NewRegistry()
+	p := &applyTestProvider{
+		manifest: provider.Manifest{
+			Name: "apt", DisplayName: "apt", FilePrefix: "apt",
+			Platforms: []provider.Platform{provider.PlatformAll},
+		},
+		probeFn: func(ctx context.Context, _ *state.File) ([]provider.ProbeResult, error) {
+			return nil, ctx.Err()
+		},
+	}
+	if err := registry.Register(p); err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	out := captureStdout(t, func() {
+		if err := runRefresh(ctx, flags, registry, "", ""); err == nil {
+			t.Fatal("expected ExitPartialFailure for interrupted ctx")
+		}
+	})
+	var data map[string]any
+	if err := json.Unmarshal([]byte(out), &data); err != nil {
+		t.Fatalf("output not valid JSON: %v\nraw: %q", err, out)
+	}
+	if got, ok := data["interrupted"].(bool); !ok || !got {
+		t.Errorf("JSON['interrupted'] = %v (ok=%v), want true; got: %v", data["interrupted"], ok, data)
+	}
+	if got, ok := data["success"].(bool); ok && got {
+		t.Errorf("JSON['success'] = %v, want false or missing; got: %v", data["success"], data)
+	}
 }
 
 // TestRunRefresh_ExplicitProfileNotFoundEmitsUserError locks in

@@ -353,6 +353,13 @@ func (p *Provider) handleUntap(ctx context.Context, args []string, hamsFlags map
 		return nil
 	}
 
+	// Cycle 222: acquire single-writer state lock per cli-architecture spec.
+	release, lockErr := provider.AcquireMutationLockFromCfg(p.effectiveConfig(flags), flags, "brew untap")
+	if lockErr != nil {
+		return lockErr
+	}
+	defer release()
+
 	if err := p.runner.Untap(ctx, repo); err != nil {
 		return err
 	}
@@ -382,12 +389,24 @@ func (p *Provider) Name() string { return cliName }
 func (p *Provider) DisplayName() string { return brewDisplayName }
 
 func (p *Provider) handleList(hamsFlags map[string]string, flags *provider.GlobalFlags) error {
+	cfg := p.effectiveConfig(flags)
+
+	// Cycle 220/222: validate the resolved profile dir exists via the
+	// shared helper. `hams brew list --profile=Typo` on an invalid
+	// profile previously printed "Homebrew managed packages:\nNo
+	// entries tracked..." — silent success despite the user's typo.
+	// Matches the top-level `hams list --profile=Typo` (cycle 217),
+	// HandleListCmd (cycle 220), and every other custom-list path
+	// (cycle 222).
+	if _, err := provider.ValidateProfileDirExists(cfg); err != nil {
+		return err
+	}
+
 	hf, err := p.loadOrCreateHamsfile(hamsFlags, flags)
 	if err != nil {
 		return err
 	}
 
-	cfg := p.effectiveConfig(flags)
 	statePath := filepath.Join(cfg.StateDir(), "brew.state.yaml")
 	sf, err := state.Load(statePath)
 	if err != nil {
@@ -448,7 +467,20 @@ func (p *Provider) handleTap(ctx context.Context, args []string, hamsFlags map[s
 		return nil
 	}
 
-	if err := provider.WrapExecPassthrough(ctx, "brew", []string{"tap", repo}, nil); err != nil {
+	// Cycle 222: acquire single-writer state lock per cli-architecture spec.
+	release, lockErr := provider.AcquireMutationLockFromCfg(p.effectiveConfig(flags), flags, "brew tap")
+	if lockErr != nil {
+		return lockErr
+	}
+	defer release()
+
+	// Cycle 212: route via the CmdRunner seam (which already exists
+	// for handleUntap cycle 177) instead of WrapExecPassthrough.
+	// Two benefits: (a) the state-write path becomes DI-testable, (b)
+	// symmetric with every other brew CLI handler (install / remove /
+	// untap). The real runner still exec's brew via exec.CommandContext
+	// internally, so the end-user behavior is identical.
+	if err := p.runner.Tap(ctx, repo); err != nil {
 		return err
 	}
 
@@ -456,9 +488,22 @@ func (p *Provider) handleTap(ctx context.Context, args []string, hamsFlags map[s
 	if err != nil {
 		return err
 	}
+	sf, err := p.loadOrCreateStateFile(flags)
+	if err != nil {
+		return err
+	}
 
 	hf.AddApp("tap", repo, "")
-	return hf.Write()
+	// Cycle 212: state write matches cycle 96 (handleInstall) and
+	// cycle 177's handleUntap fix. Without this, `hams list --only=brew`
+	// showed nothing after a successful `hams brew tap <user/repo>`
+	// because `list` reads state only.
+	sf.SetResource(repo, state.StateOK)
+
+	if writeErr := hf.Write(); writeErr != nil {
+		return writeErr
+	}
+	return sf.Save(p.statePath(flags))
 }
 
 func (p *Provider) handleInstall(ctx context.Context, args []string, hamsFlags map[string]string, flags *provider.GlobalFlags) error {
@@ -523,6 +568,13 @@ func (p *Provider) handleInstall(ctx context.Context, args []string, hamsFlags m
 		return nil
 	}
 
+	// Cycle 222: acquire single-writer state lock per cli-architecture spec.
+	release, lockErr := provider.AcquireMutationLockFromCfg(p.effectiveConfig(flags), flags, "brew install")
+	if lockErr != nil {
+		return lockErr
+	}
+	defer release()
+
 	isCask := hasCaskFlag(args)
 	// Drive the runner per-package so the flow is DI-testable
 	// (previously `provider.WrapExecPassthrough` shelled out directly,
@@ -580,6 +632,13 @@ func (p *Provider) handleRemove(ctx context.Context, args []string, hamsFlags ma
 		fmt.Printf("[dry-run] Would remove: brew uninstall %s\n", strings.Join(args, " "))
 		return nil
 	}
+
+	// Cycle 222: acquire single-writer state lock per cli-architecture spec.
+	release, lockErr := provider.AcquireMutationLockFromCfg(p.effectiveConfig(flags), flags, "brew remove")
+	if lockErr != nil {
+		return lockErr
+	}
+	defer release()
 
 	// Cycle 177: route tap-format IDs through Untap so `hams brew
 	// remove user/repo` works symmetrically with the apply path

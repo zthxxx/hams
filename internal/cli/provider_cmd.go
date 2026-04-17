@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"strings"
 
+	"github.com/zthxxx/hams/internal/logging"
 	"github.com/zthxxx/hams/internal/provider"
 )
 
@@ -39,6 +40,22 @@ func routeToProvider(ctx context.Context, handler ProviderHandler, args []string
 	if hamsFlags == nil {
 		// --help was found.
 		return showProviderHelp(handler)
+	}
+	// Cycle 242: honor --debug for per-provider CLI invocations.
+	// Pre-cycle-242 only apply / refresh applied flags.Debug to slog
+	// (via logging.Setup), so `hams cargo install foo --debug` parsed
+	// the flag into flags.Debug but never raised the slog level →
+	// the user got no extra output despite asking for it. Use the
+	// stderr-only SetupDebugOnly so short commands don't open a per-
+	// invocation log file (apply/refresh still call full Setup with
+	// file rotation).
+	//
+	// Only fires when --debug is set so tests that install their own
+	// slog.Default capture handler before invoking app.Run aren't
+	// silently clobbered. (Cycle 243 makes the same condition the
+	// invariant for the root Before hook too.)
+	if flags.Debug {
+		logging.SetupDebugOnly(true)
 	}
 	// Surface v1.1-deferred --hams-lucky usage so users who pass the
 	// flag are not surprised by a silent no-op. See

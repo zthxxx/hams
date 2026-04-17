@@ -10,6 +10,7 @@ import (
 	"github.com/zthxxx/hams/internal/config"
 	"github.com/zthxxx/hams/internal/hamsfile"
 	"github.com/zthxxx/hams/internal/provider"
+	"github.com/zthxxx/hams/internal/state"
 )
 
 type goInstallHarness struct {
@@ -55,6 +56,20 @@ func (h *goInstallHarness) hamsfileApps() []string {
 		h.t.Fatalf("read hamsfile: %v", err)
 	}
 	return f.ListApps()
+}
+
+// stateResource returns the state of a resource in the on-disk state
+// file, or "" if the state file or resource doesn't exist.
+func (h *goInstallHarness) stateResource(id string) state.ResourceState {
+	h.t.Helper()
+	sf, err := state.Load(h.provider.statePath(h.flags))
+	if err != nil {
+		return ""
+	}
+	if r, ok := sf.Resources[id]; ok {
+		return r.State
+	}
+	return ""
 }
 
 // U1 — bare module path gets `@latest` injected and that pinned form
@@ -196,5 +211,52 @@ func TestHandleCommand_U9_FlagsOnlyReturnsUsage(t *testing.T) {
 	}
 	if h.runner.CallCount(fakeOpInstall, "") != 0 {
 		t.Errorf("runner should not be called")
+	}
+}
+
+// TestHandleCommand_U10_InstallWritesStateFile — cycle 207.
+// `hams goinstall install <pkg>` writes StateOK to goinstall.state.yaml
+// so `hams list --only=goinstall` returns the package immediately.
+// Same auto-record gap as cycles 96/202/203/204/205/206. The recorded
+// state key carries the pinned form produced by injectLatest so later
+// refresh/apply match the hamsfile entry.
+func TestHandleCommand_U10_InstallWritesStateFile(t *testing.T) {
+	h := newGoInstallHarness(t)
+	if err := h.provider.HandleCommand(context.Background(),
+		[]string{"install", "golang.org/x/tools/cmd/goimports"}, nil, h.flags); err != nil {
+		t.Fatalf("install: %v", err)
+	}
+	want := "golang.org/x/tools/cmd/goimports@latest"
+	if got := h.stateResource(want); got != state.StateOK {
+		t.Errorf("state[%q] = %q, want %q", want, got, state.StateOK)
+	}
+}
+
+// TestHandleCommand_U11_InstallFailureLeavesStateUntouched — atomic
+// on failure: runner rejection must NOT produce a spurious state entry.
+func TestHandleCommand_U11_InstallFailureLeavesStateUntouched(t *testing.T) {
+	h := newGoInstallHarness(t)
+	pkg := "example.com/does-not-exist@latest"
+	h.runner.WithInstallError(pkg, errors.New("go install: not found"))
+	if err := h.provider.HandleCommand(context.Background(),
+		[]string{"install", "example.com/does-not-exist"}, nil, h.flags); err == nil {
+		t.Fatal("expected install error")
+	}
+	if got := h.stateResource(pkg); got != "" {
+		t.Errorf("state should not have an entry, got %q", got)
+	}
+}
+
+// TestHandleCommand_U12_DryRunSkipsStateWrite — dry-run must not
+// create an on-disk state file. Complements U5 at the state layer.
+func TestHandleCommand_U12_DryRunSkipsStateWrite(t *testing.T) {
+	h := newGoInstallHarness(t)
+	h.flags.DryRun = true
+	if err := h.provider.HandleCommand(context.Background(),
+		[]string{"install", "golang.org/x/tools/cmd/goimports"}, nil, h.flags); err != nil {
+		t.Fatalf("dry-run: %v", err)
+	}
+	if _, err := os.Stat(h.provider.statePath(h.flags)); err == nil {
+		t.Error("dry-run should not create state file")
 	}
 }

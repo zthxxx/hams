@@ -10,6 +10,7 @@ import (
 	"github.com/zthxxx/hams/internal/config"
 	"github.com/zthxxx/hams/internal/hamsfile"
 	"github.com/zthxxx/hams/internal/provider"
+	"github.com/zthxxx/hams/internal/state"
 )
 
 type npmHarness struct {
@@ -55,6 +56,20 @@ func (h *npmHarness) hamsfileApps() []string {
 		h.t.Fatalf("read hamsfile: %v", err)
 	}
 	return f.ListApps()
+}
+
+// stateResource reads the on-disk state file and returns the state of
+// the named resource, or "" if the file or resource doesn't exist.
+func (h *npmHarness) stateResource(id string) state.ResourceState {
+	h.t.Helper()
+	sf, err := state.Load(h.provider.statePath(h.flags))
+	if err != nil {
+		return ""
+	}
+	if r, ok := sf.Resources[id]; ok {
+		return r.State
+	}
+	return ""
 }
 
 // U1 — first install records + calls runner once.
@@ -209,5 +224,60 @@ func TestHandleCommand_U10_FlagsOnlyReturnsUsage(t *testing.T) {
 	}
 	if h.runner.CallCount(fakeOpInstall, "") != 0 {
 		t.Errorf("runner should not be called on usage error, got %d", h.runner.CallCount(fakeOpInstall, ""))
+	}
+}
+
+// TestHandleCommand_U11_InstallWritesStateFile locks in cycle 204:
+// `hams npm install <pkg>` now writes a StateOK entry to npm.state.yaml
+// so `hams list --only=npm` returns the package immediately after
+// install. Same auto-record gap as cycle 96/202/203.
+func TestHandleCommand_U11_InstallWritesStateFile(t *testing.T) {
+	h := newNpmHarness(t)
+	if err := h.provider.HandleCommand(context.Background(), []string{"install", "typescript"}, nil, h.flags); err != nil {
+		t.Fatalf("install: %v", err)
+	}
+	if got := h.stateResource("typescript"); got != state.StateOK {
+		t.Errorf("state[typescript] = %q, want %q", got, state.StateOK)
+	}
+}
+
+// TestHandleCommand_U12_RemoveMarksStateRemoved asserts the symmetric
+// contract: a successful uninstall writes a StateRemoved tombstone.
+func TestHandleCommand_U12_RemoveMarksStateRemoved(t *testing.T) {
+	h := newNpmHarness(t)
+	if err := h.provider.HandleCommand(context.Background(), []string{"install", "prettier"}, nil, h.flags); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+	if err := h.provider.HandleCommand(context.Background(), []string{"remove", "prettier"}, nil, h.flags); err != nil {
+		t.Fatalf("remove: %v", err)
+	}
+	if got := h.stateResource("prettier"); got != state.StateRemoved {
+		t.Errorf("state[prettier] = %q, want %q", got, state.StateRemoved)
+	}
+}
+
+// TestHandleCommand_U13_InstallFailureLeavesStateUntouched: a runner
+// rejection must NOT produce a spurious StateOK entry.
+func TestHandleCommand_U13_InstallFailureLeavesStateUntouched(t *testing.T) {
+	h := newNpmHarness(t)
+	h.runner.WithInstallError("nonexistent-pkg", errors.New("npm: not found"))
+	if err := h.provider.HandleCommand(context.Background(), []string{"install", "nonexistent-pkg"}, nil, h.flags); err == nil {
+		t.Fatal("expected install error")
+	}
+	if got := h.stateResource("nonexistent-pkg"); got != "" {
+		t.Errorf("state should not have an entry, got %q", got)
+	}
+}
+
+// TestHandleCommand_U14_DryRunSkipsStateWrite: --dry-run must not
+// create an on-disk state file.
+func TestHandleCommand_U14_DryRunSkipsStateWrite(t *testing.T) {
+	h := newNpmHarness(t)
+	h.flags.DryRun = true
+	if err := h.provider.HandleCommand(context.Background(), []string{"install", "typescript"}, nil, h.flags); err != nil {
+		t.Fatalf("dry-run: %v", err)
+	}
+	if _, err := os.Stat(h.provider.statePath(h.flags)); err == nil {
+		t.Error("dry-run should not create state file")
 	}
 }

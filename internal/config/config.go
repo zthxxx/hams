@@ -93,7 +93,15 @@ func (p Paths) GlobalConfigPath() string {
 //  2. Otherwise, the global config's `store_path:` is used.
 //  3. Otherwise, cfg.StorePath stays empty and the caller surfaces
 //     "no store directory configured".
-func Load(paths Paths, storePath string) (*Config, error) {
+//
+// Cycle 219: profileTag (the caller's --profile override, empty when
+// unset) is overlaid onto cfg.ProfileTag after file-based merge, with
+// the same precedence as storePath. Before cycle 219 every caller had
+// to duplicate the `if flags.Profile != "" { cfg.ProfileTag = ... }`
+// pattern, which meant forgotten overlays silently turned commands
+// into no-ops on the wrong profile (cycles 217/218 are case-by-case
+// fixes; this refactor prevents future gaps of the same shape).
+func Load(paths Paths, storePath, profileTag string) (*Config, error) {
 	cfg := &Config{
 		ProviderPriority: DefaultProviderPriority,
 	}
@@ -155,6 +163,16 @@ func Load(paths Paths, storePath string) (*Config, error) {
 	// silently producing "no providers match" on every run.
 	if expanded, expErr := expandHome(cfg.StorePath); expErr == nil {
 		cfg.StorePath = expanded
+	}
+
+	// Cycle 219: explicit --profile overrides whatever the merged config
+	// says. Empty profileTag leaves cfg.ProfileTag untouched so callers
+	// without a flag-overlay get the config-file value (or "default" via
+	// ProfileDir's sanitize fallback). Commands that want to hard-fail
+	// on a typo'd --profile still stat cfg.ProfileDir() themselves —
+	// Load only overlays the value; it does not check the filesystem.
+	if profileTag != "" {
+		cfg.ProfileTag = profileTag
 	}
 
 	if err := cfg.Validate(); err != nil {

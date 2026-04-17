@@ -62,6 +62,45 @@ func TestDiffDesiredVsState_PropertyBased(t *testing.T) {
 	})
 }
 
+// TestFormatDiff_EmptyDiffShowsFriendlyHint locks in cycle 210:
+// an empty diff (no additions, removals, matched, diverged) must
+// emit a user-visible hint, not an empty string. Pre-cycle-210
+// `hams git-config list` on a fresh/empty store printed NOTHING
+// and exited 0 — indistinguishable from "command crashed before
+// output" or "provider forgot to print anything". Users couldn't
+// tell if it worked. Hint points the user at how to seed the state.
+func TestFormatDiff_EmptyDiffShowsFriendlyHint(t *testing.T) {
+	t.Parallel()
+	diff := provider.DiffResult{}
+	out := provider.FormatDiff(&diff)
+	if out == "" {
+		t.Fatal("empty diff should emit a friendly hint, not an empty string")
+	}
+	if !strings.Contains(out, "No entries tracked") {
+		t.Errorf("empty-diff hint should mention 'No entries tracked'; got %q", out)
+	}
+	if !strings.Contains(out, "install") {
+		t.Errorf("empty-diff hint should suggest the `install` subcommand; got %q", out)
+	}
+}
+
+// TestFormatDiff_NonEmptyDiffSkipsHint asserts the inverse: any
+// non-empty diff returns the normal +/~/-/ok lines WITHOUT the
+// "No entries tracked" hint appearing as noise at the top.
+func TestFormatDiff_NonEmptyDiffSkipsHint(t *testing.T) {
+	t.Parallel()
+	diff := provider.DiffResult{
+		Matched: []provider.DiffEntry{{ID: "git", Type: "matched", Status: "ok"}},
+	}
+	out := provider.FormatDiff(&diff)
+	if strings.Contains(out, "No entries tracked") {
+		t.Errorf("non-empty diff should NOT include empty-hint text; got %q", out)
+	}
+	if !strings.Contains(out, "git") {
+		t.Errorf("output should contain the tracked resource; got %q", out)
+	}
+}
+
 func TestFormatDiff_ShowsMarkers(t *testing.T) {
 	t.Parallel()
 	diff := provider.DiffResult{

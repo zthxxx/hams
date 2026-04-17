@@ -3,9 +3,12 @@ package mas
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io/fs"
 	"log/slog"
 	"os/exec"
+	"path/filepath"
 	"strings"
 
 	"github.com/zthxxx/hams/internal/config"
@@ -131,6 +134,13 @@ func (p *Provider) HandleCommand(ctx context.Context, args []string, hamsFlags m
 		return p.handleInstall(ctx, remaining, hamsFlags, flags)
 	case "remove", "uninstall", "rm":
 		return p.handleRemove(ctx, remaining, hamsFlags, flags)
+	case "list":
+		// Cycle 214: route `hams mas list` to the hams-tracked diff.
+		// `mas list` is a real mas subcommand (shows all signed-in
+		// Mac App Store apps) but shows host-wide state rather than
+		// hams's recorded apps — wrong affordance for the user who
+		// wants to know what hams is tracking.
+		return provider.HandleListCmd(ctx, p, p.effectiveConfig(flags))
 	default:
 		return provider.WrapExecPassthrough(ctx, cliName, args, nil)
 	}
@@ -158,6 +168,13 @@ func (p *Provider) handleInstall(ctx context.Context, args []string, hamsFlags m
 		return nil
 	}
 
+	// Cycle 222: acquire single-writer state lock per cli-architecture spec.
+	release, lockErr := provider.AcquireMutationLockFromCfg(p.effectiveConfig(flags), flags, "mas install")
+	if lockErr != nil {
+		return lockErr
+	}
+	defer release()
+
 	for _, id := range ids {
 		if err := p.runner.Install(ctx, id); err != nil {
 			return err
@@ -168,10 +185,22 @@ func (p *Provider) handleInstall(ctx context.Context, args []string, hamsFlags m
 	if err != nil {
 		return err
 	}
+	sf, err := p.loadOrCreateStateFile(flags)
+	if err != nil {
+		return err
+	}
 	for _, id := range ids {
 		hf.AddApp(tagCLI, id, "")
+		// State write is additive — apt's U12-U15 / brew's cycle 96
+		// pattern. Without this, `hams list --only=mas` showed
+		// nothing after a successful `hams mas install <id>`
+		// because `list` reads state files only.
+		sf.SetResource(id, state.StateOK)
 	}
-	return hf.Write()
+	if writeErr := hf.Write(); writeErr != nil {
+		return writeErr
+	}
+	return sf.Save(p.statePath(flags))
 }
 
 // handleRemove runs `mas uninstall <id>` via the CmdRunner seam and,
@@ -195,6 +224,13 @@ func (p *Provider) handleRemove(ctx context.Context, args []string, hamsFlags ma
 		return nil
 	}
 
+	// Cycle 222: acquire single-writer state lock per cli-architecture spec.
+	release, lockErr := provider.AcquireMutationLockFromCfg(p.effectiveConfig(flags), flags, "mas remove")
+	if lockErr != nil {
+		return lockErr
+	}
+	defer release()
+
 	for _, id := range ids {
 		if err := p.runner.Uninstall(ctx, id); err != nil {
 			return err
@@ -205,10 +241,41 @@ func (p *Provider) handleRemove(ctx context.Context, args []string, hamsFlags ma
 	if err != nil {
 		return err
 	}
+	sf, err := p.loadOrCreateStateFile(flags)
+	if err != nil {
+		return err
+	}
 	for _, id := range ids {
 		hf.RemoveApp(id)
+		sf.SetResource(id, state.StateRemoved)
 	}
-	return hf.Write()
+	if writeErr := hf.Write(); writeErr != nil {
+		return writeErr
+	}
+	return sf.Save(p.statePath(flags))
+}
+
+// statePath returns the absolute path to mas.state.yaml for the
+// active machine. Mirrors homebrew.statePath.
+func (p *Provider) statePath(flags *provider.GlobalFlags) string {
+	cfg := p.effectiveConfig(flags)
+	return filepath.Join(cfg.StateDir(), p.Manifest().FilePrefix+".state.yaml")
+}
+
+// loadOrCreateStateFile reads the mas state file or returns a fresh
+// one when the file is absent. Non-ErrNotExist load failures propagate
+// so the CLI handler surfaces a user-facing error instead of silently
+// overwriting unparseable state. Mirrors homebrew.loadOrCreateStateFile.
+func (p *Provider) loadOrCreateStateFile(flags *provider.GlobalFlags) (*state.File, error) {
+	cfg := p.effectiveConfig(flags)
+	sf, err := state.Load(p.statePath(flags))
+	if err == nil {
+		return sf, nil
+	}
+	if errors.Is(err, fs.ErrNotExist) {
+		return state.New(p.Name(), cfg.MachineID), nil
+	}
+	return nil, fmt.Errorf("loading mas state %s: %w", p.statePath(flags), err)
 }
 
 // appIDArgs filters positional tokens: flags (leading `-`) are

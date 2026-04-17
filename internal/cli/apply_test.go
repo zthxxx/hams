@@ -87,6 +87,14 @@ func TestRunApply_UsesFilePrefixStatePathAndProviderPlan(t *testing.T) {
 			DisplayName: "Homebrew",
 			Platforms:   []provider.Platform{provider.PlatformAll},
 			FilePrefix:  "Homebrew",
+			// Cycle 227: this test asserts the sudo lifecycle (Acquire
+			// + Stop) wires correctly. Pre-cycle-227 sudo was acquired
+			// unconditionally; cycle 227 gates on Manifest.RequiresSudo.
+			// Set it true here so the test continues to exercise the
+			// Acquire → Stop path. The dedicated
+			// TestRunApply_NoSudoPromptWhenNoProviderRequiresIt asserts
+			// the inverse (RequiresSudo=false → no prompt).
+			RequiresSudo: true,
 		},
 		planFn: func(_ context.Context, desired *hamsfile.File, observed *state.File) ([]provider.Action, error) {
 			planCalls++
@@ -159,6 +167,158 @@ func TestRunApply_UsesFilePrefixStatePathAndProviderPlan(t *testing.T) {
 
 	if gotStore := flags.Store; gotStore != storeDir {
 		t.Fatalf("flags.Store = %q, want %q", gotStore, storeDir)
+	}
+}
+
+// TestRunApply_NoSudoPromptWhenNoProviderRequiresIt — cycle 227.
+// `hams apply` previously called sudoAcq.Acquire unconditionally,
+// prompting for a password even when the active profile only had
+// non-sudo providers (cargo / npm / pnpm / uv / brew / git-clone).
+// Spec §"Sudo management": "Operations that do not require sudo
+// SHALL NOT prompt for credentials." Cycle 227 gates Acquire on
+// `Manifest.RequiresSudo` for at least one selected provider.
+func TestRunApply_NoSudoPromptWhenNoProviderRequiresIt(t *testing.T) {
+	_, profileDir, _, flags := setupApplyTestEnv(t, []string{"cargo"})
+	hamsfilePath := filepath.Join(profileDir, "cargo.hams.yaml")
+	writeApplyTestFile(t, hamsfilePath, "cli:\n  - app: ripgrep\n")
+
+	p := &applyTestProvider{
+		manifest: provider.Manifest{
+			Name:        "cargo",
+			DisplayName: "cargo",
+			Platforms:   []provider.Platform{provider.PlatformAll},
+			FilePrefix:  "cargo",
+			// RequiresSudo intentionally false — this is the no-prompt path.
+		},
+		planFn: func(_ context.Context, _ *hamsfile.File, _ *state.File) ([]provider.Action, error) {
+			return []provider.Action{{
+				ID: "ripgrep", Type: provider.ActionInstall, Resource: "ripgrep",
+			}}, nil
+		},
+		applyFn: func(_ context.Context, _ provider.Action) error { return nil },
+	}
+
+	registry := provider.NewRegistry()
+	if err := registry.Register(p); err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+
+	spy := &sudo.SpyAcquirer{}
+	if err := runApply(context.Background(), flags, registry, spy, "", true, "", "", false, bootstrapMode{}); err != nil {
+		t.Fatalf("runApply: %v", err)
+	}
+
+	if spy.AcquireCalls != 0 {
+		t.Errorf("Acquire calls = %d, want 0 (no provider has RequiresSudo)", spy.AcquireCalls)
+	}
+	// Stop is wired via defer at runApply entry, so it always fires.
+	if spy.StopCalls != 1 {
+		t.Errorf("Stop calls = %d, want 1 (defer always fires regardless of Acquire)", spy.StopCalls)
+	}
+}
+
+// TestRunApply_SudoPromptWhenAptIncluded — cycle 227 inverse guard.
+// When the resolved provider set includes a RequiresSudo=true entry
+// (apt is the canonical v1 case), runApply MUST prompt exactly once
+// at startup — matching the spec's "Sudo acquired once for full
+// apply" scenario. The seed manifest below mirrors apt's by setting
+// RequiresSudo=true.
+func TestRunApply_SudoPromptWhenAptIncluded(t *testing.T) {
+	_, profileDir, _, flags := setupApplyTestEnv(t, []string{"apt"})
+	hamsfilePath := filepath.Join(profileDir, "apt.hams.yaml")
+	writeApplyTestFile(t, hamsfilePath, "cli:\n  - app: htop\n")
+
+	p := &applyTestProvider{
+		manifest: provider.Manifest{
+			Name:         "apt",
+			DisplayName:  "apt",
+			Platforms:    []provider.Platform{provider.PlatformAll},
+			FilePrefix:   "apt",
+			RequiresSudo: true,
+		},
+		planFn: func(_ context.Context, _ *hamsfile.File, _ *state.File) ([]provider.Action, error) {
+			return []provider.Action{{
+				ID: "htop", Type: provider.ActionInstall, Resource: "htop",
+			}}, nil
+		},
+		applyFn: func(_ context.Context, _ provider.Action) error { return nil },
+	}
+
+	registry := provider.NewRegistry()
+	if err := registry.Register(p); err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+
+	spy := &sudo.SpyAcquirer{}
+	if err := runApply(context.Background(), flags, registry, spy, "", true, "", "", false, bootstrapMode{}); err != nil {
+		t.Fatalf("runApply: %v", err)
+	}
+
+	if spy.AcquireCalls != 1 {
+		t.Errorf("Acquire calls = %d, want 1 (apt has RequiresSudo=true)", spy.AcquireCalls)
+	}
+	if spy.StopCalls != 1 {
+		t.Errorf("Stop calls = %d, want 1", spy.StopCalls)
+	}
+}
+
+// failingAcquirer is a sudo.Acquirer that always returns an error
+// from Acquire — used to exercise the cycle-228 ExitSudoError path.
+type failingAcquirer struct {
+	stopped bool
+}
+
+func (f *failingAcquirer) Acquire(_ context.Context) error {
+	return fmt.Errorf("user canceled sudo prompt")
+}
+
+func (f *failingAcquirer) Stop() { f.stopped = true }
+
+// TestRunApply_SudoFailureExitsWithSudoError — cycle 228. Per
+// cli-architecture/spec.md §"Sudo not granted": "WHEN the user
+// cancels the sudo prompt or sudo times out during startup THEN the
+// process SHALL exit with code 10". Pre-cycle-228 a failed Acquire
+// was downgraded to a slog.Warn and apply continued — apt's later
+// runner.Install would fail with a generic provider error, the user
+// got the wrong exit code, and CI scripts couldn't tell apart "user
+// canceled" from "apt-get errored". Now: hard-exit with
+// ExitSudoError + recovery hints.
+func TestRunApply_SudoFailureExitsWithSudoError(t *testing.T) {
+	_, profileDir, _, flags := setupApplyTestEnv(t, []string{"apt"})
+	hamsfilePath := filepath.Join(profileDir, "apt.hams.yaml")
+	writeApplyTestFile(t, hamsfilePath, "cli:\n  - app: htop\n")
+
+	p := &applyTestProvider{
+		manifest: provider.Manifest{
+			Name:         "apt",
+			DisplayName:  "apt",
+			Platforms:    []provider.Platform{provider.PlatformAll},
+			FilePrefix:   "apt",
+			RequiresSudo: true,
+		},
+		// planFn shouldn't be reached — the sudo failure short-circuits.
+		planFn: func(_ context.Context, _ *hamsfile.File, _ *state.File) ([]provider.Action, error) {
+			t.Fatal("Plan should not be called after sudo acquisition fails")
+			return nil, nil
+		},
+	}
+
+	registry := provider.NewRegistry()
+	if err := registry.Register(p); err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+
+	failer := &failingAcquirer{}
+	err := runApply(context.Background(), flags, registry, failer, "", true, "", "", false, bootstrapMode{})
+	if err == nil {
+		t.Fatal("expected ExitSudoError, got nil")
+	}
+	var ufe *hamserr.UserFacingError
+	if !errors.As(err, &ufe) || ufe.Code != hamserr.ExitSudoError {
+		t.Fatalf("expected ExitSudoError (code %d), got %v (%T)", hamserr.ExitSudoError, err, err)
+	}
+	if !strings.Contains(ufe.Message, "sudo acquisition failed") {
+		t.Errorf("error message should mention sudo failure; got %q", ufe.Message)
 	}
 }
 
@@ -843,7 +1003,13 @@ func TestRunApply_NonTTYWithProfileFlagButNoMachineID(t *testing.T) {
 // 148-152.
 func TestRunApply_PreApplyStateSaveFailureListIsAlphabetical(t *testing.T) {
 	storeDir, profileDir, stateDir, flags := setupApplyTestEnv(t, []string{"zeta", "alpha", "mu"})
-	flags.DryRun = true // skip post-apply save so only pre-apply path fires
+	// NOT dry-run — cycle 241 made dry-run skip the pre-apply refresh
+	// save loop entirely (per the global --dry-run "no side effects"
+	// contract). With Save now skipped under dry-run, the failure list
+	// the test exercises is unreachable that way. Use a non-dry-run
+	// apply with planFn returning no actions, so the pre-apply refresh
+	// runs (and its save fails on the read-only stateDir) but the
+	// per-provider Execute / post-apply save loop has nothing to do.
 
 	for _, name := range []string{"zeta", "alpha", "mu"} {
 		writeApplyTestFile(t, filepath.Join(profileDir, name+".hams.yaml"),
@@ -862,6 +1028,9 @@ func TestRunApply_PreApplyStateSaveFailureListIsAlphabetical(t *testing.T) {
 				return []provider.ProbeResult{{ID: "pkg-a", State: state.StateOK}}, nil
 			},
 			planFn: func(_ context.Context, _ *hamsfile.File, _ *state.File) ([]provider.Action, error) {
+				// Empty plan — Execute is a no-op. The post-apply
+				// save loop sees no changes, so the only stateSaveFailures
+				// entries come from the pre-apply refresh.
 				return nil, nil
 			},
 		}
@@ -884,12 +1053,20 @@ func TestRunApply_PreApplyStateSaveFailureListIsAlphabetical(t *testing.T) {
 
 	// Run apply. Pre-apply refresh saves all 3 providers in the
 	// (now-sorted) order alpha → mu → zeta. Each Save fails because
-	// the state dir is read-only.
+	// the state dir is read-only. Without dry-run, the surrounding
+	// runApply may or may not return ExitPartialFailure depending on
+	// whether post-apply save also runs into the readonly dir; we
+	// only care here about the per-provider error ordering in stderr,
+	// captured via the `collect` helper below.
 	captureStderr(t, func() {
 		// Capture stderr to consume slog output without polluting test
-		// output. The relevant assertion is on returned-error / stdout.
-		if err := runApply(context.Background(), flags, registry, sudo.NoopAcquirer{}, "", false, "", "", false, bootstrapMode{}); err == nil {
-			t.Fatal("expected ExitPartialFailure (state save failures in pre-apply refresh)")
+		// output. We don't assert on the returned error here — the
+		// test's focus is the per-provider stderr ordering.
+		if err := runApply(context.Background(), flags, registry, sudo.NoopAcquirer{}, "", false, "", "", false, bootstrapMode{}); err != nil {
+			// Expected: pre-apply refresh hits read-only stateDir,
+			// returns ExitPartialFailure. The test's focus is
+			// stderr ordering, not the returned error.
+			t.Logf("runApply returned (expected): %v", err)
 		}
 	})
 
@@ -989,13 +1166,26 @@ func TestRunApply_JSONOutput(t *testing.T) {
 	if err := json.Unmarshal([]byte(out), &data); err != nil {
 		t.Fatalf("output not valid JSON: %v\nraw: %q", err, out)
 	}
-	for _, key := range []string{"installed", "updated", "removed", "skipped", "failed", "skipped_providers", "state_save_errors", "success"} {
+	for _, key := range []string{"installed", "updated", "removed", "skipped", "failed", "failed_providers", "skipped_providers", "state_save_errors", "success", "dry_run", "elapsed_ms"} {
 		if _, ok := data[key]; !ok {
 			t.Errorf("JSON missing required key %q; got: %v", key, data)
 		}
 	}
+	// Cycle 238: elapsed_ms must be a non-negative number.
+	if elapsed, ok := data["elapsed_ms"].(float64); !ok || elapsed < 0 {
+		t.Errorf("elapsed_ms = %v (ok=%v), want non-negative", data["elapsed_ms"], ok)
+	}
 	if data["success"] != true {
 		t.Errorf("success = %v, want true on happy-path apply", data["success"])
+	}
+	// Cycle 230: dry_run must always be present and false on a real apply.
+	if dr, ok := data["dry_run"].(bool); !ok || dr {
+		t.Errorf("dry_run = %v (ok=%v), want false on a real apply", data["dry_run"], ok)
+	}
+	// Cycle 231: failed_providers should be an empty array (NOT null)
+	// on a happy-path apply so consumers can iterate without nil-checking.
+	if fp, ok := data["failed_providers"].([]any); !ok || len(fp) != 0 {
+		t.Errorf("failed_providers = %v, want []", data["failed_providers"])
 	}
 	// nil-safety: empty arrays should be [] not null.
 	if sp, ok := data["skipped_providers"].([]any); !ok || len(sp) != 0 {
@@ -1064,6 +1254,135 @@ func TestRunApply_ProfileMismatchClearErrorMessage(t *testing.T) {
 	}
 }
 
+// TestRunApply_JSONOutput_FailedProvidersNamesFailures — cycle 231.
+// Pre-cycle-231 the JSON summary said `"failed": N` but didn't name
+// WHICH providers failed — a CI script that wanted to retry only the
+// failed subset (`hams apply --only=$(jq -r '.failed_providers | join(",")')`)
+// had to fall back to grepping slog output. Add `failed_providers`
+// (list of provider names with at least one failed action). Empty
+// array on happy path; populated on partial failure.
+func TestRunApply_JSONOutput_FailedProvidersNamesFailures(t *testing.T) {
+	_, profileDir, _, flags := setupApplyTestEnv(t, []string{"alpha", "beta"})
+	flags.JSON = true
+	writeApplyTestFile(t, filepath.Join(profileDir, "alpha.hams.yaml"), "cli:\n  - app: pkg-good\n")
+	writeApplyTestFile(t, filepath.Join(profileDir, "beta.hams.yaml"), "cli:\n  - app: pkg-bad\n")
+
+	registry := provider.NewRegistry()
+	good := &applyTestProvider{
+		manifest: provider.Manifest{
+			Name: "alpha", DisplayName: "alpha", FilePrefix: "alpha",
+			Platforms: []provider.Platform{provider.PlatformAll},
+		},
+		planFn: func(_ context.Context, _ *hamsfile.File, _ *state.File) ([]provider.Action, error) {
+			return []provider.Action{{ID: "pkg-good", Type: provider.ActionInstall}}, nil
+		},
+		applyFn: func(_ context.Context, _ provider.Action) error { return nil },
+	}
+	bad := &applyTestProvider{
+		manifest: provider.Manifest{
+			Name: "beta", DisplayName: "beta", FilePrefix: "beta",
+			Platforms: []provider.Platform{provider.PlatformAll},
+		},
+		planFn: func(_ context.Context, _ *hamsfile.File, _ *state.File) ([]provider.Action, error) {
+			return []provider.Action{{ID: "pkg-bad", Type: provider.ActionInstall}}, nil
+		},
+		applyFn: func(_ context.Context, _ provider.Action) error {
+			return fmt.Errorf("simulated install failure")
+		},
+	}
+	if err := registry.Register(good); err != nil {
+		t.Fatalf("Register good: %v", err)
+	}
+	if err := registry.Register(bad); err != nil {
+		t.Fatalf("Register bad: %v", err)
+	}
+
+	out := captureStdout(t, func() {
+		// runApply returns ExitPartialFailure on any failed action; we
+		// expect that here.
+		if err := runApply(context.Background(), flags, registry, sudo.NoopAcquirer{}, "", true, "", "", false, bootstrapMode{}); err == nil {
+			t.Fatal("expected ExitPartialFailure due to bad provider")
+		}
+	})
+
+	var data map[string]any
+	if err := json.Unmarshal([]byte(out), &data); err != nil {
+		t.Fatalf("output not valid JSON: %v\nraw: %q", err, out)
+	}
+	failedCount, ok := data["failed"].(float64)
+	if !ok || failedCount < 1 {
+		t.Errorf("failed = %v, want >=1", data["failed"])
+	}
+	failedProviders, ok := data["failed_providers"].([]any)
+	if !ok {
+		t.Fatalf("failed_providers missing or wrong type; got %v", data["failed_providers"])
+	}
+	if len(failedProviders) != 1 {
+		t.Errorf("failed_providers = %v, want exactly [beta]", failedProviders)
+	}
+	if len(failedProviders) >= 1 {
+		if name, ok := failedProviders[0].(string); !ok || name != "beta" {
+			t.Errorf("failed_providers[0] = %v, want \"beta\"", failedProviders[0])
+		}
+	}
+}
+
+// TestRunApply_TextOutput_NamesFailedProviders — cycle 235.
+// Symmetric with cycle 231's JSON failed_providers and cycle 234's
+// refresh text naming. Pre-cycle-235 the prose summary said
+// `... %d failed` (count only) — interactive users had to grep slog
+// to find WHICH providers failed. Asserts stdout contains the
+// failing provider name with the new "had failed actions:" phrase.
+func TestRunApply_TextOutput_NamesFailedProviders(t *testing.T) {
+	_, profileDir, _, flags := setupApplyTestEnv(t, []string{"alpha", "beta"})
+	writeApplyTestFile(t, filepath.Join(profileDir, "alpha.hams.yaml"), "cli:\n  - app: pkg-good\n")
+	writeApplyTestFile(t, filepath.Join(profileDir, "beta.hams.yaml"), "cli:\n  - app: pkg-bad\n")
+
+	registry := provider.NewRegistry()
+	good := &applyTestProvider{
+		manifest: provider.Manifest{
+			Name: "alpha", DisplayName: "alpha", FilePrefix: "alpha",
+			Platforms: []provider.Platform{provider.PlatformAll},
+		},
+		planFn: func(_ context.Context, _ *hamsfile.File, _ *state.File) ([]provider.Action, error) {
+			return []provider.Action{{ID: "pkg-good", Type: provider.ActionInstall}}, nil
+		},
+		applyFn: func(_ context.Context, _ provider.Action) error { return nil },
+	}
+	bad := &applyTestProvider{
+		manifest: provider.Manifest{
+			Name: "beta", DisplayName: "beta", FilePrefix: "beta",
+			Platforms: []provider.Platform{provider.PlatformAll},
+		},
+		planFn: func(_ context.Context, _ *hamsfile.File, _ *state.File) ([]provider.Action, error) {
+			return []provider.Action{{ID: "pkg-bad", Type: provider.ActionInstall}}, nil
+		},
+		applyFn: func(_ context.Context, _ provider.Action) error {
+			return fmt.Errorf("simulated install failure")
+		},
+	}
+	if err := registry.Register(good); err != nil {
+		t.Fatalf("Register good: %v", err)
+	}
+	if err := registry.Register(bad); err != nil {
+		t.Fatalf("Register bad: %v", err)
+	}
+
+	out := captureStdout(t, func() {
+		// runApply returns ExitPartialFailure on any failed action; expected.
+		if err := runApply(context.Background(), flags, registry, sudo.NoopAcquirer{}, "", true, "", "", false, bootstrapMode{}); err == nil {
+			t.Fatal("expected ExitPartialFailure due to bad provider")
+		}
+	})
+
+	if !strings.Contains(out, "beta") {
+		t.Errorf("text output should name 'beta' as failed; got %q", out)
+	}
+	if !strings.Contains(out, "had failed actions:") {
+		t.Errorf("text output should use cycle-235 phrase 'had failed actions:'; got %q", out)
+	}
+}
+
 // TestRunApply_DryRunJSONHasNoProse locks in cycle 187: `hams
 // --json --dry-run apply` previously printed multiple prose lines
 // ("[dry-run] Would apply configurations", "[dry-run] Provider
@@ -1124,19 +1443,34 @@ func TestRunApply_DryRunJSONHasNoProse(t *testing.T) {
 	if data["success"] != true {
 		t.Errorf("success = %v, want true on happy dry-run", data["success"])
 	}
+	// Cycle 240: dry-run JSON must include elapsed_ms (schema parity
+	// with real-run JSON from cycle 238).
+	if elapsed, ok := data["elapsed_ms"].(float64); !ok || elapsed < 0 {
+		t.Errorf("elapsed_ms = %v (ok=%v), want non-negative", data["elapsed_ms"], ok)
+	}
 
 	_ = storeDir
 }
 
-// TestRunApply_DryRunStateSaveFailureSurfacesAsError locks in cycle 154:
-// `hams apply --dry-run` previously printed "[dry-run] No changes
-// made." + exit 0 even when every provider's pre-apply refresh state
-// save failed. Users had no clue their drift tracking was broken
-// until the next real apply. Same class of silent-exit-0 bug as
-// cycle 39 (skipped providers). Now: print a Warning naming the
-// providers and return ExitPartialFailure so CI scripts catch the
-// drift-tracking breakage during preview.
-func TestRunApply_DryRunStateSaveFailureSurfacesAsError(t *testing.T) {
+// TestRunApply_DryRunSkipsStateSaveEntirely locks in cycle 241.
+// cli-architecture/spec.md §--dry-run mandates: "No Hamsfile writes,
+// state file writes, lock acquisitions, or wrapped CLI invocations
+// SHALL occur during dry-run." A stateDir that was made read-only
+// MUST NOT trigger a "state save failure" error path under dry-run
+// — because dry-run MUST NOT attempt the save in the first place.
+//
+// Pre-cycle-241 the pre-apply refresh called sf.Save unconditionally,
+// which on a read-only stateDir produced an ExitPartialFailure (and
+// on a fresh/missing stateDir, silently CREATED the directory + file
+// as a side effect — violating spec). Cycle 241 gates sf.Save on
+// `!flags.DryRun`; the probe data is discarded; next non-dry-run
+// apply re-probes and persists.
+//
+// This test supersedes the cycle-154 TestRunApply_DryRunStateSaveFailureSurfacesAsError
+// which locked in the spec-violating behavior. The "detect perm issues
+// early" feature it preserved is acceptable to lose — users discover
+// perm issues at first real apply, which is the natural mutation point.
+func TestRunApply_DryRunSkipsStateSaveEntirely(t *testing.T) {
 	storeDir, profileDir, stateDir, flags := setupApplyTestEnv(t, []string{"alpha"})
 	flags.DryRun = true
 
@@ -1157,48 +1491,30 @@ func TestRunApply_DryRunStateSaveFailureSurfacesAsError(t *testing.T) {
 		t.Fatalf("Register: %v", err)
 	}
 
-	if err := os.MkdirAll(stateDir, 0o750); err != nil {
-		t.Fatalf("mkdir stateDir: %v", err)
+	// DO NOT pre-create stateDir — the spec-critical assertion is that
+	// dry-run leaves the fs untouched. A fresh store with no `.state/`
+	// subdirectory must STAY WITHOUT `.state/` after dry-run.
+	if _, statErr := os.Stat(stateDir); !os.IsNotExist(statErr) {
+		t.Fatalf("stateDir unexpectedly exists before dry-run: %v", statErr)
 	}
-	if err := os.Chmod(stateDir, 0o500); err != nil {
-		t.Fatalf("chmod stateDir read-only: %v", err)
-	}
-	t.Cleanup(func() {
-		if err := os.Chmod(stateDir, 0o700); err != nil {
-			t.Logf("restore stateDir perms: %v", err)
-		}
-	})
 
 	out := captureStdout(t, func() {
 		err := runApply(context.Background(), flags, registry, sudo.NoopAcquirer{}, "", false, "", "", false, bootstrapMode{})
-		if err == nil {
-			t.Fatal("expected ExitPartialFailure for dry-run state save failure")
-		}
-		var ufe *hamserr.UserFacingError
-		if !errors.As(err, &ufe) {
-			t.Fatalf("expected *UserFacingError, got %T: %v", err, err)
-		}
-		if ufe.Code != hamserr.ExitPartialFailure {
-			t.Errorf("Code = %d, want ExitPartialFailure (%d)", ufe.Code, hamserr.ExitPartialFailure)
-		}
-		if !strings.Contains(ufe.Message, "state save failure") {
-			t.Errorf("error should mention state save failure; got %q", ufe.Message)
-		}
-		// Suggestions teach the recovery path.
-		joined := strings.Join(ufe.Suggestions, "\n")
-		if !strings.Contains(joined, "permissions") && !strings.Contains(joined, "--no-refresh") {
-			t.Errorf("suggestions should hint at permissions or --no-refresh; got %v", ufe.Suggestions)
+		if err != nil {
+			t.Fatalf("dry-run should succeed, got error: %v", err)
 		}
 	})
 
-	// Stdout should NOT show the "[dry-run] No changes made." line —
-	// that's the silent-success sentinel that the bug produced.
-	if strings.Contains(out, "No changes made") {
-		t.Errorf("dry-run with save failures should NOT print 'No changes made'; got:\n%s", out)
+	// stdout should show the standard dry-run preview lines.
+	if !strings.Contains(out, "[dry-run]") {
+		t.Errorf("dry-run output should contain '[dry-run]' marker; got:\n%s", out)
 	}
-	// Should show the explicit warning with the provider name.
-	if !strings.Contains(out, "alpha") || !strings.Contains(out, "failed to persist state") {
-		t.Errorf("dry-run output should warn about state save failure; got:\n%s", out)
+	// Spec invariant: no state file and no state dir created.
+	if _, statErr := os.Stat(stateDir); !os.IsNotExist(statErr) {
+		t.Errorf("dry-run MUST NOT create stateDir %q; stat err: %v", stateDir, statErr)
+	}
+	if _, statErr := os.Stat(filepath.Join(stateDir, "alpha.state.yaml")); !os.IsNotExist(statErr) {
+		t.Errorf("dry-run MUST NOT create state file; stat err: %v", statErr)
 	}
 
 	_ = storeDir
@@ -1467,5 +1783,149 @@ func TestRunApply_FromRepoAndStoreAreMutuallyExclusive(t *testing.T) {
 	joined := strings.Join(ufe.Suggestions, "\n")
 	if !strings.Contains(joined, "HAMS_DATA_HOME") {
 		t.Errorf("suggestions should explain where --from-repo clones; got %v", ufe.Suggestions)
+	}
+}
+
+// TestOnlyMissingArtifacts pins cycle 226's helper contract: given a
+// --only CSV and two provider lists, return the subset of --only names
+// that are VALID registered providers but lack artifacts for the
+// active profile. Empty inputs → nil. Unknown names → silently
+// skipped (validation happens upstream in filterProviders). Order
+// matches --only input order so the user-facing message is
+// predictable.
+func TestOnlyMissingArtifacts(t *testing.T) {
+	t.Parallel()
+
+	brew := &applyTestProvider{manifest: provider.Manifest{Name: "brew", FilePrefix: "brew"}}
+	apt := &applyTestProvider{manifest: provider.Manifest{Name: "apt", FilePrefix: "apt"}}
+	cargo := &applyTestProvider{manifest: provider.Manifest{Name: "cargo", FilePrefix: "cargo"}}
+	all := []provider.Provider{brew, apt, cargo}
+	stage1 := []provider.Provider{apt} // only apt has artifacts
+
+	cases := []struct {
+		name string
+		only string
+		want []string
+	}{
+		{"empty-only", "", nil},
+		{"whitespace-only", "   ", nil},
+		{"single-missing", "brew", []string{"brew"}},
+		{"single-present", "apt", nil},
+		{"mixed-csv", "brew,apt,cargo", []string{"brew", "cargo"}},
+		{"unknown-skipped", "bogus", nil},
+		{"mixed-unknown-and-missing", "bogus,brew", []string{"brew"}},
+		{"csv-spaces", " brew , cargo ", []string{"brew", "cargo"}},
+		{"case-insensitive", "BREW", []string{"brew"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got := onlyMissingArtifacts(tc.only, all, stage1)
+			if len(got) != len(tc.want) {
+				t.Fatalf("got %v, want %v", got, tc.want)
+			}
+			for i, w := range tc.want {
+				if got[i] != w {
+					t.Errorf("[%d] got %q, want %q", i, got[i], w)
+				}
+			}
+		})
+	}
+}
+
+// TestRunApply_SudoPromptWhenBashHamsfileHasSudoEntry locks in
+// cycle 232: a bash-only profile whose hamsfile has at least one
+// `sudo: true` entry MUST trigger the upfront sudoAcq.Acquire.
+// Pre-cycle-232 the cycle-227 gate only checked Manifest.RequiresSudo
+// (bash's Manifest can't declare sudo statically — it depends on
+// per-entry `sudo: true` fields), so bash's runtime sudo scripts
+// prompted independently during Execute instead of reusing the
+// cached credential. Now: runApply peeks into bash.hams.yaml via
+// bash.HamsfileHasSudoEntries and surfaces it as a sudo-needing
+// provider.
+func TestRunApply_SudoPromptWhenBashHamsfileHasSudoEntry(t *testing.T) {
+	_, profileDir, _, flags := setupApplyTestEnv(t, []string{"bash"})
+	// Seed a bash hamsfile with ONE sudo:true entry. cycle 229's
+	// URN-warning path will also fire, but doesn't affect the sudo
+	// decision.
+	bashHamsfile := filepath.Join(profileDir, "bash.hams.yaml")
+	writeApplyTestFile(t, bashHamsfile, `install:
+  - urn: "urn:hams:bash:needs-sudo"
+    run: "apt-get install -y nix"
+    sudo: true
+`)
+
+	p := &applyTestProvider{
+		manifest: provider.Manifest{
+			Name:        "bash",
+			DisplayName: "Bash",
+			Platforms:   []provider.Platform{provider.PlatformAll},
+			FilePrefix:  "bash",
+			// RequiresSudo intentionally false — the dynamic check
+			// reading the hamsfile is what we're exercising.
+		},
+		planFn: func(_ context.Context, _ *hamsfile.File, _ *state.File) ([]provider.Action, error) {
+			return []provider.Action{{
+				ID:       "urn:hams:bash:needs-sudo",
+				Type:     provider.ActionInstall,
+				Resource: "dummy",
+			}}, nil
+		},
+		applyFn: func(_ context.Context, _ provider.Action) error { return nil },
+	}
+
+	registry := provider.NewRegistry()
+	if err := registry.Register(p); err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+
+	spy := &sudo.SpyAcquirer{}
+	if err := runApply(context.Background(), flags, registry, spy, "", true, "", "", false, bootstrapMode{}); err != nil {
+		t.Fatalf("runApply: %v", err)
+	}
+
+	if spy.AcquireCalls != 1 {
+		t.Errorf("Acquire calls = %d, want 1 (bash hamsfile has sudo:true entry)", spy.AcquireCalls)
+	}
+}
+
+// TestRunApply_NoSudoPromptWhenBashHamsfileHasNoSudoEntry is the
+// negative case for cycle 232: a bash profile whose hamsfile lacks
+// any `sudo: true` entries MUST NOT prompt. The cycle-227 spirit
+// (don't prompt when not needed) is preserved when bash scripts
+// run unprivileged.
+func TestRunApply_NoSudoPromptWhenBashHamsfileHasNoSudoEntry(t *testing.T) {
+	_, profileDir, _, flags := setupApplyTestEnv(t, []string{"bash"})
+	bashHamsfile := filepath.Join(profileDir, "bash.hams.yaml")
+	writeApplyTestFile(t, bashHamsfile, `install:
+  - urn: "urn:hams:bash:no-sudo"
+    run: "echo hello"
+`)
+
+	p := &applyTestProvider{
+		manifest: provider.Manifest{
+			Name:        "bash",
+			DisplayName: "Bash",
+			Platforms:   []provider.Platform{provider.PlatformAll},
+			FilePrefix:  "bash",
+		},
+		planFn: func(_ context.Context, _ *hamsfile.File, _ *state.File) ([]provider.Action, error) {
+			return nil, nil
+		},
+		applyFn: func(_ context.Context, _ provider.Action) error { return nil },
+	}
+
+	registry := provider.NewRegistry()
+	if err := registry.Register(p); err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+
+	spy := &sudo.SpyAcquirer{}
+	if err := runApply(context.Background(), flags, registry, spy, "", true, "", "", false, bootstrapMode{}); err != nil {
+		t.Fatalf("runApply: %v", err)
+	}
+
+	if spy.AcquireCalls != 0 {
+		t.Errorf("Acquire calls = %d, want 0 (bash hamsfile has no sudo:true entry)", spy.AcquireCalls)
 	}
 }

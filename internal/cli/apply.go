@@ -14,6 +14,7 @@ import (
 	"slices"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/urfave/cli/v3"
 	"golang.org/x/term"
@@ -24,6 +25,7 @@ import (
 	"github.com/zthxxx/hams/internal/hamsfile"
 	"github.com/zthxxx/hams/internal/logging"
 	"github.com/zthxxx/hams/internal/provider"
+	"github.com/zthxxx/hams/internal/provider/builtin/bash"
 	"github.com/zthxxx/hams/internal/state"
 	"github.com/zthxxx/hams/internal/sudo"
 )
@@ -82,6 +84,13 @@ type bootstrapMode struct {
 }
 
 func runApply(ctx context.Context, flags *provider.GlobalFlags, registry *provider.Registry, sudoAcq sudo.Acquirer, fromRepo string, noRefresh bool, only, except string, pruneOrphans bool, boot bootstrapMode) (retErr error) {
+	// Cycle 238: capture wall-clock start so the user-facing summary
+	// (text + JSON) can surface total elapsed time. CI dashboards
+	// alert on regression; interactive users debugging slow runs see
+	// the duration without grepping slog timestamps. Same field name
+	// + units as runRefresh's cycle-238 addition.
+	applyStart := time.Now()
+
 	if boot.Allow && boot.Deny {
 		return hamserr.NewUserError(hamserr.ExitUsageError,
 			"--bootstrap and --no-bootstrap are mutually exclusive",
@@ -137,7 +146,7 @@ func runApply(ctx context.Context, flags *provider.GlobalFlags, registry *provid
 	storePath := flags.Store
 	var configuredRepo string
 	if storePath == "" {
-		cfg, err := config.Load(paths, "")
+		cfg, err := config.Load(paths, "", flags.Profile)
 		if err != nil {
 			// Previously this error was swallowed — which meant malformed
 			// YAML in ~/.config/hams/hams.config.yaml was demoted into a
@@ -204,19 +213,19 @@ func runApply(ctx context.Context, flags *provider.GlobalFlags, registry *provid
 		)
 	}
 
-	cfg, err := config.Load(paths, storePath)
+	cfg, err := config.Load(paths, storePath, flags.Profile)
 	if err != nil {
 		return fmt.Errorf("loading config: %w", err)
 	}
 
-	// Honor --profile flag override. When the user explicitly passes
-	// --profile=X, validate that <store>/X exists — a typo like
-	// `--profile=Linux` (vs "linux") used to produce a misleading
-	// "No providers match: no hamsfile or state file present" + exit 0
-	// instead of "profile directory not found". Symmetric with cycle
-	// 87's store_path validation.
+	// Cycle 219 puts the --profile overlay inside config.Load, so
+	// cfg.ProfileTag already reflects the override. Apply still
+	// hard-fails when the resulting profile dir doesn't exist
+	// (cycle 92's no-silent-typo guarantee), so the validation stays
+	// in place — a typo like `--profile=Linux` (vs "linux") used to
+	// produce a misleading "No providers match" + exit 0 instead of
+	// "profile directory not found".
 	if flags.Profile != "" {
-		cfg.ProfileTag = flags.Profile
 		profileDir := cfg.ProfileDir()
 		if info, statErr := os.Stat(profileDir); statErr != nil || !info.IsDir() {
 			return hamserr.NewUserError(hamserr.ExitUsageError,
@@ -234,18 +243,17 @@ func runApply(ctx context.Context, flags *provider.GlobalFlags, registry *provid
 	}
 
 	stateDir := cfg.StateDir()
-	lock := state.NewLock(stateDir)
+	// Cycle 223: route through the shared acquireMutationLock seam
+	// (commands_seams.go → provider.AcquireMutationLock) instead of
+	// inlining state.NewLock + Acquire. Unifies apply's lock path with
+	// refresh's (cycle 221), gives the same ExitLockError shape, and
+	// makes the acquisition DI-testable via the package seam.
 	if !flags.DryRun {
-		if lockErr := lock.Acquire("hams apply"); lockErr != nil {
-			return hamserr.NewUserError(hamserr.ExitLockError, lockErr.Error(),
-				fmt.Sprintf("Remove %s/.lock if the previous run crashed", stateDir),
-			)
+		release, lockErr := acquireMutationLock(stateDir, "hams apply")
+		if lockErr != nil {
+			return lockErr
 		}
-		defer func() {
-			if releaseErr := lock.Release(); releaseErr != nil {
-				slog.Error("failed to release lock", "error", releaseErr)
-			}
-		}()
+		defer release()
 	}
 
 	defer sudoAcq.Stop()
@@ -284,7 +292,8 @@ func runApply(ctx context.Context, flags *provider.GlobalFlags, registry *provid
 		return filterErr
 	}
 	if len(providers) == 0 {
-		reportNoProvidersMatch(cfg, profileDir, len(stageOneProviders))
+		reportNoProvidersMatch(cfg, profileDir, len(stageOneProviders),
+			only, allProviders, stageOneProviders)
 		return nil
 	}
 
@@ -449,6 +458,8 @@ func runApply(ctx context.Context, flags *provider.GlobalFlags, registry *provid
 	var allResults []provider.ExecuteResult
 	var skippedProviders []string
 	var stateSaveFailures []string
+	var failedProviders []string      // cycle 231: per-provider failure attribution
+	var probeFailedProviders []string // cycle 237: symmetric with refresh
 
 	if !noRefresh {
 		slog.Info("refreshing state")
@@ -463,13 +474,48 @@ func runApply(ctx context.Context, flags *provider.GlobalFlags, registry *provid
 			probeNames = append(probeNames, name)
 		}
 		sort.Strings(probeNames)
+		// Cycle 241: skip sf.Save under --dry-run so the probe phase is
+		// side-effect-free. Pre-cycle-241, `hams apply --dry-run` on a
+		// fresh store would CREATE `.state/<machine>/<provider>.state.yaml`
+		// for every probe-succeeded provider — violating the global
+		// --dry-run flag's "no changes" contract and leaving persistent
+		// artifacts the user didn't ask for. The fresh probe data is
+		// discarded; the next non-dry-run apply will re-probe. Matches
+		// runRefresh's cycle-226 "--dry-run skips state write" behavior.
 		for _, filePrefix := range probeNames {
 			sf := probeResults[filePrefix]
+			if flags.DryRun {
+				continue
+			}
 			statePath := filepath.Join(stateDir, filePrefix+".state.yaml")
 			if saveErr := sf.Save(statePath); saveErr != nil {
 				slog.Error("failed to save probed state", "provider", sf.Provider, "path", statePath, "error", saveErr)
 				stateSaveFailures = append(stateSaveFailures, sf.Provider)
 			}
+		}
+
+		// Cycle 237: compute probe-failed providers (symmetric with
+		// runRefresh's probe_failed_providers JSON field). ProbeAll
+		// silently drops failing providers from its result map; the
+		// per-goroutine slog.Warn is easy to miss in a long apply log.
+		// Tracking the set-difference here lets the summary surface
+		// how many providers couldn't be probed BEFORE the install
+		// phase ran (so the user knows drift detection was incomplete).
+		// Apply proceeds either way — stale state is a known-acceptable
+		// fallback for best-effort pre-apply refresh — but an explicit
+		// aggregated warning primes users to expect potential re-install
+		// surprises.
+		for _, p := range sorted {
+			name := p.Manifest().Name
+			prefix := provider.ManifestFilePrefix(p.Manifest())
+			if _, ok := probeResults[prefix]; !ok {
+				probeFailedProviders = append(probeFailedProviders, name)
+			}
+		}
+		sort.Strings(probeFailedProviders)
+		if len(probeFailedProviders) > 0 {
+			slog.Warn("pre-apply refresh: some providers failed to probe; drift detection incomplete",
+				"count", len(probeFailedProviders), "providers", probeFailedProviders)
 		}
 	}
 
@@ -484,9 +530,34 @@ func runApply(ctx context.Context, flags *provider.GlobalFlags, registry *provid
 
 	// Acquire sudo credentials once before any provider operations (after dry-run check).
 	// Dry-run skips sudo acquisition — no commands will actually run.
-	if !flags.DryRun {
+	//
+	// Cycle 227: only prompt when at least one provider in the
+	// resolved `sorted` set has Manifest.RequiresSudo == true.
+	// Pre-cycle-227 `hams apply` unconditionally prompted for sudo
+	// even on profiles containing only cargo / npm / brew / pnpm /
+	// uv / git-clone (none of which need sudo) — contradicting the
+	// cli-architecture spec scenario "Operations that do not
+	// require sudo SHALL NOT prompt for credentials". The check
+	// runs after dry-run + filter so `--only=cargo` on an apt+cargo
+	// profile correctly suppresses the prompt.
+	if !flags.DryRun && providersNeedSudo(sorted, profileDir) {
 		if sudoErr := sudoAcq.Acquire(ctx); sudoErr != nil {
-			slog.Warn("sudo acquisition failed; some providers may fail", "error", sudoErr)
+			// Cycle 228: cli-architecture/spec.md §"Sudo not granted"
+			// scenario mandates exit code 10 (ExitSudoError) when the
+			// user cancels the prompt or sudo times out. Pre-cycle-228
+			// the failure was downgraded to a slog.Warn and apply kept
+			// going — so apt's runner.Install would fail later with a
+			// generic provider error, the user got the wrong exit code,
+			// and CI scripts couldn't distinguish "user canceled" from
+			// "apt-get returned 100". Now: if any provider in the
+			// resolved set requires sudo AND we failed to acquire, exit
+			// hard with ExitSudoError + the recovery hints.
+			return hamserr.NewUserError(hamserr.ExitSudoError,
+				fmt.Sprintf("sudo acquisition failed: %v", sudoErr),
+				"Re-run and enter the sudo password when prompted",
+				"Or arrange passwordless sudo for this user (NOPASSWD entry in sudoers)",
+				"Or filter out sudo-requiring providers: hams apply --except=apt",
+			)
 		}
 	}
 
@@ -622,6 +693,16 @@ func runApply(ctx context.Context, flags *provider.GlobalFlags, registry *provid
 			result := provider.Execute(ctx, p, actions, sf, otelSess.Session())
 			allResults = append(allResults, result)
 
+			// Cycle 231: track which provider had any failed action so
+			// the final JSON summary can surface failed_providers (a list
+			// of names) alongside the existing `failed` count. Pre-cycle
+			// 231 the summary said `"failed": N` but didn't name WHICH
+			// providers failed — CI scripts couldn't retry just the
+			// failed subset, they had to grep slog output.
+			if result.Failed > 0 {
+				failedProviders = append(failedProviders, name)
+			}
+
 			if result.Failed == 0 {
 				sf.ConfigHash = currentHash
 			}
@@ -651,7 +732,7 @@ func runApply(ctx context.Context, flags *provider.GlobalFlags, registry *provid
 		// dry-run outcome instead of the prose warnings — CI scripts
 		// need to parse the result without grepping prose lines.
 		if flags.JSON {
-			return emitDryRunJSON(skippedProviders, stateSaveFailures)
+			return emitDryRunJSON(skippedProviders, stateSaveFailures, time.Since(applyStart).Milliseconds())
 		}
 
 		if len(skippedProviders) > 0 {
@@ -680,7 +761,9 @@ func runApply(ctx context.Context, flags *provider.GlobalFlags, registry *provid
 				"Use '--no-refresh' to skip the pre-apply probe if state intentionally read-only",
 			)
 		}
-		fmt.Println("[dry-run] No changes made.")
+		// Cycle 239: append elapsed for symmetry with the real-run
+		// "hams apply complete: ... (took Xms)" summary.
+		fmt.Printf("[dry-run] No changes made (took %dms)\n", time.Since(applyStart).Milliseconds())
 		return nil
 	}
 
@@ -716,26 +799,7 @@ func runApply(ctx context.Context, flags *provider.GlobalFlags, registry *provid
 	// failures programmatically rather than parsing the prose output.
 	// Symmetric with cycles 181 (version) / 182 (refresh).
 	if flags.JSON {
-		// Normalize nil → empty slice so consumers don't need to
-		// nil-check before iterating.
-		skippedNorm := skippedProviders
-		if skippedNorm == nil {
-			skippedNorm = []string{}
-		}
-		saveFailNorm := stateSaveFailures
-		if saveFailNorm == nil {
-			saveFailNorm = []string{}
-		}
-		data := map[string]any{
-			"installed":         merged.Installed,
-			"updated":           merged.Updated,
-			"removed":           merged.Removed,
-			"skipped":           merged.Skipped,
-			"failed":            merged.Failed,
-			"skipped_providers": skippedNorm,
-			"state_save_errors": saveFailNorm,
-			"success":           merged.Failed == 0 && len(skippedProviders) == 0 && len(stateSaveFailures) == 0,
-		}
+		data := buildApplyJSONSummary(merged, failedProviders, skippedProviders, stateSaveFailures, probeFailedProviders, time.Since(applyStart).Milliseconds())
 		out, mErr := json.MarshalIndent(data, "", "  ")
 		if mErr != nil {
 			return fmt.Errorf("marshaling apply JSON: %w", mErr)
@@ -752,9 +816,23 @@ func runApply(ctx context.Context, flags *provider.GlobalFlags, registry *provid
 		return nil
 	}
 
-	fmt.Printf("\nhams apply complete: %d installed, %d updated, %d removed, %d skipped, %d failed\n",
-		merged.Installed, merged.Updated, merged.Removed, merged.Skipped, merged.Failed)
+	// Cycle 238: append elapsed time to the summary so interactive
+	// users can spot slowdowns without scraping slog timestamps.
+	fmt.Printf("\nhams apply complete: %d installed, %d updated, %d removed, %d skipped, %d failed (took %dms)\n",
+		merged.Installed, merged.Updated, merged.Removed, merged.Skipped, merged.Failed, time.Since(applyStart).Milliseconds())
 
+	// Cycle 235: name the providers whose Apply produced any failed
+	// action. Symmetric with cycle 231's JSON failed_providers list
+	// and cycle 234's refresh text naming. Pre-cycle-235 the prose
+	// summary said `... %d failed` (count only) — interactive users
+	// had to grep slog to find WHICH providers failed.
+	if len(failedProviders) > 0 {
+		sortedFailed := append([]string(nil), failedProviders...)
+		sort.Strings(sortedFailed)
+		fmt.Printf("Warning: %d provider(s) had failed actions: %s\n",
+			len(sortedFailed), strings.Join(sortedFailed, ", "))
+		fmt.Println("  Re-run with --debug for the underlying error from each provider's runner.")
+	}
 	if len(skippedProviders) > 0 {
 		fmt.Printf("Warning: %d provider(s) skipped due to errors: %s\n",
 			len(skippedProviders), strings.Join(skippedProviders, ", "))
@@ -787,8 +865,28 @@ func runApply(ctx context.Context, flags *provider.GlobalFlags, registry *provid
 // previously both produced the bare "no providers match" message,
 // leaving users who cloned a store without their profile_tag
 // confused about what was missing.
-func reportNoProvidersMatch(cfg *config.Config, profileDir string, stageOneProvidersLen int) {
+//
+// Cycle 226: when `--only=X` is set and X is a VALID registered
+// provider but has no hamsfile/state for the current profile, the
+// old "--only/--except excluded every provider that has artifacts"
+// message misled the user — they named the provider explicitly and
+// the message suggested the filter removed something the user
+// wanted. New message names the artifact-less providers from the
+// --only list so the user's attention goes to "X has no artifacts",
+// not "my filter is wrong".
+func reportNoProvidersMatch(cfg *config.Config, profileDir string, stageOneProvidersLen int,
+	only string, allProviders, stageOneProviders []provider.Provider,
+) {
 	if stageOneProvidersLen > 0 {
+		if missing := onlyMissingArtifacts(only, allProviders, stageOneProviders); len(missing) > 0 {
+			verb := pluralize(len(missing), "has", "have")
+			fmt.Printf("No providers match: %s %s no hamsfile or state file for the current profile — nothing to apply.\n",
+				strings.Join(missing, ", "), verb)
+			fmt.Printf("  Profile: %s (%s)\n", cfg.ProfileTag, logging.TildePath(profileDir))
+			fmt.Printf("  Run 'hams %s install <pkg>' to start tracking, or omit --only to apply every provider with artifacts.\n",
+				missing[0])
+			return
+		}
 		fmt.Println("No providers match: --only/--except excluded every provider that has artifacts.")
 		return
 	}
@@ -816,11 +914,20 @@ func reportNoProvidersMatch(cfg *config.Config, profileDir string, stageOneProvi
 	fmt.Println("  Fix: hams config set profile_tag <profile>  OR  pass --profile=<profile>")
 }
 
-// emitDryRunJSON writes a pure JSON summary of a dry-run to stdout
-// and returns the matching ExitPartialFailure when appropriate. The
-// JSON shape mirrors the full-apply JSON (cycle 183) with a
-// `dry_run: true` marker so CI scripts can distinguish both modes.
-func emitDryRunJSON(skippedProviders, stateSaveFailures []string) error {
+// buildApplyJSONSummary constructs the map used by the `--json`
+// real-run branch of runApply. Factored out of the inline block in
+// cycle 237 because the growing schema (installed, updated, removed,
+// skipped, failed, failed_providers, skipped_providers,
+// state_save_errors, probe_failed_providers, success, dry_run) with
+// per-field nil-to-empty normalization pushed the surrounding
+// `if flags.JSON` block past golangci-lint's nestif threshold.
+func buildApplyJSONSummary(merged provider.ExecuteResult, failedProviders, skippedProviders, stateSaveFailures, probeFailedProviders []string, elapsedMs int64) map[string]any {
+	// Normalize nil → empty slice so consumers don't need to
+	// nil-check before iterating.
+	failedNorm := failedProviders
+	if failedNorm == nil {
+		failedNorm = []string{}
+	}
 	skippedNorm := skippedProviders
 	if skippedNorm == nil {
 		skippedNorm = []string{}
@@ -829,11 +936,105 @@ func emitDryRunJSON(skippedProviders, stateSaveFailures []string) error {
 	if saveFailNorm == nil {
 		saveFailNorm = []string{}
 	}
+	probeFailNorm := probeFailedProviders
+	if probeFailNorm == nil {
+		probeFailNorm = []string{}
+	}
+	// Cycle 230: include dry_run = false so the apply JSON shape
+	// matches refresh's (cycle 229). Without this, the only way
+	// for a CI consumer to tell apart a dry-run preview from a
+	// real run is to check whether `dry_run` is present at all
+	// (presence == dry-run because the dry-run path uses
+	// emitDryRunJSON). Always-present `dry_run` field gives
+	// machine consumers a stable schema across modes.
+	// Cycle 238: elapsed_ms surfaces total wall-clock duration so
+	// CI dashboards can alert on regression. Same field name +
+	// units as runRefresh's cycle-238 addition.
+	return map[string]any{
+		"installed":              merged.Installed,
+		"updated":                merged.Updated,
+		"removed":                merged.Removed,
+		"skipped":                merged.Skipped,
+		"failed":                 merged.Failed,
+		"failed_providers":       failedNorm,
+		"skipped_providers":      skippedNorm,
+		"state_save_errors":      saveFailNorm,
+		"probe_failed_providers": probeFailNorm,
+		"success":                merged.Failed == 0 && len(skippedProviders) == 0 && len(stateSaveFailures) == 0,
+		"dry_run":                false,
+		"elapsed_ms":             elapsedMs,
+	}
+}
+
+// onlyMissingArtifacts returns the subset of `--only=<csv>` names
+// that are VALID registered providers but lack a hamsfile/state file
+// for the active profile. Empty slice when `only` is empty, when the
+// parsed CSV is empty, or when every named provider already has
+// artifacts.
+//
+// Cycle 226: powers the user-facing "X has no hamsfile/state" message
+// so the user sees the actual reason their --only filter produced
+// zero matches. Names preserved in --only input order so output is
+// predictable for users and scripts.
+func onlyMissingArtifacts(only string, allProviders, stageOneProviders []provider.Provider) []string {
+	if only == "" {
+		return nil
+	}
+	parsed := parseCSV(only)
+	if len(parsed) == 0 {
+		return nil
+	}
+
+	allNames := make(map[string]bool, len(allProviders))
+	for _, p := range allProviders {
+		allNames[strings.ToLower(p.Manifest().Name)] = true
+	}
+	haveArtifacts := make(map[string]bool, len(stageOneProviders))
+	for _, p := range stageOneProviders {
+		haveArtifacts[strings.ToLower(p.Manifest().Name)] = true
+	}
+
+	var missing []string
+	for raw := range strings.SplitSeq(only, ",") {
+		name := strings.ToLower(strings.TrimSpace(raw))
+		if name == "" {
+			continue
+		}
+		if !allNames[name] {
+			continue // unknown name is caught upstream; don't surface here
+		}
+		if haveArtifacts[name] {
+			continue
+		}
+		missing = append(missing, name)
+	}
+	return missing
+}
+
+// emitDryRunJSON writes a pure JSON summary of a dry-run to stdout
+// and returns the matching ExitPartialFailure when appropriate. The
+// JSON shape mirrors the full-apply JSON (cycle 183) with a
+// `dry_run: true` marker so CI scripts can distinguish both modes.
+func emitDryRunJSON(skippedProviders, stateSaveFailures []string, elapsedMs int64) error {
+	skippedNorm := skippedProviders
+	if skippedNorm == nil {
+		skippedNorm = []string{}
+	}
+	saveFailNorm := stateSaveFailures
+	if saveFailNorm == nil {
+		saveFailNorm = []string{}
+	}
+	// Cycle 240: include elapsed_ms so dry-run JSON shape matches the
+	// real-run shape (cycle 238). CI dashboards that diff dry-run
+	// previews against real applies need the same field set on both
+	// sides; without elapsed_ms on dry-run, regression tests had to
+	// special-case the field as "may be missing on the dry-run path".
 	data := map[string]any{
 		"dry_run":           true,
 		"skipped_providers": skippedNorm,
 		"state_save_errors": saveFailNorm,
 		"success":           len(skippedProviders) == 0 && len(stateSaveFailures) == 0,
+		"elapsed_ms":        elapsedMs,
 	}
 	out, mErr := json.MarshalIndent(data, "", "  ")
 	if mErr != nil {
@@ -999,6 +1200,38 @@ func parseCSV(s string) map[string]bool {
 // printDryRunActions prints the list of planned actions for one
 // provider in dry-run mode. Groups by action type so the user can
 // quickly scan what install / update / remove operations would run.
+// providersNeedSudo reports whether any provider in the slice has
+// `Manifest.RequiresSudo == true`, OR (cycle 232) is a bash provider
+// whose hamsfile contains at least one `sudo: true` entry.
+//
+// Cycle 227 wired Manifest.RequiresSudo into runApply's startup path
+// so the password prompt only fires for apt-bearing profiles. But bash
+// can't declare RequiresSudo statically — each bash hamsfile entry
+// optionally sets `sudo: true`, and that's not knowable until the
+// hamsfile is read. Pre-cycle-232: a bash-only profile with sudo: true
+// scripts silently skipped sudoAcq.Acquire, then prompted for
+// password EACH TIME a sudo script ran during Execute. Cycle 232:
+// detect sudo-using bash hamsfiles via bash.HamsfileHasSudoEntries
+// and surface them as a sudo-needing provider so the upfront
+// acquire fires ONCE.
+//
+// profileDir is used to resolve the bash hamsfile path when a bash
+// provider is in the slice.
+func providersNeedSudo(providers []provider.Provider, profileDir string) bool {
+	for _, p := range providers {
+		if p.Manifest().RequiresSudo {
+			return true
+		}
+		if p.Manifest().Name == "bash" {
+			bashPath := filepath.Join(profileDir, "bash.hams.yaml")
+			if bash.HamsfileHasSudoEntries(bashPath) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 func printDryRunActions(name, displayName string, actions []provider.Action) {
 	var installs, updates, removes, skips []string
 	for _, a := range actions {

@@ -18,7 +18,7 @@ import (
 )
 
 func TestManifest(t *testing.T) {
-	p := New()
+	p := New(nil)
 	m := p.Manifest()
 	if m.Name != "bash" {
 		t.Errorf("Name = %q, want 'bash'", m.Name)
@@ -29,25 +29,25 @@ func TestManifest(t *testing.T) {
 }
 
 func TestBootstrap(t *testing.T) {
-	p := New()
+	p := New(nil)
 	if err := p.Bootstrap(context.Background()); err != nil {
 		t.Fatalf("Bootstrap error: %v", err)
 	}
 }
 
 func TestProviderImplementsBashScriptRunner(_ *testing.T) {
-	var _ provider.BashScriptRunner = New()
+	var _ provider.BashScriptRunner = New(nil)
 }
 
 func TestRunScript_EmptyScriptIsNoop(t *testing.T) {
-	p := New()
+	p := New(nil)
 	if err := p.RunScript(context.Background(), ""); err != nil {
 		t.Fatalf("empty RunScript should be a no-op, got %v", err)
 	}
 }
 
 func TestRunScript_ExecutesViaInjectedBoundary(t *testing.T) {
-	p := New()
+	p := New(nil)
 	original := bootstrapExecCommand
 	defer func() { bootstrapExecCommand = original }()
 
@@ -73,7 +73,7 @@ func TestRunScript_ExecutesViaInjectedBoundary(t *testing.T) {
 }
 
 func TestRunScript_PropagatesExecFailure(t *testing.T) {
-	p := New()
+	p := New(nil)
 	original := bootstrapExecCommand
 	defer func() { bootstrapExecCommand = original }()
 
@@ -88,7 +88,7 @@ func TestRunScript_PropagatesExecFailure(t *testing.T) {
 }
 
 func TestApply_SimpleCommand(t *testing.T) {
-	p := New()
+	p := New(nil)
 	action := provider.Action{
 		ID:       "test-echo",
 		Type:     provider.ActionInstall,
@@ -102,7 +102,7 @@ func TestApply_SimpleCommand(t *testing.T) {
 }
 
 func TestApply_FailingCommand(t *testing.T) {
-	p := New()
+	p := New(nil)
 	action := provider.Action{
 		ID:       "test-fail",
 		Type:     provider.ActionInstall,
@@ -116,7 +116,7 @@ func TestApply_FailingCommand(t *testing.T) {
 }
 
 func TestApply_EmptyResource(t *testing.T) {
-	p := New()
+	p := New(nil)
 	action := provider.Action{
 		ID:       "test-empty",
 		Type:     provider.ActionInstall,
@@ -130,7 +130,7 @@ func TestApply_EmptyResource(t *testing.T) {
 }
 
 func TestApply_CheckPassesSkipsRun(t *testing.T) {
-	p := New()
+	p := New(nil)
 	action := provider.Action{
 		ID:   "test-check-pass",
 		Type: provider.ActionInstall,
@@ -147,7 +147,7 @@ func TestApply_CheckPassesSkipsRun(t *testing.T) {
 }
 
 func TestApply_CheckFailsRunsCommand(t *testing.T) {
-	p := New()
+	p := New(nil)
 	action := provider.Action{
 		ID:   "test-check-fail",
 		Type: provider.ActionInstall,
@@ -178,7 +178,7 @@ func TestApply_SudoPrefix(t *testing.T) {
 }
 
 func TestRemove_WithCommand(t *testing.T) {
-	p := New()
+	p := New(nil)
 	p.removeCommands["test-script"] = "echo removed"
 
 	err := p.Remove(context.Background(), "test-script")
@@ -188,7 +188,7 @@ func TestRemove_WithCommand(t *testing.T) {
 }
 
 func TestRemove_WithSudoCommand(t *testing.T) {
-	p := New()
+	p := New(nil)
 	// Simulate what Plan does: store the already-prefixed command.
 	p.removeCommands["test-sudo-script"] = "sudo echo removed"
 
@@ -224,7 +224,7 @@ func TestRunCheck_Failure(t *testing.T) {
 // markers — both already caught upstream, but a wrapper-level
 // regression test makes the dependency explicit.
 func TestList_DelegatesToProviderDiff(t *testing.T) {
-	p := New()
+	p := New(nil)
 	yamlDoc := `
 install:
   - urn: urn:hams:bash:zsh-setup
@@ -308,7 +308,7 @@ func TestRunCheck_Empty(t *testing.T) {
 }
 
 func TestRemove_NoCommand(t *testing.T) {
-	p := New()
+	p := New(nil)
 	err := p.Remove(context.Background(), "some-script")
 	if err != nil {
 		t.Fatalf("Remove without command should be no-op: %v", err)
@@ -433,6 +433,78 @@ install:
 	}
 }
 
+// TestBashParseResources_WarnsOnMalformedURN locks in cycle 229:
+// a bash hamsfile entry whose `urn:` field doesn't match the
+// urn:hams:bash:<id> shape (per schema-design spec) must emit a
+// slog.Warn describing the mismatch, while still processing the
+// entry so pre-cycle-229 hamsfiles keep working (soft-warn
+// semantic, not a hard reject).
+func TestBashParseResources_WarnsOnMalformedURN(t *testing.T) {
+	origStderr := os.Stderr
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("Pipe: %v", err)
+	}
+	os.Stderr = w
+	defer func() { os.Stderr = origStderr }()
+	defer slog.SetDefault(slog.Default())
+	slog.SetDefault(slog.New(slog.NewTextHandler(w, nil)))
+
+	// Three cases: missing 'urn:' prefix, wrong provider, and one
+	// valid entry that should NOT emit a warning.
+	yamlDoc := `
+install:
+  - urn: "not-a-real-urn"
+    run: "echo malformed"
+  - urn: "urn:hams:apt:wrong-provider"
+    run: "echo wrong"
+  - urn: "urn:hams:bash:valid"
+    run: "echo ok"
+`
+	var root yaml.Node
+	if uErr := yaml.Unmarshal([]byte(yamlDoc), &root); uErr != nil {
+		t.Fatalf("unmarshal: %v", uErr)
+	}
+	hf := &hamsfile.File{Path: "test.yaml", Root: &root}
+
+	resourceByID, parseErr := bashParseResources(hf)
+	if parseErr != nil {
+		t.Fatalf("bashParseResources: %v", parseErr)
+	}
+
+	if cerr := w.Close(); cerr != nil {
+		t.Logf("close pipe writer: %v", cerr)
+	}
+	stderrBuf, readErr := io.ReadAll(r)
+	if readErr != nil {
+		t.Fatalf("read pipe: %v", readErr)
+	}
+	if cerr := r.Close(); cerr != nil {
+		t.Logf("close pipe reader: %v", cerr)
+	}
+
+	// Soft-warn: all three entries still in the map.
+	for _, id := range []string{"not-a-real-urn", "urn:hams:apt:wrong-provider", "urn:hams:bash:valid"} {
+		if _, ok := resourceByID[id]; !ok {
+			t.Errorf("entry %q should be parsed despite warning; got map %v", id, resourceByID)
+		}
+	}
+
+	stderr := string(stderrBuf)
+	if !strings.Contains(stderr, "not-a-real-urn") {
+		t.Errorf("expected warning naming 'not-a-real-urn'; stderr=%q", stderr)
+	}
+	if !strings.Contains(stderr, "urn:hams:apt:wrong-provider") {
+		t.Errorf("expected warning naming the wrong-provider URN; stderr=%q", stderr)
+	}
+	// Valid URN MUST NOT produce a warning. Count the "does not match" substring —
+	// should appear exactly twice (once per malformed entry), never three times.
+	count := strings.Count(stderr, "urn does not match")
+	if count != 2 {
+		t.Errorf("expected exactly 2 URN-mismatch warnings (one per malformed entry); got %d in %q", count, stderr)
+	}
+}
+
 // TestPlan_ParsesAndEnrichesActions drives bashParseResources → Plan
 // end to end: a hamsfile with two bash URNs (one with check+sudo, one
 // plain) should produce two Install actions, each enriched with the
@@ -456,7 +528,7 @@ install:
 	}
 	hf := &hamsfile.File{Path: "test.yaml", Root: &root}
 
-	p := New()
+	p := New(nil)
 	observed := state.New("bash", "test")
 	actions, err := p.Plan(context.Background(), hf, observed)
 	if err != nil {
@@ -496,7 +568,7 @@ install:
 }
 
 func TestProbe(t *testing.T) {
-	p := New()
+	p := New(nil)
 	sf := state.New("bash", "test")
 	sf.SetResource("init-zsh", state.StateOK)
 	sf.SetResource("removed-script", state.StateRemoved)
@@ -521,7 +593,7 @@ func TestProbe(t *testing.T) {
 // can distinguish "idempotent check ran, output matched" from
 // "no check defined". Previously 0% coverage on this branch.
 func TestProbe_CheckCmdPassingCapturesStdout(t *testing.T) {
-	p := New()
+	p := New(nil)
 	sf := state.New("bash", "test")
 	// A check that always passes (exit 0) and prints a stable line.
 	sf.SetResource("check-passes", state.StateOK,
@@ -548,7 +620,7 @@ func TestProbe_CheckCmdPassingCapturesStdout(t *testing.T) {
 // the Install action. This is the core drift-detection contract
 // for bash provider — previously 0% coverage.
 func TestProbe_CheckCmdFailingFlagsPending(t *testing.T) {
-	p := New()
+	p := New(nil)
 	sf := state.New("bash", "test")
 	// Explicit non-zero exit simulates a check that's drifted (the
 	// feature it asserts is no longer configured on the host).
@@ -564,5 +636,75 @@ func TestProbe_CheckCmdFailingFlagsPending(t *testing.T) {
 	}
 	if results[0].State != state.StatePending {
 		t.Errorf("state = %v, want StatePending (check failed → drift detected)", results[0].State)
+	}
+}
+
+// TestHandleCommand_NoArgsReturnsUsageError pins cycle 215:
+// `hams bash` without a subcommand must produce an actionable
+// ExitUsageError showing the valid list/run/remove surface.
+func TestHandleCommand_NoArgsReturnsUsageError(t *testing.T) {
+	t.Parallel()
+	p := New(nil)
+	err := p.HandleCommand(context.Background(), nil, nil, &provider.GlobalFlags{})
+	if err == nil {
+		t.Fatal("expected usage error on empty args")
+	}
+	if !strings.Contains(err.Error(), "subcommand") {
+		t.Errorf("error should mention 'subcommand'; got %q", err.Error())
+	}
+}
+
+// TestHandleCommand_ListVerbNoStoreReturnsUsageError pins cycle 215:
+// the `list` verb needs a configured store_path. Without one, the
+// shared HandleListCmd helper returns ExitUsageError. Pre-cycle-215
+// `hams bash list` returned "unknown command" before any config was
+// even checked, because bash had no HandleCommand at all.
+func TestHandleCommand_ListVerbNoStoreReturnsUsageError(t *testing.T) {
+	t.Parallel()
+	p := New(nil) // no cfg → effectiveConfig returns empty StorePath
+	err := p.HandleCommand(context.Background(), []string{"list"}, nil, &provider.GlobalFlags{})
+	if err == nil {
+		t.Fatal("expected ExitUsageError when no store configured")
+	}
+	if !strings.Contains(err.Error(), "store") {
+		t.Errorf("error should mention 'store'; got %q", err.Error())
+	}
+}
+
+// TestHandleCommand_RunAndRemoveVerbsReturnV1Gap pins cycle 215's
+// deferred-verb messaging. Spec promises `hams bash run <urn>` /
+// `hams bash remove <urn>`, but wiring hamsfile-edit into bash's
+// HandleCommand is planned for v1.1. Rather than exec'ing a real
+// bash command or silently failing, the CLI returns a clear
+// "planned for v1.1" ExitUsageError that points the user at the
+// apply-from-hamsfile fallback.
+func TestHandleCommand_RunAndRemoveVerbsReturnV1Gap(t *testing.T) {
+	t.Parallel()
+	for _, verb := range []string{"run", "remove"} {
+		t.Run(verb, func(t *testing.T) {
+			t.Parallel()
+			p := New(nil)
+			err := p.HandleCommand(context.Background(), []string{verb, "urn:hams:bash:foo"}, nil, &provider.GlobalFlags{})
+			if err == nil {
+				t.Fatal("expected v1.1-gap error")
+			}
+			if !strings.Contains(err.Error(), "v1.1") {
+				t.Errorf("error should mention 'v1.1'; got %q", err.Error())
+			}
+		})
+	}
+}
+
+// TestNameAndDisplayName locks in the two-method ProviderHandler
+// contract cycle 215 introduced for bash. A future refactor that
+// drops either method breaks provider registration.
+func TestNameAndDisplayName(t *testing.T) {
+	t.Parallel()
+	p := New(nil)
+	if p.Name() != "bash" {
+		t.Errorf("Name() = %q, want 'bash'", p.Name())
+	}
+	if p.DisplayName() != "Bash" {
+		t.Errorf("DisplayName() = %q, want 'Bash'", p.DisplayName())
 	}
 }

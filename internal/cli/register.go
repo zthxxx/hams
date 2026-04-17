@@ -50,13 +50,14 @@ func registerBuiltins(registry *provider.Registry, sudoCmd sudo.CmdBuilder) {
 		duti.New(builtinCfg, duti.NewRealCmdRunner()),
 		mas.New(builtinCfg, mas.NewRealCmdRunner()),
 		vscodeext.New(builtinCfg, vscodeext.NewRealCmdRunner()),
-		ansible.New(ansible.NewRealCmdRunner()),
+		ansible.New(builtinCfg, ansible.NewRealCmdRunner()),
+		bash.New(builtinCfg),
 	}
 
-	// Providers that only implement Provider (no CLI handler).
-	providerOnly := []provider.Provider{
-		bash.New(),
-	}
+	// All builtin providers now implement ProviderHandler, so the
+	// providerOnly slice is empty. Kept for future external plugins
+	// that may want to register as apply-only (no CLI surface).
+	providerOnly := []provider.Provider{}
 
 	// Register all into the provider registry. Platform mismatch
 	// (e.g. macOS-only `duti` on Linux) is silently skipped by
@@ -87,18 +88,16 @@ func loadBuiltinProviderConfig() *config.Config {
 
 	paths := resolvePaths(flags)
 
-	cfg, err := config.Load(paths, flags.Store)
+	cfg, err := config.Load(paths, flags.Store, flags.Profile)
 	if err != nil {
 		slog.Warn("failed to load config for builtin providers", "error", err)
 		cfg = &config.Config{}
 	}
 
-	if flags.Store != "" {
-		cfg.StorePath = flags.Store
-	}
-	if flags.Profile != "" {
-		cfg.ProfileTag = flags.Profile
-	}
-
+	// config.Load already overlays --store (cycle 91) and --profile
+	// (cycle 219); no further per-builtin manipulation needed. The
+	// cfg returned here is shared by every provider's effectiveConfig
+	// helper, which still re-applies the same overlays per call so
+	// late-arriving flags from sub-CLI dispatch do not get lost.
 	return cfg
 }

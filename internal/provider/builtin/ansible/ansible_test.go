@@ -3,12 +3,13 @@ package ansible
 import (
 	"testing"
 
+	"github.com/zthxxx/hams/internal/config"
 	"github.com/zthxxx/hams/internal/provider"
 )
 
 func TestManifest(t *testing.T) {
 	t.Parallel()
-	p := New(NewFakeCmdRunner())
+	p := New(&config.Config{}, NewFakeCmdRunner())
 	m := p.Manifest()
 	if m.Name != "ansible" {
 		t.Errorf("Name = %q", m.Name)
@@ -26,7 +27,7 @@ func TestManifest(t *testing.T) {
 
 func TestNameDisplayName(t *testing.T) {
 	t.Parallel()
-	p := New(NewFakeCmdRunner())
+	p := New(&config.Config{}, NewFakeCmdRunner())
 	if p.Name() != "ansible" {
 		t.Errorf("Name() = %q", p.Name())
 	}

@@ -45,6 +45,11 @@ func (p *Provider) Manifest() provider.Manifest {
 		Platforms:     []provider.Platform{provider.PlatformLinux},
 		ResourceClass: provider.ClassPackage,
 		FilePrefix:    cliName,
+		// Cycle 227: declare sudo requirement so runApply only
+		// prompts for the password when an apt-bearing profile is
+		// being applied. apt-get install / remove require root —
+		// every apt CmdBuilder.Command call prepends sudo.
+		RequiresSudo: true,
 	}
 }
 
@@ -205,6 +210,13 @@ func (p *Provider) HandleCommand(ctx context.Context, args []string, hamsFlags m
 		return p.handleInstall(ctx, remaining, hamsFlags, flags)
 	case "remove":
 		return p.handleRemove(ctx, remaining, hamsFlags, flags)
+	case "list":
+		// Cycle 214: route `hams apt list` to the hams-tracked diff.
+		// `apt list` is a real apt subcommand but dumps the entire
+		// system package catalog (thousands of lines) — wrong
+		// affordance for the user who ran `hams apt install foo`
+		// and now wants to see what hams is tracking.
+		return provider.HandleListCmd(ctx, p, p.effectiveConfig(flags))
 	default:
 		return provider.WrapExecPassthrough(ctx, "apt-get", args, nil)
 	}
@@ -236,6 +248,13 @@ func (p *Provider) handleInstall(ctx context.Context, args []string, hamsFlags m
 		fmt.Printf("[dry-run] Would install: sudo apt-get install -y %s\n", strings.Join(args, " "))
 		return nil
 	}
+
+	// Cycle 222: acquire single-writer state lock per cli-architecture spec.
+	release, lockErr := provider.AcquireMutationLockFromCfg(p.effectiveConfig(flags), flags, "apt install")
+	if lockErr != nil {
+		return lockErr
+	}
+	defer release()
 
 	// Forward args verbatim so passthrough flags (e.g. --no-install-recommends)
 	// reach apt-get AND the multi-package install runs as one transaction
@@ -341,6 +360,13 @@ func (p *Provider) handleRemove(ctx context.Context, args []string, hamsFlags ma
 		fmt.Printf("[dry-run] Would remove: sudo apt-get remove -y %s\n", strings.Join(args, " "))
 		return nil
 	}
+
+	// Cycle 222: acquire single-writer state lock per cli-architecture spec.
+	release, lockErr := provider.AcquireMutationLockFromCfg(p.effectiveConfig(flags), flags, "apt remove")
+	if lockErr != nil {
+		return lockErr
+	}
+	defer release()
 
 	// Forward args verbatim — preserves passthrough flags (e.g. --purge) and
 	// runs the multi-package remove as one transaction.

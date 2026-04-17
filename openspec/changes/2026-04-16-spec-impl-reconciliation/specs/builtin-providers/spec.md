@@ -2,22 +2,24 @@
 
 ## MODIFIED Requirements
 
-### Requirement: VSCode Extension Provider — Renamed `vscode-ext` → `code-ext`
+### Requirement: VSCode Extension Provider — Renamed `vscode-ext` → `code-ext` (CLI name only)
 
-The VSCode Extension provider's `Manifest().Name`, `FilePrefix`, CLI verb, and state-file path SHALL all use the string `code-ext` (NOT `vscode-ext`). The rename reconciles the spec with the impl shipped in `internal/provider/builtin/vscodeext/vscodeext.go` since v1; renaming the impl would invalidate every existing user's `code-ext.hams.yaml` file and `.state/<machine-id>/code-ext.state.yaml` path.
+The VSCode Extension provider's `Manifest().Name` and CLI verb SHALL use the string `code-ext` (NOT `vscode-ext`). The `FilePrefix` SHALL remain `vscodeext` for historical reasons — early v1 shipped `vscodeext.hams.yaml` as the canonical filename before the CLI name was finalized, and renaming the prefix now would invalidate every existing user's `vscodeext.hams.yaml` file and `.state/<machine-id>/vscodeext.state.yaml` path.
 
-The display name SHALL remain `VS Code Extensions` (note the space; previous spec wrote `VSCode Extension` without space).
+This is an intentional CLI-name-vs-file-prefix divergence. Users type `code-ext` at the CLI; the provider writes `vscodeext.*.yaml` on disk. Both are documented in the provider's `code-ext.mdx` doc page.
 
-#### Scenario: Install a VS Code extension uses code-ext name
+The display name SHALL be `VS Code Extensions` (note the space; previous spec wrote `VSCode Extension` without space).
+
+#### Scenario: Install a VS Code extension uses code-ext CLI name
 
 - **WHEN** the user runs `hams code-ext install ms-python.python`
-- **THEN** the provider SHALL execute `code --install-extension ms-python.python`, record it in `code-ext.hams.yaml`, and update `code-ext.state.yaml`.
+- **THEN** the provider SHALL execute `code --install-extension ms-python.python`, record it in `<profile>/vscodeext.hams.yaml`, and update `<store>/.state/<machine-id>/vscodeext.state.yaml`.
 
-#### Scenario: Provider table reflects code-ext name
+#### Scenario: Provider table reflects code-ext CLI name with divergent file prefix
 
 - **WHEN** a developer reads `openspec/specs/builtin-providers/spec.md` table of 15 builtin providers
-- **THEN** row 9 SHALL list `code-ext` (NOT `vscode-ext`) as the provider name
-- **AND** the file column SHALL list `code-ext.hams.yaml` (NOT `VSCode Extension.hams.yaml`).
+- **THEN** row 9 SHALL list `code-ext` (NOT `vscode-ext`) as the CLI name
+- **AND** the file column SHALL list `vscodeext.hams.yaml` (NOT `code-ext.hams.yaml`) to document the intentional divergence.
 
 ### Requirement: Go Install Provider — Renamed `go` → `goinstall`
 

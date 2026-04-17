@@ -2,12 +2,16 @@ package cli
 
 import (
 	"context"
+	"errors"
+	"log/slog"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
+	hamserr "github.com/zthxxx/hams/internal/error"
 	"github.com/zthxxx/hams/internal/provider"
 	"github.com/zthxxx/hams/internal/sudo"
 )
@@ -75,6 +79,38 @@ func TestStoreStatus_SpecCompliantOutput(t *testing.T) {
 		if !strings.Contains(got, want) {
 			t.Errorf("store status output missing %q; full:\n%s", want, got)
 		}
+	}
+}
+
+// TestStoreStatus_HonorsProfileOverride — cycle 218 guard. Pre-cycle-218
+// `hams --profile=X store status` silently showed the config-file's
+// profile_tag, contradicting what apply/refresh/list would use for
+// the same invocation. The test seeds TWO profile dirs (config-file
+// profile "fromfile" and overridden profile "override") and asserts
+// that passing --profile=override makes the output show the override
+// value. Regression against forgetting the overlay step.
+func TestStoreStatus_HonorsProfileOverride(t *testing.T) {
+	storeDir := t.TempDir()
+	// Seed both profile dirs so neither triggers a "dir missing" path.
+	for _, p := range []string{"fromfile", "override"} {
+		if err := os.MkdirAll(filepath.Join(storeDir, p), 0o750); err != nil {
+			t.Fatalf("mkdir profile %s: %v", p, err)
+		}
+	}
+	t.Setenv("HAMS_CONFIG_HOME", t.TempDir())
+	t.Setenv("HAMS_DATA_HOME", t.TempDir())
+
+	got := captureStdout(t, func() {
+		registry := provider.NewRegistry()
+		app := NewApp(registry, sudo.NoopAcquirer{})
+		args := []string{"hams", "--store", storeDir, "--profile", "override", "store", "status"}
+		if err := app.Run(context.Background(), args); err != nil {
+			t.Fatalf("store status: %v", err)
+		}
+	})
+
+	if !strings.Contains(got, "override") {
+		t.Errorf("store status output missing overridden profile %q; full:\n%s", "override", got)
 	}
 }
 
@@ -147,6 +183,96 @@ func TestStoreStatus_CanceledContextAbortsPromptly(t *testing.T) {
 	elapsed := time.Since(start)
 	if elapsed > 2*time.Second {
 		t.Errorf("store status with canceled ctx took %v; want < 2s (5s timeout was being honored, ignoring ctx)", elapsed)
+	}
+}
+
+// TestList_NonexistentStorePathEmitsUserError locks in cycle 211:
+// `hams list --store=/ghost` (where the path doesn't exist) previously
+// printed "No managed resources found. Run 'hams <provider> install
+// <package>' ..." — misleading because the user's real issue was a
+// misaimed store_path, not an empty store. Now: surface an
+// ExitUsageError naming the bad path with the same recovery hints as
+// apply (cycle 87) / refresh (cycle 88).
+func TestList_NonexistentStorePathEmitsUserError(t *testing.T) {
+	ghostStore := filepath.Join(t.TempDir(), "ghost-store-does-not-exist")
+
+	registry := provider.NewRegistry()
+	p := &applyTestProvider{
+		manifest: provider.Manifest{
+			Name: "apt", DisplayName: "apt", FilePrefix: "apt",
+			Platforms: []provider.Platform{provider.PlatformAll},
+		},
+	}
+	if err := registry.Register(p); err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+
+	// Redirect config dirs so the test doesn't pick up the user's real config.
+	t.Setenv("HAMS_CONFIG_HOME", t.TempDir())
+	t.Setenv("HAMS_DATA_HOME", t.TempDir())
+
+	app := NewApp(registry, sudo.NoopAcquirer{})
+	err := app.Run(context.Background(), []string{"hams", "--store", ghostStore, "list"})
+	if err == nil {
+		t.Fatal("expected ExitUsageError for missing store_path")
+	}
+	var ufe *hamserr.UserFacingError
+	if !errors.As(err, &ufe) || ufe.Code != hamserr.ExitUsageError {
+		t.Fatalf("expected ExitUsageError, got %v (%T)", err, err)
+	}
+	if !strings.Contains(ufe.Message, ghostStore) {
+		t.Errorf("error should name the bad path; got %q", ufe.Message)
+	}
+	// Regression: the bad surface message is "No managed resources
+	// found" — assert it's NOT in the error.
+	if strings.Contains(ufe.Error(), "No managed resources found") {
+		t.Errorf("error should NOT use the misleading empty-store text; got %q", ufe.Error())
+	}
+}
+
+// TestList_NonexistentProfileEmitsUserError — cycle 217 guard.
+// `hams --profile=<typo> list` used to be a silent no-op: the list
+// Action never applied flags.Profile to cfg.ProfileTag, so the
+// override was dropped and the "No managed resources found" fallback
+// fired against whatever profile_tag the config file specified.
+// Apply (cycle 92) and refresh (cycle 93) already validate the
+// overridden profile dir; cycle 217 adds the same check to list.
+func TestList_NonexistentProfileEmitsUserError(t *testing.T) {
+	storeDir := t.TempDir()
+	// Seed a valid profile so cfg.Load finds store_path OK. The
+	// typo'd --profile value is the focus of this test.
+	if err := os.MkdirAll(filepath.Join(storeDir, "macOS"), 0o750); err != nil {
+		t.Fatalf("mkdir profile: %v", err)
+	}
+
+	registry := provider.NewRegistry()
+	p := &applyTestProvider{
+		manifest: provider.Manifest{
+			Name: "apt", DisplayName: "apt", FilePrefix: "apt",
+			Platforms: []provider.Platform{provider.PlatformAll},
+		},
+	}
+	if err := registry.Register(p); err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+
+	t.Setenv("HAMS_CONFIG_HOME", t.TempDir())
+	t.Setenv("HAMS_DATA_HOME", t.TempDir())
+
+	app := NewApp(registry, sudo.NoopAcquirer{})
+	err := app.Run(context.Background(), []string{"hams", "--store", storeDir, "--profile", "Typo", "list"})
+	if err == nil {
+		t.Fatal("expected ExitUsageError for typo'd profile")
+	}
+	var ufe *hamserr.UserFacingError
+	if !errors.As(err, &ufe) || ufe.Code != hamserr.ExitUsageError {
+		t.Fatalf("expected ExitUsageError, got %v (%T)", err, err)
+	}
+	if !strings.Contains(ufe.Message, "Typo") {
+		t.Errorf("error should name the bad profile; got %q", ufe.Message)
+	}
+	if strings.Contains(ufe.Error(), "No managed resources found") {
+		t.Errorf("error should NOT use the misleading empty-store text; got %q", ufe.Error())
 	}
 }
 
@@ -517,5 +643,62 @@ resources:
 				t.Errorf("ok-resource entry should NOT emit last_error; entry:\n%s", slice)
 			}
 		}
+	}
+}
+
+// TestList_CorruptStateFileEmitsWarning locks in cycle 236: a state
+// file that exists but fails to parse (corrupt YAML, permission
+// denied) previously caused `hams list` to silently skip the
+// provider and print "No managed resources found" — indistinguishable
+// from a fresh empty store to the user whose state had been
+// corrupted mid-write or by an editor crash. Now: slog.Warn names
+// the provider + path + underlying error before the loop continues.
+// Healthy providers in the same store still surface in the list.
+func TestList_CorruptStateFileEmitsWarning(t *testing.T) {
+	storeDir, _, stateDir, _ := setupApplyTestEnv(t, []string{"apt"})
+
+	// setupApplyTestEnv doesn't create stateDir (apply/refresh's lazy
+	// mkdir does that on first write). For this test we need the dir
+	// up front so we can drop a corrupt state file in place.
+	if err := os.MkdirAll(stateDir, 0o750); err != nil {
+		t.Fatalf("mkdir state: %v", err)
+	}
+	// Write garbage YAML to the apt state path. state.Load will error.
+	statePath := filepath.Join(stateDir, "apt.state.yaml")
+	if err := os.WriteFile(statePath, []byte("not: valid: yaml: here\n"), 0o600); err != nil {
+		t.Fatalf("write corrupt state: %v", err)
+	}
+
+	registry := provider.NewRegistry()
+	p := &applyTestProvider{
+		manifest: provider.Manifest{
+			Name: "apt", DisplayName: "apt", FilePrefix: "apt",
+			Platforms: []provider.Platform{provider.PlatformAll},
+		},
+	}
+	if err := registry.Register(p); err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+
+	// Redirect slog to capture the warn line.
+	origDefault := slog.Default()
+	t.Cleanup(func() { slog.SetDefault(origDefault) })
+	var buf strings.Builder
+	slog.SetDefault(slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelWarn})))
+
+	app := NewApp(registry, sudo.NoopAcquirer{})
+	if err := app.Run(context.Background(), []string{"hams", "--store", storeDir, "list"}); err != nil {
+		t.Fatalf("list: %v", err)
+	}
+
+	got := buf.String()
+	if !strings.Contains(got, "state file unreadable") {
+		t.Errorf("expected 'state file unreadable' warning; got:\n%s", got)
+	}
+	if !strings.Contains(got, "apt") {
+		t.Errorf("warning should name the provider; got:\n%s", got)
+	}
+	if !strings.Contains(got, statePath) {
+		t.Errorf("warning should name the state file path; got:\n%s", got)
 	}
 }

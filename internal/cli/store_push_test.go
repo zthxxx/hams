@@ -535,3 +535,41 @@ func TestRunStorePush_PushErrorSurfaces(t *testing.T) {
 		t.Fatalf("expected push error, got nil")
 	}
 }
+
+// TestConfigEdit_MissingEditorEmitsFriendlyError locks in cycle 228:
+// $EDITOR pointing at a missing binary previously produced the opaque
+// "fork/exec /nonexistent/binary: no such file or directory" error
+// from exec.Run. Now: pre-checked via exec.LookPath and surfaced as
+// a UserFacingError with ExitNotFound code + actionable suggestions
+// (install the editor, pick a different one, edit config file directly).
+func TestConfigEdit_MissingEditorEmitsFriendlyError(t *testing.T) {
+	configHome := t.TempDir()
+	dataHome := t.TempDir()
+	t.Setenv("HAMS_CONFIG_HOME", configHome)
+	t.Setenv("HAMS_DATA_HOME", dataHome)
+	t.Setenv("EDITOR", "/absolutely-nonexistent-editor-binary-xyz")
+
+	app := NewApp(provider.NewRegistry(), sudo.NoopAcquirer{})
+	err := app.Run(context.Background(), []string{"hams", "config", "edit"})
+	if err == nil {
+		t.Fatal("expected error when $EDITOR is missing")
+	}
+	var ufe *hamserr.UserFacingError
+	if !errors.As(err, &ufe) {
+		t.Fatalf("want *UserFacingError, got %T: %v", err, err)
+	}
+	if ufe.Code != hamserr.ExitNotFound {
+		t.Errorf("Code = %d, want ExitNotFound (%d)", ufe.Code, hamserr.ExitNotFound)
+	}
+	if !strings.Contains(ufe.Message, "absolutely-nonexistent-editor-binary-xyz") {
+		t.Errorf("message should name the missing editor; got %q", ufe.Message)
+	}
+	// Message must name "$EDITOR" so user knows which env var to fix.
+	if !strings.Contains(ufe.Message, "EDITOR") {
+		t.Errorf("message should mention EDITOR env var; got %q", ufe.Message)
+	}
+	// Regression: the old cryptic "fork/exec" prefix MUST NOT appear.
+	if strings.Contains(ufe.Message, "fork/exec") {
+		t.Errorf("message should not include raw fork/exec text; got %q", ufe.Message)
+	}
+}

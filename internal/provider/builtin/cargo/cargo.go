@@ -3,8 +3,11 @@ package cargo
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io/fs"
 	"log/slog"
+	"path/filepath"
 	"strings"
 
 	"github.com/zthxxx/hams/internal/config"
@@ -30,14 +33,19 @@ func New(cfg *config.Config, runner CmdRunner) *Provider {
 	return &Provider{cfg: cfg, runner: runner}
 }
 
+// cliName is the cargo provider's manifest + CLI name + file prefix.
+// Single source of truth so the goconst lint can't flag the
+// repeated literal.
+const cliName = "cargo"
+
 // Manifest returns the cargo provider metadata.
 func (p *Provider) Manifest() provider.Manifest {
 	return provider.Manifest{
-		Name:          "cargo",
-		DisplayName:   "cargo",
+		Name:          cliName,
+		DisplayName:   cliName,
 		Platforms:     []provider.Platform{provider.PlatformAll},
 		ResourceClass: provider.ClassPackage,
-		FilePrefix:    "cargo",
+		FilePrefix:    cliName,
 	}
 }
 
@@ -103,8 +111,15 @@ func (p *Provider) HandleCommand(ctx context.Context, args []string, hamsFlags m
 		return p.handleInstall(ctx, remaining, hamsFlags, flags)
 	case "remove", "uninstall", "rm":
 		return p.handleRemove(ctx, remaining, hamsFlags, flags)
+	case "list":
+		// Cycle 214: spec promises "Diff view" for `hams cargo list`.
+		// Pre-cycle-214 this fell through to `cargo list` which is
+		// not a valid cargo subcommand (cargo errors with "no such
+		// command: list"). HandleListCmd prints the hams-tracked
+		// desired-vs-observed diff, matching `hams list --only=cargo`.
+		return provider.HandleListCmd(ctx, p, p.effectiveConfig(flags))
 	default:
-		return provider.WrapExecPassthrough(ctx, "cargo", args, nil)
+		return provider.WrapExecPassthrough(ctx, cliName, args, nil)
 	}
 }
 
@@ -134,6 +149,16 @@ func (p *Provider) handleInstall(ctx context.Context, args []string, hamsFlags m
 		return nil
 	}
 
+	// Cycle 222: acquire single-writer state lock per the
+	// cli-architecture spec. Pre-cycle-222 only apply/refresh held
+	// the lock; a `hams cargo install ripgrep` could race with an
+	// in-flight `hams apply` and clobber cargo.state.yaml.
+	release, lockErr := provider.AcquireMutationLockFromCfg(p.effectiveConfig(flags), flags, "cargo install")
+	if lockErr != nil {
+		return lockErr
+	}
+	defer release()
+
 	// Run every install first; only record once all succeed. This
 	// mirrors apt's all-or-nothing auto-record semantics — partial
 	// failures force the user to retry rather than leaving a mixed
@@ -148,10 +173,22 @@ func (p *Provider) handleInstall(ctx context.Context, args []string, hamsFlags m
 	if err != nil {
 		return err
 	}
+	sf, err := p.loadOrCreateStateFile(flags)
+	if err != nil {
+		return err
+	}
 	for _, crate := range crates {
 		hf.AddApp(tagCLI, crate, "")
+		// Cycle 203: state write is additive. Without this,
+		// `hams list --only=cargo` returned empty right after a
+		// successful install because `list` reads state only.
+		// Same auto-record gap as cycle 96 (homebrew) / 202 (mas).
+		sf.SetResource(crate, state.StateOK)
 	}
-	return hf.Write()
+	if writeErr := hf.Write(); writeErr != nil {
+		return writeErr
+	}
+	return sf.Save(p.statePath(flags))
 }
 
 // handleRemove runs `cargo uninstall <crate>` via the CmdRunner seam
@@ -177,6 +214,13 @@ func (p *Provider) handleRemove(ctx context.Context, args []string, hamsFlags ma
 		return nil
 	}
 
+	// Cycle 222: same lock-acquisition contract as handleInstall.
+	release, lockErr := provider.AcquireMutationLockFromCfg(p.effectiveConfig(flags), flags, "cargo remove")
+	if lockErr != nil {
+		return lockErr
+	}
+	defer release()
+
 	for _, crate := range crates {
 		if err := p.runner.Uninstall(ctx, crate); err != nil {
 			return err
@@ -187,10 +231,41 @@ func (p *Provider) handleRemove(ctx context.Context, args []string, hamsFlags ma
 	if err != nil {
 		return err
 	}
+	sf, err := p.loadOrCreateStateFile(flags)
+	if err != nil {
+		return err
+	}
 	for _, crate := range crates {
 		hf.RemoveApp(crate)
+		sf.SetResource(crate, state.StateRemoved)
 	}
-	return hf.Write()
+	if writeErr := hf.Write(); writeErr != nil {
+		return writeErr
+	}
+	return sf.Save(p.statePath(flags))
+}
+
+// statePath returns the absolute path to cargo.state.yaml for the
+// active machine. Mirrors homebrew.statePath / mas.statePath.
+func (p *Provider) statePath(flags *provider.GlobalFlags) string {
+	cfg := p.effectiveConfig(flags)
+	return filepath.Join(cfg.StateDir(), p.Manifest().FilePrefix+".state.yaml")
+}
+
+// loadOrCreateStateFile reads the cargo state file or returns a
+// fresh one when the file is absent. Non-ErrNotExist load failures
+// propagate so the CLI handler surfaces a user-facing error instead
+// of silently overwriting unparseable state.
+func (p *Provider) loadOrCreateStateFile(flags *provider.GlobalFlags) (*state.File, error) {
+	cfg := p.effectiveConfig(flags)
+	sf, err := state.Load(p.statePath(flags))
+	if err == nil {
+		return sf, nil
+	}
+	if errors.Is(err, fs.ErrNotExist) {
+		return state.New(p.Name(), cfg.MachineID), nil
+	}
+	return nil, fmt.Errorf("loading cargo state %s: %w", p.statePath(flags), err)
 }
 
 // crateArgs filters the positional tokens from args: any token
@@ -208,10 +283,10 @@ func crateArgs(args []string) []string {
 }
 
 // Name returns the CLI name.
-func (p *Provider) Name() string { return "cargo" }
+func (p *Provider) Name() string { return cliName }
 
 // DisplayName returns the display name.
-func (p *Provider) DisplayName() string { return "cargo" }
+func (p *Provider) DisplayName() string { return cliName }
 
 // parseCargoList parses `cargo install --list` output.
 // Lines with a package have the form "name v1.2.3:".

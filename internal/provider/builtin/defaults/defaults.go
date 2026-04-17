@@ -115,10 +115,19 @@ func (p *Provider) List(_ context.Context, desired *hamsfile.File, sf *state.Fil
 // mutation. Other `defaults` verbs (e.g., `read`, `domains`) are
 // passed through to the real binary without bookkeeping.
 func (p *Provider) HandleCommand(ctx context.Context, args []string, hamsFlags map[string]string, flags *provider.GlobalFlags) error {
+	// Cycle 214: list must be recognized before the len<3 gate below
+	// because `hams defaults list` intentionally takes no further args.
+	// The spec promises diff view for list; pre-cycle-214 the len<3
+	// gate rejected it with a misleading "write <domain> <key>" usage
+	// error.
+	if len(args) == 1 && args[0] == "list" { //nolint:gosec // len(args)==1 guards the index
+		return provider.HandleListCmd(ctx, p, p.effectiveConfig(flags))
+	}
 	if len(args) < 3 {
 		return hamserr.NewUserError(hamserr.ExitUsageError,
 			"defaults requires: write <domain> <key> -<type> <value>",
 			"Usage: hams defaults write com.apple.dock autohide -bool true",
+			"       hams defaults list",
 		)
 	}
 
@@ -168,6 +177,13 @@ func (p *Provider) handleWrite(ctx context.Context, args []string, hamsFlags map
 		return nil
 	}
 
+	// Cycle 222: acquire single-writer state lock per cli-architecture spec.
+	release, lockErr := provider.AcquireMutationLockFromCfg(p.effectiveConfig(flags), flags, "defaults write")
+	if lockErr != nil {
+		return lockErr
+	}
+	defer release()
+
 	if err := p.runner.Write(ctx, domain, key, typeStr, value); err != nil {
 		return err
 	}
@@ -200,6 +216,13 @@ func (p *Provider) handleDelete(ctx context.Context, args []string, hamsFlags ma
 		fmt.Printf("[dry-run] Would run: defaults %s\n", strings.Join(args, " "))
 		return nil
 	}
+
+	// Cycle 222: acquire single-writer state lock per cli-architecture spec.
+	release, lockErr := provider.AcquireMutationLockFromCfg(p.effectiveConfig(flags), flags, "defaults delete")
+	if lockErr != nil {
+		return lockErr
+	}
+	defer release()
 
 	if err := p.runner.Delete(ctx, domain, key); err != nil {
 		return err

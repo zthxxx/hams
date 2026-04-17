@@ -147,11 +147,8 @@ func resolveLocalRepo(repo string) (string, error) {
 
 // cloneRemoteRepo clones a remote git repository into the data home.
 func cloneRemoteRepo(ctx context.Context, repo string, paths config.Paths) (string, error) {
-	// Expand GitHub shorthand.
-	repoURL := repo
-	if !strings.Contains(repo, "://") && !strings.HasPrefix(repo, "git@") {
-		repoURL = "https://github.com/" + repo
-	}
+	// Expand to a full URL based on input shape.
+	repoURL := expandRepoShorthand(repo)
 
 	// Determine clone path from repo identifier.
 	clonePath := resolveClonePath(repo, paths)
@@ -212,6 +209,37 @@ func transformCloneError(repoURL string, err error) error {
 	return fmt.Errorf("cloning %s: %w", repoURL, err)
 }
 
+// expandRepoShorthand mirrors `resolveClonePath`'s host-detection
+// heuristic so that `--from-repo` accepts the same range of shapes
+// uniformly. Without this, a user typing `--from-repo=gitlab.com/x/y`
+// pre-cycle-225 had it silently rewritten to
+// `https://github.com/gitlab.com/x/y` — go-git then returned a
+// confusing "Repository not found" against the wrong host.
+//
+// Recognized shapes (must align with resolveClonePath):
+//   - `scheme://host/path`        → returned verbatim
+//   - `git@host:path`             → returned verbatim
+//   - `host.tld/user/repo`        → `https://host.tld/user/repo`
+//     (heuristic: first segment contains a dot, signaling a host)
+//   - `user/repo` (no dot)        → `https://github.com/user/repo`
+//     (GitHub shorthand, the documented common case)
+//   - anything else (one segment) → returned verbatim; clone will
+//     fail with go-git's URL-format error so the user sees a real
+//     diagnostic rather than a silent github.com prefix.
+func expandRepoShorthand(repo string) string {
+	if strings.Contains(repo, "://") || strings.HasPrefix(repo, "git@") {
+		return repo
+	}
+	parts := strings.SplitN(repo, "/", 2)
+	if len(parts) == 2 && strings.Contains(parts[0], ".") {
+		return "https://" + repo
+	}
+	if len(parts) == 2 {
+		return "https://github.com/" + repo
+	}
+	return repo
+}
+
 // resolveClonePath returns the local cache directory for a remote
 // `--from-repo`. The path includes the HOST component so that two
 // repos with the same `<user>/<repo>` on different forges don't
@@ -246,10 +274,20 @@ func resolveClonePath(repo string, paths config.Paths) string {
 		}
 	}
 
-	// Shorthand `user/repo` — assume github.com.
+	// Shorthand `user/repo` — assume github.com (no dot in first segment).
 	parts := strings.Split(repoName, "/")
 	if len(parts) == 2 && !strings.Contains(parts[0], ".") {
 		return filepath.Join(paths.DataHome, "repo", "github.com", parts[0], parts[1])
+	}
+
+	// Cycle 225: host-prefixed shorthand `host.tld/user/repo` (or
+	// deeper, e.g. `gitea.example/group/sub/repo`) — first segment
+	// contains a dot, so treat it as a host and keep the rest as-is.
+	// Pre-cycle-225 inputs like `gitlab.com/team/repo` fell into the
+	// defensive 2-segment fallback, producing `/data/hams/repo/team/repo`
+	// (no host scoping → forge collisions).
+	if len(parts) >= 2 && strings.Contains(parts[0], ".") {
+		return filepath.Join(paths.DataHome, "repo", parts[0], filepath.Join(parts[1:]...))
 	}
 
 	// Defensive fallback: use the input verbatim. Same behavior as

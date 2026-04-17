@@ -54,7 +54,7 @@ For each of the 7 providers — cargo, npm, pnpm, uv, goinstall, mas, vscodeext 
 5. Update `New()` signatures to accept `cfg *config.Config`. Update `internal/cli/register.go` to pass `builtinCfg` into each.
 6. Add `TestHandleCommand_U*` tests matching apt's U1-U5 coverage: install-adds-to-hamsfile, install-is-idempotent, install-failure-leaves-hamsfile-untouched, remove-deletes-from-hamsfile, remove-failure-leaves-hamsfile-untouched, dry-run-does-nothing.
 
-State-file writes are OUT OF SCOPE for this change — the apply path already writes state, and the CLI-first state-write is a separate concern (apt handles it via U12-U15; only homebrew needs the same upgrade, tracked separately).
+State-file writes were originally deferred to a separate change. In practice the hamsfile-only fix surfaced the follow-on bug immediately: `hams list --only=<provider>` reads the state file only, so right after a successful CLI install the list was empty until the user ran `hams refresh`. Cycles 96 (homebrew) and 202–208 (mas, cargo, npm, pnpm, uv, goinstall, vscodeext) therefore added the state-write half in the CLI handler too, matching apt's U12–U15 behavior. The spec delta and scenarios have been updated to describe both writes as part of the single auto-record contract.
 
 ### Spec delta (this change)
 

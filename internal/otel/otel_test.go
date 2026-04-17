@@ -79,6 +79,39 @@ func TestFlush_WritesFiles(t *testing.T) {
 	}
 }
 
+// TestFlush_RapidFlushesProduceUniqueFilenames — cycle 237 guard.
+// Pre-cycle-237 the trace/metric filename was timestamped per-second
+// (`YYYYMMDDTHHmmss.json`), so two flushes within the same second
+// silently clobbered the first file via `os.Create` truncation. The
+// fix adds nanos + PID to the filename. Asserts that 5 rapid flushes
+// each produce a distinct trace file.
+func TestFlush_RapidFlushesProduceUniqueFilenames(t *testing.T) {
+	dir := t.TempDir()
+
+	const flushes = 5
+	for range flushes {
+		s := NewSession(Config{DataHome: dir, Enabled: true})
+		// Span must be ended (added to s.spans) for Flush to actually
+		// write a file. Pre-cycle-237 a span-less Flush was a no-op.
+		s.EndSpan(s.StartSpan("root", "", nil), "ok")
+		if err := s.Flush(); err != nil {
+			t.Fatalf("Flush: %v", err)
+		}
+	}
+
+	traceDir := filepath.Join(dir, "otel", "traces")
+	entries, err := os.ReadDir(traceDir)
+	if err != nil {
+		t.Fatalf("ReadDir traces: %v", err)
+	}
+	if len(entries) != flushes {
+		t.Errorf("trace files = %d, want %d (collision in filename → silent overwrite)", len(entries), flushes)
+		for _, e := range entries {
+			t.Logf("  trace file: %s", e.Name())
+		}
+	}
+}
+
 func TestFlush_DisabledNoOp(t *testing.T) {
 	s := NewSession(Config{Enabled: false})
 	s.RecordMetric("test", 1.0, "ms", nil)

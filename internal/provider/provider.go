@@ -83,6 +83,19 @@ type Manifest struct {
 	VerbRouting   []VerbRoute       `yaml:"verb_routing,omitempty"` // Maps verbs to provider actions.
 	AutoInject    map[string]string `yaml:"auto_inject,omitempty"`  // Flags auto-injected per verb.
 	HamsFlags     []FlagDef         `yaml:"hams_flags,omitempty"`   // Provider-specific --hams- flags.
+
+	// RequiresSudo signals that the provider's Apply / Remove / CLI
+	// handlers may invoke privileged commands and therefore need a
+	// valid sudo ticket to be acquired before the run. Pre-cycle-227
+	// `runApply` acquired sudo unconditionally on every invocation,
+	// contradicting the cli-architecture spec scenario "Operations
+	// that do not require sudo SHALL NOT prompt for credentials" —
+	// a user whose profile contained only cargo / npm / brew (none
+	// of which need sudo) still got a sudo password prompt at the
+	// start of every `hams apply`. Set to true in apt's manifest
+	// (the only v1 builtin whose runner.Install / Remove path
+	// shells out as root). Default false; per-provider opt-in.
+	RequiresSudo bool `yaml:"requires_sudo,omitempty"`
 }
 
 // ProbeResult represents the outcome of probing a single resource.

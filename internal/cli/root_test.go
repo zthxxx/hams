@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
+	"log/slog"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -41,6 +43,59 @@ func TestNewApp_HelpFlag(t *testing.T) {
 	err := app.Run(context.Background(), []string{"hams", "--help"})
 	if err != nil {
 		t.Fatalf("--help error: %v", err)
+	}
+}
+
+// TestNewApp_DebugFlagRaisesSlogLevel — cycle 243 guard. The root
+// Before hook calls logging.SetupDebugOnly(true) when --debug is set,
+// so every command (not just per-provider CLI dispatch from cycle 242)
+// surfaces debug-level slog output. Asserts:
+//
+//  1. `hams --debug version` (a top-level non-provider command) raises
+//     the global slog level so a subsequent slog.Debug call would emit.
+//  2. `hams version` (no --debug) leaves the level unchanged so
+//     slog.Debug calls stay suppressed.
+//
+// We can't easily intercept Before's internal slog.SetDefault from a
+// black-box test, but we CAN observe the side effect: after Run
+// returns, slog.Default() reflects whichever handler was installed
+// last. Compare slog.Default()'s level via the Enabled API.
+func TestNewApp_DebugFlagRaisesSlogLevel(t *testing.T) {
+	// Save and restore the global default logger so this test doesn't
+	// leak slog state into siblings.
+	original := slog.Default()
+	t.Cleanup(func() { slog.SetDefault(original) })
+
+	// Install a known-low-level baseline handler (LevelInfo). The
+	// Before hook should overwrite it with LevelDebug when --debug.
+	baseline := slog.NewTextHandler(io.Discard, &slog.HandlerOptions{Level: slog.LevelInfo})
+	slog.SetDefault(slog.New(baseline))
+
+	registry := provider.NewRegistry()
+	app := NewApp(registry, sudo.NoopAcquirer{})
+
+	// Sanity: baseline rejects Debug.
+	if slog.Default().Enabled(context.Background(), slog.LevelDebug) {
+		t.Fatal("test setup: baseline handler should reject Debug")
+	}
+
+	// `hams --debug version` should raise the level so Debug is enabled.
+	if err := app.Run(context.Background(), []string{"hams", "--debug", "version"}); err != nil {
+		t.Fatalf("hams --debug version: %v", err)
+	}
+	if !slog.Default().Enabled(context.Background(), slog.LevelDebug) {
+		t.Errorf("after hams --debug, slog.Default should accept Debug")
+	}
+
+	// Reset baseline. `hams version` (no --debug) should leave the
+	// caller's handler alone — Before only fires when --debug is set,
+	// so the baseline-installed Info handler stays as Default.
+	slog.SetDefault(slog.New(baseline))
+	if err := app.Run(context.Background(), []string{"hams", "version"}); err != nil {
+		t.Fatalf("hams version: %v", err)
+	}
+	if slog.Default().Enabled(context.Background(), slog.LevelDebug) {
+		t.Errorf("after hams version (no --debug), Default should NOT accept Debug — but it does, suggesting Before fired unconditionally")
 	}
 }
 
