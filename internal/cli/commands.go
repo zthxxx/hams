@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -29,11 +30,33 @@ import (
 // via `hams version`. Complements `--version` which returns the brief form;
 // users filing bug reports want the full string. Previously `version.Info()`
 // was defined + unit-tested but had zero callers.
+//
+// Cycle 181: honor the global --json flag. CI scripts that want to
+// machine-extract the running version (e.g. for compatibility gates,
+// bug-report templates) need a parseable shape — the text form
+// "hams 1.0.0 (abc123) built 2026-04-17 linux/amd64" is awkward to
+// regex-parse and brittle across format changes.
 func versionCmd() *cli.Command {
 	return &cli.Command{
 		Name:  "version",
 		Usage: "Print detailed version information",
-		Action: func(_ context.Context, _ *cli.Command) error {
+		Action: func(_ context.Context, cmd *cli.Command) error {
+			flags := globalFlags(cmd)
+			if flags.JSON {
+				data := map[string]string{
+					"version": version.Version(),
+					"commit":  version.Commit(),
+					"date":    version.Date(),
+					"goos":    runtime.GOOS,
+					"goarch":  runtime.GOARCH,
+				}
+				out, mErr := json.MarshalIndent(data, "", "  ")
+				if mErr != nil {
+					return fmt.Errorf("marshaling version JSON: %w", mErr)
+				}
+				fmt.Println(string(out))
+				return nil
+			}
 			fmt.Println(version.Info())
 			return nil
 		},
