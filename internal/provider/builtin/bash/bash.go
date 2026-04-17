@@ -11,6 +11,8 @@ import (
 
 	"gopkg.in/yaml.v3"
 
+	"github.com/zthxxx/hams/internal/config"
+	hamserr "github.com/zthxxx/hams/internal/error"
 	"github.com/zthxxx/hams/internal/hamsfile"
 	"github.com/zthxxx/hams/internal/provider"
 	"github.com/zthxxx/hams/internal/state"
@@ -31,14 +33,23 @@ type bashResource struct {
 
 // Provider implements the bash script provider.
 type Provider struct {
+	// cfg supplies store/profile paths used by the `list` CLI
+	// subcommand. Optional: bash can be instantiated without cfg
+	// for pure apply-path usage (tests, register.go providerOnly
+	// fallback) — CLI verbs that need cfg will surface an ExitUsageError
+	// when cfg is nil/empty.
+	cfg *config.Config
 	// removeCommands caches remove commands by resource ID, populated during Plan
 	// so that Remove (which only receives a resource ID) can look them up.
 	removeCommands map[string]string
 }
 
-// New creates a new bash provider.
-func New() *Provider {
+// New creates a new bash provider with an optional config. Pass cfg
+// to unlock CLI verbs (`hams bash list`). Apply-path usage can pass
+// nil cfg.
+func New(cfg *config.Config) *Provider {
 	return &Provider{
+		cfg:            cfg,
 		removeCommands: make(map[string]string),
 	}
 }
@@ -296,4 +307,76 @@ func bashParseResources(f *hamsfile.File) (map[string]bashResource, error) {
 	}
 
 	return resourceByID, nil
+}
+
+// Name returns the CLI name.
+func (p *Provider) Name() string { return "bash" }
+
+// DisplayName returns the display name.
+func (p *Provider) DisplayName() string { return "Bash" }
+
+// HandleCommand processes CLI subcommands for bash.
+//
+// Per builtin-providers.md §"Bash Provider" CLI wrapping:
+//
+//   - `hams bash list` — show all steps with status from state.
+//   - `hams bash run <urn-id>` — execute a single step by URN suffix.
+//   - `hams bash remove <urn-id>` — remove the step from the hamsfile.
+//
+// Cycle 215 wires `list` via the shared HandleListCmd helper (same
+// pattern as cargo / npm / pnpm / uv / mas / vscodeext / goinstall /
+// apt / duti / defaults from cycle 214). The `run` and `remove` verbs
+// require URN-resolution + hamsfile-edit support that v1 has not yet
+// shipped — they return an ExitUsageError pointing the user at
+// `hams apply --only=bash` or hand-editing the bash hamsfile.
+//
+// Any non-verb input produces a usage error: `hams bash <playbook.yml>`
+// makes no sense for bash (unlike ansible there is no sensible
+// passthrough since bash scripts must be URN-tracked to run via hams).
+func (p *Provider) HandleCommand(ctx context.Context, args []string, _ map[string]string, flags *provider.GlobalFlags) error {
+	if len(args) == 0 {
+		return p.bashUsageError()
+	}
+
+	switch args[0] {
+	case "list":
+		cfg := p.effectiveConfig(flags)
+		return provider.HandleListCmd(ctx, p, cfg)
+	case "run", "remove":
+		return hamserr.NewUserError(hamserr.ExitUsageError,
+			fmt.Sprintf("bash %s is planned for v1.1 (URN-editing on the CLI is not yet wired)", args[0]),
+			"Use 'hams apply --only=bash' to run all tracked bash scripts",
+			"Or hand-edit the bash hamsfile: <profile-dir>/bash.hams.yaml",
+		)
+	}
+	return p.bashUsageError()
+}
+
+func (p *Provider) bashUsageError() error {
+	return hamserr.NewUserError(hamserr.ExitUsageError,
+		"bash requires a subcommand",
+		"Usage: hams bash list",
+		"       hams bash run <urn-id>              (planned v1.1)",
+		"       hams bash remove <urn-id>           (planned v1.1)",
+	)
+}
+
+// effectiveConfig returns the provider's config overlaid with any
+// per-invocation flags (--store, --profile). Mirrors the helper used
+// by other providers' CLI paths.
+func (p *Provider) effectiveConfig(flags *provider.GlobalFlags) *config.Config {
+	if p.cfg == nil {
+		p.cfg = &config.Config{}
+	}
+	cfg := *p.cfg
+	if flags == nil {
+		return &cfg
+	}
+	if flags.Store != "" {
+		cfg.StorePath = flags.Store
+	}
+	if flags.Profile != "" {
+		cfg.ProfileTag = flags.Profile
+	}
+	return &cfg
 }

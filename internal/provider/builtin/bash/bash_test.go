@@ -18,7 +18,7 @@ import (
 )
 
 func TestManifest(t *testing.T) {
-	p := New()
+	p := New(nil)
 	m := p.Manifest()
 	if m.Name != "bash" {
 		t.Errorf("Name = %q, want 'bash'", m.Name)
@@ -29,25 +29,25 @@ func TestManifest(t *testing.T) {
 }
 
 func TestBootstrap(t *testing.T) {
-	p := New()
+	p := New(nil)
 	if err := p.Bootstrap(context.Background()); err != nil {
 		t.Fatalf("Bootstrap error: %v", err)
 	}
 }
 
 func TestProviderImplementsBashScriptRunner(_ *testing.T) {
-	var _ provider.BashScriptRunner = New()
+	var _ provider.BashScriptRunner = New(nil)
 }
 
 func TestRunScript_EmptyScriptIsNoop(t *testing.T) {
-	p := New()
+	p := New(nil)
 	if err := p.RunScript(context.Background(), ""); err != nil {
 		t.Fatalf("empty RunScript should be a no-op, got %v", err)
 	}
 }
 
 func TestRunScript_ExecutesViaInjectedBoundary(t *testing.T) {
-	p := New()
+	p := New(nil)
 	original := bootstrapExecCommand
 	defer func() { bootstrapExecCommand = original }()
 
@@ -73,7 +73,7 @@ func TestRunScript_ExecutesViaInjectedBoundary(t *testing.T) {
 }
 
 func TestRunScript_PropagatesExecFailure(t *testing.T) {
-	p := New()
+	p := New(nil)
 	original := bootstrapExecCommand
 	defer func() { bootstrapExecCommand = original }()
 
@@ -88,7 +88,7 @@ func TestRunScript_PropagatesExecFailure(t *testing.T) {
 }
 
 func TestApply_SimpleCommand(t *testing.T) {
-	p := New()
+	p := New(nil)
 	action := provider.Action{
 		ID:       "test-echo",
 		Type:     provider.ActionInstall,
@@ -102,7 +102,7 @@ func TestApply_SimpleCommand(t *testing.T) {
 }
 
 func TestApply_FailingCommand(t *testing.T) {
-	p := New()
+	p := New(nil)
 	action := provider.Action{
 		ID:       "test-fail",
 		Type:     provider.ActionInstall,
@@ -116,7 +116,7 @@ func TestApply_FailingCommand(t *testing.T) {
 }
 
 func TestApply_EmptyResource(t *testing.T) {
-	p := New()
+	p := New(nil)
 	action := provider.Action{
 		ID:       "test-empty",
 		Type:     provider.ActionInstall,
@@ -130,7 +130,7 @@ func TestApply_EmptyResource(t *testing.T) {
 }
 
 func TestApply_CheckPassesSkipsRun(t *testing.T) {
-	p := New()
+	p := New(nil)
 	action := provider.Action{
 		ID:   "test-check-pass",
 		Type: provider.ActionInstall,
@@ -147,7 +147,7 @@ func TestApply_CheckPassesSkipsRun(t *testing.T) {
 }
 
 func TestApply_CheckFailsRunsCommand(t *testing.T) {
-	p := New()
+	p := New(nil)
 	action := provider.Action{
 		ID:   "test-check-fail",
 		Type: provider.ActionInstall,
@@ -178,7 +178,7 @@ func TestApply_SudoPrefix(t *testing.T) {
 }
 
 func TestRemove_WithCommand(t *testing.T) {
-	p := New()
+	p := New(nil)
 	p.removeCommands["test-script"] = "echo removed"
 
 	err := p.Remove(context.Background(), "test-script")
@@ -188,7 +188,7 @@ func TestRemove_WithCommand(t *testing.T) {
 }
 
 func TestRemove_WithSudoCommand(t *testing.T) {
-	p := New()
+	p := New(nil)
 	// Simulate what Plan does: store the already-prefixed command.
 	p.removeCommands["test-sudo-script"] = "sudo echo removed"
 
@@ -224,7 +224,7 @@ func TestRunCheck_Failure(t *testing.T) {
 // markers — both already caught upstream, but a wrapper-level
 // regression test makes the dependency explicit.
 func TestList_DelegatesToProviderDiff(t *testing.T) {
-	p := New()
+	p := New(nil)
 	yamlDoc := `
 install:
   - urn: urn:hams:bash:zsh-setup
@@ -308,7 +308,7 @@ func TestRunCheck_Empty(t *testing.T) {
 }
 
 func TestRemove_NoCommand(t *testing.T) {
-	p := New()
+	p := New(nil)
 	err := p.Remove(context.Background(), "some-script")
 	if err != nil {
 		t.Fatalf("Remove without command should be no-op: %v", err)
@@ -456,7 +456,7 @@ install:
 	}
 	hf := &hamsfile.File{Path: "test.yaml", Root: &root}
 
-	p := New()
+	p := New(nil)
 	observed := state.New("bash", "test")
 	actions, err := p.Plan(context.Background(), hf, observed)
 	if err != nil {
@@ -496,7 +496,7 @@ install:
 }
 
 func TestProbe(t *testing.T) {
-	p := New()
+	p := New(nil)
 	sf := state.New("bash", "test")
 	sf.SetResource("init-zsh", state.StateOK)
 	sf.SetResource("removed-script", state.StateRemoved)
@@ -521,7 +521,7 @@ func TestProbe(t *testing.T) {
 // can distinguish "idempotent check ran, output matched" from
 // "no check defined". Previously 0% coverage on this branch.
 func TestProbe_CheckCmdPassingCapturesStdout(t *testing.T) {
-	p := New()
+	p := New(nil)
 	sf := state.New("bash", "test")
 	// A check that always passes (exit 0) and prints a stable line.
 	sf.SetResource("check-passes", state.StateOK,
@@ -548,7 +548,7 @@ func TestProbe_CheckCmdPassingCapturesStdout(t *testing.T) {
 // the Install action. This is the core drift-detection contract
 // for bash provider — previously 0% coverage.
 func TestProbe_CheckCmdFailingFlagsPending(t *testing.T) {
-	p := New()
+	p := New(nil)
 	sf := state.New("bash", "test")
 	// Explicit non-zero exit simulates a check that's drifted (the
 	// feature it asserts is no longer configured on the host).

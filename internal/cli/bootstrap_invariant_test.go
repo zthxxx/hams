@@ -59,7 +59,7 @@ func TestBuiltinManifestScriptHostsAreBash(t *testing.T) {
 		mas.New(cfg, mas.NewFakeCmdRunner()),
 		vscodeext.New(cfg, vscodeext.NewFakeCmdRunner()),
 		ansible.New(cfg, ansible.NewFakeCmdRunner()),
-		bash.New(),
+		bash.New(cfg),
 	}
 
 	for _, p := range all {

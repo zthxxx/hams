@@ -51,12 +51,13 @@ func registerBuiltins(registry *provider.Registry, sudoCmd sudo.CmdBuilder) {
 		mas.New(builtinCfg, mas.NewRealCmdRunner()),
 		vscodeext.New(builtinCfg, vscodeext.NewRealCmdRunner()),
 		ansible.New(builtinCfg, ansible.NewRealCmdRunner()),
+		bash.New(builtinCfg),
 	}
 
-	// Providers that only implement Provider (no CLI handler).
-	providerOnly := []provider.Provider{
-		bash.New(),
-	}
+	// All builtin providers now implement ProviderHandler, so the
+	// providerOnly slice is empty. Kept for future external plugins
+	// that may want to register as apply-only (no CLI surface).
+	providerOnly := []provider.Provider{}
 
 	// Register all into the provider registry. Platform mismatch
 	// (e.g. macOS-only `duti` on Linux) is silently skipped by
