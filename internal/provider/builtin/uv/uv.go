@@ -44,6 +44,15 @@ func (p *Provider) Bootstrap(_ context.Context) error {
 }
 
 // Probe queries uv for installed tools.
+// Probe queries uv for installed tools.
+//
+// Cycle 189: state IDs with `==version` pins (pip convention — uv
+// uses pip's version-specifier syntax) strip the suffix before the
+// installed-map lookup. Pre-cycle-189 a pinned state entry never
+// matched — drift detection was broken for any user who pinned via
+// CLI like `hams uv install foo==1.2.3`. Also strips the broader
+// pip specifiers (`>=`, `<=`, `~=`, `>`, `<`) so uses consistent
+// drift detection for those too.
 func (p *Provider) Probe(ctx context.Context, sf *state.File) ([]provider.ProbeResult, error) {
 	output, err := p.runner.List(ctx)
 	if err != nil {
@@ -56,13 +65,26 @@ func (p *Provider) Probe(ctx context.Context, sf *state.File) ([]provider.ProbeR
 		if r.State == state.StateRemoved {
 			continue
 		}
-		if ver, ok := installed[id]; ok {
+		key := stripUvVersionPin(id)
+		if ver, ok := installed[key]; ok {
 			results = append(results, provider.ProbeResult{ID: id, State: state.StateOK, Version: ver})
 		} else {
 			results = append(results, provider.ProbeResult{ID: id, State: state.StateFailed})
 		}
 	}
 	return results, nil
+}
+
+// stripUvVersionPin strips the pip-style version specifier suffix
+// from a uv tool ID. uv uses pip's syntax (`foo==1.2.3`, `foo>=1.0`,
+// etc.) rather than npm's `@` delimiter. Returns the bare tool name.
+func stripUvVersionPin(id string) string {
+	for _, sep := range []string{"==", ">=", "<=", "~=", ">", "<"} {
+		if idx := strings.Index(id, sep); idx > 0 {
+			return id[:idx]
+		}
+	}
+	return id
 }
 
 // Plan computes actions for uv tools and attaches any

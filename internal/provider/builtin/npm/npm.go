@@ -55,6 +55,13 @@ func (p *Provider) Bootstrap(_ context.Context) error {
 }
 
 // Probe queries npm for globally installed packages.
+//
+// Cycle 189: a state entry like `foo@1.2.3` or `@scope/bar@1.2.3`
+// (recorded by `hams npm install -g foo@1.2.3`) strips the pin
+// suffix before looking up in the bare-name `installed` map. Pre-
+// cycle-189 the full state ID including `@version` was used as the
+// lookup key and never matched — any user who pinned via CLI saw
+// their drift detection permanently broken.
 func (p *Provider) Probe(ctx context.Context, sf *state.File) ([]provider.ProbeResult, error) {
 	output, err := p.runner.List(ctx)
 	if err != nil {
@@ -67,13 +74,33 @@ func (p *Provider) Probe(ctx context.Context, sf *state.File) ([]provider.ProbeR
 		if r.State == state.StateRemoved {
 			continue
 		}
-		if ver, ok := installed[id]; ok {
+		key := stripNpmVersionPin(id)
+		if ver, ok := installed[key]; ok {
 			results = append(results, provider.ProbeResult{ID: id, State: state.StateOK, Version: ver})
 		} else {
 			results = append(results, provider.ProbeResult{ID: id, State: state.StateFailed})
 		}
 	}
 	return results, nil
+}
+
+// stripNpmVersionPin strips the optional `@version` suffix from an
+// npm package ID, preserving the leading `@` of a scoped package.
+// Examples:
+//
+//	foo@1.2.3           → foo
+//	@scope/bar@1.2.3    → @scope/bar
+//	@scope/bar          → @scope/bar  (no version)
+//	foo                 → foo
+//
+// Rule: use the LAST `@` as the version delimiter — but only when
+// its position is > 0 (the initial `@` of a scoped name is preserved).
+func stripNpmVersionPin(id string) string {
+	idx := strings.LastIndex(id, "@")
+	if idx <= 0 {
+		return id
+	}
+	return id[:idx]
 }
 
 // Plan computes actions for npm packages and attaches any

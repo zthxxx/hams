@@ -98,6 +98,13 @@ func (p *Provider) Bootstrap(_ context.Context) error {
 }
 
 // Probe queries pnpm for globally installed packages.
+//
+// Cycle 189: state IDs with `@version` pins strip the suffix before
+// the installed-map lookup. Pre-cycle-189 a pinned state entry
+// never matched — drift detection was broken for any user who
+// pinned via CLI. Scoped packages (`@scope/bar`) preserve the
+// leading `@`; only the LAST `@` (position > 0) is treated as the
+// version delimiter.
 func (p *Provider) Probe(ctx context.Context, sf *state.File) ([]provider.ProbeResult, error) {
 	output, err := p.runner.List(ctx)
 	if err != nil {
@@ -110,13 +117,25 @@ func (p *Provider) Probe(ctx context.Context, sf *state.File) ([]provider.ProbeR
 		if r.State == state.StateRemoved {
 			continue
 		}
-		if ver, ok := installed[id]; ok {
+		key := stripPnpmVersionPin(id)
+		if ver, ok := installed[key]; ok {
 			results = append(results, provider.ProbeResult{ID: id, State: state.StateOK, Version: ver})
 		} else {
 			results = append(results, provider.ProbeResult{ID: id, State: state.StateFailed})
 		}
 	}
 	return results, nil
+}
+
+// stripPnpmVersionPin strips the optional `@version` suffix from a
+// pnpm package ID, preserving the leading `@` of a scoped package.
+// Same rule as npm (cycle 189).
+func stripPnpmVersionPin(id string) string {
+	idx := strings.LastIndex(id, "@")
+	if idx <= 0 {
+		return id
+	}
+	return id[:idx]
 }
 
 // Plan computes actions for pnpm packages and attaches any

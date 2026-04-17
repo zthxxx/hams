@@ -142,6 +142,63 @@ func TestU6_Probe_OKAndFailedClassification(t *testing.T) {
 	}
 }
 
+// TestProbe_MatchesPinnedVersionIDs locks in cycle 189: state IDs
+// with `@version` pins strip the suffix before the installed-map
+// lookup. Scoped packages (`@scope/bar`) preserve the leading `@`.
+// Pre-cycle-189 a state entry like "typescript@5.3.3" would never
+// match the installed map (keyed on bare name) and always return
+// StateFailed, breaking drift detection for any CLI-pinned install.
+func TestProbe_MatchesPinnedVersionIDs(t *testing.T) {
+	t.Parallel()
+	fake := NewFakeCmdRunner().
+		Seed("typescript", "5.3.3").
+		Seed("@scope/tool", "1.0.0")
+	p := New(nil, fake)
+
+	sf := state.New("npm", "test-machine")
+	sf.SetResource("typescript@5.3.3", state.StateOK)
+	sf.SetResource("@scope/tool@1.0.0", state.StateOK)
+	sf.SetResource("@scope/bare", state.StateOK) // scoped without pin
+
+	results, err := p.Probe(context.Background(), sf)
+	if err != nil {
+		t.Fatalf("Probe: %v", err)
+	}
+	byID := map[string]provider.ProbeResult{}
+	for _, r := range results {
+		byID[r.ID] = r
+	}
+	if byID["typescript@5.3.3"].State != state.StateOK {
+		t.Errorf("pinned typescript: state=%v, want StateOK", byID["typescript@5.3.3"].State)
+	}
+	if byID["@scope/tool@1.0.0"].State != state.StateOK {
+		t.Errorf("pinned scoped: state=%v, want StateOK", byID["@scope/tool@1.0.0"].State)
+	}
+	// Scoped without pin: NOT in fake's installed → StateFailed (still bare vs "@scope/bare").
+	if byID["@scope/bare"].State != state.StateFailed {
+		t.Errorf("@scope/bare (absent): state=%v, want StateFailed", byID["@scope/bare"].State)
+	}
+}
+
+// TestStripNpmVersionPin covers the pure-helper invariant.
+func TestStripNpmVersionPin(t *testing.T) {
+	t.Parallel()
+	cases := map[string]string{
+		"foo":              "foo",
+		"foo@1.2.3":        "foo",
+		"@scope/bar":       "@scope/bar",
+		"@scope/bar@1.2.3": "@scope/bar",
+		"@scope/bar@^1.0":  "@scope/bar",
+		"":                 "",
+		"@":                "@",
+	}
+	for in, want := range cases {
+		if got := stripNpmVersionPin(in); got != want {
+			t.Errorf("stripNpmVersionPin(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
 // U7 — Probe skips StateRemoved entries.
 func TestU7_Probe_SkipsRemovedResources(t *testing.T) {
 	t.Parallel()
