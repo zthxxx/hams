@@ -346,6 +346,42 @@ func configCmd() *cli.Command {
 				},
 			},
 			{
+				Name:      "unset",
+				Usage:     "Remove a configuration value",
+				ArgsUsage: "<key>",
+				Action: func(_ context.Context, cmd *cli.Command) error {
+					if cmd.Args().Len() < 1 {
+						return hamserr.NewUserError(hamserr.ExitUsageError,
+							"config unset requires a key",
+							"Usage: hams config unset <key>",
+							"Valid keys: "+strings.Join(config.ValidConfigKeys, ", "),
+						)
+					}
+					key := cmd.Args().Get(0)
+					// Accept whitelisted keys OR sensitive-pattern keys —
+					// mirrors `config set`'s gate so users can unset any
+					// key they could previously set.
+					if !config.IsValidConfigKey(key) && !config.IsSensitiveKey(key) {
+						return hamserr.NewUserError(hamserr.ExitUsageError,
+							fmt.Sprintf("unknown config key %q", key),
+							"Valid keys: "+strings.Join(config.ValidConfigKeys, ", "),
+							"Or use a key containing token/key/secret/password/credential",
+						)
+					}
+					flags := globalFlags(cmd)
+					paths := resolvePaths(flags)
+					if err := config.UnsetConfigKey(paths, flags.Store, key); err != nil {
+						return fmt.Errorf("unsetting config: %w", err)
+					}
+					target := "global config"
+					if config.IsSensitiveKey(key) {
+						target = "local config"
+					}
+					fmt.Printf("Unset %s (from %s)\n", key, target)
+					return nil
+				},
+			},
+			{
 				Name:  "edit",
 				Usage: "Open the global config file in your editor",
 				Action: func(ctx context.Context, cmd *cli.Command) error {

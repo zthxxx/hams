@@ -315,6 +315,51 @@ func ReadRawConfigKey(paths Paths, storePath, key string) (value string, found b
 	return fmt.Sprint(raw), true, nil
 }
 
+// UnsetConfigKey deletes a key from the appropriate config file,
+// using the same routing as WriteConfigKey: sensitive keys from
+// hams.config.local.yaml (store-local or global fallback), non-
+// sensitive from the global hams.config.yaml. Returns nil if the
+// key is not present (idempotent) OR the target file does not yet
+// exist — the user's intent is "this key shouldn't be set", and
+// both "not present" and "file missing" satisfy that intent.
+// Documented as `hams config unset <key>` in docs/cli/config.mdx
+// but previously not implemented — users had to hand-edit YAML.
+func UnsetConfigKey(paths Paths, storePath, key string) error {
+	targetPath := paths.GlobalConfigPath()
+	if IsSensitiveKey(key) {
+		if storePath == "" {
+			targetPath = filepath.Join(paths.ConfigHome, "hams.config.local.yaml")
+		} else {
+			targetPath = filepath.Join(storePath, "hams.config.local.yaml")
+		}
+	}
+
+	data, err := os.ReadFile(targetPath) //nolint:gosec // config paths are user-specified
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil // file missing == key not set, already at desired state
+		}
+		return fmt.Errorf("reading config %s: %w", targetPath, err)
+	}
+
+	existing := make(map[string]any)
+	if unmarshalErr := yaml.Unmarshal(data, &existing); unmarshalErr != nil {
+		return fmt.Errorf("parsing config %s: %w", targetPath, unmarshalErr)
+	}
+
+	if _, present := existing[key]; !present {
+		return nil // already not present, nothing to do
+	}
+	delete(existing, key)
+
+	out, err := yaml.Marshal(existing)
+	if err != nil {
+		return fmt.Errorf("marshaling config: %w", err)
+	}
+
+	return hamsfile.AtomicWrite(targetPath, out)
+}
+
 // WriteConfigKey reads the appropriate config file, updates a single key, and writes it back atomically.
 // Sensitive keys are written to the store's local config; other keys go to the global config file.
 func WriteConfigKey(paths Paths, storePath, key, value string) error {

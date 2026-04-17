@@ -3,6 +3,7 @@ package git
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
@@ -12,6 +13,7 @@ import (
 	"testing"
 
 	"github.com/zthxxx/hams/internal/config"
+	hamserr "github.com/zthxxx/hams/internal/error"
 	"github.com/zthxxx/hams/internal/provider"
 	"github.com/zthxxx/hams/internal/state"
 )
@@ -228,6 +230,88 @@ func TestRecordAdd_WritesBothHamsfileAndState(t *testing.T) {
 	}
 	if r.State != state.StateOK {
 		t.Errorf("state = %v, want StateOK", r.State)
+	}
+}
+
+// TestHandleAdd_ExistingNonGitDirErrors locks in cycle 137:
+// `hams git-clone add <remote> --hams-path=<existing-non-git>`
+// surfaces an actionable UserFacingError instead of shelling
+// out to git and letting it fail cryptically with "destination
+// path already exists and is not an empty directory". Mirror of
+// cycle 136's declarative-apply fix applied to the CLI path.
+func TestHandleAdd_ExistingNonGitDirErrors(t *testing.T) {
+	t.Parallel()
+	p, flags, _ := newCloneHarness(t)
+	broken := t.TempDir() // exists, no .git
+
+	err := p.HandleCommand(context.Background(),
+		[]string{"add", "git@github.com:foo/bar"},
+		map[string]string{"path": broken},
+		flags)
+	if err == nil {
+		t.Fatalf("git-clone add on non-git existing dir should error")
+	}
+	var ufe *hamserr.UserFacingError
+	if !errors.As(err, &ufe) {
+		t.Fatalf("expected *UserFacingError, got %T: %v", err, err)
+	}
+	if !strings.Contains(ufe.Message, broken) {
+		t.Errorf("error should name the path %q, got: %q", broken, ufe.Message)
+	}
+	joined := strings.Join(ufe.Suggestions, " | ")
+	if !strings.Contains(joined, "rm -rf") {
+		t.Errorf("suggestions should include `rm -rf` remedy, got: %q", joined)
+	}
+}
+
+// TestHandleAdd_ExistingValidRepoRecordsWithoutCloning locks in
+// the cycle 137 idempotency behavior: `hams git-clone add` on a
+// target path that already contains a valid `.git` records the
+// resource in the hamsfile WITHOUT re-cloning (no duplicate
+// network call, no `destination already exists` error). Common
+// scenario: user manually cloned then realized they want hams
+// to track it.
+func TestHandleAdd_ExistingValidRepoRecordsWithoutCloning(t *testing.T) {
+	t.Parallel()
+	p, flags, stateDir := newCloneHarness(t)
+
+	// Seed: a directory with a `.git` subdir (looks like a valid
+	// repo without needing a real git binary).
+	targetDir := t.TempDir()
+	clonePath := filepath.Join(targetDir, "already")
+	if err := os.Mkdir(clonePath, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.Mkdir(filepath.Join(clonePath, ".git"), 0o755); err != nil {
+		t.Fatalf("mkdir .git: %v", err)
+	}
+
+	remote := "git@github.com:foo/already"
+	err := p.HandleCommand(context.Background(),
+		[]string{"add", remote},
+		map[string]string{"path": clonePath},
+		flags)
+	if err != nil {
+		t.Errorf("git-clone add on valid repo should be no-op, got: %v", err)
+	}
+
+	// The hamsfile MUST have the resource recorded — the user's
+	// intent to track was captured even though no clone happened.
+	hf, err := p.loadOrCreateHamsfile(nil, flags)
+	if err != nil {
+		t.Fatalf("load hamsfile: %v", err)
+	}
+	wantID := remote + " -> " + clonePath
+	if !slices.Contains(hf.ListApps(), wantID) {
+		t.Errorf("hamsfile missing recorded resource %q — got %v", wantID, hf.ListApps())
+	}
+	// State file should also have the resource at StateOK.
+	sf, err := state.Load(filepath.Join(stateDir, "git-clone.state.yaml"))
+	if err != nil {
+		t.Fatalf("load state: %v", err)
+	}
+	if r, ok := sf.Resources[wantID]; !ok || r.State != state.StateOK {
+		t.Errorf("state missing or wrong state for %q: ok=%v, state=%v", wantID, ok, r)
 	}
 }
 

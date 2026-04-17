@@ -263,6 +263,27 @@ func (p *CloneProvider) handleAdd(ctx context.Context, args []string, hamsFlags 
 		return nil
 	}
 
+	// Mirror Apply's cycle-136 guard: detect non-git-but-existing dir
+	// and already-a-valid-repo cases before shelling out to git.
+	// Without this, users of `hams git-clone add` hit the same cryptic
+	// "destination already exists" shell error that declarative apply
+	// users hit before cycle 136.
+	if info, statErr := os.Stat(cloneTarget); statErr == nil && info.IsDir() {
+		if !isGitRepoPath(cloneTarget) {
+			return hamserr.NewUserError(hamserr.ExitGeneralError,
+				fmt.Sprintf("git-clone target %q already exists but is not a git repository", cloneTarget),
+				"Either delete the directory and re-run: rm -rf "+cloneTarget,
+				"Or initialize it in place: cd "+cloneTarget+" && git init && git remote add origin "+remote,
+			)
+		}
+		// Already a git repo — skip the clone but still record in the
+		// hamsfile so the user's explicit `add` intent is captured.
+		// Common scenario: user manually cloned the repo earlier, now
+		// wants hams to track it.
+		slog.Info("git-clone: target already a git repo, recording in hamsfile without cloning", "path", cloneTarget)
+		return p.recordAdd(remote, localPath, hamsFlags, flags)
+	}
+
 	cmd := exec.CommandContext(ctx, "git", "clone", remote, cloneTarget) //nolint:gosec // git clone from CLI input
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
