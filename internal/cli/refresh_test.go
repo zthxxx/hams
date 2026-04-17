@@ -178,6 +178,111 @@ func TestRunRefresh_SaveFailure_ReturnsPartialFailure(t *testing.T) {
 	}
 }
 
+// TestRunRefresh_SaveFailureListIsAlphabetical locks in cycle 151:
+// when multiple providers fail to save their probed state, the
+// printed warning ("N state save failure(s): X, Y, Z") MUST list
+// the names alphabetically. Previously runRefresh iterated the
+// probeResults map (Go map iteration is non-deterministic), so
+// the warning showed providers in shuffled order on every run —
+// broke log-grep / diff tooling that compared two refresh runs.
+// Symmetric with cycles 148/149/150.
+func TestRunRefresh_SaveFailureListIsAlphabetical(t *testing.T) {
+	storeDir, profileDir, stateDir, flags := setupApplyTestEnv(t, []string{"zeta", "alpha", "mu"})
+
+	// Seed each provider's hamsfile so the artifact filter keeps them
+	// in scope. Probe will succeed (they each return one StateOK),
+	// then sf.Save will fail because we make the state dir read-only.
+	for _, name := range []string{"zeta", "alpha", "mu"} {
+		writeApplyTestFile(t, filepath.Join(profileDir, name+".hams.yaml"),
+			"packages:\n  - app: pkg-a\n")
+	}
+
+	registry := provider.NewRegistry()
+	for _, name := range []string{"zeta", "alpha", "mu"} {
+		nameCopy := name
+		p := &applyTestProvider{
+			manifest: provider.Manifest{
+				Name: nameCopy, DisplayName: nameCopy, FilePrefix: nameCopy,
+				Platforms: []provider.Platform{provider.PlatformAll},
+			},
+			probeFn: func(_ context.Context, _ *state.File) ([]provider.ProbeResult, error) {
+				return []provider.ProbeResult{{ID: "pkg-a", State: state.StateOK}}, nil
+			},
+		}
+		if err := registry.Register(p); err != nil {
+			t.Fatalf("Register %s: %v", nameCopy, err)
+		}
+	}
+
+	// State dir needs to exist for the chmod to take effect — and
+	// must be read-only so AtomicWrite's CreateTemp + Rename both fail
+	// with EACCES → sf.Save returns an error → the provider lands in
+	// the saveFailures slice.
+	if err := os.MkdirAll(stateDir, 0o750); err != nil {
+		t.Fatalf("mkdir stateDir: %v", err)
+	}
+	if err := os.Chmod(stateDir, 0o500); err != nil {
+		t.Fatalf("chmod stateDir read-only: %v", err)
+	}
+	t.Cleanup(func() {
+		// Restore writable bit so t.TempDir cleanup can remove the dir.
+		if err := os.Chmod(stateDir, 0o700); err != nil {
+			t.Logf("restore stateDir perms: %v", err)
+		}
+	})
+
+	out := captureStdout(t, func() {
+		err := runRefresh(context.Background(), flags, registry, "", "")
+		if err == nil {
+			t.Fatal("expected ExitPartialFailure (3 save failures)")
+		}
+	})
+
+	// Assert the warning lists the 3 providers in alphabetical order.
+	// alpha, mu, zeta (NOT registration / map order).
+	wantOrder := []string{"alpha", "mu", "zeta"}
+	last := -1
+	for _, name := range wantOrder {
+		idx := strings.Index(out, name)
+		if idx < 0 {
+			t.Errorf("save-failure warning missing %q; got:\n%s", name, out)
+			continue
+		}
+		if idx <= last {
+			t.Errorf("save failure list not alphabetical: %q at idx %d should come after previous (idx %d); got:\n%s",
+				name, idx, last, out)
+		}
+		last = idx
+	}
+
+	// Run 10 more times; assert byte-for-byte stability of the
+	// warning output across runs.
+	for range 10 {
+		got := captureStdout(t, func() {
+			if err := runRefresh(context.Background(), flags, registry, "", ""); err == nil {
+				t.Fatal("expected ExitPartialFailure on every run")
+			}
+		})
+		// Compare the lines that mention the failing providers.
+		extractFailureLine := func(s string) string {
+			for line := range strings.SplitSeq(s, "\n") {
+				if strings.Contains(line, "alpha") && strings.Contains(line, "mu") && strings.Contains(line, "zeta") {
+					return line
+				}
+			}
+			return ""
+		}
+		if extractFailureLine(got) != extractFailureLine(out) {
+			t.Errorf("save-failure line differs across runs:\nfirst:\n%s\nlater:\n%s",
+				extractFailureLine(out), extractFailureLine(got))
+			break
+		}
+	}
+
+	// Silence unused-var warnings on storeDir.
+	_ = storeDir
+}
+
 // TestRunRefresh_ExplicitProfileNotFoundEmitsUserError locks in
 // cycle 93: symmetric to cycle 92's apply fix. `hams --profile=Typo
 // refresh` used to print "No providers match" + exit 0 instead of

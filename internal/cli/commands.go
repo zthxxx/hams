@@ -178,8 +178,19 @@ func runRefresh(ctx context.Context, flags *provider.GlobalFlags, registry *prov
 	probeStart := time.Now()
 	probeResults := provider.ProbeAll(ctx, providers, stateDir, cfg.MachineID)
 	probeElapsed := time.Since(probeStart).Milliseconds()
+	// Sort the result-map keys before iterating so save errors and the
+	// per-provider slog.Error lines emerge in stable, alphabetical order
+	// across runs. Without this, the printed "failed to save" warning
+	// listed providers in shuffled order on each invocation, breaking
+	// log-grep / diff workflows. Symmetric with cycles 148/149/150.
+	probeNames := make([]string, 0, len(probeResults))
+	for name := range probeResults {
+		probeNames = append(probeNames, name)
+	}
+	sort.Strings(probeNames)
 	var saveFailures []string
-	for name, sf := range probeResults {
+	for _, name := range probeNames {
+		sf := probeResults[name]
 		statePath := filepath.Join(stateDir, name+".state.yaml")
 		if saveErr := sf.Save(statePath); saveErr != nil {
 			slog.Error("failed to save probed state", "provider", name, "path", statePath, "error", saveErr)
