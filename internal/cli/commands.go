@@ -240,6 +240,38 @@ func runRefresh(ctx context.Context, flags *provider.GlobalFlags, registry *prov
 	planned := len(providers)
 	providersNoun := pluralize(planned, "provider", "providers")
 
+	// Cycle 209: if ctx was canceled (Ctrl+C / SIGTERM), distinguish
+	// the user interruption from genuine probe errors. Without this,
+	// a canceled refresh reported "Refresh complete: 0/N providers
+	// probed (N probe error(s); see log for details)" — misleading
+	// because (a) "Refresh complete" is wrong, and (b) the N "probe
+	// error(s)" are all the same ctx.Canceled, not separate failures.
+	// Matches runApply's cycle-84 behavior (which also surfaces a
+	// distinct "interrupted" message on ctx cancellation).
+	if ctx.Err() != nil {
+		if flags.JSON {
+			data := map[string]any{
+				"probed":      probed,
+				"planned":     planned,
+				"interrupted": true,
+				"success":     false,
+			}
+			out, mErr := json.MarshalIndent(data, "", "  ")
+			if mErr != nil {
+				return fmt.Errorf("marshaling refresh JSON: %w", mErr)
+			}
+			fmt.Println(string(out))
+		} else {
+			fmt.Printf("Refresh interrupted: %d/%d %s probed before cancellation\n",
+				probed, planned, providersNoun)
+		}
+		return hamserr.NewUserError(hamserr.ExitPartialFailure,
+			fmt.Sprintf("refresh interrupted by signal (%v) after probing %d/%d providers",
+				ctx.Err(), probed, planned),
+			"Re-run 'hams refresh' to complete the probe",
+		)
+	}
+
 	// Cycle 182: emit a JSON summary when --json is set. CI scripts
 	// that run `hams refresh` in a loop need to detect partial
 	// failures programmatically rather than parsing the prose output.

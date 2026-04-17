@@ -338,6 +338,99 @@ func TestRunRefresh_SaveFailureListIsAlphabetical(t *testing.T) {
 	_ = storeDir
 }
 
+// TestRunRefresh_InterruptedContextReportsExplicitly locks in cycle
+// 209: when the root context is canceled mid-refresh (user pressed
+// Ctrl+C), the summary output MUST say "Refresh interrupted" — not
+// the misleading "Refresh complete: 0/N providers probed (N probe
+// error(s); see log for details)" which made it look like N
+// independent probe failures instead of one user cancellation.
+// Matches cycle 84's behavior for runApply.
+func TestRunRefresh_InterruptedContextReportsExplicitly(t *testing.T) {
+	_, profileDir, _, flags := setupApplyTestEnv(t, []string{"apt"})
+	writeApplyTestFile(t, filepath.Join(profileDir, "apt.hams.yaml"), "cli:\n  - app: htop\n")
+
+	registry := provider.NewRegistry()
+	p := &applyTestProvider{
+		manifest: provider.Manifest{
+			Name: "apt", DisplayName: "apt", FilePrefix: "apt",
+			Platforms: []provider.Platform{provider.PlatformAll},
+		},
+		probeFn: func(ctx context.Context, _ *state.File) ([]provider.ProbeResult, error) {
+			return nil, ctx.Err()
+		},
+	}
+	if err := registry.Register(p); err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	out := captureStdout(t, func() {
+		err := runRefresh(ctx, flags, registry, "", "")
+		if err == nil {
+			t.Fatal("expected ExitPartialFailure for interrupted ctx")
+		}
+		var ufe *hamserr.UserFacingError
+		if !errors.As(err, &ufe) || ufe.Code != hamserr.ExitPartialFailure {
+			t.Fatalf("expected ExitPartialFailure, got %v (%T)", err, err)
+		}
+		if !strings.Contains(ufe.Message, "interrupted") {
+			t.Errorf("error message should mention 'interrupted'; got %q", ufe.Message)
+		}
+	})
+	if !strings.Contains(out, "Refresh interrupted") {
+		t.Errorf("expected 'Refresh interrupted' in stdout; got %q", out)
+	}
+	if strings.Contains(out, "Refresh complete") {
+		t.Errorf("stdout should NOT say 'Refresh complete' on ctx cancellation; got %q", out)
+	}
+}
+
+// TestRunRefresh_InterruptedContextEmitsJSONFlag asserts the JSON
+// variant of cycle 209. `hams --json refresh` with a canceled ctx
+// produces {"interrupted": true, "success": false} instead of the
+// probe_failures/save_failures shape, so CI scripts can branch on
+// the interrupted flag rather than parsing text.
+func TestRunRefresh_InterruptedContextEmitsJSONFlag(t *testing.T) {
+	_, profileDir, _, flags := setupApplyTestEnv(t, []string{"apt"})
+	flags.JSON = true
+	writeApplyTestFile(t, filepath.Join(profileDir, "apt.hams.yaml"), "cli:\n  - app: htop\n")
+
+	registry := provider.NewRegistry()
+	p := &applyTestProvider{
+		manifest: provider.Manifest{
+			Name: "apt", DisplayName: "apt", FilePrefix: "apt",
+			Platforms: []provider.Platform{provider.PlatformAll},
+		},
+		probeFn: func(ctx context.Context, _ *state.File) ([]provider.ProbeResult, error) {
+			return nil, ctx.Err()
+		},
+	}
+	if err := registry.Register(p); err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	out := captureStdout(t, func() {
+		if err := runRefresh(ctx, flags, registry, "", ""); err == nil {
+			t.Fatal("expected ExitPartialFailure for interrupted ctx")
+		}
+	})
+	var data map[string]any
+	if err := json.Unmarshal([]byte(out), &data); err != nil {
+		t.Fatalf("output not valid JSON: %v\nraw: %q", err, out)
+	}
+	if got, ok := data["interrupted"].(bool); !ok || !got {
+		t.Errorf("JSON['interrupted'] = %v (ok=%v), want true; got: %v", data["interrupted"], ok, data)
+	}
+	if got, ok := data["success"].(bool); ok && got {
+		t.Errorf("JSON['success'] = %v, want false or missing; got: %v", data["success"], data)
+	}
+}
+
 // TestRunRefresh_ExplicitProfileNotFoundEmitsUserError locks in
 // cycle 93: symmetric to cycle 92's apply fix. `hams --profile=Typo
 // refresh` used to print "No providers match" + exit 0 instead of
