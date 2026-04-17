@@ -233,6 +233,38 @@ func TestRecordAdd_WritesBothHamsfileAndState(t *testing.T) {
 	}
 }
 
+// TestHandleAdd_StrictArgCount locks in cycle 165: the pre-cycle-165
+// implementation only used args[0] of `hams git-clone add …` and
+// silently dropped extra positional args. Common typo: the user
+// remembers `git clone <remote> <path>` syntax and types
+// `hams git-clone add <remote> <path> --hams-path=<X>` thinking
+// `<path>` was forwarded. The actual path came from --hams-path;
+// `<path>` was silently lost. Now: too-many positional args returns
+// a usage error that points the user at --hams-path.
+func TestHandleAdd_StrictArgCount(t *testing.T) {
+	t.Parallel()
+	p, flags, _ := newCloneHarness(t)
+
+	err := p.HandleCommand(context.Background(),
+		[]string{"add", "git@github.com:foo/bar", "extra-positional-arg"},
+		map[string]string{"path": "/tmp/bar"},
+		flags)
+	if err == nil {
+		t.Fatalf("git-clone add with extra positional should error")
+	}
+	var ufe *hamserr.UserFacingError
+	if !errors.As(err, &ufe) {
+		t.Fatalf("expected *UserFacingError, got %T: %v", err, err)
+	}
+	if !strings.Contains(ufe.Message, "exactly one") {
+		t.Errorf("error should say 'exactly one'; got %q", ufe.Message)
+	}
+	joined := strings.Join(ufe.Suggestions, " | ")
+	if !strings.Contains(joined, "--hams-path") {
+		t.Errorf("suggestions should mention --hams-path; got %q", joined)
+	}
+}
+
 // TestHandleAdd_ExistingNonGitDirErrors locks in cycle 137:
 // `hams git-clone add <remote> --hams-path=<existing-non-git>`
 // surfaces an actionable UserFacingError instead of shelling

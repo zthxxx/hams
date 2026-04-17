@@ -251,6 +251,20 @@ func (p *CloneProvider) handleAdd(ctx context.Context, args []string, hamsFlags 
 			"Usage: hams git-clone add <remote> --hams-path=<path>",
 		)
 	}
+	// Strict arg count — same UX class as cycles 156/163/164. The
+	// pre-cycle-165 implementation only used args[0] and silently
+	// dropped any extra positional args. Common typo: the user
+	// remembers `git clone <remote> <path>` syntax and types
+	// `hams git-clone add foo bar --hams-path=/x` thinking `bar` was
+	// the path. The path actually came from --hams-path; "bar" was
+	// silently lost. Now: surface the mismatch.
+	if len(args) != 1 {
+		return hamserr.NewUserError(hamserr.ExitUsageError,
+			fmt.Sprintf("git-clone add takes exactly one remote URL (got %d args: %v)", len(args), args),
+			"Usage: hams git-clone add <remote> --hams-path=<path>",
+			"The local path is set via --hams-path, not as a positional arg",
+		)
+	}
 
 	remote := args[0]
 	localPath := hamsFlags["path"]
