@@ -2,10 +2,12 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	hamserr "github.com/zthxxx/hams/internal/error"
 	"github.com/zthxxx/hams/internal/provider"
 	"github.com/zthxxx/hams/internal/sudo"
 )
@@ -113,6 +115,66 @@ func TestProviderUsageDescription_UnknownProviderFallsBack(t *testing.T) {
 	}
 	if !strings.Contains(got, "future-external") {
 		t.Errorf("fallback should contain display name, got %q", got)
+	}
+}
+
+// TestNewApp_UnknownCommandReturnsUsageError asserts that typing a
+// non-existent subcommand (e.g., `hams bogus-command` or `hams aply`)
+// returns a UserFacingError{Code: ExitUsageError} instead of
+// silently printing the help text with exit 0. Scripts need to be
+// able to detect typos; users need to be pointed at `--help`.
+func TestNewApp_UnknownCommandReturnsUsageError(t *testing.T) {
+	registry := provider.NewRegistry()
+	app := NewApp(registry, sudo.NoopAcquirer{})
+
+	err := app.Run(context.Background(), []string{"hams", "bogus-command"})
+	if err == nil {
+		t.Fatal("expected error for unknown command, got nil")
+	}
+	if !strings.Contains(err.Error(), "unknown command") {
+		t.Errorf("error message should mention 'unknown command', got: %v", err)
+	}
+	if !strings.Contains(err.Error(), "bogus-command") {
+		t.Errorf("error message should name the typo'd command, got: %v", err)
+	}
+}
+
+// TestNewApp_UnknownCommandSuggestsClosestMatch asserts that
+// `hams aply` (typo of `apply`) surfaces a "Did you mean 'hams
+// apply'?" suggestion via urfave/cli's Jaro-Winkler suggester.
+// Without this the user sees only the bare "unknown command"
+// error and has to re-read the command list.
+func TestNewApp_UnknownCommandSuggestsClosestMatch(t *testing.T) {
+	registry := provider.NewRegistry()
+	app := NewApp(registry, sudo.NoopAcquirer{})
+
+	err := app.Run(context.Background(), []string{"hams", "aply"})
+	if err == nil {
+		t.Fatal("expected error for typo'd command, got nil")
+	}
+	var ufe *hamserr.UserFacingError
+	if !errors.As(err, &ufe) {
+		t.Fatalf("error should be *UserFacingError, got %T: %v", err, err)
+	}
+	joined := strings.Join(ufe.Suggestions, " | ")
+	if !strings.Contains(joined, "apply") {
+		t.Errorf("suggestions should mention 'apply' for typo 'aply', got: %v", ufe.Suggestions)
+	}
+	if ufe.Code != hamserr.ExitUsageError {
+		t.Errorf("exit code = %d, want ExitUsageError (%d)", ufe.Code, hamserr.ExitUsageError)
+	}
+}
+
+// TestNewApp_NoArgsShowsHelpNotError asserts that bare `hams` (no
+// subcommand) still prints the help text and exits 0, preserving
+// the prior behavior for the empty-args path — the usage-error
+// fix is SCOPED to "args given but no subcommand matched".
+func TestNewApp_NoArgsShowsHelpNotError(t *testing.T) {
+	registry := provider.NewRegistry()
+	app := NewApp(registry, sudo.NoopAcquirer{})
+
+	if err := app.Run(context.Background(), []string{"hams"}); err != nil {
+		t.Errorf("bare 'hams' should not error, got: %v", err)
 	}
 }
 
