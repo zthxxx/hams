@@ -237,12 +237,35 @@ func runRefresh(ctx context.Context, flags *provider.GlobalFlags, registry *prov
 	}
 	sort.Strings(probeNames)
 	var saveFailures []string
-	for _, name := range probeNames {
-		sf := probeResults[name]
-		statePath := filepath.Join(stateDir, name+".state.yaml")
-		if saveErr := sf.Save(statePath); saveErr != nil {
-			slog.Error("failed to save probed state", "provider", name, "path", statePath, "error", saveErr)
-			saveFailures = append(saveFailures, name)
+	switch {
+	case flags.DryRun:
+		// Cycle 226: --dry-run is a pure preview per the global flag's
+		// "no side effects" contract. Pre-cycle-226 refresh probed
+		// providers (read-only, fine) AND then unconditionally called
+		// sf.Save on every result — writing state files and bumping
+		// timestamps. CI scripts running `hams refresh --dry-run` to
+		// check planned drift were silently mutating state.
+		//
+		// Preview the writes instead of executing them. The non-JSON
+		// branch prints a per-provider "would write" line; the JSON
+		// summary further down already reports `dry_run: true` (see
+		// cycle 182's --json refresh shape) so machine consumers
+		// distinguish dry-run from real runs without grepping prose.
+		if !flags.JSON {
+			fmt.Printf("[dry-run] Would write state for %d %s:\n",
+				len(probeNames), pluralize(len(probeNames), "provider", "providers"))
+			for _, name := range probeNames {
+				fmt.Printf("  %s\n", logging.TildePath(filepath.Join(stateDir, name+".state.yaml")))
+			}
+		}
+	default:
+		for _, name := range probeNames {
+			sf := probeResults[name]
+			statePath := filepath.Join(stateDir, name+".state.yaml")
+			if saveErr := sf.Save(statePath); saveErr != nil {
+				slog.Error("failed to save probed state", "provider", name, "path", statePath, "error", saveErr)
+				saveFailures = append(saveFailures, name)
+			}
 		}
 	}
 

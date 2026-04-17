@@ -398,6 +398,53 @@ func TestRunRefresh_AcquiresMutationLock(t *testing.T) {
 	}
 }
 
+// TestRunRefresh_DryRunSkipsStateWrites — cycle 226 guard. `hams
+// refresh --dry-run` was unconditionally calling sf.Save on every
+// probed provider before this fix, mutating state files and bumping
+// timestamps despite the user's explicit --dry-run. Asserts:
+//
+//  1. probeFn IS called (refresh still surfaces the would-be plan).
+//  2. NO state file ends up on disk afterward.
+//  3. Stdout contains the "[dry-run] Would write state" preview.
+func TestRunRefresh_DryRunSkipsStateWrites(t *testing.T) {
+	_, profileDir, stateDir, flags := setupApplyTestEnv(t, []string{"alpha"})
+	flags.DryRun = true
+	writeApplyTestFile(t, filepath.Join(profileDir, "alpha.hams.yaml"), "cli:\n  - app: pkg-a\n")
+
+	registry := provider.NewRegistry()
+	probeCalls := 0
+	p := &applyTestProvider{
+		manifest: provider.Manifest{
+			Name: "alpha", DisplayName: "alpha", FilePrefix: "alpha",
+			Platforms: []provider.Platform{provider.PlatformAll},
+		},
+		probeFn: func(_ context.Context, _ *state.File) ([]provider.ProbeResult, error) {
+			probeCalls++
+			return []provider.ProbeResult{{ID: "pkg-a", State: state.StateOK}}, nil
+		},
+	}
+	if err := registry.Register(p); err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+
+	out := captureStdout(t, func() {
+		if err := runRefresh(context.Background(), flags, registry, "", ""); err != nil {
+			t.Fatalf("runRefresh: %v", err)
+		}
+	})
+
+	if probeCalls == 0 {
+		t.Error("dry-run refresh should still call Probe (preview the plan)")
+	}
+	statePath := filepath.Join(stateDir, "alpha.state.yaml")
+	if _, err := os.Stat(statePath); err == nil {
+		t.Errorf("dry-run refresh wrote state file %q; must be a pure preview", statePath)
+	}
+	if !strings.Contains(out, "[dry-run] Would write state") {
+		t.Errorf("dry-run output missing 'Would write state' preview; got %q", out)
+	}
+}
+
 // TestRunRefresh_DryRunSkipsLock — cycle 221 invariant: dry-run is
 // a pure preview per the global flag's "no side effects" contract,
 // so refresh MUST NOT acquire the lock under --dry-run (acquiring
