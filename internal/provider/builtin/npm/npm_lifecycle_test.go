@@ -252,6 +252,14 @@ func TestPlan_SuppressesRedundantVersionPinRemoves(t *testing.T) {
 	if len(removes) != 0 {
 		t.Errorf("removes = %v, want [] (redundant bare-name remove suppressed)", removes)
 	}
+	// Cycle 192: the suppressed ID must be marked StateRemoved in the
+	// observed state so sf.Save persists the tombstone. Without this,
+	// every subsequent `hams apply` would re-emit the same Remove
+	// action that we'd suppress again, leaving stale StateOK entries
+	// in the state file indefinitely.
+	if r, ok := sf.Resources["typescript@5.3.3"]; !ok || r.State != state.StateRemoved {
+		t.Errorf("typescript@5.3.3 state = %v (ok=%v), want StateRemoved", r, ok)
+	}
 }
 
 // TestStripNpmVersionPin covers the pure-helper invariant.

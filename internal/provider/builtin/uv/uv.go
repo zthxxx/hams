@@ -89,9 +89,10 @@ func stripUvVersionPin(id string) string {
 
 // suppressRedundantVersionRemoves drops ActionRemove entries whose
 // bare tool name (pip-specifier-stripped) matches an Install/Update/
-// Skip action. Cycle 191 — same rationale as npm. uv uses pip-style
-// specifiers so the strip function is stripUvVersionPin.
-func suppressRedundantVersionRemoves(actions []provider.Action) []provider.Action {
+// Skip action and tombstones the stale state entry. Cycle 191/192 —
+// same rationale as npm. uv uses pip-style specifiers so the strip
+// function is stripUvVersionPin.
+func suppressRedundantVersionRemoves(actions []provider.Action, observed *state.File) []provider.Action {
 	keepBareNames := make(map[string]bool)
 	for _, a := range actions {
 		if a.Type == provider.ActionRemove {
@@ -104,6 +105,9 @@ func suppressRedundantVersionRemoves(actions []provider.Action) []provider.Actio
 		if a.Type == provider.ActionRemove && keepBareNames[stripUvVersionPin(a.ID)] {
 			slog.Info("uv: suppressing redundant version-pin remove (bare name overlaps install)",
 				"removing", a.ID)
+			if observed != nil {
+				observed.SetResource(a.ID, state.StateRemoved)
+			}
 			continue
 		}
 		out = append(out, a)
@@ -116,9 +120,9 @@ func suppressRedundantVersionRemoves(actions []provider.Action) []provider.Actio
 func (p *Provider) Plan(_ context.Context, desired *hamsfile.File, observed *state.File) ([]provider.Action, error) {
 	apps := desired.ListApps()
 	actions := provider.ComputePlan(apps, observed, observed.ConfigHash)
-	// Cycle 191: drop redundant version-pinned removes (same rationale
-	// as npm).
-	actions = suppressRedundantVersionRemoves(actions)
+	// Cycle 191/192: drop redundant version-pinned removes + tombstone
+	// the stale state entry (same rationale as npm).
+	actions = suppressRedundantVersionRemoves(actions, observed)
 	return provider.PopulateActionHooks(actions, desired), nil
 }
 
