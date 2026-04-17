@@ -147,6 +147,86 @@ func TestComputePlan_DedupsPreservesFirstOccurrenceOrder(t *testing.T) {
 	}
 }
 
+// TestComputePlan_RemoveActionsAreSorted asserts that the Remove
+// actions appended after the desired-driven Install/Skip block are
+// in stable, alphabetical order. Without this, Go's non-deterministic
+// map iteration over observed.Resources shuffled the Remove actions
+// on every apply — flapped dry-run preview output, log order, and
+// hook firing order. Symmetric with cycles 148/149.
+func TestComputePlan_RemoveActionsAreSorted(t *testing.T) {
+	// 6 observed resources, 0 in desired, all eligible for removal.
+	// Inserted in deliberate non-alphabetical order so a sort is the
+	// only way to get them out alphabetically across runs.
+	observed := state.New("apt", "test")
+	insertOrder := []string{"zsh", "ack", "vim", "curl", "htop", "jq"}
+	for _, id := range insertOrder {
+		observed.SetResource(id, state.StateOK)
+	}
+
+	first := ComputePlan(nil, observed, "baseline")
+	// 21 reps. Compare each rep's slice byte-for-byte against the first.
+	for range 20 {
+		again := ComputePlan(nil, observed, "baseline")
+		if len(again) != len(first) {
+			t.Fatalf("len differs across runs: %d vs %d", len(first), len(again))
+		}
+		for i := range first {
+			if again[i].ID != first[i].ID {
+				t.Errorf("actions[%d].ID differs across runs: %q vs %q", i, first[i].ID, again[i].ID)
+			}
+		}
+	}
+
+	// Assert alphabetical ordering, not just stability.
+	wantOrder := []string{"ack", "curl", "htop", "jq", "vim", "zsh"}
+	if len(first) != len(wantOrder) {
+		t.Fatalf("got %d actions, want %d", len(first), len(wantOrder))
+	}
+	for i, want := range wantOrder {
+		if first[i].ID != want {
+			t.Errorf("actions[%d].ID = %q, want %q (alphabetical)", i, first[i].ID, want)
+		}
+		if first[i].Type != ActionRemove {
+			t.Errorf("actions[%d].Type = %v, want ActionRemove", i, first[i].Type)
+		}
+	}
+}
+
+// TestComputePlan_InstallsBeforeRemoves_StableMixedOrder asserts the
+// invariant that desired-driven actions (Install/Skip) come before
+// Remove actions in the result, AND that Remove actions are
+// alphabetical within their block. Hooks and preview ordering rely
+// on both invariants together.
+func TestComputePlan_InstallsBeforeRemoves_StableMixedOrder(t *testing.T) {
+	observed := state.New("apt", "test")
+	observed.SetResource("zombie-z", state.StateOK)
+	observed.SetResource("zombie-a", state.StateOK)
+	observed.SetResource("zombie-m", state.StateOK)
+
+	desired := []string{"new-c", "new-a", "new-b"}
+	actions := ComputePlan(desired, observed, "baseline")
+
+	if len(actions) != 6 {
+		t.Fatalf("got %d actions, want 6 (3 install + 3 remove)", len(actions))
+	}
+
+	// Installs first (preserve first-occurrence order from desired).
+	wantInstall := []string{"new-c", "new-a", "new-b"}
+	for i, want := range wantInstall {
+		if actions[i].ID != want || actions[i].Type != ActionInstall {
+			t.Errorf("actions[%d] = {%q, %v}, want {%q, Install}", i, actions[i].ID, actions[i].Type, want)
+		}
+	}
+
+	// Removes after, alphabetically.
+	wantRemove := []string{"zombie-a", "zombie-m", "zombie-z"}
+	for i, want := range wantRemove {
+		if actions[3+i].ID != want || actions[3+i].Type != ActionRemove {
+			t.Errorf("actions[%d] = {%q, %v}, want {%q, Remove}", 3+i, actions[3+i].ID, actions[3+i].Type, want)
+		}
+	}
+}
+
 // Property: every desired resource appears in the action list exactly once.
 func TestProperty_PlanCoversAllDesired(t *testing.T) {
 	rapid.Check(t, func(t *rapid.T) {
