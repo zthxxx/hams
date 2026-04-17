@@ -443,6 +443,13 @@ func (p *CloneProvider) handleRemove(args []string, hamsFlags map[string]string,
 // scripts that need to enumerate tracked repos had to grep the
 // prose, which broke on the empty-state hint line.
 func (p *CloneProvider) handleList(ctx context.Context, hamsFlags map[string]string, flags *provider.GlobalFlags) error {
+	// Cycle 222: fail fast on typo'd --profile. Symmetric with the
+	// shared HandleListCmd (cycle 220) and every other custom-list
+	// path (homebrew, git-config).
+	if _, err := provider.ValidateProfileDirExists(p.effectiveConfig(flags)); err != nil {
+		return err
+	}
+
 	hf, err := p.loadOrCreateHamsfile(hamsFlags, flags)
 	if err != nil {
 		return err

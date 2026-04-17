@@ -14,6 +14,47 @@ import (
 	"github.com/zthxxx/hams/internal/state"
 )
 
+// ValidateProfileDirExists returns the resolved profile directory for
+// cfg when it exists on disk, otherwise returns an ExitUsageError
+// naming the missing path. Used by every `hams <provider> list` code
+// path — both the shared HandleListCmd and per-provider custom
+// handlers (git-clone, git-config, homebrew, …) — so a typo'd
+// --profile fails fast with the same actionable error everywhere.
+//
+// Symmetric with the top-level `hams list --profile=Typo` check
+// (cycle 217) and the apply/refresh `flags.Profile != ""` guards
+// (cycles 92/93).
+//
+// Cycle 220 introduced the guard inline; cycle 222 extracted it so
+// custom-handler providers (git-clone, git-config, homebrew) can
+// share the exact error shape without duplication. If a future
+// provider bypasses HandleListCmd, adopting this helper is one call.
+//
+// Order of failure modes (both are ExitUsageError):
+//  1. cfg.StorePath empty → "no store directory configured" (this
+//     matches what loadOrCreateHamsfile returns, so the error is
+//     stable regardless of whether the caller validates profile
+//     first or goes straight to hamsfile loading).
+//  2. profile dir missing → "profile %q not found at %s".
+func ValidateProfileDirExists(cfg *config.Config) (string, error) {
+	if cfg == nil || cfg.StorePath == "" {
+		return "", hamserr.NewUserError(hamserr.ExitUsageError,
+			"no store directory configured",
+			"Set store_path in hams config or pass --store",
+		)
+	}
+	profileDir := cfg.ProfileDir()
+	info, statErr := os.Stat(profileDir)
+	if statErr == nil && info.IsDir() {
+		return profileDir, nil
+	}
+	return "", hamserr.NewUserError(hamserr.ExitUsageError,
+		fmt.Sprintf("profile %q not found at %s", cfg.ProfileTag, profileDir),
+		"Check available profiles: ls "+cfg.StorePath,
+		"Or create this profile: mkdir -p "+profileDir,
+	)
+}
+
 // HandleListCmd is the shared implementation of the `hams <provider>
 // list` CLI verb. It loads the provider's hamsfile + state file
 // (tolerating absent files by creating empty in-memory doubles),
@@ -45,22 +86,9 @@ func HandleListCmd(ctx context.Context, p Provider, cfg *config.Config) error {
 	manifest := p.Manifest()
 	prefix := manifest.FilePrefix
 
-	// Cycle 220: symmetric with cycles 92/93/217. When the resolved
-	// profile directory doesn't exist, fail hard with a clear error
-	// naming the missing path. Otherwise `hams <provider> list
-	// --profile=Typo` silently printed "No entries tracked" —
-	// indistinguishable from a real empty-profile scenario. This
-	// mirrors what the top-level `hams list --profile=Typo` does
-	// (cycle 217) via a path-exists check: the user's typo surfaces
-	// immediately instead of being hidden behind FormatDiff's
-	// zero-entry message.
-	profileDir := cfg.ProfileDir()
-	if info, statErr := os.Stat(profileDir); statErr != nil || !info.IsDir() {
-		return hamserr.NewUserError(hamserr.ExitUsageError,
-			fmt.Sprintf("profile %q not found at %s", cfg.ProfileTag, profileDir),
-			"Check available profiles: ls "+cfg.StorePath,
-			"Or create this profile: mkdir -p "+profileDir,
-		)
+	profileDir, profileErr := ValidateProfileDirExists(cfg)
+	if profileErr != nil {
+		return profileErr
 	}
 
 	// Cycle 216: read-only load. hamsfile.LoadOrCreateEmpty would call

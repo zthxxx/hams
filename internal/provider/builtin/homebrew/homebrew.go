@@ -384,19 +384,15 @@ func (p *Provider) DisplayName() string { return brewDisplayName }
 func (p *Provider) handleList(hamsFlags map[string]string, flags *provider.GlobalFlags) error {
 	cfg := p.effectiveConfig(flags)
 
-	// Cycle 220: validate the resolved profile dir exists. `hams brew
-	// list --profile=Typo` on an invalid profile previously printed
-	// "Homebrew managed packages:\nNo entries tracked..." — silent
-	// success despite the user's obvious typo. Match the top-level
-	// `hams list --profile=Typo` (cycle 217) and HandleListCmd
-	// (cycle 220) behavior: fail hard with actionable error.
-	profileDir := cfg.ProfileDir()
-	if info, statErr := os.Stat(profileDir); statErr != nil || !info.IsDir() {
-		return hamserr.NewUserError(hamserr.ExitUsageError,
-			fmt.Sprintf("profile %q not found at %s", cfg.ProfileTag, profileDir),
-			"Check available profiles: ls "+cfg.StorePath,
-			"Or create this profile: mkdir -p "+profileDir,
-		)
+	// Cycle 220/222: validate the resolved profile dir exists via the
+	// shared helper. `hams brew list --profile=Typo` on an invalid
+	// profile previously printed "Homebrew managed packages:\nNo
+	// entries tracked..." — silent success despite the user's typo.
+	// Matches the top-level `hams list --profile=Typo` (cycle 217),
+	// HandleListCmd (cycle 220), and every other custom-list path
+	// (cycle 222).
+	if _, err := provider.ValidateProfileDirExists(cfg); err != nil {
+		return err
 	}
 
 	hf, err := p.loadOrCreateHamsfile(hamsFlags, flags)
