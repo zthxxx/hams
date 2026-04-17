@@ -740,6 +740,16 @@ func filterProviders(providers []provider.Provider, only, except string, knownNa
 
 	if only != "" {
 		onlySet := parseCSV(only)
+		// Whitespace-only input (e.g., `--only="   "` or `--only=,,`)
+		// parses to an empty set. Without this guard we'd silently filter
+		// to zero providers — indistinguishable from "no providers match"
+		// the user saw on a fresh store, masking the user's typo.
+		if len(onlySet) == 0 {
+			return nil, hamserr.NewUserError(hamserr.ExitUsageError,
+				"--only value is empty after trimming whitespace",
+				fmt.Sprintf("Pass a comma-separated list: --only=%s", strings.Join(knownNames, ",")),
+			)
+		}
 		if err := validateProviderNames(onlySet, knownSet, knownNames); err != nil {
 			return nil, err
 		}
@@ -753,6 +763,15 @@ func filterProviders(providers []provider.Provider, only, except string, knownNa
 	}
 
 	exceptSet := parseCSV(except)
+	// Mirror of the --only empty-after-trim guard. A whitespace-only
+	// --except would otherwise be a silent no-op (keeps every provider)
+	// and mask a typo where the user MEANT to exclude something.
+	if len(exceptSet) == 0 {
+		return nil, hamserr.NewUserError(hamserr.ExitUsageError,
+			"--except value is empty after trimming whitespace",
+			fmt.Sprintf("Pass a comma-separated list: --except=%s", strings.Join(knownNames, ",")),
+		)
+	}
 	if err := validateProviderNames(exceptSet, knownSet, knownNames); err != nil {
 		return nil, err
 	}
