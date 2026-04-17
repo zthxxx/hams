@@ -1008,6 +1008,62 @@ func TestRunApply_JSONOutput(t *testing.T) {
 	_ = storeDir
 }
 
+// TestRunApply_ProfileMismatchClearErrorMessage locks in cycle 194:
+// when the configured profile_tag doesn't match any dir in the
+// store, apply previously printed the generic "No providers match"
+// message. Users who cloned a store without their profile_tag
+// couldn't tell whether the store was empty or their config was
+// wrong. Now: name the missing profile, name its path, AND list
+// the profiles that DO exist in the store + suggest the fix.
+func TestRunApply_ProfileMismatchClearErrorMessage(t *testing.T) {
+	storeDir, _, _, flags := setupApplyTestEnv(t, []string{"apt"})
+
+	// setupApplyTestEnv creates profileDir at storeDir/macOS and
+	// writes profile_tag=macOS. Simulate profile-mismatch by renaming
+	// the macOS dir away AND creating TWO unrelated profile dirs as
+	// the "suggestions" we expect to see enumerated.
+	flags.Profile = "" // clear explicit --profile; config wins
+	if err := os.Rename(filepath.Join(storeDir, "macOS"), filepath.Join(storeDir, "_removed")); err != nil {
+		t.Fatalf("rename: %v", err)
+	}
+	for _, sibling := range []string{"linux", "openwrt"} {
+		if err := os.MkdirAll(filepath.Join(storeDir, sibling), 0o750); err != nil {
+			t.Fatalf("mkdir sibling: %v", err)
+		}
+	}
+
+	// Register apt so the registry has a match.
+	registry := provider.NewRegistry()
+	p := &applyTestProvider{
+		manifest: provider.Manifest{
+			Name: "apt", DisplayName: "apt", FilePrefix: "apt",
+			Platforms: []provider.Platform{provider.PlatformAll},
+		},
+	}
+	if err := registry.Register(p); err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+
+	out := captureStdout(t, func() {
+		if err := runApply(context.Background(), flags, registry, sudo.NoopAcquirer{}, "", true, "", "", false, bootstrapMode{}); err != nil {
+			t.Fatalf("apply: %v", err)
+		}
+	})
+
+	if !strings.Contains(out, "profile directory") {
+		t.Errorf("output should mention 'profile directory'; got:\n%s", out)
+	}
+	if !strings.Contains(out, "Available profiles in this store") {
+		t.Errorf("output should list available profiles; got:\n%s", out)
+	}
+	if !strings.Contains(out, "linux") || !strings.Contains(out, "openwrt") {
+		t.Errorf("output should name the sibling profiles; got:\n%s", out)
+	}
+	if !strings.Contains(out, "hams config set profile_tag") {
+		t.Errorf("output should suggest config fix; got:\n%s", out)
+	}
+}
+
 // TestRunApply_DryRunJSONHasNoProse locks in cycle 187: `hams
 // --json --dry-run apply` previously printed multiple prose lines
 // ("[dry-run] Would apply configurations", "[dry-run] Provider

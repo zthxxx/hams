@@ -284,14 +284,7 @@ func runApply(ctx context.Context, flags *provider.GlobalFlags, registry *provid
 		return filterErr
 	}
 	if len(providers) == 0 {
-		// Distinguish stage-1 empty (no artifacts anywhere) from stage-2
-		// empty (artifacts exist but --only/--except excluded them all).
-		switch {
-		case len(stageOneProviders) == 0:
-			fmt.Println("No providers match: no hamsfile or state file present for any registered provider.")
-		default:
-			fmt.Println("No providers match: --only/--except excluded every provider that has artifacts.")
-		}
+		reportNoProvidersMatch(cfg, profileDir, len(stageOneProviders))
 		return nil
 	}
 
@@ -785,6 +778,42 @@ func runApply(ctx context.Context, flags *provider.GlobalFlags, registry *provid
 	}
 
 	return nil
+}
+
+// reportNoProvidersMatch prints the user-facing message when no
+// providers survive the two-stage artifact+flag filter. Cycle 194
+// distinguishes the profile-mismatch case (configured profile_tag
+// doesn't exist in the store) from the genuinely-empty case —
+// previously both produced the bare "no providers match" message,
+// leaving users who cloned a store without their profile_tag
+// confused about what was missing.
+func reportNoProvidersMatch(cfg *config.Config, profileDir string, stageOneProvidersLen int) {
+	if stageOneProvidersLen > 0 {
+		fmt.Println("No providers match: --only/--except excluded every provider that has artifacts.")
+		return
+	}
+	if info, statErr := os.Stat(profileDir); statErr == nil && info.IsDir() {
+		fmt.Println("No providers match: no hamsfile or state file present for any registered provider.")
+		return
+	}
+	fmt.Printf("No providers match: profile directory %q does not exist (profile_tag=%q).\n",
+		logging.TildePath(profileDir), cfg.ProfileTag)
+	entries, readErr := os.ReadDir(cfg.StorePath)
+	if readErr != nil {
+		return
+	}
+	var available []string
+	for _, e := range entries {
+		if e.IsDir() && !strings.HasPrefix(e.Name(), ".") {
+			available = append(available, e.Name())
+		}
+	}
+	if len(available) == 0 {
+		return
+	}
+	sort.Strings(available)
+	fmt.Printf("  Available profiles in this store: %s\n", strings.Join(available, ", "))
+	fmt.Println("  Fix: hams config set profile_tag <profile>  OR  pass --profile=<profile>")
 }
 
 // emitDryRunJSON writes a pure JSON summary of a dry-run to stdout
