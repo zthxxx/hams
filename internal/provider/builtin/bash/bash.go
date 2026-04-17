@@ -279,6 +279,18 @@ func bashParseResources(f *hamsfile.File) (map[string]bashResource, error) {
 				}
 				continue
 			}
+			// Cycle 193: warn on duplicate URNs. Silent last-write-
+			// wins means ComputePlan's first-occurrence-wins dedup
+			// (cycle 111) and bashParseResources's last-wins storage
+			// disagree — Apply would run the LAST entry's `run`
+			// command even though `hams list` / `hams apply` dry-run
+			// preview iterate via ListApps (first). The user's first
+			// entry silently loses. Surface the collision so they can
+			// deduplicate.
+			if prior, exists := resourceByID[id]; exists && (prior.Run != res.Run || prior.Check != res.Check || prior.Remove != res.Remove) {
+				slog.Warn("bash provider: duplicate urn in hamsfile — only the last entry wins, preceding entries are silently lost",
+					"urn", id, "kept", res.Run, "discarded", prior.Run)
+			}
 			resourceByID[id] = res
 		}
 	}

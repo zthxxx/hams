@@ -315,6 +315,62 @@ func TestRemove_NoCommand(t *testing.T) {
 	}
 }
 
+// TestBashParseResources_WarnsOnDuplicateURN locks in cycle 193:
+// a hamsfile with two entries under the same `urn:` value loses the
+// FIRST entry silently — ComputePlan's first-occurrence-wins dedup
+// (cycle 111) and bashParseResources's last-wins storage disagree.
+// Apply ends up running the LAST entry's `run` command while the
+// preview output iterates via ListApps (first-occurrence). The user
+// thinks their FIRST script ran; actually it was the second one.
+func TestBashParseResources_WarnsOnDuplicateURN(t *testing.T) {
+	origStderr := os.Stderr
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("Pipe: %v", err)
+	}
+	os.Stderr = w
+	defer func() { os.Stderr = origStderr }()
+	defer slog.SetDefault(slog.Default())
+	slog.SetDefault(slog.New(slog.NewTextHandler(w, nil)))
+
+	yamlDoc := `
+install:
+  - urn: urn:hams:bash:init
+    run: "echo first"
+  - urn: urn:hams:bash:init
+    run: "echo second"
+`
+	var root yaml.Node
+	if uErr := yaml.Unmarshal([]byte(yamlDoc), &root); uErr != nil {
+		t.Fatalf("unmarshal: %v", uErr)
+	}
+	hf := &hamsfile.File{Path: "test.yaml", Root: &root}
+
+	_, parseErr := bashParseResources(hf)
+	if parseErr != nil {
+		t.Fatalf("bashParseResources: %v", parseErr)
+	}
+
+	if cerr := w.Close(); cerr != nil {
+		t.Logf("close pipe: %v", cerr)
+	}
+	buf, readErr := io.ReadAll(r)
+	if readErr != nil {
+		t.Fatalf("read pipe: %v", readErr)
+	}
+	if cerr := r.Close(); cerr != nil {
+		t.Logf("close reader: %v", cerr)
+	}
+
+	stderr := string(buf)
+	if !strings.Contains(stderr, "duplicate urn") {
+		t.Errorf("expected duplicate-urn warning; stderr=%q", stderr)
+	}
+	if !strings.Contains(stderr, "urn:hams:bash:init") {
+		t.Errorf("warning should mention the duplicate URN; stderr=%q", stderr)
+	}
+}
+
 // TestBashParseResources_WarnsOnMissingURN locks in cycle 180:
 // hamsfile entries with `run:` but no `urn:` are common user typos
 // (forgot the URN line). Pre-cycle-180 they were silently dropped:
