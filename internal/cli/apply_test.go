@@ -1484,6 +1484,66 @@ func TestRunApply_DryRunJSONHasNoProse(t *testing.T) {
 	_ = storeDir
 }
 
+// TestRunApply_DuplicateAppAcrossTagsSkipsProvider locks in cycle
+// 255 per schema-design spec §"Duplicate app identity across groups
+// is rejected". When a provider's hamsfile declares the same app
+// under two tags (user accidentally moved an entry without deleting
+// the original), apply SHALL skip that provider and list it in
+// skipped_providers. Pre-cycle-255 the duplicate silently folded
+// via ComputePlan's dedup — the user never learned their edit was
+// ambiguous and drift attribution between tags became meaningless.
+func TestRunApply_DuplicateAppAcrossTagsSkipsProvider(t *testing.T) {
+	_, profileDir, _, flags := setupApplyTestEnv(t, []string{"alpha"})
+	flags.JSON = true
+
+	// Same app under two tags — the spec violation case.
+	writeApplyTestFile(t, filepath.Join(profileDir, "alpha.hams.yaml"),
+		"development-tool:\n  - app: git\nterminal-tool:\n  - app: git\n")
+
+	registry := provider.NewRegistry()
+	installCalls := 0
+	p := &applyTestProvider{
+		manifest: provider.Manifest{
+			Name: "alpha", DisplayName: "alpha", FilePrefix: "alpha",
+			Platforms: []provider.Platform{provider.PlatformAll},
+		},
+		planFn: func(_ context.Context, _ *hamsfile.File, _ *state.File) ([]provider.Action, error) {
+			installCalls++
+			return []provider.Action{{ID: "git", Type: provider.ActionInstall}}, nil
+		},
+	}
+	if err := registry.Register(p); err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+
+	var data map[string]any
+	out := captureStdout(t, func() {
+		err := runApply(context.Background(), flags, registry, sudo.NoopAcquirer{}, "", true, "", "", false, bootstrapMode{})
+		// Expect ExitPartialFailure (provider was skipped).
+		if err == nil {
+			t.Fatalf("runApply should ExitPartialFailure when a provider is skipped")
+		}
+	})
+	if err := json.Unmarshal([]byte(strings.TrimSpace(out)), &data); err != nil {
+		t.Fatalf("output not parseable as JSON: %v\nraw: %q", err, out)
+	}
+
+	// alpha must appear in skipped_providers.
+	skipped, ok := data["skipped_providers"].([]any)
+	if !ok || len(skipped) != 1 {
+		t.Fatalf("skipped_providers should have 1 entry; got %v", data["skipped_providers"])
+	}
+	if name, nameOK := skipped[0].(string); !nameOK || name != "alpha" {
+		t.Errorf("skipped_providers[0] = %v, want \"alpha\"", skipped[0])
+	}
+
+	// Plan MUST NOT have been called — validation short-circuits before
+	// the provider sees any action.
+	if installCalls != 0 {
+		t.Errorf("Plan called %d times, want 0 (validation should short-circuit)", installCalls)
+	}
+}
+
 // TestRunApply_JSONOutput_FailureListsAreSorted locks in cycle 254:
 // when multiple providers land in `failed_providers` /
 // `skipped_providers` / `state_save_errors`, the JSON output MUST

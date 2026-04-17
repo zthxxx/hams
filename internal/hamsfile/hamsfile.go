@@ -166,6 +166,112 @@ func (f *File) ListApps() []string {
 	return apps
 }
 
+// DuplicateAppError identifies a resource whose `app` / `urn` name
+// appears under more than one top-level tag in the Hamsfile. Per
+// schema-design spec §"Duplicate app identity across groups is
+// rejected" (cycle 255), this case is a validation failure: the
+// user likely moved an entry between tags without deleting the
+// original copy, and silently merging the two under one identity
+// would make drift attribution meaningless. The error names the
+// offending app and lists every tag it appears in, in original
+// document order.
+type DuplicateAppError struct {
+	App  string
+	Tags []string
+}
+
+// Error satisfies the error interface with a human-readable
+// message naming the duplicate and the tags it appears in.
+func (e *DuplicateAppError) Error() string {
+	return fmt.Sprintf("duplicate app %q found in tags: %s",
+		e.App, strings.Join(e.Tags, ", "))
+}
+
+// ValidateNoDuplicateApps walks every tag's sequence and fails with
+// a *DuplicateAppError if any app/urn identity appears under two or
+// more tags. First-occurrence order is preserved for the tag list
+// so the error message is stable across runs. Returns nil on
+// success (including the "zero apps" case). Cycle 255.
+//
+// Duplicates WITHIN a single tag are not rejected here — those
+// fold into a single action via ComputePlan's dedup (the common
+// case is a typo that the user can fix; rejecting them entirely
+// would break hand-edited files mid-correction). Cross-tag
+// duplicates are the dangerous case because state attribution
+// (which tag "owns" the app) becomes undefined.
+func (f *File) ValidateNoDuplicateApps() error {
+	doc := f.DocMapping()
+	if doc == nil {
+		return nil
+	}
+
+	// tagsByApp preserves first-occurrence order of tags per app.
+	tagsByApp := make(map[string][]string)
+	// seenInTag deduplicates within a single tag so same-tag repeats
+	// don't inflate the reported tag list.
+	for i := 0; i < len(doc.Content)-1; i += 2 {
+		tagName := doc.Content[i].Value
+		valNode := doc.Content[i+1]
+		if valNode.Kind != yaml.SequenceNode {
+			continue
+		}
+
+		seenInTag := make(map[string]bool)
+		for _, item := range valNode.Content {
+			if item.Kind != yaml.MappingNode {
+				continue
+			}
+			for k := 0; k < len(item.Content)-1; k += 2 {
+				key := item.Content[k].Value
+				if key != fieldApp && key != fieldURN {
+					continue
+				}
+				name := strings.TrimSpace(item.Content[k+1].Value)
+				if name == "" {
+					break
+				}
+				if seenInTag[name] {
+					break
+				}
+				seenInTag[name] = true
+				tagsByApp[name] = append(tagsByApp[name], tagName)
+				break
+			}
+		}
+	}
+
+	// Scan in original document order (iterate the doc again) so the
+	// first-detected duplicate gets reported deterministically. Map
+	// iteration is unordered; re-walking is cheap for realistic
+	// Hamsfile sizes (< 1000 entries).
+	for i := 0; i < len(doc.Content)-1; i += 2 {
+		valNode := doc.Content[i+1]
+		if valNode.Kind != yaml.SequenceNode {
+			continue
+		}
+		for _, item := range valNode.Content {
+			if item.Kind != yaml.MappingNode {
+				continue
+			}
+			for k := 0; k < len(item.Content)-1; k += 2 {
+				key := item.Content[k].Value
+				if key != fieldApp && key != fieldURN {
+					continue
+				}
+				name := strings.TrimSpace(item.Content[k+1].Value)
+				if name == "" {
+					break
+				}
+				if tags := tagsByApp[name]; len(tags) > 1 {
+					return &DuplicateAppError{App: name, Tags: tags}
+				}
+				break
+			}
+		}
+	}
+	return nil
+}
+
 // FindApp searches all tags for a package entry with the given app name.
 // Returns the tag name and index within the tag's sequence, or -1 if not found.
 func (f *File) FindApp(appName string) (tag string, index int) {

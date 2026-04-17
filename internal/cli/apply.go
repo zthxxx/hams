@@ -639,6 +639,23 @@ func runApply(ctx context.Context, flags *provider.GlobalFlags, registry *provid
 			continue
 		}
 
+		// Cycle 255: reject hamsfiles that declare the same app under
+		// two or more tags per schema-design spec §"Duplicate app
+		// identity across groups is rejected". Pre-cycle-255 the
+		// duplicate silently folded via ComputePlan's dedup, so the
+		// user never learned their edit was ambiguous and drift
+		// attribution between tags became meaningless. Skip-and-log
+		// so other providers still run, and surface the offending
+		// provider through skipped_providers. The log line names the
+		// duplicate app and the tag list so a `tail -f` debugger has
+		// the full context.
+		if dupErr := hf.ValidateNoDuplicateApps(); dupErr != nil {
+			slog.Error("hamsfile has duplicate app across tags",
+				"provider", name, "error", dupErr)
+			skippedProviders = append(skippedProviders, name)
+			continue
+		}
+
 		// state.Load returns a wrapped error for any read/parse failure.
 		// Missing file (os.ErrNotExist) is the common first-run case —
 		// fall back to an empty state. Any OTHER failure (YAML corruption,
