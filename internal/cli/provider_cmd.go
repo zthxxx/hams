@@ -49,7 +49,14 @@ func routeToProvider(ctx context.Context, handler ProviderHandler, args []string
 	// stderr-only SetupDebugOnly so short commands don't open a per-
 	// invocation log file (apply/refresh still call full Setup with
 	// file rotation).
-	logging.SetupDebugOnly(flags.Debug)
+	//
+	// Only fires when --debug is set so tests that install their own
+	// slog.Default capture handler before invoking app.Run aren't
+	// silently clobbered. (Cycle 243 makes the same condition the
+	// invariant for the root Before hook too.)
+	if flags.Debug {
+		logging.SetupDebugOnly(true)
+	}
 	// Surface v1.1-deferred --hams-lucky usage so users who pass the
 	// flag are not surprised by a silent no-op. See
 	// openspec/specs/cli-architecture/spec.md (lucky-defer delta) for

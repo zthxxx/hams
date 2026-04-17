@@ -16,6 +16,7 @@ import (
 	"github.com/zthxxx/hams/internal/config"
 	hamserr "github.com/zthxxx/hams/internal/error"
 	"github.com/zthxxx/hams/internal/i18n"
+	"github.com/zthxxx/hams/internal/logging"
 	"github.com/zthxxx/hams/internal/provider"
 	"github.com/zthxxx/hams/internal/sudo"
 	"github.com/zthxxx/hams/internal/version"
@@ -94,6 +95,27 @@ restoration on new machines.
 Use 'hams <provider> install <package>' to install and record.
 Use 'hams apply' to replay all installations from config.`,
 		Flags: flags,
+		// Cycle 243: --debug fires for every Action via the Before hook,
+		// not only per-provider CLI dispatch (cycle 242). `hams config
+		// get key --debug`, `hams list --debug`, `hams store status
+		// --debug`, etc. now produce the same level-promoted slog output
+		// as `hams cargo install foo --debug`. apply / refresh still
+		// override slog with the full file-rotating Setup later in their
+		// Action — that's intentional and harmless (Setup is a superset
+		// of SetupDebugOnly).
+		//
+		// Only fires when --debug is set. The default branch leaves the
+		// caller-installed slog.Default alone — important for tests that
+		// install their own capture handler before app.Run; if Before
+		// unconditionally called SetupDebugOnly, those handlers would
+		// be silently overwritten and the tests would lose visibility
+		// into the warnings/errors they're asserting on.
+		Before: func(_ context.Context, cmd *cli.Command) (context.Context, error) {
+			if cmd.Bool("debug") {
+				logging.SetupDebugOnly(true)
+			}
+			return nil, nil
+		},
 		Commands: []*cli.Command{
 			applyCmd(registry, sudoAcq),
 			refreshCmd(registry),
