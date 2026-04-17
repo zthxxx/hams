@@ -1,6 +1,10 @@
 package provider
 
 import (
+	"io"
+	"log/slog"
+	"os"
+	"strings"
 	"testing"
 
 	"gopkg.in/yaml.v3"
@@ -95,6 +99,70 @@ post_install:
 	}
 	if hs.PostInstall[0].Type != HookPostInstall {
 		t.Errorf("PostInstall hook Type = %v, want HookPostInstall", hs.PostInstall[0].Type)
+	}
+}
+
+// TestParseHookSet_WarnsOnDeferTrue locks in cycle 200: `defer:
+// true` hooks are parsed but NOT yet wired into the executor
+// (RunDeferredHooks has no production caller). Users who write
+// deferred hooks silently lose the functionality. Now: slog.Warn
+// names the hook type and command so the user sees the gap.
+func TestParseHookSet_WarnsOnDeferTrue(t *testing.T) {
+	// Capture stderr via pipe + slog redirect.
+	origStderr := os.Stderr
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("Pipe: %v", err)
+	}
+	os.Stderr = w
+	defer func() { os.Stderr = origStderr }()
+	defer slog.SetDefault(slog.Default())
+	slog.SetDefault(slog.New(slog.NewTextHandler(w, nil)))
+
+	raw := `
+post_install:
+  - run: echo deferred-step
+    defer: true
+  - run: echo immediate-step
+`
+	var root yaml.Node
+	if uErr := yaml.Unmarshal([]byte(raw), &root); uErr != nil {
+		t.Fatalf("unmarshal: %v", uErr)
+	}
+	// ParseHookSet expects a MappingNode (the hook-root, NOT a document).
+	// yaml.Unmarshal gives us a DocumentNode wrapping a MappingNode.
+	hs := ParseHookSet(root.Content[0])
+	if hs == nil {
+		t.Fatal("ParseHookSet returned nil")
+	}
+	if len(hs.PostInstall) != 2 {
+		t.Errorf("expected 2 hooks parsed, got %d", len(hs.PostInstall))
+	}
+
+	if cerr := w.Close(); cerr != nil {
+		t.Logf("close pipe: %v", cerr)
+	}
+	buf, readErr := io.ReadAll(r)
+	if readErr != nil {
+		t.Fatalf("read pipe: %v", readErr)
+	}
+	if cerr := r.Close(); cerr != nil {
+		t.Logf("close reader: %v", cerr)
+	}
+
+	stderr := string(buf)
+	if !strings.Contains(stderr, "defer") {
+		t.Errorf("expected warning about deferred hook; stderr=%q", stderr)
+	}
+	if !strings.Contains(stderr, "not yet executed") {
+		t.Errorf("warning should say 'not yet executed'; stderr=%q", stderr)
+	}
+	if !strings.Contains(stderr, "echo deferred-step") {
+		t.Errorf("warning should include the hook command; stderr=%q", stderr)
+	}
+	// The non-defer hook MUST NOT produce a warning.
+	if strings.Count(stderr, "deferred-hooks feature not wired") != 1 {
+		t.Errorf("expected exactly one warning (only the defer:true hook); got stderr=%q", stderr)
 	}
 }
 

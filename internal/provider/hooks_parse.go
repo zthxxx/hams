@@ -1,6 +1,7 @@
 package provider
 
 import (
+	"log/slog"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -66,6 +67,15 @@ func (hs *HookSet) HasAny() bool {
 // parseHookList walks a YAML sequence of hook entries, producing one
 // Hook per well-formed item. Items missing `run:` are skipped (a hook
 // with an empty command is a config bug, not a usable Hook).
+//
+// Cycle 200: emits a slog.Warn for any hook with `defer: true`. The
+// deferred-hooks feature (run all defer:true hooks AFTER every
+// non-deferred action in the provider completes) has RunDeferredHooks
+// and CollectDeferredHooks scaffolded in hooks.go but NO production
+// caller wires them — same scaffolded-but-unwired pattern as
+// --hams-lucky (cycle 3). The hook parses but never fires. Mirror
+// cycle 3's fail-loud strategy so users notice instead of silently
+// losing the hook.
 func parseHookList(seq *yaml.Node, ht HookType) []Hook {
 	var hooks []Hook
 	for _, item := range seq.Content {
@@ -85,6 +95,10 @@ func parseHookList(seq *yaml.Node, ht HookType) []Hook {
 			}
 		}
 		if h.Command != "" {
+			if h.Defer {
+				slog.Warn("hook with `defer: true` parsed but not yet executed (deferred-hooks feature not wired in v1)",
+					"hook_type", ht.String(), "command", h.Command)
+			}
 			hooks = append(hooks, h)
 		}
 	}
