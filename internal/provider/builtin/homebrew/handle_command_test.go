@@ -87,6 +87,76 @@ func (h *brewHarness) stateResources() map[string]state.ResourceState {
 	return out
 }
 
+// TestHandleUntap_AutoRecordsRemoval locks in cycle 167: `hams brew
+// untap user/repo` previously fell through to the raw passthrough,
+// which exec'd `brew untap` but NEVER updated the hamsfile/state.
+// Result: drift accumulated — the user untapped the repo on the
+// host but the hamsfile still said it was tapped, so the next
+// `hams apply` would re-tap. Now: auto-records the removal so the
+// CLI-first contract holds for taps too.
+func TestHandleUntap_AutoRecordsRemoval(t *testing.T) {
+	t.Parallel()
+	h := newBrewHarness(t)
+
+	// Pre-seed the hamsfile with a tap entry directly (bypass handleTap
+	// which goes through the real exec passthrough). This isolates the
+	// untap behavior from the tap path's exec dependency.
+	hf, err := hamsfile.LoadOrCreateEmpty(h.hamsfilePath)
+	if err != nil {
+		t.Fatalf("seed hamsfile: %v", err)
+	}
+	hf.AddApp("tap", "homebrew/cask-fonts", "")
+	if err := hf.Write(); err != nil {
+		t.Fatalf("write hamsfile: %v", err)
+	}
+
+	// Untap should remove the entry from the hamsfile AND mark state removed.
+	if err := h.provider.HandleCommand(context.Background(),
+		[]string{"untap", "homebrew/cask-fonts"}, nil, h.flags); err != nil {
+		t.Fatalf("untap: %v", err)
+	}
+
+	if h.runner.CallCount(fakeOpUntap, "homebrew/cask-fonts") != 1 {
+		t.Errorf("runner.Untap calls = %d, want 1", h.runner.CallCount(fakeOpUntap, "homebrew/cask-fonts"))
+	}
+	if apps := h.hamsfileApps(); len(apps) != 0 {
+		t.Errorf("hamsfile should be empty after untap, got %v", apps)
+	}
+	if resources := h.stateResources(); resources["homebrew/cask-fonts"] != state.StateRemoved {
+		t.Errorf("state[homebrew/cask-fonts] = %q, want removed", resources["homebrew/cask-fonts"])
+	}
+}
+
+// TestHandleUntap_StrictArgCount: same UX class as cycles 156/163
+// — too-many positional args returns ExitUsageError instead of
+// silently dropping.
+func TestHandleUntap_StrictArgCount(t *testing.T) {
+	t.Parallel()
+	h := newBrewHarness(t)
+	err := h.provider.HandleCommand(context.Background(),
+		[]string{"untap", "user1/repo", "user2/repo"}, nil, h.flags)
+	if err == nil {
+		t.Fatal("expected usage error for too-many args")
+	}
+	if !strings.Contains(err.Error(), "exactly one") {
+		t.Errorf("error should say 'exactly one'; got %q", err.Error())
+	}
+}
+
+// TestHandleUntap_NoArgsErrors asserts the empty-args case errors
+// with the usage hint.
+func TestHandleUntap_NoArgsErrors(t *testing.T) {
+	t.Parallel()
+	h := newBrewHarness(t)
+	err := h.provider.HandleCommand(context.Background(), []string{"untap"}, nil, h.flags)
+	if err == nil {
+		t.Fatal("expected usage error for no args")
+	}
+	if !strings.Contains(err.Error(), "requires a repository name") {
+		t.Errorf("error should say 'requires a repository name'; got %q", err.Error())
+	}
+}
+
 // TestHandleTap_StrictArgCount locks in cycle 163: the pre-cycle-163
 // implementation only used args[0] of `hams brew tap …` and silently
 // dropped any additional args. So `hams brew tap user1/repo

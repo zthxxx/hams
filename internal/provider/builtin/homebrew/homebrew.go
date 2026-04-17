@@ -303,11 +303,63 @@ func (p *Provider) HandleCommand(ctx context.Context, args []string, hamsFlags m
 		return p.handleList(hamsFlags, flags)
 	case "tap":
 		return p.handleTap(ctx, remaining, hamsFlags, flags)
+	case "untap":
+		return p.handleUntap(ctx, remaining, hamsFlags, flags)
 	default:
 		// Passthrough to brew.
 		slog.Debug("passthrough to brew", "args", args)
 		return provider.WrapExecPassthrough(ctx, "brew", args, nil)
 	}
+}
+
+// handleUntap executes `brew untap <repo>` via the runner and removes
+// the matching hamsfile entry + marks the state resource StateRemoved.
+// Without this verb, `hams brew untap user/repo` fell through to the
+// raw passthrough which exec'd `brew untap` but never updated the
+// hamsfile/state — drift accumulated. The cycle 52 fix routed taps
+// through `brew untap` for the declarative apply path; this closes the
+// loop on the CLI-first auto-record contract for taps.
+func (p *Provider) handleUntap(ctx context.Context, args []string, hamsFlags map[string]string, flags *provider.GlobalFlags) error {
+	if len(args) == 0 {
+		return hamserr.NewUserError(hamserr.ExitUsageError,
+			"brew untap requires a repository name",
+			"Usage: hams brew untap <user/repo>",
+		)
+	}
+	if len(args) != 1 {
+		return hamserr.NewUserError(hamserr.ExitUsageError,
+			fmt.Sprintf("brew untap takes exactly one repository (got %d args: %v)", len(args), args),
+			"Usage: hams brew untap <user/repo>",
+			"To untap multiple repos, run the command once per repo",
+		)
+	}
+
+	repo := args[0]
+	if flags.DryRun {
+		fmt.Printf("[dry-run] Would run: brew untap %s\n", repo)
+		return nil
+	}
+
+	if err := p.runner.Untap(ctx, repo); err != nil {
+		return err
+	}
+
+	hf, err := p.loadOrCreateHamsfile(hamsFlags, flags)
+	if err != nil {
+		return err
+	}
+	sf, err := p.loadOrCreateStateFile(flags)
+	if err != nil {
+		return err
+	}
+
+	hf.RemoveApp(repo)
+	sf.SetResource(repo, state.StateRemoved)
+
+	if writeErr := hf.Write(); writeErr != nil {
+		return writeErr
+	}
+	return sf.Save(p.statePath(flags))
 }
 
 // Name returns the CLI name.
