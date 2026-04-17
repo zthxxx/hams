@@ -29,10 +29,21 @@ const (
 
 // bootstrapPromptIn and bootstrapPromptOut are the interactive-prompt
 // seams. Overridden in tests to inject scripted input and capture
-// output. Production values are os.Stdin / os.Stdout.
+// output. Production values are os.Stdin / os.Stderr.
+//
+// Cycle 253: prompts write to stderr, not stdout. Same rationale as
+// cycle 250 (clone progress) + cycle 252 (profile prompts): stdout
+// is the channel for primary machine-consumable output (JSON
+// summaries), stderr is for prompts / diagnostics / progress.
+// Pre-cycle-253 `interactiveBootstrapPrompt` wrote the
+// script-preview + [y/N/s] question to stdout, so an interactive
+// `hams --json apply` hitting a BootstrapRequiredError interleaved
+// prompt prose into the JSON output surface. Interactive users
+// still see the prompt on their terminal (stderr), CI consumers
+// redirecting stdout no longer get prose mixed with JSON.
 var (
 	bootstrapPromptIn  io.Reader = os.Stdin
-	bootstrapPromptOut io.Writer = os.Stdout
+	bootstrapPromptOut io.Writer = os.Stderr
 
 	// bootstrapPromptIsTTY reports whether the prompt seam is connected
 	// to a terminal. In production, checks os.Stdin's fd. In tests, can
