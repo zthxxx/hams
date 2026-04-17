@@ -52,13 +52,19 @@ func mergeFromStoreFile(cfg *Config, path string) error {
 	return nil
 }
 
+// keyProfileTag is the legacy YAML key for the profile tag — kept as a
+// const so goconst doesn't flag the multi-callsite literal across the
+// package. Not exported because external callers should reach for the
+// canonical Config.ProfileTag field directly.
+const keyProfileTag = "profile_tag"
+
 // validateStoreScope rejects fields that must only appear in the global
 // config. Returns a user-actionable error pointing to the correct location.
 func validateStoreScope(cfg *Config, path string) error {
 	var field string
 	switch {
 	case cfg.ProfileTag != "":
-		field = "profile_tag"
+		field = keyProfileTag
 	case cfg.MachineID != "":
 		field = "machine_id"
 	default:

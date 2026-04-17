@@ -145,6 +145,19 @@ func runRefresh(ctx context.Context, flags *provider.GlobalFlags, registry *prov
 	// config-* / register) without duplication. Cycle 219 did the
 	// same for `--profile`.
 
+	// First-run path: no --store, no configured store_path. Auto-init
+	// a default store at ${HAMS_DATA_HOME}/store/ so `hams refresh` on
+	// a fresh machine returns "0 providers refreshed" rather than
+	// hard-failing on missing config (matches runApply's auto-init).
+	if cfg.StorePath == "" && !IsAutoInitDisabled() {
+		if ensureErr := EnsureGlobalConfig(paths); ensureErr != nil {
+			return fmt.Errorf("auto-init global config: %w", ensureErr)
+		}
+		if _, _, ensureErr := EnsureStoreReady(paths, cfg, ""); ensureErr != nil {
+			return fmt.Errorf("auto-init default store: %w", ensureErr)
+		}
+	}
+
 	// Validate the configured/supplied store path exists as a directory.
 	// Without this, refresh against a typo'd store_path silently reported
 	// "No providers match" + exit 0 — the user couldn't tell whether

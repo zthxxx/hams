@@ -23,6 +23,10 @@ import (
 )
 
 // globalFlags extracts GlobalFlags from the urfave/cli context.
+//
+// `--tag` is the canonical name; `--profile` is registered as an alias on
+// the same flag (see globalFlagDefs), so cmd.String("tag") returns the
+// value regardless of which form the user typed.
 func globalFlags(cmd *cli.Command) *provider.GlobalFlags {
 	return &provider.GlobalFlags{
 		Debug:   cmd.Bool("debug"),
@@ -31,7 +35,7 @@ func globalFlags(cmd *cli.Command) *provider.GlobalFlags {
 		NoColor: cmd.Bool("no-color"),
 		Config:  cmd.String("config"),
 		Store:   cmd.String("store"),
-		Profile: cmd.String("profile"),
+		Profile: cmd.String("tag"),
 	}
 }
 
@@ -248,6 +252,10 @@ func globalFlagDefs() []cli.Flag {
 		&cli.BoolFlag{Name: "no-color", Usage: "Disable colored output"},
 		&cli.StringFlag{Name: "config", Usage: "Override config file path"},
 		&cli.StringFlag{Name: "store", Usage: "Override store directory path"},
-		&cli.StringFlag{Name: "profile", Usage: "Override active profile tag"},
+		&cli.StringFlag{
+			Name:    "tag",
+			Aliases: []string{"profile"},
+			Usage:   "Active profile tag (precedence: --tag > config tag > default 'default'). Aliases --profile for back-compat.",
+		},
 	}
 }

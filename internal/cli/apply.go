@@ -201,11 +201,27 @@ func runApply(ctx context.Context, flags *provider.GlobalFlags, registry *provid
 	}
 
 	if storePath == "" {
-		return hamserr.NewUserError(hamserr.ExitUsageError,
-			"no store directory configured",
-			"Run 'hams apply --from-repo=<user/repo>' to clone a store",
-			"Or set store_path in ~/.config/hams/hams.config.yaml",
-		)
+		// First-run path: no --store, no --from-repo, no configured
+		// store_path. Auto-init a default store at ${HAMS_DATA_HOME}/store/
+		// so `hams apply` on a fresh machine succeeds with zero providers
+		// rather than hard-failing on missing config. Users can opt out
+		// via HAMS_NO_AUTO_INIT=1.
+		if IsAutoInitDisabled() {
+			return hamserr.NewUserError(hamserr.ExitUsageError,
+				"no store directory configured (auto-init disabled via HAMS_NO_AUTO_INIT)",
+				"Run 'hams apply --from-repo=<user/repo>' to clone a store",
+				"Or set store_path in ~/.config/hams/hams.config.yaml",
+				"Or unset HAMS_NO_AUTO_INIT to enable auto-init",
+			)
+		}
+		if ensureErr := EnsureGlobalConfig(paths); ensureErr != nil {
+			return fmt.Errorf("auto-init global config: %w", ensureErr)
+		}
+		resolved, _, ensureErr := EnsureStoreReady(paths, nil, "")
+		if ensureErr != nil {
+			return fmt.Errorf("auto-init default store: %w", ensureErr)
+		}
+		storePath = resolved
 	}
 
 	// Validate the configured/supplied store path exists as a directory

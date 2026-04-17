@@ -1,0 +1,4 @@
+# hams store .gitignore — keep private state + local overrides out of the repo
+.state/
+*.local.yaml
+*.local.*

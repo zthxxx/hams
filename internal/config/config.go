@@ -19,7 +19,9 @@ import (
 // Config holds the merged hams configuration from all levels.
 type Config struct {
 	// ProfileTag identifies which profile directory to use (e.g., "macOS", "openwrt").
-	ProfileTag string `yaml:"profile_tag"`
+	// YAML key `tag` is the canonical form; `profile_tag` remains a recognized
+	// alias for back-compat with configs written before the Tag rename.
+	ProfileTag string `yaml:"-"`
 	// MachineID is a user-defined name for this machine (e.g., "MacbookProM5X").
 	MachineID string `yaml:"machine_id"`
 	// StoreRepo is the path or GitHub shorthand for the hams store repository.
@@ -30,6 +32,59 @@ type Config struct {
 	LLMCLI string `yaml:"llm_cli"`
 	// ProviderPriority defines the execution order for providers at the same DAG level.
 	ProviderPriority []string `yaml:"provider_priority"`
+}
+
+// rawConfig is the on-disk YAML shape. We unmarshal into this and then
+// fold the `tag` / `profile_tag` aliases onto Config.ProfileTag — the
+// custom path keeps both keys readable and makes "tag" the canonical
+// form going forward without forcing existing users to migrate their
+// `profile_tag:` entries.
+type rawConfig struct {
+	Tag              string   `yaml:"tag"`
+	ProfileTag       string   `yaml:"profile_tag"`
+	MachineID        string   `yaml:"machine_id"`
+	StoreRepo        string   `yaml:"store_repo"`
+	StorePath        string   `yaml:"store_path"`
+	LLMCLI           string   `yaml:"llm_cli"`
+	ProviderPriority []string `yaml:"provider_priority"`
+}
+
+// UnmarshalYAML lets Config accept both `tag:` (new canonical) and
+// `profile_tag:` (legacy alias). Last-wins on collision: when both keys
+// are present in the same document, `tag:` overrides `profile_tag:`.
+func (c *Config) UnmarshalYAML(value *yaml.Node) error {
+	var raw rawConfig
+	if err := value.Decode(&raw); err != nil {
+		return err
+	}
+	c.ProfileTag = raw.ProfileTag
+	if raw.Tag != "" {
+		c.ProfileTag = raw.Tag
+	}
+	c.MachineID = raw.MachineID
+	c.StoreRepo = raw.StoreRepo
+	c.StorePath = raw.StorePath
+	c.LLMCLI = raw.LLMCLI
+	c.ProviderPriority = raw.ProviderPriority
+	return nil
+}
+
+// MarshalYAML emits `tag:` as the canonical key. Existing files with
+// `profile_tag:` keep their key when WriteConfigKey edits them in place
+// (it preserves unknown / legacy fields via the generic map path), but
+// any full Config marshaled by Go uses `tag:`.
+//
+// Pointer receiver to avoid copying the heavy struct on every yaml
+// encode (gocritic hugeParam).
+func (c *Config) MarshalYAML() (any, error) {
+	return rawConfig{
+		Tag:              c.ProfileTag,
+		MachineID:        c.MachineID,
+		StoreRepo:        c.StoreRepo,
+		StorePath:        c.StorePath,
+		LLMCLI:           c.LLMCLI,
+		ProviderPriority: c.ProviderPriority,
+	}, nil
 }
 
 // DefaultProviderPriority is the built-in provider execution order.
@@ -352,12 +407,29 @@ func IsSensitiveKey(key string) bool {
 	return false
 }
 
+// keyTag is the canonical YAML key for the profile tag (see also the
+// legacy alias keyProfileTag in merge.go).
+const keyTag = "tag"
+
 // ValidConfigKeys lists the keys that can be set via `hams config set`.
-var ValidConfigKeys = []string{"profile_tag", "machine_id", "store_path", "store_repo", "llm_cli"}
+// `tag` is the canonical alias for `profile_tag`; both are accepted to keep
+// existing scripts (`hams config set profile_tag macOS`) working unchanged.
+var ValidConfigKeys = []string{keyTag, keyProfileTag, "machine_id", "store_path", "store_repo", "llm_cli"}
 
 // IsValidConfigKey returns true if the key is a recognized settable config key.
 func IsValidConfigKey(key string) bool {
 	return slices.Contains(ValidConfigKeys, key)
+}
+
+// CanonicalConfigKey normalizes recognized aliases to their canonical
+// in-memory field name. `profile_tag` → `tag` is the only alias today.
+// Used by `hams config get` so the read path can lookup both YAML keys
+// when one is requested but only the other is present on disk.
+func CanonicalConfigKey(key string) string {
+	if key == keyProfileTag {
+		return keyTag
+	}
+	return key
 }
 
 // ReadRawConfigKey reads a single key from the appropriate config file
@@ -451,8 +523,13 @@ func UnsetConfigKey(paths Paths, storePath, key string) error {
 // persisted YAML stays honest (cycle 195 silently collapses to
 // fallback at runtime, which confused users who ran `hams config
 // get profile_tag` and saw "../etc" but apply used "default").
+//
+// `tag` and `profile_tag` are aliases — both validate the same and both
+// write to whichever key already exists in the file (so legacy files
+// stay legacy until the user opts to migrate). When neither key is
+// present, the canonical `tag:` form is written.
 func WriteConfigKey(paths Paths, storePath, key, value string) error {
-	if (key == "profile_tag" || key == "machine_id") && !IsValidPathSegment(value) {
+	if (key == keyTag || key == keyProfileTag || key == "machine_id") && !IsValidPathSegment(value) {
 		return fmt.Errorf("invalid value for %s: %q must be a simple identifier (letters, digits, '.', '-', '_' — no path separators or '..')", key, value)
 	}
 	var targetPath string
@@ -479,7 +556,35 @@ func WriteConfigKey(paths Paths, storePath, key, value string) error {
 		return fmt.Errorf("reading config %s: %w", targetPath, err)
 	}
 
-	existing[key] = value
+	// `tag` and `profile_tag` are alias keys for the same field. Pick the
+	// key form that matches the existing file (so legacy `profile_tag:`
+	// files stay legacy). When neither is present, write whichever key
+	// the caller passed — this preserves explicit caller intent on fresh
+	// files (`hams config set tag X` writes `tag:`, `hams config set
+	// profile_tag X` writes `profile_tag:`).
+	switch key {
+	case keyTag, keyProfileTag:
+		_, hasLegacy := existing[keyProfileTag]
+		_, hasNew := existing[keyTag]
+		writeKey := key
+		switch {
+		case hasNew:
+			writeKey = keyTag
+		case hasLegacy:
+			writeKey = keyProfileTag
+		}
+		// Drop the OTHER key when present to avoid two keys for the same
+		// field on next read (would still resolve via UnmarshalYAML's
+		// last-wins, but reading the file is confusing).
+		other := keyProfileTag
+		if writeKey == keyProfileTag {
+			other = keyTag
+		}
+		delete(existing, other)
+		existing[writeKey] = value
+	default:
+		existing[key] = value
+	}
 
 	out, err := yaml.Marshal(existing)
 	if err != nil {

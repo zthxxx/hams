@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"strings"
 
+	"github.com/zthxxx/hams/internal/config"
 	"github.com/zthxxx/hams/internal/logging"
 	"github.com/zthxxx/hams/internal/provider"
 )
@@ -66,7 +67,49 @@ func routeToProvider(ctx context.Context, handler ProviderHandler, args []string
 		slog.Warn("--hams-lucky is parsed but silently ignored in v1 (LLM enrichment deferred to v1.1)",
 			"provider", handler.Name())
 	}
+	// Onboarding-auto-init (2026-04-17): ensure a global config + store
+	// exist before dispatching to the provider, so a brand-new user
+	// running `hams brew install jq` succeeds without `hams store init`
+	// first. Provider handlers can then assume `flags.Store` (or the
+	// configured store_path) points at a real directory.
+	if err := autoInitForProvider(flags); err != nil {
+		return err
+	}
 	return handler.HandleCommand(ctx, passthrough, hamsFlags, flags)
+}
+
+// autoInitForProvider is the dispatch-side guard that materializes a
+// default store + global config when a provider CLI is invoked on a
+// fresh machine. The function is a no-op when the user has already
+// configured a store (--store, configured store_path, or
+// HAMS_NO_AUTO_INIT=1).
+//
+// Mutates flags.Store so the downstream provider's effectiveConfig
+// observes a non-empty store path without each provider needing to
+// duplicate the auto-init wiring.
+func autoInitForProvider(flags *provider.GlobalFlags) error {
+	if flags.Store != "" {
+		return nil
+	}
+	if IsAutoInitDisabled() {
+		// Caller-explicit opt-out: stay silent and let the provider
+		// surface its existing "no store directory configured" error.
+		return nil
+	}
+	paths := resolvePaths(flags)
+	cfg, _ := config.Load(paths, "", flags.Profile) //nolint:errcheck // best-effort; auto-init still runs even when load fails so a corrupt config doesn't block first-run
+	if cfg != nil && cfg.StorePath != "" {
+		return nil
+	}
+	if err := EnsureGlobalConfig(paths); err != nil {
+		return fmt.Errorf("auto-init global config: %w", err)
+	}
+	resolved, _, err := EnsureStoreReady(paths, cfg, "")
+	if err != nil {
+		return fmt.Errorf("auto-init default store: %w", err)
+	}
+	flags.Store = resolved
+	return nil
 }
 
 // parseProviderArgs processes provider args in a single pass:
@@ -137,6 +180,11 @@ func parseProviderArgs(args []string, flags *provider.GlobalFlags) (hamsFlags ma
 		case arg == "--profile" && i+1 < len(args):
 			flags.Profile = args[i+1]
 			skip = true
+		case strings.HasPrefix(arg, "--tag="):
+			flags.Profile = strings.TrimPrefix(arg, "--tag=")
+		case arg == "--tag" && i+1 < len(args):
+			flags.Profile = args[i+1]
+			skip = true
 		default:
 			passthrough = append(passthrough, arg)
 		}
@@ -204,6 +252,11 @@ func stripGlobalFlags(args []string, flags *provider.GlobalFlags) []string {
 		case strings.HasPrefix(arg, "--profile="):
 			flags.Profile = strings.TrimPrefix(arg, "--profile=")
 		case arg == "--profile" && i+1 < len(args):
+			flags.Profile = args[i+1]
+			skip = true
+		case strings.HasPrefix(arg, "--tag="):
+			flags.Profile = strings.TrimPrefix(arg, "--tag=")
+		case arg == "--tag" && i+1 < len(args):
 			flags.Profile = args[i+1]
 			skip = true
 		default:

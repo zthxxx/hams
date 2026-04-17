@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"gopkg.in/yaml.v3"
 )
 
 func TestResolvePaths_Defaults(t *testing.T) {
@@ -720,5 +722,67 @@ func TestExpandHome_NoTildePrefix(t *testing.T) {
 		if got != input {
 			t.Errorf("expandHome(%q) = %q, want unchanged", input, got)
 		}
+	}
+}
+
+// TestUnmarshalYAML_TagAlias asserts both `tag:` and `profile_tag:`
+// land on cfg.ProfileTag, and `tag:` wins on collision (last-wins
+// semantics matches CLI's --tag overriding the configured value).
+func TestUnmarshalYAML_TagAlias(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name string
+		yaml string
+		want string
+	}{
+		{"legacy_only", "profile_tag: macOS\n", "macOS"},
+		{"new_only", "tag: linux\n", "linux"},
+		{"both_tag_wins", "profile_tag: macOS\ntag: linux\n", "linux"},
+		{"empty_both", "machine_id: foo\n", ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			var cfg Config
+			if err := yaml.Unmarshal([]byte(tc.yaml), &cfg); err != nil {
+				t.Fatalf("unmarshal: %v", err)
+			}
+			if cfg.ProfileTag != tc.want {
+				t.Errorf("ProfileTag = %q, want %q", cfg.ProfileTag, tc.want)
+			}
+		})
+	}
+}
+
+// TestWriteConfigKey_TagAndProfileTagAlias asserts WriteConfigKey
+// accepts both keys, and writes to whichever key already exists in
+// the file (so legacy `profile_tag:` files stay legacy on update).
+func TestWriteConfigKey_TagAndProfileTagAlias(t *testing.T) {
+	t.Parallel()
+	configHome := t.TempDir()
+	paths := Paths{ConfigHome: configHome, DataHome: t.TempDir()}
+
+	// Fresh write of `tag` produces `tag:` in the file.
+	if err := WriteConfigKey(paths, "", "tag", "alpha"); err != nil {
+		t.Fatalf("WriteConfigKey tag=alpha: %v", err)
+	}
+	got, err := os.ReadFile(filepath.Join(configHome, "hams.config.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(got), "tag: alpha") {
+		t.Errorf("expected tag: alpha; got %q", got)
+	}
+
+	// Update via the legacy key MUST write back to `tag:` (not duplicate).
+	if err := WriteConfigKey(paths, "", "profile_tag", "beta"); err != nil {
+		t.Fatalf("WriteConfigKey profile_tag=beta: %v", err)
+	}
+	got, _ = os.ReadFile(filepath.Join(configHome, "hams.config.yaml")) //nolint:errcheck // read-back assertion; failure visible below
+	if !strings.Contains(string(got), "tag: beta") {
+		t.Errorf("expected updated tag: beta; got %q", got)
+	}
+	if strings.Contains(string(got), "profile_tag:") {
+		t.Errorf("legacy profile_tag should be removed when canonical tag exists; got %q", got)
 	}
 }
