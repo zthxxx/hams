@@ -3,6 +3,7 @@ package git
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"os"
@@ -344,6 +345,72 @@ func TestHandleAdd_ExistingValidRepoRecordsWithoutCloning(t *testing.T) {
 	}
 	if r, ok := sf.Resources[wantID]; !ok || r.State != state.StateOK {
 		t.Errorf("state missing or wrong state for %q: ok=%v, state=%v", wantID, ok, r)
+	}
+}
+
+// TestHandleCommand_List_JSONOutput locks in cycle 185: `hams
+// --json git-clone list` previously printed the prose with header
+// + indented rows, ignoring --json. CI scripts that enumerate
+// tracked repos had to grep the prose, breaking on the empty-state
+// hint line. Now: emit a sorted array of {id, state} objects.
+func TestHandleCommand_List_JSONOutput(t *testing.T) {
+	t.Parallel()
+	p, flags, stateDir := newCloneHarness(t)
+	flags.JSON = true
+
+	sf := state.New(p.Manifest().Name, "test-machine")
+	for _, id := range []string{
+		"git@github.com:zeta/repo -> /tmp/zeta",
+		"git@github.com:alpha/repo -> /tmp/alpha",
+	} {
+		sf.SetResource(id, state.StateOK)
+	}
+	if err := sf.Save(filepath.Join(stateDir, "git-clone.state.yaml")); err != nil {
+		t.Fatalf("save state: %v", err)
+	}
+
+	out := captureStdoutForClone(t, func() {
+		if err := p.HandleCommand(context.Background(), []string{"list"}, nil, flags); err != nil {
+			t.Fatalf("HandleCommand list --json: %v", err)
+		}
+	})
+
+	var entries []map[string]string
+	if err := json.Unmarshal([]byte(out), &entries); err != nil {
+		t.Fatalf("output not valid JSON: %v\nraw: %q", err, out)
+	}
+	if len(entries) != 2 {
+		t.Fatalf("got %d entries, want 2", len(entries))
+	}
+	// Sorted: alpha < zeta.
+	if entries[0]["id"] != "git@github.com:alpha/repo -> /tmp/alpha" {
+		t.Errorf("entries[0].id = %q, want alpha entry first (sorted)", entries[0]["id"])
+	}
+	if entries[0]["state"] != "ok" {
+		t.Errorf("entries[0].state = %q, want ok", entries[0]["state"])
+	}
+}
+
+// TestHandleCommand_List_JSONEmptyStateProducesEmptyArray asserts the
+// empty-state JSON output is `[]` (not null and not the prose hint),
+// so script consumers can iterate without nil-checking.
+func TestHandleCommand_List_JSONEmptyStateProducesEmptyArray(t *testing.T) {
+	t.Parallel()
+	p, flags, _ := newCloneHarness(t)
+	flags.JSON = true
+
+	out := captureStdoutForClone(t, func() {
+		if err := p.HandleCommand(context.Background(), []string{"list"}, nil, flags); err != nil {
+			t.Fatalf("HandleCommand list --json: %v", err)
+		}
+	})
+
+	var entries []map[string]string
+	if err := json.Unmarshal([]byte(out), &entries); err != nil {
+		t.Fatalf("empty-state output not valid JSON: %v\nraw: %q", err, out)
+	}
+	if len(entries) != 0 {
+		t.Errorf("empty-state should produce empty array; got %v", entries)
 	}
 }
 
