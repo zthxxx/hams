@@ -329,8 +329,11 @@ func runRefresh(ctx context.Context, flags *provider.GlobalFlags, registry *prov
 			}
 			fmt.Println(string(out))
 		} else {
-			fmt.Printf("Refresh interrupted: %d/%d %s probed before cancellation\n",
-				probed, planned, providersNoun)
+			// Cycle 239: append elapsed even on the interrupted path
+			// so users know how long the run took before they Ctrl+C'd.
+			// Useful for "did the probe just hang?" debugging.
+			fmt.Printf("Refresh interrupted: %d/%d %s probed before cancellation (took %dms)\n",
+				probed, planned, providersNoun, time.Since(refreshStart).Milliseconds())
 		}
 		return hamserr.NewUserError(hamserr.ExitPartialFailure,
 			fmt.Sprintf("refresh interrupted by signal (%v) after probing %d/%d providers",
@@ -415,9 +418,13 @@ func runRefresh(ctx context.Context, flags *provider.GlobalFlags, registry *prov
 	// and the existing save-failure naming below). Pre-cycle-234
 	// the text said "(N probe error(s); see log for details)" and
 	// users had to grep slog output to find WHICH providers failed.
+	// Cycle 239: every Refresh-complete branch includes elapsed time
+	// so users can spot regressions whether the run succeeded fully,
+	// hit save failures, or hit probe failures.
+	elapsedMs := time.Since(refreshStart).Milliseconds()
 	if probed == planned {
-		fmt.Printf("Refresh complete: %d %s probed, but %d state file(s) failed to save: %s\n",
-			planned, providersNoun, len(saveFailures), strings.Join(saveFailures, ", "))
+		fmt.Printf("Refresh complete: %d %s probed, but %d state file(s) failed to save: %s (took %dms)\n",
+			planned, providersNoun, len(saveFailures), strings.Join(saveFailures, ", "), elapsedMs)
 	} else {
 		probeFailedNames := make([]string, 0, planned-probed)
 		for _, p := range providers {
@@ -426,8 +433,8 @@ func runRefresh(ctx context.Context, flags *provider.GlobalFlags, registry *prov
 			}
 		}
 		sort.Strings(probeFailedNames)
-		fmt.Printf("Refresh complete: %d/%d %s probed (%d probe error(s) in: %s; see log for details)\n",
-			probed, planned, providersNoun, planned-probed, strings.Join(probeFailedNames, ", "))
+		fmt.Printf("Refresh complete: %d/%d %s probed (%d probe error(s) in: %s; see log for details) (took %dms)\n",
+			probed, planned, providersNoun, planned-probed, strings.Join(probeFailedNames, ", "), elapsedMs)
 	}
 	if len(saveFailures) > 0 {
 		fmt.Printf("Warning: %d state save failure(s): %s — next run may re-probe these\n",

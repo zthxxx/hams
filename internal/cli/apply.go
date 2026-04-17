@@ -750,7 +750,9 @@ func runApply(ctx context.Context, flags *provider.GlobalFlags, registry *provid
 				"Use '--no-refresh' to skip the pre-apply probe if state intentionally read-only",
 			)
 		}
-		fmt.Println("[dry-run] No changes made.")
+		// Cycle 239: append elapsed for symmetry with the real-run
+		// "hams apply complete: ... (took Xms)" summary.
+		fmt.Printf("[dry-run] No changes made (took %dms)\n", time.Since(applyStart).Milliseconds())
 		return nil
 	}
 

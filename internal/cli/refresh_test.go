@@ -509,6 +509,12 @@ func TestRunRefresh_SaveFailureListIsAlphabetical(t *testing.T) {
 		extractFailureLine := func(s string) string {
 			for line := range strings.SplitSeq(s, "\n") {
 				if strings.Contains(line, "alpha") && strings.Contains(line, "mu") && strings.Contains(line, "zeta") {
+					// Cycle 239: strip the trailing "(took Xms)" suffix
+					// because Xms varies per run and is not part of the
+					// alphabetical-failure-list invariant under test.
+					if idx := strings.LastIndex(line, "(took "); idx > 0 {
+						return strings.TrimRight(line[:idx], " ")
+					}
 					return line
 				}
 			}
