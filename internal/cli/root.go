@@ -32,6 +32,7 @@ func globalFlags(cmd *cli.Command) *provider.GlobalFlags {
 		Config:  cmd.String("config"),
 		Store:   cmd.String("store"),
 		Profile: cmd.String("profile"),
+		Tag:     cmd.String("tag"),
 	}
 }
 
@@ -248,6 +249,7 @@ func globalFlagDefs() []cli.Flag {
 		&cli.BoolFlag{Name: "no-color", Usage: "Disable colored output"},
 		&cli.StringFlag{Name: "config", Usage: "Override config file path"},
 		&cli.StringFlag{Name: "store", Usage: "Override store directory path"},
-		&cli.StringFlag{Name: "profile", Usage: "Override active profile tag"},
+		&cli.StringFlag{Name: "tag", Usage: "Active profile tag (picks <store>/<tag>/ on disk; overrides profile_tag in config)"},
+		&cli.StringFlag{Name: "profile", Usage: "Alias of --tag (kept for backward compatibility)", Hidden: true},
 	}
 }
