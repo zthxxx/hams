@@ -173,7 +173,20 @@ func writeJSON(dir string, data any) error {
 		return fmt.Errorf("creating otel directory %s: %w", dir, err)
 	}
 
-	filename := fmt.Sprintf("%s.json", time.Now().Format("20060102T150405"))
+	// Cycle 237: include nano + PID in the filename so two
+	// `hams apply` / `hams refresh` runs that complete within the
+	// same wall-clock second don't silently clobber each other's
+	// traces. Pre-cycle-237 the timestamp resolution was per-second
+	// and the second writer's `os.Create` truncated the first
+	// writer's file on overwrite — losing observability data
+	// silently. The PID disambiguates the (rare but real) case
+	// where two concurrent writes share both the wall-clock second
+	// AND the nano value (clock granularity / VM time-skew). PID
+	// is bounded (PID_MAX is typically 2^22 on Linux) so the
+	// filename stays sane.
+	now := time.Now()
+	filename := fmt.Sprintf("%s.%09d.%d.json",
+		now.Format("20060102T150405"), now.Nanosecond(), os.Getpid())
 	path := filepath.Join(dir, filename)
 
 	f, err := os.Create(path) //nolint:gosec // otel path derived from XDG data directory
