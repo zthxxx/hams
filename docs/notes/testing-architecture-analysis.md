@@ -1,10 +1,9 @@
 ---
-title: hams Testing Architecture Analysis
 date: 2026-04-18
 status: analysis-snapshot
 ---
 
-# hams Testing Architecture — Full Analysis
+# Hams Testing Architecture
 
 This note aggregates the findings of three parallel research agents that audited the three runtime test tiers of the `hams` project. The goal is to answer, with file-path citations, the question: **what does every test in this project actually verify?**
 

@@ -104,14 +104,6 @@ Running `go test ./...` (and therefore `task test:unit`) on any host — root or
 - **THEN** the search SHALL return zero matches
 - **AND** `grep -r 'RunWithSudo' internal/ cmd/` SHALL return zero matches.
 
-#### Scenario: CI and Taskfile enforce the no-RunWithSudo invariant
-
-- **WHEN** the `lint:no-run-with-sudo` Taskfile task runs (locally or via the `lint-no-run-with-sudo` CI job)
-- **THEN** it SHALL grep `RunWithSudo` across `internal`, `cmd`, and `pkg`
-- **AND** it SHALL exit zero when there are no matches
-- **AND** it SHALL exit non-zero with a descriptive error when any match reappears
-- **AND** the `lint` aggregate Taskfile task SHALL include `lint:no-run-with-sudo` so `task lint` fails the same way.
-
 ---
 
 ### Requirement: Build-Tag Gated Real-Sudo Tests

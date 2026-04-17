@@ -27,7 +27,7 @@ When you believe a change is complete, you MUST verify the result before reporti
 
 1. **Build**: `go build ./...` must pass with zero errors.
 2. **Vet**: `go vet ./...` must pass.
-3. **Tests**: `go test -race ./...` must pass — all packages, not just the ones you touched.
+3. **Tests**: `task check` must pass — all packages, not just the ones you touched.
 4. **Stale references**: grep for old names/imports you removed to confirm zero remaining occurrences.
 
 Only after all checks pass may you report the work as complete. If any check fails, fix the issue and re-verify — do not report partial success.
