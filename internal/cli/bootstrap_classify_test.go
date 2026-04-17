@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/zthxxx/hams/internal/config"
@@ -91,6 +92,55 @@ func TestIsLocalPathAttempt_ExistingDirectoryTrue(t *testing.T) {
 
 	if !isLocalPathAttempt("local-repo") {
 		t.Error("bare name that stats to an existing dir should be classified local")
+	}
+}
+
+// TestPromptProfileInit_RejectsInvalidInput locks in cycle 198: the
+// interactive profile prompt previously accepted any input string.
+// A user typing "../etc" at the prompt would set cfg.ProfileTag
+// in memory to "../etc", but cycle 197's config.WriteConfigKey
+// would reject the persist → the in-memory value diverged from
+// the YAML. Now: validate at the prompt so the user sees an
+// immediate error instead of a silent divergence.
+func TestPromptProfileInit_RejectsInvalidInput(t *testing.T) {
+	// Redirect os.Stdin through a pipe carrying the invalid input.
+	origStdin := os.Stdin
+	defer func() { os.Stdin = origStdin }()
+
+	cases := []struct {
+		name string
+		body string
+		want string // substring in error
+	}{
+		{"traversal-profile", "../etc\nvalid-machine\n", "profile tag"},
+		{"traversal-machine", "valid-profile\n../..\n", "machine ID"},
+		{"slash-profile", "foo/bar\nbaz\n", "profile tag"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			r, w, err := os.Pipe()
+			if err != nil {
+				t.Fatalf("Pipe: %v", err)
+			}
+			if _, werr := w.WriteString(tc.body); werr != nil {
+				t.Fatalf("write: %v", werr)
+			}
+			if cerr := w.Close(); cerr != nil {
+				t.Logf("close pipe writer: %v", cerr)
+			}
+			os.Stdin = r
+
+			_, _, gotErr := promptProfileInit()
+			if cerr := r.Close(); cerr != nil {
+				t.Logf("close pipe reader: %v", cerr)
+			}
+			if gotErr == nil {
+				t.Fatalf("expected error for %q", tc.body)
+			}
+			if !strings.Contains(gotErr.Error(), tc.want) {
+				t.Errorf("error should mention %q; got %v", tc.want, gotErr)
+			}
+		})
 	}
 }
 

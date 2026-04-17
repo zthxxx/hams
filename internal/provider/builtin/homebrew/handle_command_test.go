@@ -2,16 +2,52 @@ package homebrew
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"io"
 	"os"
 	"path/filepath"
+	"strings"
+	"sync"
 	"testing"
 
 	"github.com/zthxxx/hams/internal/config"
+	hamserr "github.com/zthxxx/hams/internal/error"
 	"github.com/zthxxx/hams/internal/hamsfile"
 	"github.com/zthxxx/hams/internal/provider"
 	"github.com/zthxxx/hams/internal/state"
 )
+
+// captureStdoutForHomebrew captures os.Stdout while fn runs.
+// Mu serializes across concurrent tests so the global swap doesn't
+// race (cycle 127 pattern).
+var captureStdoutForHomebrewMu sync.Mutex //nolint:gochecknoglobals // test-only serializer
+
+func captureStdoutForHomebrew(t *testing.T, fn func()) string {
+	t.Helper()
+	captureStdoutForHomebrewMu.Lock()
+	defer captureStdoutForHomebrewMu.Unlock()
+
+	orig := os.Stdout
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("Pipe: %v", err)
+	}
+	os.Stdout = w
+	fn()
+	if cerr := w.Close(); cerr != nil {
+		t.Logf("close pipe: %v", cerr)
+	}
+	os.Stdout = orig
+	out, rerr := io.ReadAll(r)
+	if rerr != nil {
+		t.Fatalf("read: %v", rerr)
+	}
+	if cerr := r.Close(); cerr != nil {
+		t.Logf("close reader: %v", cerr)
+	}
+	return string(out)
+}
 
 // brewHarness wires a homebrew.Provider against a FakeCmdRunner +
 // tempdir profile + tempdir state dir so HandleCommand tests can
@@ -84,6 +120,368 @@ func (h *brewHarness) stateResources() map[string]state.ResourceState {
 		out[id] = r.State
 	}
 	return out
+}
+
+// TestHandleRemove_TapFormatRoutesToUntap locks in cycle 177:
+// `hams brew remove user/repo` (tap-format) previously called
+// `brew uninstall user/repo` which fails with "No installed keg
+// or cask". Provider.Remove (the apply-path handler) correctly
+// routes tap-format IDs through Untap; the CLI handler was the
+// asymmetry. Now: handleRemove also routes, so users can drop a
+// tap via CLI without reaching for `hams apply`.
+func TestHandleRemove_TapFormatRoutesToUntap(t *testing.T) {
+	t.Parallel()
+	h := newBrewHarness(t)
+
+	// Pre-seed hamsfile with a tap entry so the Remove path has
+	// something to remove. Bypass handleTap (which exec's brew).
+	hf, err := hamsfile.LoadOrCreateEmpty(h.hamsfilePath)
+	if err != nil {
+		t.Fatalf("seed hamsfile: %v", err)
+	}
+	hf.AddApp("tap", "homebrew/cask-fonts", "")
+	if err := hf.Write(); err != nil {
+		t.Fatalf("write hamsfile: %v", err)
+	}
+
+	if err := h.provider.HandleCommand(context.Background(),
+		[]string{"remove", "homebrew/cask-fonts"}, nil, h.flags); err != nil {
+		t.Fatalf("remove tap: %v", err)
+	}
+
+	// Must have invoked runner.Untap (NOT Uninstall).
+	if h.runner.CallCount(fakeOpUntap, "homebrew/cask-fonts") != 1 {
+		t.Errorf("runner.Untap calls = %d, want 1", h.runner.CallCount(fakeOpUntap, "homebrew/cask-fonts"))
+	}
+	if h.runner.CallCount(fakeOpUninstall, "homebrew/cask-fonts") != 0 {
+		t.Errorf("runner.Uninstall must NOT be called for tap-format ID")
+	}
+	// Hamsfile cleared.
+	if apps := h.hamsfileApps(); len(apps) != 0 {
+		t.Errorf("hamsfile should be empty after tap remove, got %v", apps)
+	}
+}
+
+// TestHandleRemove_FormulaStillUsesUninstall is the regression gate
+// for cycle 177's routing change: non-tap-format IDs continue to
+// route through Uninstall (NOT Untap) as before.
+func TestHandleRemove_FormulaStillUsesUninstall(t *testing.T) {
+	t.Parallel()
+	h := newBrewHarness(t)
+
+	if err := h.provider.HandleCommand(context.Background(),
+		[]string{"install", "htop"}, nil, h.flags); err != nil {
+		t.Fatalf("install setup: %v", err)
+	}
+	if err := h.provider.HandleCommand(context.Background(),
+		[]string{"remove", "htop"}, nil, h.flags); err != nil {
+		t.Fatalf("remove formula: %v", err)
+	}
+
+	if h.runner.CallCount(fakeOpUninstall, "htop") != 1 {
+		t.Errorf("runner.Uninstall(htop) calls = %d, want 1", h.runner.CallCount(fakeOpUninstall, "htop"))
+	}
+	if h.runner.CallCount(fakeOpUntap, "htop") != 0 {
+		t.Errorf("runner.Untap must NOT be called for formula name")
+	}
+}
+
+// TestHandleCommand_TapFormatInInstallErrors locks in cycle 176:
+// `hams brew install user/repo` previously had a quirky path —
+// `brew install user/repo` triggers a `brew tap` as a side effect
+// then tries to install a formula named "repo" from that tap (which
+// usually doesn't exist), leaving the host tapped but with no
+// hamsfile record of the tap. Now: detect tap-format args at the
+// install verb and direct the user at `hams brew tap` instead.
+func TestHandleCommand_TapFormatInInstallErrors(t *testing.T) {
+	t.Parallel()
+	h := newBrewHarness(t)
+
+	err := h.provider.HandleCommand(context.Background(),
+		[]string{"install", "homebrew/cask-fonts"}, nil, h.flags)
+	if err == nil {
+		t.Fatal("expected error for tap-format arg in install")
+	}
+	if !strings.Contains(err.Error(), "tap-format") {
+		t.Errorf("error should mention 'tap-format'; got %q", err.Error())
+	}
+	// Suggestions must point at `hams brew tap`.
+	var ufe *hamserr.UserFacingError
+	if !errors.As(err, &ufe) {
+		t.Fatalf("expected *UserFacingError, got %T", err)
+	}
+	joined := strings.Join(ufe.Suggestions, " | ")
+	if !strings.Contains(joined, "hams brew tap") {
+		t.Errorf("suggestions should mention 'hams brew tap'; got %q", joined)
+	}
+	// Brew MUST NOT have been invoked.
+	if h.runner.CallCount(fakeOpInstall, "homebrew/cask-fonts") > 0 {
+		t.Errorf("brew install must not be invoked for tap-format args")
+	}
+}
+
+// TestHandleCommand_TapFormatInMixedInstallErrors locks in cycle 179:
+// the cycle-176 guard only checked packages[0]. A mixed invocation
+// like `hams brew install htop user/repo` slipped past — runner
+// would install htop, then runner.Install("user/repo") would tap as
+// a side effect and fail on the formula install, leaking the tap.
+// Now: scan ALL args for tap-format.
+func TestHandleCommand_TapFormatInMixedInstallErrors(t *testing.T) {
+	t.Parallel()
+	h := newBrewHarness(t)
+
+	err := h.provider.HandleCommand(context.Background(),
+		[]string{"install", "htop", "homebrew/cask-fonts"}, nil, h.flags)
+	if err == nil {
+		t.Fatal("expected error for tap-format arg in mixed install")
+	}
+	if !strings.Contains(err.Error(), "tap-format") {
+		t.Errorf("error should mention 'tap-format'; got %q", err.Error())
+	}
+	if !strings.Contains(err.Error(), "homebrew/cask-fonts") {
+		t.Errorf("error should name the offending arg 'homebrew/cask-fonts'; got %q", err.Error())
+	}
+	// Brew MUST NOT have been invoked for ANY arg (early-return).
+	if h.runner.CallCount(fakeOpInstall, "htop") > 0 {
+		t.Errorf("brew install must not be invoked when any arg is tap-format")
+	}
+	if h.runner.CallCount(fakeOpInstall, "homebrew/cask-fonts") > 0 {
+		t.Errorf("brew install must not be invoked for tap-format arg")
+	}
+}
+
+// TestHandleCommand_FormulaInstallStillWorks asserts the cycle-176
+// fix doesn't break legitimate non-tap formula installs (regression
+// gate: ensure `hams brew install htop` still works).
+func TestHandleCommand_FormulaInstallStillWorks(t *testing.T) {
+	t.Parallel()
+	h := newBrewHarness(t)
+
+	if err := h.provider.HandleCommand(context.Background(),
+		[]string{"install", "htop"}, nil, h.flags); err != nil {
+		t.Fatalf("install: %v", err)
+	}
+	if h.runner.CallCount(fakeOpInstall, "htop") != 1 {
+		t.Errorf("brew install(htop) calls = %d, want 1", h.runner.CallCount(fakeOpInstall, "htop"))
+	}
+}
+
+// TestHandleCommand_CaskWithConflictingTagErrors locks in cycle 175:
+// `hams brew install iterm2 --cask --hams-tag=apps` would previously
+// record the entry under "apps" tag with NO cask metadata. caskApps()
+// in Plan only flags entries under the "cask" tag with IsCask=true,
+// so the next `hams apply` would run `brew install iterm2` (no
+// --cask), which fails because iterm2 has no formula. Now: surface
+// the conflict at the CLI layer with a UserFacingError pointing at
+// the resolution.
+func TestHandleCommand_CaskWithConflictingTagErrors(t *testing.T) {
+	t.Parallel()
+	h := newBrewHarness(t)
+
+	err := h.provider.HandleCommand(context.Background(),
+		[]string{"install", "iterm2", "--cask"},
+		map[string]string{"tag": "apps"},
+		h.flags)
+	if err == nil {
+		t.Fatal("expected error for --cask with conflicting --hams-tag")
+	}
+	if !strings.Contains(err.Error(), "--cask is incompatible") {
+		t.Errorf("error should mention --cask incompatibility; got %q", err.Error())
+	}
+	// Must NOT have invoked brew or written hamsfile.
+	if h.runner.CallCount(fakeOpInstall, "iterm2") > 0 {
+		t.Errorf("brew install must not be invoked on usage error")
+	}
+	if apps := h.hamsfileApps(); len(apps) != 0 {
+		t.Errorf("hamsfile should be empty on usage error, got %v", apps)
+	}
+}
+
+// TestHandleCommand_CaskWithExplicitCaskTag asserts the friendly
+// path: --cask + --hams-tag=cask is the canonical form and works.
+func TestHandleCommand_CaskWithExplicitCaskTag(t *testing.T) {
+	t.Parallel()
+	h := newBrewHarness(t)
+
+	if err := h.provider.HandleCommand(context.Background(),
+		[]string{"install", "iterm2", "--cask"},
+		map[string]string{"tag": "cask"},
+		h.flags); err != nil {
+		t.Fatalf("install: %v", err)
+	}
+	if h.runner.CallCount(fakeOpInstall, "iterm2") != 1 {
+		t.Errorf("brew install(iterm2) calls = %d, want 1", h.runner.CallCount(fakeOpInstall, "iterm2"))
+	}
+}
+
+// TestHandleCommand_CaskAutoTaggedAsCask asserts the default path
+// (no --hams-tag): --cask alone routes to the "cask" tag.
+func TestHandleCommand_CaskAutoTaggedAsCask(t *testing.T) {
+	t.Parallel()
+	h := newBrewHarness(t)
+
+	if err := h.provider.HandleCommand(context.Background(),
+		[]string{"install", "iterm2", "--cask"}, nil, h.flags); err != nil {
+		t.Fatalf("install: %v", err)
+	}
+	if h.runner.CallCount(fakeOpInstall, "iterm2") != 1 {
+		t.Errorf("brew install(iterm2) calls = %d, want 1", h.runner.CallCount(fakeOpInstall, "iterm2"))
+	}
+}
+
+// TestHandleList_JSONHasNoProseHeader locks in cycle 186: `hams
+// --json brew list` previously printed the prose header
+// "Homebrew managed packages:" BEFORE the JSON, making the output
+// unparseable via `jq` or `json.Unmarshal`. Now: JSON mode emits
+// pure JSON; text mode keeps the friendly header.
+func TestHandleList_JSONHasNoProseHeader(t *testing.T) {
+	t.Parallel()
+	h := newBrewHarness(t)
+	h.flags.JSON = true
+
+	out := captureStdoutForHomebrew(t, func() {
+		if err := h.provider.HandleCommand(context.Background(),
+			[]string{"list"}, nil, h.flags); err != nil {
+			t.Fatalf("list --json: %v", err)
+		}
+	})
+
+	// MUST NOT contain the prose header.
+	if strings.Contains(out, "Homebrew managed packages:") {
+		t.Errorf("--json output must NOT contain prose header; got:\n%s", out)
+	}
+	// Output MUST be parseable as JSON.
+	var data map[string]any
+	if err := json.Unmarshal([]byte(strings.TrimSpace(out)), &data); err != nil {
+		t.Errorf("--json output not parseable JSON: %v\nraw: %q", err, out)
+	}
+}
+
+// TestHandleList_TextHasProseHeader asserts the cycle-186 fix
+// didn't accidentally remove the friendly header from the text
+// path. Text mode still shows "Homebrew managed packages:".
+func TestHandleList_TextHasProseHeader(t *testing.T) {
+	t.Parallel()
+	h := newBrewHarness(t)
+
+	out := captureStdoutForHomebrew(t, func() {
+		if err := h.provider.HandleCommand(context.Background(),
+			[]string{"list"}, nil, h.flags); err != nil {
+			t.Fatalf("list: %v", err)
+		}
+	})
+
+	if !strings.Contains(out, "Homebrew managed packages:") {
+		t.Errorf("text-mode list should contain prose header; got:\n%s", out)
+	}
+}
+
+// TestHandleUntap_AutoRecordsRemoval locks in cycle 167: `hams brew
+// untap user/repo` previously fell through to the raw passthrough,
+// which exec'd `brew untap` but NEVER updated the hamsfile/state.
+// Result: drift accumulated — the user untapped the repo on the
+// host but the hamsfile still said it was tapped, so the next
+// `hams apply` would re-tap. Now: auto-records the removal so the
+// CLI-first contract holds for taps too.
+func TestHandleUntap_AutoRecordsRemoval(t *testing.T) {
+	t.Parallel()
+	h := newBrewHarness(t)
+
+	// Pre-seed the hamsfile with a tap entry directly (bypass handleTap
+	// which goes through the real exec passthrough). This isolates the
+	// untap behavior from the tap path's exec dependency.
+	hf, err := hamsfile.LoadOrCreateEmpty(h.hamsfilePath)
+	if err != nil {
+		t.Fatalf("seed hamsfile: %v", err)
+	}
+	hf.AddApp("tap", "homebrew/cask-fonts", "")
+	if err := hf.Write(); err != nil {
+		t.Fatalf("write hamsfile: %v", err)
+	}
+
+	// Untap should remove the entry from the hamsfile AND mark state removed.
+	if err := h.provider.HandleCommand(context.Background(),
+		[]string{"untap", "homebrew/cask-fonts"}, nil, h.flags); err != nil {
+		t.Fatalf("untap: %v", err)
+	}
+
+	if h.runner.CallCount(fakeOpUntap, "homebrew/cask-fonts") != 1 {
+		t.Errorf("runner.Untap calls = %d, want 1", h.runner.CallCount(fakeOpUntap, "homebrew/cask-fonts"))
+	}
+	if apps := h.hamsfileApps(); len(apps) != 0 {
+		t.Errorf("hamsfile should be empty after untap, got %v", apps)
+	}
+	if resources := h.stateResources(); resources["homebrew/cask-fonts"] != state.StateRemoved {
+		t.Errorf("state[homebrew/cask-fonts] = %q, want removed", resources["homebrew/cask-fonts"])
+	}
+}
+
+// TestHandleUntap_StrictArgCount: same UX class as cycles 156/163
+// — too-many positional args returns ExitUsageError instead of
+// silently dropping.
+func TestHandleUntap_StrictArgCount(t *testing.T) {
+	t.Parallel()
+	h := newBrewHarness(t)
+	err := h.provider.HandleCommand(context.Background(),
+		[]string{"untap", "user1/repo", "user2/repo"}, nil, h.flags)
+	if err == nil {
+		t.Fatal("expected usage error for too-many args")
+	}
+	if !strings.Contains(err.Error(), "exactly one") {
+		t.Errorf("error should say 'exactly one'; got %q", err.Error())
+	}
+}
+
+// TestHandleUntap_NoArgsErrors asserts the empty-args case errors
+// with the usage hint.
+func TestHandleUntap_NoArgsErrors(t *testing.T) {
+	t.Parallel()
+	h := newBrewHarness(t)
+	err := h.provider.HandleCommand(context.Background(), []string{"untap"}, nil, h.flags)
+	if err == nil {
+		t.Fatal("expected usage error for no args")
+	}
+	if !strings.Contains(err.Error(), "requires a repository name") {
+		t.Errorf("error should say 'requires a repository name'; got %q", err.Error())
+	}
+}
+
+// TestHandleTap_StrictArgCount locks in cycle 163: the pre-cycle-163
+// implementation only used args[0] of `hams brew tap …` and silently
+// dropped any additional args. So `hams brew tap user1/repo
+// user2/repo` only tapped user1/repo and the second tap was lost
+// — user thought both were tapped because exit was 0. Now: too-many
+// args returns ExitUsageError with a hint to repeat the command per
+// repo. (Multi-tap support belongs in a separate feature change;
+// fixing the silent-drop is the immediate priority.)
+func TestHandleTap_StrictArgCount(t *testing.T) {
+	t.Parallel()
+	cases := [][]string{
+		{"tap", "user1/repo", "user2/repo"},               // two args
+		{"tap", "user1/repo", "user2/repo", "user3/repo"}, // three args
+	}
+	for _, args := range cases {
+		t.Run(strings.Join(args, "_"), func(t *testing.T) {
+			t.Parallel()
+			h := newBrewHarness(t)
+			err := h.provider.HandleCommand(context.Background(), args, nil, h.flags)
+			if err == nil {
+				t.Fatalf("expected error for %v; got nil", args)
+			}
+			// Must NOT have invoked brew.
+			if h.runner.CallCount(fakeOpInstall, "user1/repo") > 0 {
+				t.Errorf("brew install must not be invoked on usage error")
+			}
+			// Must NOT have written hamsfile.
+			if apps := h.hamsfileApps(); len(apps) != 0 {
+				t.Errorf("hamsfile should be empty on usage error, got %v", apps)
+			}
+			// Error should say "exactly one" so the user understands.
+			if !strings.Contains(err.Error(), "exactly one") {
+				t.Errorf("error should say 'exactly one'; got %q", err.Error())
+			}
+		})
+	}
 }
 
 // U1 — install records the package in BOTH hamsfile and state.

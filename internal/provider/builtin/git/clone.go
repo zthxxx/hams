@@ -2,6 +2,7 @@ package git
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"os"
@@ -251,6 +252,20 @@ func (p *CloneProvider) handleAdd(ctx context.Context, args []string, hamsFlags 
 			"Usage: hams git-clone add <remote> --hams-path=<path>",
 		)
 	}
+	// Strict arg count — same UX class as cycles 156/163/164. The
+	// pre-cycle-165 implementation only used args[0] and silently
+	// dropped any extra positional args. Common typo: the user
+	// remembers `git clone <remote> <path>` syntax and types
+	// `hams git-clone add foo bar --hams-path=/x` thinking `bar` was
+	// the path. The path actually came from --hams-path; "bar" was
+	// silently lost. Now: surface the mismatch.
+	if len(args) != 1 {
+		return hamserr.NewUserError(hamserr.ExitUsageError,
+			fmt.Sprintf("git-clone add takes exactly one remote URL (got %d args: %v)", len(args), args),
+			"Usage: hams git-clone add <remote> --hams-path=<path>",
+			"The local path is set via --hams-path, not as a positional arg",
+		)
+	}
 
 	remote := args[0]
 	localPath := hamsFlags["path"]
@@ -422,12 +437,42 @@ func (p *CloneProvider) handleRemove(args []string, hamsFlags map[string]string,
 // no hint whether state existed or was empty. Now: header + either
 // the tracked repositories (id, state) or an actionable empty-state
 // hint pointing at `git-clone add`.
+//
+// Cycle 185: honors the global --json flag. Symmetric with cycles
+// 181/182/183 (version, refresh, apply). Without JSON output, CI
+// scripts that need to enumerate tracked repos had to grep the
+// prose, which broke on the empty-state hint line.
 func (p *CloneProvider) handleList(ctx context.Context, hamsFlags map[string]string, flags *provider.GlobalFlags) error {
 	hf, err := p.loadOrCreateHamsfile(hamsFlags, flags)
 	if err != nil {
 		return err
 	}
 	sf := p.loadOrCreateStateFile(flags)
+
+	if flags.JSON {
+		// Emit a stable, sorted array of {id, state} entries so script
+		// consumers don't need to nil-check or re-sort. Symmetric with
+		// cycle 149 (hams list ordering) + cycle 155 (clone List
+		// determinism).
+		ids := make([]string, 0, len(sf.Resources))
+		for id := range sf.Resources {
+			ids = append(ids, id)
+		}
+		sort.Strings(ids)
+		entries := make([]map[string]string, 0, len(ids))
+		for _, id := range ids {
+			entries = append(entries, map[string]string{
+				"id":    id,
+				"state": string(sf.Resources[id].State),
+			})
+		}
+		out, mErr := json.MarshalIndent(entries, "", "  ")
+		if mErr != nil {
+			return fmt.Errorf("marshaling git-clone list JSON: %w", mErr)
+		}
+		fmt.Println(string(out))
+		return nil
+	}
 
 	output, err := p.List(ctx, hf, sf)
 	if err != nil {

@@ -2,6 +2,9 @@ package bash
 
 import (
 	"context"
+	"io"
+	"log/slog"
+	"os"
 	"os/exec"
 	"strings"
 	"testing"
@@ -213,6 +216,45 @@ func TestRunCheck_Failure(t *testing.T) {
 	}
 }
 
+// TestList_DelegatesToProviderDiff asserts the bash provider's
+// List method is a thin wrapper around provider.DiffDesiredVsState
+// + provider.FormatDiff (the standard diff path that cycle 148
+// fixed for determinism). A regression that bypassed the diff
+// machinery would silently flap output OR omit the "+ not installed"
+// markers — both already caught upstream, but a wrapper-level
+// regression test makes the dependency explicit.
+func TestList_DelegatesToProviderDiff(t *testing.T) {
+	p := New()
+	yamlDoc := `
+install:
+  - urn: urn:hams:bash:zsh-setup
+    run: "echo zsh"
+  - urn: urn:hams:bash:vim-setup
+    run: "echo vim"
+`
+	var root yaml.Node
+	if err := yaml.Unmarshal([]byte(yamlDoc), &root); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	hf := &hamsfile.File{Path: "test.yaml", Root: &root}
+	sf := state.New("bash", "test")
+
+	out, err := p.List(context.Background(), hf, sf)
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	// Both URNs are in desired but not in state → both appear as "+ not installed".
+	if !strings.Contains(out, "urn:hams:bash:zsh-setup") {
+		t.Errorf("output should contain zsh-setup, got:\n%s", out)
+	}
+	if !strings.Contains(out, "urn:hams:bash:vim-setup") {
+		t.Errorf("output should contain vim-setup, got:\n%s", out)
+	}
+	if !strings.Contains(out, "(not installed)") {
+		t.Errorf("output should contain '(not installed)' marker, got:\n%s", out)
+	}
+}
+
 // TestRunCheck_HonorsContext locks in cycle 160: RunCheck previously
 // used bitfield/script which doesn't honor context cancellation, so
 // a hanging check command (e.g. `sleep 30`) kept running after the
@@ -270,6 +312,124 @@ func TestRemove_NoCommand(t *testing.T) {
 	err := p.Remove(context.Background(), "some-script")
 	if err != nil {
 		t.Fatalf("Remove without command should be no-op: %v", err)
+	}
+}
+
+// TestBashParseResources_WarnsOnDuplicateURN locks in cycle 193:
+// a hamsfile with two entries under the same `urn:` value loses the
+// FIRST entry silently — ComputePlan's first-occurrence-wins dedup
+// (cycle 111) and bashParseResources's last-wins storage disagree.
+// Apply ends up running the LAST entry's `run` command while the
+// preview output iterates via ListApps (first-occurrence). The user
+// thinks their FIRST script ran; actually it was the second one.
+func TestBashParseResources_WarnsOnDuplicateURN(t *testing.T) {
+	origStderr := os.Stderr
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("Pipe: %v", err)
+	}
+	os.Stderr = w
+	defer func() { os.Stderr = origStderr }()
+	defer slog.SetDefault(slog.Default())
+	slog.SetDefault(slog.New(slog.NewTextHandler(w, nil)))
+
+	yamlDoc := `
+install:
+  - urn: urn:hams:bash:init
+    run: "echo first"
+  - urn: urn:hams:bash:init
+    run: "echo second"
+`
+	var root yaml.Node
+	if uErr := yaml.Unmarshal([]byte(yamlDoc), &root); uErr != nil {
+		t.Fatalf("unmarshal: %v", uErr)
+	}
+	hf := &hamsfile.File{Path: "test.yaml", Root: &root}
+
+	_, parseErr := bashParseResources(hf)
+	if parseErr != nil {
+		t.Fatalf("bashParseResources: %v", parseErr)
+	}
+
+	if cerr := w.Close(); cerr != nil {
+		t.Logf("close pipe: %v", cerr)
+	}
+	buf, readErr := io.ReadAll(r)
+	if readErr != nil {
+		t.Fatalf("read pipe: %v", readErr)
+	}
+	if cerr := r.Close(); cerr != nil {
+		t.Logf("close reader: %v", cerr)
+	}
+
+	stderr := string(buf)
+	if !strings.Contains(stderr, "duplicate urn") {
+		t.Errorf("expected duplicate-urn warning; stderr=%q", stderr)
+	}
+	if !strings.Contains(stderr, "urn:hams:bash:init") {
+		t.Errorf("warning should mention the duplicate URN; stderr=%q", stderr)
+	}
+}
+
+// TestBashParseResources_WarnsOnMissingURN locks in cycle 180:
+// hamsfile entries with `run:` but no `urn:` are common user typos
+// (forgot the URN line). Pre-cycle-180 they were silently dropped:
+// ListApps skipped them, bashParseResources skipped them, the script
+// never ran, and the user had no clue why. Now: emit a slog.Warn so
+// the user sees their typo when they run with debug or check logs.
+func TestBashParseResources_WarnsOnMissingURN(t *testing.T) {
+	// Capture slog output via stderr redirection.
+	origStderr := os.Stderr
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("Pipe: %v", err)
+	}
+	os.Stderr = w
+	defer func() { os.Stderr = origStderr }()
+
+	// Force slog to write to the new stderr.
+	defer slog.SetDefault(slog.Default())
+	slog.SetDefault(slog.New(slog.NewTextHandler(w, nil)))
+
+	yamlDoc := `
+install:
+  - run: "echo hello"
+  - urn: urn:hams:bash:legitimate
+    run: "echo legit"
+`
+	var root yaml.Node
+	if uErr := yaml.Unmarshal([]byte(yamlDoc), &root); uErr != nil {
+		t.Fatalf("unmarshal: %v", uErr)
+	}
+	hf := &hamsfile.File{Path: "test.yaml", Root: &root}
+
+	resourceByID, parseErr := bashParseResources(hf)
+	if parseErr != nil {
+		t.Fatalf("bashParseResources: %v", parseErr)
+	}
+
+	if cerr := w.Close(); cerr != nil {
+		t.Logf("close pipe writer: %v", cerr)
+	}
+	stderrBuf, readErr := io.ReadAll(r)
+	if readErr != nil {
+		t.Fatalf("read pipe: %v", readErr)
+	}
+	if cerr := r.Close(); cerr != nil {
+		t.Logf("close pipe reader: %v", cerr)
+	}
+
+	// Only the legitimate entry should be in the map.
+	if _, ok := resourceByID["urn:hams:bash:legitimate"]; !ok {
+		t.Errorf("legitimate entry should be parsed; got map %v", resourceByID)
+	}
+
+	stderr := string(stderrBuf)
+	if !strings.Contains(stderr, "no urn") {
+		t.Errorf("expected warning about missing urn; stderr=%q", stderr)
+	}
+	if !strings.Contains(stderr, "echo hello") {
+		t.Errorf("warning should include the run command; stderr=%q", stderr)
 	}
 }
 

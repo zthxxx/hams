@@ -1,9 +1,12 @@
 package provider
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"log/slog"
+	"os"
 	"os/exec"
 	"strings"
 
@@ -142,10 +145,19 @@ func runHook(ctx context.Context, h Hook, resourceID string) error {
 			"resource", resourceID, "command", h.Command)
 	}
 
+	// Cycle 178: tee stdout/stderr to the user's terminal AND a buffer.
+	// Pre-cycle-178 used CombinedOutput which silenced everything until
+	// the hook finished — long-running hooks (compilation, network
+	// calls, brew bottle install) appeared to hang for minutes with
+	// no progress indication. Now: streams to terminal so the user
+	// sees output in real time, AND captures into a buffer so the
+	// error path can include the output for debugging.
 	cmd := exec.CommandContext(ctx, "sh", "-c", h.Command) //nolint:gosec // hook commands are user-defined in hamsfile, not external input
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("command %q: %w\noutput: %s", h.Command, err, string(output))
+	var captured bytes.Buffer
+	cmd.Stdout = io.MultiWriter(os.Stdout, &captured)
+	cmd.Stderr = io.MultiWriter(os.Stderr, &captured)
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("command %q: %w\noutput: %s", h.Command, err, captured.String())
 	}
 	return nil
 }

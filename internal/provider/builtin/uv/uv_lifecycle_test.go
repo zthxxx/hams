@@ -137,6 +137,56 @@ func TestU6_Probe_OKAndFailedClassification(t *testing.T) {
 	}
 }
 
+// TestProbe_MatchesPinnedVersionIDs locks in cycle 189 (uv side).
+// uv uses pip's version-specifier syntax (`==`, `>=`, etc.) rather
+// than npm's `@` delimiter. Pre-cycle-189 a state entry like
+// "foo==1.2.3" never matched the installed map.
+func TestProbe_MatchesPinnedVersionIDs(t *testing.T) {
+	t.Parallel()
+	fake := NewFakeCmdRunner().Seed("ruff", "0.1.0")
+	p := New(nil, fake)
+
+	sf := state.New("uv", "test-machine")
+	sf.SetResource("ruff==0.1.0", state.StateOK)
+	sf.SetResource("ruff>=0.1", state.StateOK)
+
+	results, err := p.Probe(context.Background(), sf)
+	if err != nil {
+		t.Fatalf("Probe: %v", err)
+	}
+	byID := map[string]provider.ProbeResult{}
+	for _, r := range results {
+		byID[r.ID] = r
+	}
+	if byID["ruff==0.1.0"].State != state.StateOK {
+		t.Errorf("== pinned ruff: state=%v, want StateOK", byID["ruff==0.1.0"].State)
+	}
+	if byID["ruff>=0.1"].State != state.StateOK {
+		t.Errorf(">= pinned ruff: state=%v, want StateOK", byID["ruff>=0.1"].State)
+	}
+}
+
+// TestStripUvVersionPin covers the pure-helper invariant.
+func TestStripUvVersionPin(t *testing.T) {
+	t.Parallel()
+	cases := map[string]string{
+		"ruff":        "ruff",
+		"ruff==0.1.0": "ruff",
+		"ruff>=0.1.0": "ruff",
+		"ruff<=0.9":   "ruff",
+		"ruff~=0.1":   "ruff",
+		"ruff>0":      "ruff",
+		"ruff<9":      "ruff",
+		"":            "",
+		"==1.0":       "==1.0", // no name before specifier → leave as-is
+	}
+	for in, want := range cases {
+		if got := stripUvVersionPin(in); got != want {
+			t.Errorf("stripUvVersionPin(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
 // U7 — Probe skips StateRemoved entries.
 func TestU7_Probe_SkipsRemovedResources(t *testing.T) {
 	t.Parallel()

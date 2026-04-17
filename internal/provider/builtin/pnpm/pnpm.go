@@ -98,6 +98,13 @@ func (p *Provider) Bootstrap(_ context.Context) error {
 }
 
 // Probe queries pnpm for globally installed packages.
+//
+// Cycle 189: state IDs with `@version` pins strip the suffix before
+// the installed-map lookup. Pre-cycle-189 a pinned state entry
+// never matched — drift detection was broken for any user who
+// pinned via CLI. Scoped packages (`@scope/bar`) preserve the
+// leading `@`; only the LAST `@` (position > 0) is treated as the
+// version delimiter.
 func (p *Provider) Probe(ctx context.Context, sf *state.File) ([]provider.ProbeResult, error) {
 	output, err := p.runner.List(ctx)
 	if err != nil {
@@ -110,7 +117,8 @@ func (p *Provider) Probe(ctx context.Context, sf *state.File) ([]provider.ProbeR
 		if r.State == state.StateRemoved {
 			continue
 		}
-		if ver, ok := installed[id]; ok {
+		key := stripPnpmVersionPin(id)
+		if ver, ok := installed[key]; ok {
 			results = append(results, provider.ProbeResult{ID: id, State: state.StateOK, Version: ver})
 		} else {
 			results = append(results, provider.ProbeResult{ID: id, State: state.StateFailed})
@@ -119,11 +127,52 @@ func (p *Provider) Probe(ctx context.Context, sf *state.File) ([]provider.ProbeR
 	return results, nil
 }
 
+// stripPnpmVersionPin strips the optional `@version` suffix from a
+// pnpm package ID, preserving the leading `@` of a scoped package.
+// Same rule as npm (cycle 189).
+func stripPnpmVersionPin(id string) string {
+	idx := strings.LastIndex(id, "@")
+	if idx <= 0 {
+		return id
+	}
+	return id[:idx]
+}
+
+// suppressRedundantVersionRemoves drops ActionRemove entries whose
+// bare package name (version-stripped) matches an Install/Update/Skip
+// action and tombstones the stale state entry. Cycle 191/192 — same
+// rationale as npm.
+func suppressRedundantVersionRemoves(actions []provider.Action, observed *state.File) []provider.Action {
+	keepBareNames := make(map[string]bool)
+	for _, a := range actions {
+		if a.Type == provider.ActionRemove {
+			continue
+		}
+		keepBareNames[stripPnpmVersionPin(a.ID)] = true
+	}
+	out := make([]provider.Action, 0, len(actions))
+	for _, a := range actions {
+		if a.Type == provider.ActionRemove && keepBareNames[stripPnpmVersionPin(a.ID)] {
+			slog.Info("pnpm: suppressing redundant version-pin remove (bare name overlaps install)",
+				"removing", a.ID)
+			if observed != nil {
+				observed.SetResource(a.ID, state.StateRemoved)
+			}
+			continue
+		}
+		out = append(out, a)
+	}
+	return out
+}
+
 // Plan computes actions for pnpm packages and attaches any
 // hamsfile-declared hooks to each action.
 func (p *Provider) Plan(_ context.Context, desired *hamsfile.File, observed *state.File) ([]provider.Action, error) {
 	apps := desired.ListApps()
 	actions := provider.ComputePlan(apps, observed, observed.ConfigHash)
+	// Cycle 191/192: drop redundant version-pinned removes + tombstone
+	// the stale state entry (same rationale as npm).
+	actions = suppressRedundantVersionRemoves(actions, observed)
 	return provider.PopulateActionHooks(actions, desired), nil
 }
 

@@ -68,12 +68,26 @@ func TestResolveLocalRepo_TildeExpansion(t *testing.T) {
 func TestResolveClonePath(t *testing.T) {
 	paths := config.Paths{DataHome: "/data/hams"}
 
+	// Cycle 168: clone paths now include the HOST so that two repos
+	// with the same `<user>/<repo>` on different forges don't
+	// collide on disk (github.com/x/y vs gitlab.com/x/y previously
+	// shared `/data/hams/repo/x/y`).
 	tests := []struct {
 		repo string
 		want string
 	}{
-		{"zthxxx/hams-store", "/data/hams/repo/zthxxx/hams-store"},
-		{"zthxxx/hams-store.git", "/data/hams/repo/zthxxx/hams-store"},
+		// Shorthand `user/repo` defaults to github.com.
+		{"zthxxx/hams-store", "/data/hams/repo/github.com/zthxxx/hams-store"},
+		{"zthxxx/hams-store.git", "/data/hams/repo/github.com/zthxxx/hams-store"},
+		// HTTPS URLs preserve the host.
+		{"https://github.com/zthxxx/hams-store.git", "/data/hams/repo/github.com/zthxxx/hams-store"},
+		{"https://gitlab.com/zthxxx/hams-store.git", "/data/hams/repo/gitlab.com/zthxxx/hams-store"},
+		{"https://bitbucket.org/team/repo", "/data/hams/repo/bitbucket.org/team/repo"},
+		// SSH URLs (`git@host:user/repo`) preserve the host.
+		{"git@github.com:zthxxx/hams-store.git", "/data/hams/repo/github.com/zthxxx/hams-store"},
+		{"git@gitlab.com:team/project.git", "/data/hams/repo/gitlab.com/team/project"},
+		// Defensive fallback: malformed input still returns SOME path
+		// (the legacy last-2-segments behavior) so tests don't crash.
 		{"single-name", "/data/hams/repo/single-name"},
 	}
 
@@ -82,6 +96,21 @@ func TestResolveClonePath(t *testing.T) {
 		if got != tt.want {
 			t.Errorf("resolveClonePath(%q) = %q, want %q", tt.repo, got, tt.want)
 		}
+	}
+}
+
+// TestResolveClonePath_NoCollisionAcrossForges asserts the cycle-168
+// invariant that github.com/X/Y and gitlab.com/X/Y resolve to
+// DIFFERENT clone paths. Without the host scoping, the second clone
+// would silently inherit the first's `.git` and pull from the
+// wrong origin.
+func TestResolveClonePath_NoCollisionAcrossForges(t *testing.T) {
+	paths := config.Paths{DataHome: "/data/hams"}
+
+	githubPath := resolveClonePath("https://github.com/team/repo", paths)
+	gitlabPath := resolveClonePath("https://gitlab.com/team/repo", paths)
+	if githubPath == gitlabPath {
+		t.Errorf("github + gitlab repos collide at %q", githubPath)
 	}
 }
 
@@ -268,7 +297,10 @@ func TestPreviewExistingStoreFromRepo_LocalPath(t *testing.T) {
 // preview reuses it without re-network.
 func TestPreviewExistingStoreFromRepo_PriorClone(t *testing.T) {
 	dataHome := t.TempDir()
-	clonePath := filepath.Join(dataHome, "repo", "zthxxx", "hams-store")
+	// Cycle 168: clone paths now include the host so shorthand
+	// `user/repo` lands at `repo/github.com/user/repo` not
+	// `repo/user/repo`.
+	clonePath := filepath.Join(dataHome, "repo", "github.com", "zthxxx", "hams-store")
 	if err := os.MkdirAll(filepath.Join(clonePath, ".git"), 0o750); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}

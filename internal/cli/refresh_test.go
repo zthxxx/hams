@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -176,6 +177,60 @@ func TestRunRefresh_SaveFailure_ReturnsPartialFailure(t *testing.T) {
 	if !errors.As(err, &ufe) || ufe.Code != hamserr.ExitPartialFailure {
 		t.Fatalf("expected ExitPartialFailure, got %v (%T)", err, err)
 	}
+}
+
+// TestRunRefresh_JSONOutput locks in cycle 182: `hams --json
+// refresh` previously printed the same prose summary as the
+// non-JSON path, ignoring the global --json flag. CI scripts that
+// run `hams refresh` in a loop need a parseable shape to detect
+// partial failures programmatically.
+func TestRunRefresh_JSONOutput(t *testing.T) {
+	storeDir, profileDir, _, flags := setupApplyTestEnv(t, []string{"alpha"})
+	flags.JSON = true
+
+	writeApplyTestFile(t, filepath.Join(profileDir, "alpha.hams.yaml"),
+		"packages:\n  - app: pkg-a\n")
+
+	registry := provider.NewRegistry()
+	p := &applyTestProvider{
+		manifest: provider.Manifest{
+			Name: "alpha", DisplayName: "alpha", FilePrefix: "alpha",
+			Platforms: []provider.Platform{provider.PlatformAll},
+		},
+		probeFn: func(_ context.Context, _ *state.File) ([]provider.ProbeResult, error) {
+			return []provider.ProbeResult{{ID: "pkg-a", State: state.StateOK}}, nil
+		},
+	}
+	if err := registry.Register(p); err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+
+	out := captureStdout(t, func() {
+		if err := runRefresh(context.Background(), flags, registry, "", ""); err != nil {
+			t.Fatalf("refresh: %v", err)
+		}
+	})
+
+	var data map[string]any
+	if err := json.Unmarshal([]byte(out), &data); err != nil {
+		t.Fatalf("output not valid JSON: %v\nraw: %q", err, out)
+	}
+
+	for _, key := range []string{"probed", "planned", "save_failures", "probe_failures", "success"} {
+		if _, ok := data[key]; !ok {
+			t.Errorf("JSON missing required key %q; got: %v", key, data)
+		}
+	}
+	if data["success"] != true {
+		t.Errorf("success = %v, want true", data["success"])
+	}
+	// save_failures should be an empty array (NOT null) so consumers
+	// can iterate without nil-checking.
+	if sf, ok := data["save_failures"].([]any); !ok || len(sf) != 0 {
+		t.Errorf("save_failures = %v, want []", data["save_failures"])
+	}
+
+	_ = storeDir
 }
 
 // TestRunRefresh_SaveFailureListIsAlphabetical locks in cycle 151:

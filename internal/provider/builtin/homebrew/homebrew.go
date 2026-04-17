@@ -92,13 +92,26 @@ var brewInstallLocations = []string{
 // post-install-sh brew onto the process $PATH. Swapped in tests to
 // assert path augmentation without mutating the test harness's env.
 // Production value mutates the live process env via os.Setenv.
+//
+// Cycle 169: membership check splits PATH on the OS path-separator
+// and compares each entry exactly. The pre-cycle-169 strings.Contains
+// check incorrectly skipped augmentation when an UNRELATED PATH entry
+// shared a prefix with a brew install location — e.g. user PATH
+// containing `/usr/local/bin-old` falsely matched `/usr/local/bin`,
+// so brew never made it onto $PATH and Bootstrap kept failing.
+// Same sibling-substring bug class as cycle 161 (TildePath).
 var envPathAugment = func(additions []string) {
 	existing := os.Getenv("PATH")
+	already := make(map[string]bool)
+	for entry := range strings.SplitSeq(existing, string(os.PathListSeparator)) {
+		already[entry] = true
+	}
 	for _, dir := range additions {
-		if strings.Contains(existing, dir) {
+		if already[dir] {
 			continue
 		}
 		existing = dir + string(os.PathListSeparator) + existing
+		already[dir] = true
 	}
 	if err := os.Setenv("PATH", existing); err != nil {
 		slog.Warn("failed to set PATH for brew lookup", "error", err)
@@ -303,11 +316,63 @@ func (p *Provider) HandleCommand(ctx context.Context, args []string, hamsFlags m
 		return p.handleList(hamsFlags, flags)
 	case "tap":
 		return p.handleTap(ctx, remaining, hamsFlags, flags)
+	case "untap":
+		return p.handleUntap(ctx, remaining, hamsFlags, flags)
 	default:
 		// Passthrough to brew.
 		slog.Debug("passthrough to brew", "args", args)
 		return provider.WrapExecPassthrough(ctx, "brew", args, nil)
 	}
+}
+
+// handleUntap executes `brew untap <repo>` via the runner and removes
+// the matching hamsfile entry + marks the state resource StateRemoved.
+// Without this verb, `hams brew untap user/repo` fell through to the
+// raw passthrough which exec'd `brew untap` but never updated the
+// hamsfile/state — drift accumulated. The cycle 52 fix routed taps
+// through `brew untap` for the declarative apply path; this closes the
+// loop on the CLI-first auto-record contract for taps.
+func (p *Provider) handleUntap(ctx context.Context, args []string, hamsFlags map[string]string, flags *provider.GlobalFlags) error {
+	if len(args) == 0 {
+		return hamserr.NewUserError(hamserr.ExitUsageError,
+			"brew untap requires a repository name",
+			"Usage: hams brew untap <user/repo>",
+		)
+	}
+	if len(args) != 1 {
+		return hamserr.NewUserError(hamserr.ExitUsageError,
+			fmt.Sprintf("brew untap takes exactly one repository (got %d args: %v)", len(args), args),
+			"Usage: hams brew untap <user/repo>",
+			"To untap multiple repos, run the command once per repo",
+		)
+	}
+
+	repo := args[0]
+	if flags.DryRun {
+		fmt.Printf("[dry-run] Would run: brew untap %s\n", repo)
+		return nil
+	}
+
+	if err := p.runner.Untap(ctx, repo); err != nil {
+		return err
+	}
+
+	hf, err := p.loadOrCreateHamsfile(hamsFlags, flags)
+	if err != nil {
+		return err
+	}
+	sf, err := p.loadOrCreateStateFile(flags)
+	if err != nil {
+		return err
+	}
+
+	hf.RemoveApp(repo)
+	sf.SetResource(repo, state.StateRemoved)
+
+	if writeErr := hf.Write(); writeErr != nil {
+		return writeErr
+	}
+	return sf.Save(p.statePath(flags))
 }
 
 // Name returns the CLI name.
@@ -317,8 +382,6 @@ func (p *Provider) Name() string { return cliName }
 func (p *Provider) DisplayName() string { return brewDisplayName }
 
 func (p *Provider) handleList(hamsFlags map[string]string, flags *provider.GlobalFlags) error {
-	fmt.Println("Homebrew managed packages:")
-
 	hf, err := p.loadOrCreateHamsfile(hamsFlags, flags)
 	if err != nil {
 		return err
@@ -339,14 +402,22 @@ func (p *Provider) handleList(hamsFlags map[string]string, flags *provider.Globa
 
 	diff := provider.DiffDesiredVsState(hf, sf)
 	if flags.JSON {
+		// Cycle 186: emit PURE JSON with no prose header. The pre-
+		// cycle-186 code printed "Homebrew managed packages:" on
+		// stdout BEFORE the JSON object, making the output
+		// unparseable via `hams brew list --json | jq`. Consumers
+		// had to pipe through a heuristic stripper. Now the text
+		// branch still prints the friendly header, but --json is
+		// strictly machine-readable.
 		out, jsonErr := provider.FormatDiffJSON(&diff)
 		if jsonErr != nil {
 			return jsonErr
 		}
 		fmt.Println(out)
-	} else {
-		fmt.Print(provider.FormatDiff(&diff))
+		return nil
 	}
+	fmt.Println("Homebrew managed packages:")
+	fmt.Print(provider.FormatDiff(&diff))
 	return nil
 }
 
@@ -355,6 +426,19 @@ func (p *Provider) handleTap(ctx context.Context, args []string, hamsFlags map[s
 		return hamserr.NewUserError(hamserr.ExitUsageError,
 			"brew tap requires a repository name",
 			"Usage: hams brew tap <user/repo>",
+		)
+	}
+	// Strict arg count — same UX class as cycle 156 (config strict
+	// args). The pre-cycle-163 code only used args[0] and silently
+	// dropped the rest, so `hams brew tap user1/repo user2/repo` only
+	// tapped user1/repo and the second tap was lost. Brew CLI itself
+	// supports multi-tap, but the wrapper didn't forward beyond [0].
+	// Surface the mismatch with a hint about repeating the command.
+	if len(args) != 1 {
+		return hamserr.NewUserError(hamserr.ExitUsageError,
+			fmt.Sprintf("brew tap takes exactly one repository (got %d args: %v)", len(args), args),
+			"Usage: hams brew tap <user/repo>",
+			"To tap multiple repos, run the command once per repo",
 		)
 	}
 
@@ -388,13 +472,44 @@ func (p *Provider) handleInstall(ctx context.Context, args []string, hamsFlags m
 
 	packages := packageArgs(args)
 	tag := parseInstallTag(hamsFlags)
+	caskFlag := hasCaskFlag(args)
+	// Cycle 175: --cask MUST land under the "cask" tag because
+	// caskApps() (Plan-side) only marks entries under that tag with
+	// IsCask=true. Without this guard, `hams brew install iterm2
+	// --cask --hams-tag=apps` would auto-record under "apps" with
+	// no cask metadata. Next `hams apply` would then run
+	// `brew install iterm2` (no --cask), which fails because iterm2
+	// has no formula. Surface the conflict instead of silently
+	// breaking the apply replay.
+	if caskFlag && tag != tagCLI && tag != tagCask {
+		return hamserr.NewUserError(hamserr.ExitUsageError,
+			fmt.Sprintf("--cask is incompatible with --hams-tag=%q (cask entries must live under the %q tag so apply replay invokes brew --cask)", tag, tagCask),
+			"Use --hams-tag=cask explicitly, or omit --hams-tag entirely (defaults to cask when --cask is set)",
+		)
+	}
 	// If --cask is present in args and no explicit tag was set, use "cask" as the tag.
-	if tag == tagCLI && hasCaskFlag(args) {
+	if tag == tagCLI && caskFlag {
 		tag = tagCask
 	}
-	// Auto-detect tap format (user/repo with exactly one slash, no formula suffix).
-	if tag == tagCLI && len(packages) > 0 && isTapFormat(packages[0]) {
-		tag = "tap"
+	// Cycle 176/179: reject tap-format args in `brew install`. A user
+	// typing `hams brew install user/repo` almost always intends a
+	// tap, but `brew install user/repo` actually triggers a `brew
+	// tap` as a side effect THEN tries to install a formula named
+	// "repo" from that tap (which usually doesn't exist) — leaving
+	// the host tapped but with no hamsfile/state record of it.
+	//
+	// Cycle 179: scan ALL packages, not just packages[0]. Pre-cycle-179
+	// the guard only fired when the FIRST arg was tap-format; a mixed
+	// invocation like `hams brew install htop user/repo` slipped past
+	// the guard and the user/repo arg leaked the tap as before.
+	for _, pkg := range packages {
+		if isTapFormat(pkg) {
+			return hamserr.NewUserError(hamserr.ExitUsageError,
+				fmt.Sprintf("brew install does not support tap-format args (%q looks like user/repo)", pkg),
+				"Use `hams brew tap "+pkg+"` instead — it taps the repo AND auto-records it",
+				"To install a formula from a tap, first tap it then install: hams brew tap user/repo && hams brew install <formula>",
+			)
+		}
 	}
 	if len(packages) == 0 {
 		return hamserr.NewUserError(hamserr.ExitUsageError,
@@ -466,7 +581,20 @@ func (p *Provider) handleRemove(ctx context.Context, args []string, hamsFlags ma
 		return nil
 	}
 
+	// Cycle 177: route tap-format IDs through Untap so `hams brew
+	// remove user/repo` works symmetrically with the apply path
+	// (Provider.Remove already does this routing). Pre-cycle-177 the
+	// CLI handler always called runner.Uninstall, which fails with
+	// "No installed keg or cask" for tap names — user couldn't
+	// remove a tap via the CLI without going through `hams apply`
+	// (forcing a full reconcile just to drop one tap).
 	for _, pkg := range packages {
+		if isTapFormat(pkg) {
+			if err := p.runner.Untap(ctx, pkg); err != nil {
+				return err
+			}
+			continue
+		}
 		if err := p.runner.Uninstall(ctx, pkg); err != nil {
 			return err
 		}

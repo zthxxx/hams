@@ -55,6 +55,13 @@ func (p *Provider) Bootstrap(_ context.Context) error {
 }
 
 // Probe queries npm for globally installed packages.
+//
+// Cycle 189: a state entry like `foo@1.2.3` or `@scope/bar@1.2.3`
+// (recorded by `hams npm install -g foo@1.2.3`) strips the pin
+// suffix before looking up in the bare-name `installed` map. Pre-
+// cycle-189 the full state ID including `@version` was used as the
+// lookup key and never matched — any user who pinned via CLI saw
+// their drift detection permanently broken.
 func (p *Provider) Probe(ctx context.Context, sf *state.File) ([]provider.ProbeResult, error) {
 	output, err := p.runner.List(ctx)
 	if err != nil {
@@ -67,7 +74,8 @@ func (p *Provider) Probe(ctx context.Context, sf *state.File) ([]provider.ProbeR
 		if r.State == state.StateRemoved {
 			continue
 		}
-		if ver, ok := installed[id]; ok {
+		key := stripNpmVersionPin(id)
+		if ver, ok := installed[key]; ok {
 			results = append(results, provider.ProbeResult{ID: id, State: state.StateOK, Version: ver})
 		} else {
 			results = append(results, provider.ProbeResult{ID: id, State: state.StateFailed})
@@ -76,12 +84,80 @@ func (p *Provider) Probe(ctx context.Context, sf *state.File) ([]provider.ProbeR
 	return results, nil
 }
 
+// stripNpmVersionPin strips the optional `@version` suffix from an
+// npm package ID, preserving the leading `@` of a scoped package.
+// Examples:
+//
+//	foo@1.2.3           → foo
+//	@scope/bar@1.2.3    → @scope/bar
+//	@scope/bar          → @scope/bar  (no version)
+//	foo                 → foo
+//
+// Rule: use the LAST `@` as the version delimiter — but only when
+// its position is > 0 (the initial `@` of a scoped name is preserved).
+func stripNpmVersionPin(id string) string {
+	idx := strings.LastIndex(id, "@")
+	if idx <= 0 {
+		return id
+	}
+	return id[:idx]
+}
+
 // Plan computes actions for npm packages and attaches any
 // hamsfile-declared hooks to each action.
 func (p *Provider) Plan(_ context.Context, desired *hamsfile.File, observed *state.File) ([]provider.Action, error) {
 	apps := desired.ListApps()
 	actions := provider.ComputePlan(apps, observed, observed.ConfigHash)
+	// Cycle 191/192: when a pin-upgrade produces both Install X@5.4
+	// and Remove X@5.3 actions in the same apply, drop the Remove
+	// exec AND directly tombstone the stale state entry so it doesn't
+	// accumulate as StateOK noise. Rationale: npm uninstall with a
+	// version-pinned arg is treated by npm as bare-name uninstall —
+	// running it AFTER the new version was just installed would
+	// uninstall the new version too.
+	actions = suppressRedundantVersionRemoves(actions, observed)
 	return provider.PopulateActionHooks(actions, desired), nil
+}
+
+// suppressRedundantVersionRemoves drops ActionRemove entries whose
+// bare package name (version-stripped) matches an Install/Update/Skip
+// action's bare name in the same plan. The provider's Remove exec
+// would otherwise run `npm uninstall <pkg>@<old-ver>` which npm
+// interprets as bare uninstall, clobbering the fresh install.
+//
+// Cycle 192: ALSO marks the suppressed ID as StateRemoved in the
+// observed state file. Cycle 191 just dropped the action, leaving
+// state at StateOK — which accumulated stale pin entries over many
+// upgrades (visible in `hams list` and confusing to users). Now the
+// state tombstone is applied directly at Plan time, before the
+// executor loop; the subsequent sf.Save in runApply persists both
+// the new Install's StateOK AND the stale pin's StateRemoved.
+//
+// This is npm-family-specific; the same helper is duplicated in
+// pnpm/uv/vscodeext because extracting it into provider/plan.go
+// would require coupling to pin-stripping functions that differ
+// per ecosystem.
+func suppressRedundantVersionRemoves(actions []provider.Action, observed *state.File) []provider.Action {
+	keepBareNames := make(map[string]bool)
+	for _, a := range actions {
+		if a.Type == provider.ActionRemove {
+			continue
+		}
+		keepBareNames[stripNpmVersionPin(a.ID)] = true
+	}
+	out := make([]provider.Action, 0, len(actions))
+	for _, a := range actions {
+		if a.Type == provider.ActionRemove && keepBareNames[stripNpmVersionPin(a.ID)] {
+			slog.Info("npm: suppressing redundant version-pin remove (bare name overlaps install)",
+				"removing", a.ID)
+			if observed != nil {
+				observed.SetResource(a.ID, state.StateRemoved)
+			}
+			continue
+		}
+		out = append(out, a)
+	}
+	return out
 }
 
 // Apply installs an npm package globally.

@@ -112,6 +112,61 @@ func TestHandleCommand_U2_WriteDryRunSkipsAllSideEffects(t *testing.T) {
 	}
 }
 
+// TestHandleCommand_WriteStrictArgCount locks in cycle 164: the
+// pre-cycle-164 implementation accepted 5 OR MORE args and silently
+// dropped the rest. Critical failure: `hams defaults write
+// com.apple.dock SetText -string Hello World` (forgot to quote)
+// silently called `defaults write … "Hello"` and recorded only
+// "Hello" — far worse than a typo because the user thought the full
+// "Hello World" string was set. Now: surface the mismatch with a
+// quoting hint.
+func TestHandleCommand_WriteStrictArgCount(t *testing.T) {
+	t.Parallel()
+	cases := [][]string{
+		// Forgot to quote multi-word value — common case.
+		{"write", "com.apple.dock", "SetText", "-string", "Hello", "World"},
+		// Stray trailing arg.
+		{"write", "com.apple.dock", "autohide", "-bool", "true", "extra"},
+	}
+	for _, args := range cases {
+		t.Run(strings.Join(args, "_"), func(t *testing.T) {
+			t.Parallel()
+			h := newDefaultsHarness(t)
+			err := h.provider.HandleCommand(context.Background(), args, nil, h.flags)
+			if err == nil {
+				t.Fatalf("expected usage error for %v; got nil", args)
+			}
+			if h.runner.CallCount(fakeOpWrite, "") != 0 {
+				t.Errorf("runner.Write must not be invoked on usage error")
+			}
+			if apps := h.hamsfileApps(); len(apps) != 0 {
+				t.Errorf("hamsfile must not be mutated on usage error, got %v", apps)
+			}
+			if !strings.Contains(err.Error(), "exactly 4 args") {
+				t.Errorf("error should say 'exactly 4 args'; got %q", err.Error())
+			}
+		})
+	}
+}
+
+// TestHandleCommand_DeleteStrictArgCount locks in the parallel for
+// `defaults delete`. Multi-key deletion was silently dropped.
+func TestHandleCommand_DeleteStrictArgCount(t *testing.T) {
+	t.Parallel()
+	args := []string{"delete", "com.apple.dock", "autohide", "other-key"}
+	h := newDefaultsHarness(t)
+	err := h.provider.HandleCommand(context.Background(), args, nil, h.flags)
+	if err == nil {
+		t.Fatalf("expected usage error for %v; got nil", args)
+	}
+	if h.runner.CallCount(fakeOpDelete, "") != 0 {
+		t.Errorf("runner.Delete must not be invoked on usage error")
+	}
+	if !strings.Contains(err.Error(), "exactly 2 args") {
+		t.Errorf("error should say 'exactly 2 args'; got %q", err.Error())
+	}
+}
+
 // U3 — `defaults write` auto-records to hamsfile + state and calls
 // runner.Write with the parsed (domain, key, type, value).
 func TestHandleCommand_U3_WriteAutoRecordsToHamsfileAndState(t *testing.T) {

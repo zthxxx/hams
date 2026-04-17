@@ -267,7 +267,29 @@ func bashParseResources(f *hamsfile.File) (map[string]bashResource, error) {
 			}
 
 			if id == "" {
+				// Cycle 180: emit a slog.Warn when an entry has fields
+				// like `run:` but no `urn:` — this is a common user typo
+				// (forgot to add the URN line). Pre-cycle-180 the entry
+				// was silently dropped: ListApps skipped it (no app/urn
+				// field), bashParseResources skipped it here, so the
+				// user's script never ran and they had no clue why.
+				if res.Run != "" || res.Check != "" || res.Remove != "" {
+					slog.Warn("bash provider: entry has run/check/remove but no urn — silently ignored",
+						"run", res.Run, "check", res.Check)
+				}
 				continue
+			}
+			// Cycle 193: warn on duplicate URNs. Silent last-write-
+			// wins means ComputePlan's first-occurrence-wins dedup
+			// (cycle 111) and bashParseResources's last-wins storage
+			// disagree — Apply would run the LAST entry's `run`
+			// command even though `hams list` / `hams apply` dry-run
+			// preview iterate via ListApps (first). The user's first
+			// entry silently loses. Surface the collision so they can
+			// deduplicate.
+			if prior, exists := resourceByID[id]; exists && (prior.Run != res.Run || prior.Check != res.Check || prior.Remove != res.Remove) {
+				slog.Warn("bash provider: duplicate urn in hamsfile — only the last entry wins, preceding entries are silently lost",
+					"urn", id, "kept", res.Run, "discarded", prior.Run)
 			}
 			resourceByID[id] = res
 		}

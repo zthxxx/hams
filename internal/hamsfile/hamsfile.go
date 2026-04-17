@@ -335,6 +335,38 @@ func setOrAppendScalarPair(entry *yaml.Node, key, val string) {
 	)
 }
 
+// RemoveAppField clears a single key/value pair from an existing app
+// entry's mapping node. Used by CLI handlers that need to UNPIN a
+// previously-pinned resource (e.g. `hams apt install nginx` after a
+// prior `hams apt install nginx=1.24.0` must clear the version field
+// — `AddAppWithFields` SKIPS empty values for the merge case so it
+// can't itself express "remove this key", which would otherwise leave
+// the hamsfile drifting from the actual install).
+//
+// Returns true when the field was present and removed; false when the
+// entry doesn't exist or the field is absent. Idempotent — safe to
+// call when the user re-runs a bare install with no prior pin.
+func (f *File) RemoveAppField(appName, key string) bool {
+	mu.Lock()
+	defer mu.Unlock()
+
+	doc := f.DocMapping()
+	if doc == nil {
+		return false
+	}
+	entry := findAppEntry(doc, appName)
+	if entry == nil {
+		return false
+	}
+	for i := 0; i < len(entry.Content)-1; i += 2 {
+		if entry.Content[i].Kind == yaml.ScalarNode && entry.Content[i].Value == key {
+			entry.Content = append(entry.Content[:i], entry.Content[i+2:]...)
+			return true
+		}
+	}
+	return false
+}
+
 // RemoveApp removes a package entry by app name from all tags.
 // Returns true if the entry was found and removed.
 func (f *File) RemoveApp(appName string) bool {

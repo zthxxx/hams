@@ -139,6 +139,36 @@ func TestU6_Probe_OKAndFailedClassification(t *testing.T) {
 	}
 }
 
+// TestProbe_MatchesPinnedVersionIDs locks in cycle 189 (pnpm side).
+// Same rule as npm: strip @version suffix, preserve leading @ for
+// scoped packages.
+func TestProbe_MatchesPinnedVersionIDs(t *testing.T) {
+	t.Parallel()
+	fake := NewFakeCmdRunner().
+		Seed("serve", "14.2.0").
+		Seed("@scope/tool", "1.0.0")
+	p := New(nil, fake)
+
+	sf := state.New("pnpm", "test-machine")
+	sf.SetResource("serve@14.2.0", state.StateOK)
+	sf.SetResource("@scope/tool@1.0.0", state.StateOK)
+
+	results, err := p.Probe(context.Background(), sf)
+	if err != nil {
+		t.Fatalf("Probe: %v", err)
+	}
+	byID := map[string]provider.ProbeResult{}
+	for _, r := range results {
+		byID[r.ID] = r
+	}
+	if byID["serve@14.2.0"].State != state.StateOK {
+		t.Errorf("pinned serve: state=%v, want StateOK", byID["serve@14.2.0"].State)
+	}
+	if byID["@scope/tool@1.0.0"].State != state.StateOK {
+		t.Errorf("pinned scoped: state=%v, want StateOK", byID["@scope/tool@1.0.0"].State)
+	}
+}
+
 // U7 — Probe skips StateRemoved entries.
 func TestU7_Probe_SkipsRemovedResources(t *testing.T) {
 	t.Parallel()

@@ -51,6 +51,11 @@ func TestTildePath(t *testing.T) {
 		{home + "/.local/share/hams/log", "~/.local/share/hams/log"},
 		{"/tmp/other/path", "/tmp/other/path"},
 		{home, "~"},
+		// Cycle 161 regression: `home + "2"` (sibling user dir) must
+		// NOT be treated as a tilde-prefixed path. Previously the
+		// naive prefix match returned the bogus `~2/foo`.
+		{home + "2/foo", home + "2/foo"},
+		{home + "extra", home + "extra"},
 	}
 
 	for _, tt := range tests {

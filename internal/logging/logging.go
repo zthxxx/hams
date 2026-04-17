@@ -61,12 +61,21 @@ func LogPath(dataHome string) string {
 }
 
 // TildePath replaces the user's home directory with ~/  in a path.
+// Only matches when the path equals home exactly OR continues with a
+// path separator. Without this guard, `home=/home/alice`,
+// `path=/home/alice2/foo` would naively prefix-match and return the
+// bogus `~2/foo` instead of leaving the path untouched. Real risk on
+// systems where multiple users share a parent (e.g. `/home/alice` and
+// `/home/alice2` exist side by side).
 func TildePath(path string) string {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return path
 	}
-	if strings.HasPrefix(path, home) {
+	if path == home {
+		return "~"
+	}
+	if strings.HasPrefix(path, home+string(os.PathSeparator)) {
 		return "~" + path[len(home):]
 	}
 	return path

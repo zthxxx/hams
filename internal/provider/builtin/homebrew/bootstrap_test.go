@@ -3,6 +3,7 @@ package homebrew
 import (
 	"context"
 	"errors"
+	"os"
 	"os/exec"
 	"slices"
 	"strings"
@@ -116,6 +117,72 @@ func TestBootstrap_PathAugmentationAfterInstall(t *testing.T) {
 	}
 	if !containsAll(augmentCalls[0], []string{"/opt/homebrew/bin", "/home/linuxbrew/.linuxbrew/bin"}) {
 		t.Errorf("augment list should include /opt/homebrew/bin AND /home/linuxbrew/.linuxbrew/bin; got %v", augmentCalls[0])
+	}
+}
+
+// TestEnvPathAugment_SiblingSubstringDoesNotMatch locks in cycle 169:
+// the pre-cycle-169 implementation used strings.Contains(existing,
+// dir) which falsely matched when an UNRELATED PATH entry shared a
+// prefix with a brew install location. Concrete failure: user PATH
+// = "/usr/local/bin-old:/usr/bin" (someone renamed their old bin
+// dir), brewInstallLocations contains "/usr/local/bin". The
+// substring check returns true → /usr/local/bin is NOT prepended →
+// brew is NEVER found → Bootstrap fails with "still unavailable
+// after bootstrap" forever.
+//
+// Fix: split PATH on os.PathListSeparator and compare entries
+// exactly. Same sibling-substring bug class as cycle 161 (TildePath).
+func TestEnvPathAugment_SiblingSubstringDoesNotMatch(t *testing.T) {
+	// Pin the test PATH so the global mutation is reversible.
+	origPath := os.Getenv("PATH")
+	defer func() {
+		if err := os.Setenv("PATH", origPath); err != nil {
+			t.Logf("restore PATH: %v", err)
+		}
+	}()
+
+	// Sibling-substring scenario: PATH has /usr/local/bin-old but NOT
+	// /usr/local/bin. Augmentation must add /usr/local/bin.
+	if err := os.Setenv("PATH", "/usr/local/bin-old:/usr/bin"); err != nil {
+		t.Fatalf("setenv: %v", err)
+	}
+	envPathAugment([]string{"/usr/local/bin"})
+
+	got := os.Getenv("PATH")
+	// Split and check exact membership — the new /usr/local/bin should appear.
+	entries := strings.Split(got, string(os.PathListSeparator))
+	if !slices.Contains(entries, "/usr/local/bin") {
+		t.Errorf("envPathAugment should add /usr/local/bin (PATH had /usr/local/bin-old, NOT /usr/local/bin); got PATH=%q", got)
+	}
+}
+
+// TestEnvPathAugment_ExactMatchSkipsAddition asserts the truthy
+// case still works: when the directory IS already in PATH, no
+// duplicate is added.
+func TestEnvPathAugment_ExactMatchSkipsAddition(t *testing.T) {
+	origPath := os.Getenv("PATH")
+	defer func() {
+		if err := os.Setenv("PATH", origPath); err != nil {
+			t.Logf("restore PATH: %v", err)
+		}
+	}()
+
+	if err := os.Setenv("PATH", "/usr/local/bin:/usr/bin"); err != nil {
+		t.Fatalf("setenv: %v", err)
+	}
+	envPathAugment([]string{"/usr/local/bin"})
+
+	got := os.Getenv("PATH")
+	// Count occurrences of /usr/local/bin in the resulting PATH.
+	entries := strings.Split(got, string(os.PathListSeparator))
+	count := 0
+	for _, e := range entries {
+		if e == "/usr/local/bin" {
+			count++
+		}
+	}
+	if count != 1 {
+		t.Errorf("envPathAugment should NOT duplicate exact-match dir; PATH=%q has %d copies of /usr/local/bin", got, count)
 	}
 }
 

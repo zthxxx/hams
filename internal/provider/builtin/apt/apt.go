@@ -244,11 +244,15 @@ func (p *Provider) handleInstall(ctx context.Context, args []string, hamsFlags m
 		return err
 	}
 
-	// Dry-run flags executed apt-get but didn't change host state, so
-	// post-hoc bookkeeping cannot represent the invocation truthfully.
-	// Skip the auto-record entirely and warn the user.
+	// apt-get's OWN simulate flags (--simulate, -s, --no-act, etc.)
+	// run apt-get without changing host state, so post-hoc bookkeeping
+	// cannot represent the invocation truthfully. Skip the auto-record
+	// entirely and warn the user. Note: this is distinct from hams's
+	// own `--dry-run` flag (gated above at the flags.DryRun check) —
+	// the previous wording "(dry-run flag detected)" conflated the
+	// two and confused users who hadn't passed --dry-run.
 	if isComplexAptInvocation(args) {
-		slog.Warn("hams apt install completed but did not auto-record (dry-run flag detected). To declare these resources, edit the apt hamsfile and run `hams apply`.", "args", args)
+		slog.Warn("hams apt install completed but did not auto-record (apt-get simulate flag detected). To declare these resources, edit the apt hamsfile and run `hams apply`.", "args", args)
 		return nil
 	}
 
@@ -267,9 +271,9 @@ func (p *Provider) handleInstall(ctx context.Context, args []string, hamsFlags m
 		if pkg == "" {
 			continue
 		}
-		// AddAppWithFields is now idempotent + merging: an existing
-		// bare entry is upgraded in place when extras are non-empty;
-		// a missing entry is appended; a fully matching entry is a
+		// AddAppWithFields is idempotent + merging: an existing bare
+		// entry is upgraded in place when extras are non-empty; a
+		// missing entry is appended; a fully matching entry is a
 		// no-op. The previous FindApp guard would have skipped the
 		// in-place upgrade case (existing bare entry + new pin), so
 		// it is intentionally absent here.
@@ -279,16 +283,34 @@ func (p *Provider) handleInstall(ctx context.Context, args []string, hamsFlags m
 		}
 		hf.AddAppWithFields(tagCLI, pkg, "", extra)
 
+		// Cycle 173: bare install MUST clear any prior pin so the
+		// hamsfile matches the user's intent (`hams apt install nginx`
+		// after a prior `hams apt install nginx=1.24.0` means "no
+		// pin"). AddAppWithFields SKIPS empty values during merge,
+		// so without an explicit RemoveAppField the stale pin would
+		// linger and the next `hams apply` would try to downgrade
+		// the freshly-installed latest version back to the pinned
+		// one. Same reasoning for source.
+		if requestedVersion == "" {
+			hf.RemoveAppField(pkg, "version")
+		}
+		if requestedSource == "" {
+			hf.RemoveAppField(pkg, "source")
+		}
+
 		_, observed, probeErr := p.runner.IsInstalled(ctx, pkg)
 		if probeErr != nil {
 			slog.Warn("post-install version probe failed", "package", pkg, "error", probeErr)
 		}
-		opts := []state.ResourceOption{state.WithVersion(observed)}
-		if requestedVersion != "" {
-			opts = append(opts, state.WithRequestedVersion(requestedVersion))
-		}
-		if requestedSource != "" {
-			opts = append(opts, state.WithRequestedSource(requestedSource))
+		// Always pass WithRequestedVersion / WithRequestedSource (even
+		// empty) so a bare install CLEARS the stale state pins. Without
+		// this, state.RequestedVersion stayed "1.24.0" even though the
+		// hamsfile was updated to bare; next refresh-then-apply would
+		// flip the diff back to "drifted from pin" and re-pin.
+		opts := []state.ResourceOption{
+			state.WithVersion(observed),
+			state.WithRequestedVersion(requestedVersion),
+			state.WithRequestedSource(requestedSource),
 		}
 		sf.SetResource(pkg, state.StateOK, opts...)
 	}
@@ -329,7 +351,7 @@ func (p *Provider) handleRemove(ctx context.Context, args []string, hamsFlags ma
 	// Same dry-run guard as install: dry-run flags execute apt-get but
 	// don't change host state, so the remove bookkeeping would lie.
 	if isComplexAptInvocation(args) {
-		slog.Warn("hams apt remove completed but did not auto-record (dry-run flag detected). To declare these resources, edit the apt hamsfile and run `hams apply`.", "args", args)
+		slog.Warn("hams apt remove completed but did not auto-record (apt-get simulate flag detected). To remove these resources from the hamsfile, edit it and run `hams apply`.", "args", args)
 		return nil
 	}
 

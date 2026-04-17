@@ -5,6 +5,9 @@ import (
 	"errors"
 	"testing"
 
+	"gopkg.in/yaml.v3"
+
+	"github.com/zthxxx/hams/internal/hamsfile"
 	"github.com/zthxxx/hams/internal/provider"
 	"github.com/zthxxx/hams/internal/state"
 )
@@ -139,6 +142,142 @@ func TestU6_Probe_OKAndFailedClassification(t *testing.T) {
 	}
 	if byID["missing"].State != state.StateFailed {
 		t.Errorf("missing: state=%v, want StateFailed", byID["missing"].State)
+	}
+}
+
+// TestProbe_MatchesPinnedVersionIDs locks in cycle 189: state IDs
+// with `@version` pins strip the suffix before the installed-map
+// lookup. Scoped packages (`@scope/bar`) preserve the leading `@`.
+// Pre-cycle-189 a state entry like "typescript@5.3.3" would never
+// match the installed map (keyed on bare name) and always return
+// StateFailed, breaking drift detection for any CLI-pinned install.
+func TestProbe_MatchesPinnedVersionIDs(t *testing.T) {
+	t.Parallel()
+	fake := NewFakeCmdRunner().
+		Seed("typescript", "5.3.3").
+		Seed("@scope/tool", "1.0.0")
+	p := New(nil, fake)
+
+	sf := state.New("npm", "test-machine")
+	sf.SetResource("typescript@5.3.3", state.StateOK)
+	sf.SetResource("@scope/tool@1.0.0", state.StateOK)
+	sf.SetResource("@scope/bare", state.StateOK) // scoped without pin
+
+	results, err := p.Probe(context.Background(), sf)
+	if err != nil {
+		t.Fatalf("Probe: %v", err)
+	}
+	byID := map[string]provider.ProbeResult{}
+	for _, r := range results {
+		byID[r.ID] = r
+	}
+	if byID["typescript@5.3.3"].State != state.StateOK {
+		t.Errorf("pinned typescript: state=%v, want StateOK", byID["typescript@5.3.3"].State)
+	}
+	if byID["@scope/tool@1.0.0"].State != state.StateOK {
+		t.Errorf("pinned scoped: state=%v, want StateOK", byID["@scope/tool@1.0.0"].State)
+	}
+	// Scoped without pin: NOT in fake's installed → StateFailed (still bare vs "@scope/bare").
+	if byID["@scope/bare"].State != state.StateFailed {
+		t.Errorf("@scope/bare (absent): state=%v, want StateFailed", byID["@scope/bare"].State)
+	}
+}
+
+// buildNpmHamsfile constructs an in-memory *hamsfile.File with the
+// given apps under a "cli" tag. Used by Plan tests that need a
+// real desired-state source. Mirrors the diff-test helper.
+func buildNpmHamsfile(apps []string) *hamsfile.File {
+	seq := &yaml.Node{Kind: yaml.SequenceNode}
+	for _, app := range apps {
+		seq.Content = append(seq.Content, &yaml.Node{
+			Kind: yaml.MappingNode,
+			Content: []*yaml.Node{
+				{Kind: yaml.ScalarNode, Value: "app", Tag: "!!str"},
+				{Kind: yaml.ScalarNode, Value: app, Tag: "!!str"},
+			},
+		})
+	}
+	mapping := &yaml.Node{
+		Kind: yaml.MappingNode,
+		Content: []*yaml.Node{
+			{Kind: yaml.ScalarNode, Value: "cli", Tag: "!!str"},
+			seq,
+		},
+	}
+	return &hamsfile.File{
+		Path: "/tmp/npm.hams.yaml",
+		Root: &yaml.Node{Kind: yaml.DocumentNode, Content: []*yaml.Node{mapping}},
+	}
+}
+
+// TestPlan_SuppressesRedundantVersionPinRemoves locks in cycle 191:
+// when the user upgrades a pinned package (e.g. typescript@5.3.3 →
+// typescript@5.4.0 in the hamsfile), ComputePlan emits BOTH an
+// Install typescript@5.4.0 AND a Remove typescript@5.3.3 in the
+// same plan. The Remove exec `npm uninstall typescript@5.3.3`
+// is interpreted by npm as bare-name uninstall — it would uninstall
+// the freshly-installed 5.4.0. Plan now filters out Remove actions
+// whose bare name overlaps an Install/Skip action.
+func TestPlan_SuppressesRedundantVersionPinRemoves(t *testing.T) {
+	t.Parallel()
+	p := New(nil, NewFakeCmdRunner())
+
+	// Desired: typescript@5.4.0 (new pin).
+	// Observed: typescript@5.3.3 (old pin, last-applied).
+	hf := buildNpmHamsfile([]string{"typescript@5.4.0"})
+	sf := state.New("npm", "test-machine")
+	sf.SetResource("typescript@5.3.3", state.StateOK)
+	sf.ConfigHash = "baseline" // needed for ComputePlan to emit Remove
+
+	actions, err := p.Plan(context.Background(), hf, sf)
+	if err != nil {
+		t.Fatalf("Plan: %v", err)
+	}
+
+	var installs, removes []string
+	for _, a := range actions {
+		switch a.Type {
+		case provider.ActionInstall:
+			installs = append(installs, a.ID)
+		case provider.ActionRemove:
+			removes = append(removes, a.ID)
+		}
+	}
+
+	if len(installs) != 1 || installs[0] != "typescript@5.4.0" {
+		t.Errorf("installs = %v, want [typescript@5.4.0]", installs)
+	}
+	// The Remove typescript@5.3.3 MUST have been suppressed — it shares
+	// the bare name "typescript" with the Install action above.
+	if len(removes) != 0 {
+		t.Errorf("removes = %v, want [] (redundant bare-name remove suppressed)", removes)
+	}
+	// Cycle 192: the suppressed ID must be marked StateRemoved in the
+	// observed state so sf.Save persists the tombstone. Without this,
+	// every subsequent `hams apply` would re-emit the same Remove
+	// action that we'd suppress again, leaving stale StateOK entries
+	// in the state file indefinitely.
+	if r, ok := sf.Resources["typescript@5.3.3"]; !ok || r.State != state.StateRemoved {
+		t.Errorf("typescript@5.3.3 state = %v (ok=%v), want StateRemoved", r, ok)
+	}
+}
+
+// TestStripNpmVersionPin covers the pure-helper invariant.
+func TestStripNpmVersionPin(t *testing.T) {
+	t.Parallel()
+	cases := map[string]string{
+		"foo":              "foo",
+		"foo@1.2.3":        "foo",
+		"@scope/bar":       "@scope/bar",
+		"@scope/bar@1.2.3": "@scope/bar",
+		"@scope/bar@^1.0":  "@scope/bar",
+		"":                 "",
+		"@":                "@",
+	}
+	for in, want := range cases {
+		if got := stripNpmVersionPin(in); got != want {
+			t.Errorf("stripNpmVersionPin(%q) = %q, want %q", in, got, want)
+		}
 	}
 }
 

@@ -70,8 +70,15 @@ func (p *Provider) Probe(ctx context.Context, sf *state.File) ([]provider.ProbeR
 		if r.State == state.StateRemoved {
 			continue
 		}
-		// Extension IDs are case-insensitive.
-		lowerID := strings.ToLower(id)
+		// Cycle 188: strip the optional `@version` suffix from the
+		// state ID before matching against the `installed` map (which
+		// keys on bare publisher.extension only — parseExtensionList
+		// drops the version from the key). Pre-cycle-188 a state
+		// entry like "foo.bar@1.2.3" NEVER matched — Probe always
+		// reported StateFailed, drift detection was broken for any
+		// user who pinned a version via `hams code-ext install
+		// publisher.ext@1.2.3`. Extension IDs are case-insensitive.
+		lowerID := stripExtensionVersionPin(strings.ToLower(id))
 		if ver, ok := installed[lowerID]; ok {
 			results = append(results, provider.ProbeResult{ID: id, State: state.StateOK, Version: ver})
 		} else {
@@ -81,11 +88,56 @@ func (p *Provider) Probe(ctx context.Context, sf *state.File) ([]provider.ProbeR
 	return results, nil
 }
 
+// stripExtensionVersionPin strips the optional @version suffix from
+// a VS Code extension ID. Extension IDs are of form
+// `publisher.extension[@version]` — no scoped-package ambiguity since
+// there's no leading `@`. Cycle 188 introduced the inline strip; cycle
+// 191 extracts it as a helper so the Plan-level version-pin-remove
+// suppressor (below) can share the logic.
+func stripExtensionVersionPin(id string) string {
+	if idx := strings.Index(id, "@"); idx > 0 {
+		return id[:idx]
+	}
+	return id
+}
+
+// suppressRedundantVersionRemoves drops ActionRemove entries whose
+// bare extension ID matches an Install/Update/Skip action in the
+// same plan and tombstones the stale state entry. Cycle 191/192 —
+// same rationale as npm: `code --uninstall-extension foo.bar@1.2.3`
+// would uninstall foo.bar entirely after the new version was just
+// installed.
+func suppressRedundantVersionRemoves(actions []provider.Action, observed *state.File) []provider.Action {
+	keepBareNames := make(map[string]bool)
+	for _, a := range actions {
+		if a.Type == provider.ActionRemove {
+			continue
+		}
+		keepBareNames[stripExtensionVersionPin(strings.ToLower(a.ID))] = true
+	}
+	out := make([]provider.Action, 0, len(actions))
+	for _, a := range actions {
+		if a.Type == provider.ActionRemove && keepBareNames[stripExtensionVersionPin(strings.ToLower(a.ID))] {
+			slog.Info("code-ext: suppressing redundant version-pin remove (bare name overlaps install)",
+				"removing", a.ID)
+			if observed != nil {
+				observed.SetResource(a.ID, state.StateRemoved)
+			}
+			continue
+		}
+		out = append(out, a)
+	}
+	return out
+}
+
 // Plan computes actions for VS Code extensions and attaches any
 // hamsfile-declared hooks to each action.
 func (p *Provider) Plan(_ context.Context, desired *hamsfile.File, observed *state.File) ([]provider.Action, error) {
 	apps := desired.ListApps()
 	actions := provider.ComputePlan(apps, observed, observed.ConfigHash)
+	// Cycle 191/192: drop redundant version-pinned removes + tombstone
+	// the stale state entry (same rationale as npm).
+	actions = suppressRedundantVersionRemoves(actions, observed)
 	return provider.PopulateActionHooks(actions, desired), nil
 }
 

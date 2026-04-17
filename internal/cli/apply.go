@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -111,7 +112,13 @@ func runApply(ctx context.Context, flags *provider.GlobalFlags, registry *provid
 			"Use --only to include specific providers, or --except to exclude them",
 		)
 	}
-	if flags.DryRun {
+	if flags.DryRun && !flags.JSON {
+		// Cycle 187: suppress prose header in JSON mode. CI scripts
+		// running `hams --json --dry-run apply` need machine-parseable
+		// output — prose on stdout before the final JSON object breaks
+		// `jq` / `json.Unmarshal`. The same guard applies to the
+		// per-provider dry-run previews (printDryRunActions) and the
+		// "No changes made" / execution-order lines.
 		fmt.Println("[dry-run] Would apply configurations. No changes will be made.")
 	}
 
@@ -277,14 +284,7 @@ func runApply(ctx context.Context, flags *provider.GlobalFlags, registry *provid
 		return filterErr
 	}
 	if len(providers) == 0 {
-		// Distinguish stage-1 empty (no artifacts anywhere) from stage-2
-		// empty (artifacts exist but --only/--except excluded them all).
-		switch {
-		case len(stageOneProviders) == 0:
-			fmt.Println("No providers match: no hamsfile or state file present for any registered provider.")
-		default:
-			fmt.Println("No providers match: --only/--except excluded every provider that has artifacts.")
-		}
+		reportNoProvidersMatch(cfg, profileDir, len(stageOneProviders))
 		return nil
 	}
 
@@ -341,10 +341,14 @@ func runApply(ctx context.Context, flags *provider.GlobalFlags, registry *provid
 				// Dry-run preserves --bootstrap's INTENT (user consented)
 				// without the side effect: print what WOULD run and
 				// leave the host untouched. The surrounding printDryRunPlan
-				// step still fires to show the rest of the plan.
+				// step still fires to show the rest of the plan. Cycle
+				// 187: suppress the prose in JSON mode so stdout stays
+				// parseable.
 				if flags.DryRun {
-					fmt.Printf("[dry-run] Would bootstrap %s via: %s\n",
-						manifest.Name, brerr.Script)
+					if !flags.JSON {
+						fmt.Printf("[dry-run] Would bootstrap %s via: %s\n",
+							manifest.Name, brerr.Script)
+					}
 					continue
 				}
 				if runErr := provider.RunBootstrap(ctx, p, registry); runErr != nil {
@@ -469,7 +473,8 @@ func runApply(ctx context.Context, flags *provider.GlobalFlags, registry *provid
 		}
 	}
 
-	if flags.DryRun {
+	if flags.DryRun && !flags.JSON {
+		// Cycle 187: suppress in JSON mode — see the DryRun guard above.
 		fmt.Println("[dry-run] Provider execution order:")
 		for i, p := range sorted {
 			fmt.Printf("  %d. %s (%s)\n", i+1, p.Manifest().DisplayName, p.Manifest().Name)
@@ -585,8 +590,13 @@ func runApply(ctx context.Context, flags *provider.GlobalFlags, registry *provid
 		// Dry-run: print the planned actions per provider and skip
 		// execution. The user sees exactly which resources would be
 		// installed / updated / removed before committing to the real run.
+		// Cycle 187: skip the per-provider prose preview in JSON mode
+		// — the final JSON summary at the end of the dry-run branch is
+		// the machine-readable surface for CI consumers.
 		if flags.DryRun {
-			printDryRunActions(name, manifest.DisplayName, actions)
+			if !flags.JSON {
+				printDryRunActions(name, manifest.DisplayName, actions)
+			}
 			continue
 		}
 
@@ -637,6 +647,13 @@ func runApply(ctx context.Context, flags *provider.GlobalFlags, registry *provid
 	// previews fail fast on broken hamsfiles instead of silently exiting
 	// 0 — matching the non-dry-run branch's error semantics.
 	if flags.DryRun {
+		// Cycle 187: in JSON mode, emit a pure JSON summary of the
+		// dry-run outcome instead of the prose warnings — CI scripts
+		// need to parse the result without grepping prose lines.
+		if flags.JSON {
+			return emitDryRunJSON(skippedProviders, stateSaveFailures)
+		}
+
 		if len(skippedProviders) > 0 {
 			fmt.Printf("Warning: %d provider(s) skipped due to errors: %s\n",
 				len(skippedProviders), strings.Join(skippedProviders, ", "))
@@ -693,6 +710,48 @@ func runApply(ctx context.Context, flags *provider.GlobalFlags, registry *provid
 	}
 
 	merged := provider.MergeResults(allResults)
+
+	// Cycle 183: emit a JSON summary when --json is set. CI scripts
+	// that orchestrate multi-machine applies need to detect partial
+	// failures programmatically rather than parsing the prose output.
+	// Symmetric with cycles 181 (version) / 182 (refresh).
+	if flags.JSON {
+		// Normalize nil → empty slice so consumers don't need to
+		// nil-check before iterating.
+		skippedNorm := skippedProviders
+		if skippedNorm == nil {
+			skippedNorm = []string{}
+		}
+		saveFailNorm := stateSaveFailures
+		if saveFailNorm == nil {
+			saveFailNorm = []string{}
+		}
+		data := map[string]any{
+			"installed":         merged.Installed,
+			"updated":           merged.Updated,
+			"removed":           merged.Removed,
+			"skipped":           merged.Skipped,
+			"failed":            merged.Failed,
+			"skipped_providers": skippedNorm,
+			"state_save_errors": saveFailNorm,
+			"success":           merged.Failed == 0 && len(skippedProviders) == 0 && len(stateSaveFailures) == 0,
+		}
+		out, mErr := json.MarshalIndent(data, "", "  ")
+		if mErr != nil {
+			return fmt.Errorf("marshaling apply JSON: %w", mErr)
+		}
+		fmt.Println(string(out))
+		if merged.Failed > 0 || len(skippedProviders) > 0 || len(stateSaveFailures) > 0 {
+			return hamserr.NewUserError(hamserr.ExitPartialFailure,
+				fmt.Sprintf("%d resources failed, %d providers skipped, %d state saves failed",
+					merged.Failed, len(skippedProviders), len(stateSaveFailures)),
+				"Run 'hams apply' again to retry failed resources",
+				"Use '--debug' for detailed error output",
+			)
+		}
+		return nil
+	}
+
 	fmt.Printf("\nhams apply complete: %d installed, %d updated, %d removed, %d skipped, %d failed\n",
 		merged.Installed, merged.Updated, merged.Removed, merged.Skipped, merged.Failed)
 
@@ -718,6 +777,83 @@ func runApply(ctx context.Context, flags *provider.GlobalFlags, registry *provid
 		)
 	}
 
+	return nil
+}
+
+// reportNoProvidersMatch prints the user-facing message when no
+// providers survive the two-stage artifact+flag filter. Cycle 194
+// distinguishes the profile-mismatch case (configured profile_tag
+// doesn't exist in the store) from the genuinely-empty case —
+// previously both produced the bare "no providers match" message,
+// leaving users who cloned a store without their profile_tag
+// confused about what was missing.
+func reportNoProvidersMatch(cfg *config.Config, profileDir string, stageOneProvidersLen int) {
+	if stageOneProvidersLen > 0 {
+		fmt.Println("No providers match: --only/--except excluded every provider that has artifacts.")
+		return
+	}
+	if info, statErr := os.Stat(profileDir); statErr == nil && info.IsDir() {
+		fmt.Println("No providers match: no hamsfile or state file present for any registered provider.")
+		return
+	}
+	fmt.Printf("No providers match: profile directory %q does not exist (profile_tag=%q).\n",
+		logging.TildePath(profileDir), cfg.ProfileTag)
+	entries, readErr := os.ReadDir(cfg.StorePath)
+	if readErr != nil {
+		return
+	}
+	var available []string
+	for _, e := range entries {
+		if e.IsDir() && !strings.HasPrefix(e.Name(), ".") {
+			available = append(available, e.Name())
+		}
+	}
+	if len(available) == 0 {
+		return
+	}
+	sort.Strings(available)
+	fmt.Printf("  Available profiles in this store: %s\n", strings.Join(available, ", "))
+	fmt.Println("  Fix: hams config set profile_tag <profile>  OR  pass --profile=<profile>")
+}
+
+// emitDryRunJSON writes a pure JSON summary of a dry-run to stdout
+// and returns the matching ExitPartialFailure when appropriate. The
+// JSON shape mirrors the full-apply JSON (cycle 183) with a
+// `dry_run: true` marker so CI scripts can distinguish both modes.
+func emitDryRunJSON(skippedProviders, stateSaveFailures []string) error {
+	skippedNorm := skippedProviders
+	if skippedNorm == nil {
+		skippedNorm = []string{}
+	}
+	saveFailNorm := stateSaveFailures
+	if saveFailNorm == nil {
+		saveFailNorm = []string{}
+	}
+	data := map[string]any{
+		"dry_run":           true,
+		"skipped_providers": skippedNorm,
+		"state_save_errors": saveFailNorm,
+		"success":           len(skippedProviders) == 0 && len(stateSaveFailures) == 0,
+	}
+	out, mErr := json.MarshalIndent(data, "", "  ")
+	if mErr != nil {
+		return fmt.Errorf("marshaling dry-run JSON: %w", mErr)
+	}
+	fmt.Println(string(out))
+	if len(skippedProviders) > 0 {
+		return hamserr.NewUserError(hamserr.ExitPartialFailure,
+			fmt.Sprintf("[dry-run] %d providers skipped due to errors (see log for details)", len(skippedProviders)),
+			"Fix the hamsfile or remove broken provider entries before running apply",
+			"Use '--debug' for detailed error output",
+		)
+	}
+	if len(stateSaveFailures) > 0 {
+		return hamserr.NewUserError(hamserr.ExitPartialFailure,
+			fmt.Sprintf("[dry-run] %d state save failure(s) during refresh", len(stateSaveFailures)),
+			"Check filesystem permissions on the store's .state/ directory",
+			"Use '--no-refresh' to skip the pre-apply probe if state intentionally read-only",
+		)
+	}
 	return nil
 }
 

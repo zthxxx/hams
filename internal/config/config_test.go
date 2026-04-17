@@ -142,6 +142,85 @@ func TestStateDir(t *testing.T) {
 	}
 }
 
+// TestWriteConfigKey_RejectsInvalidPathSegment locks in cycle 197:
+// `hams config set profile_tag ../etc` previously wrote the invalid
+// value to ~/.config/hams/hams.config.yaml. Cycle 195 sanitized at
+// runtime (apply used "default"), but `hams config get profile_tag`
+// still showed "../etc" — a confusing discrepancy. Now: reject at
+// write time so the persisted YAML stays honest.
+func TestWriteConfigKey_RejectsInvalidPathSegment(t *testing.T) {
+	t.Parallel()
+	paths := Paths{ConfigHome: t.TempDir(), DataHome: t.TempDir()}
+	storeDir := t.TempDir()
+
+	invalidValues := []string{"../etc", "..", ".", "/etc/passwd", "foo/bar", "foo\\bar", ""}
+	for _, field := range []string{"profile_tag", "machine_id"} {
+		for _, v := range invalidValues {
+			err := WriteConfigKey(paths, storeDir, field, v)
+			if err == nil {
+				t.Errorf("WriteConfigKey(%s=%q) should reject invalid value; got nil", field, v)
+			}
+			if err != nil && !strings.Contains(err.Error(), "invalid value") {
+				t.Errorf("WriteConfigKey(%s=%q) error should say 'invalid value'; got %v", field, v, err)
+			}
+		}
+	}
+
+	// Valid values still accepted.
+	for _, v := range []string{"macOS", "linux-arm64", "team_alpha", "prod.v2"} {
+		if err := WriteConfigKey(paths, storeDir, "profile_tag", v); err != nil {
+			t.Errorf("WriteConfigKey(profile_tag=%q) should succeed; got %v", v, err)
+		}
+	}
+}
+
+// TestProfileDir_RejectsPathTraversal locks in cycle 195: a
+// profile_tag like "../foo" used to escape StorePath via
+// filepath.Join's path cleaning. Now: sanitizePathSegment
+// collapses any value containing path separators or "." / ".." to
+// the fallback "default", preventing filesystem escape regardless
+// of how the invalid value reached the config struct.
+func TestProfileDir_RejectsPathTraversal(t *testing.T) {
+	t.Parallel()
+	cases := map[string]string{
+		"../etc":      "/store/default", // escapes via ..
+		"..":          "/store/default",
+		".":           "/store/default",
+		"/etc/passwd": "/store/default", // leading / (absolute)
+		"foo/bar":     "/store/default", // nested
+		"foo\\bar":    "/store/default", // Windows separator
+		"":            "/store/default", // empty → fallback
+		"macOS":       "/store/macOS",   // valid
+		"linux-arm64": "/store/linux-arm64",
+		"prod.v2":     "/store/prod.v2",
+		"team_alpha":  "/store/team_alpha",
+	}
+	for tag, want := range cases {
+		cfg := &Config{StorePath: "/store", ProfileTag: tag}
+		if got := cfg.ProfileDir(); got != want {
+			t.Errorf("ProfileDir(tag=%q) = %q, want %q", tag, got, want)
+		}
+	}
+}
+
+// TestStateDir_RejectsPathTraversal is the parallel for machine_id.
+func TestStateDir_RejectsPathTraversal(t *testing.T) {
+	t.Parallel()
+	cases := map[string]string{
+		"../..":      "/store/.state/unknown",
+		"/etc":       "/store/.state/unknown",
+		"foo/bar":    "/store/.state/unknown",
+		"MyMac":      "/store/.state/MyMac",
+		"machine-42": "/store/.state/machine-42",
+	}
+	for id, want := range cases {
+		cfg := &Config{StorePath: "/store", MachineID: id}
+		if got := cfg.StateDir(); got != want {
+			t.Errorf("StateDir(id=%q) = %q, want %q", id, got, want)
+		}
+	}
+}
+
 func TestIsSensitiveKey_ExactMatch(t *testing.T) {
 	t.Parallel()
 	if !IsSensitiveKey("llm_cli") {

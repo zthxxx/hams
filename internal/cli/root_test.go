@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"path/filepath"
 	"strings"
@@ -52,6 +53,41 @@ func TestNewApp_VersionSubcommandAvailable(t *testing.T) {
 
 	if err := app.Run(context.Background(), []string{"hams", "version"}); err != nil {
 		t.Fatalf("`hams version` error: %v", err)
+	}
+}
+
+// TestVersion_JSONOutputProducesParseableObject locks in cycle 181:
+// `hams --json version` previously printed the same text as the
+// non-JSON path, ignoring the global --json flag. CI scripts and
+// bug-report templates that machine-extract the running version
+// need a parseable shape — text form `hams 1.0.0 (abc123) built …`
+// is awkward to regex-parse and brittle.
+func TestVersion_JSONOutputProducesParseableObject(t *testing.T) {
+	registry := provider.NewRegistry()
+	app := NewApp(registry, sudo.NoopAcquirer{})
+
+	out := captureStdout(t, func() {
+		if err := app.Run(context.Background(), []string{"hams", "--json", "version"}); err != nil {
+			t.Fatalf("hams --json version: %v", err)
+		}
+	})
+
+	// Must be valid JSON.
+	var data map[string]string
+	if err := json.Unmarshal([]byte(out), &data); err != nil {
+		t.Fatalf("output is not valid JSON: %v\nraw: %q", err, out)
+	}
+
+	// Required fields.
+	for _, key := range []string{"version", "commit", "date", "goos", "goarch"} {
+		if _, ok := data[key]; !ok {
+			t.Errorf("JSON missing required key %q; got: %v", key, data)
+		}
+	}
+
+	// Sanity-check goos / goarch reflect the running platform.
+	if data["goos"] == "" || data["goarch"] == "" {
+		t.Errorf("goos/goarch should be non-empty; got goos=%q goarch=%q", data["goos"], data["goarch"])
 	}
 }
 

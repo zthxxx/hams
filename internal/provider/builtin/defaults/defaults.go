@@ -144,10 +144,17 @@ func (p *Provider) HandleCommand(ctx context.Context, args []string, hamsFlags m
 // value replaces the old hamsfile entry in place (old → StateRemoved,
 // new → StateOK) so the hamsfile stays single-valued per key.
 func (p *Provider) handleWrite(ctx context.Context, args []string, hamsFlags map[string]string, flags *provider.GlobalFlags) error {
-	if len(args) < 5 {
+	// Strict arg count — same UX class as cycle 156/163. A user typing
+	// `hams defaults write com.apple.dock SetText -string Hello World`
+	// (forgot to quote a multi-word value) had "World" silently dropped:
+	// only "Hello" was passed to defaults AND recorded. Far worse than
+	// a typo because the user believed the full string was set. Now:
+	// surface the mismatch with a quoting hint.
+	if len(args) != 5 {
 		return hamserr.NewUserError(hamserr.ExitUsageError,
-			"defaults write requires: write <domain> <key> -<type> <value>",
+			fmt.Sprintf("defaults write requires exactly 4 args after `write` (got %d): write <domain> <key> -<type> <value>", len(args)-1),
 			"Usage: hams defaults write com.apple.dock autohide -bool true",
+			"Quote multi-word values: hams defaults write <domain> <key> -string \"<value with spaces>\"",
 		)
 	}
 
@@ -174,10 +181,15 @@ func (p *Provider) handleWrite(ctx context.Context, args []string, hamsFlags map
 // removes the matching hamsfile entry (by `<domain>.<key>` prefix),
 // marking the state resource as StateRemoved.
 func (p *Provider) handleDelete(ctx context.Context, args []string, hamsFlags map[string]string, flags *provider.GlobalFlags) error {
-	if len(args) < 3 {
+	// Strict arg count — same UX class as handleWrite. A user typing
+	// `hams defaults delete com.apple.dock autohide other-key` would
+	// previously have silently deleted only the first (domain, key)
+	// pair and dropped "other-key". Surface the mismatch.
+	if len(args) != 3 {
 		return hamserr.NewUserError(hamserr.ExitUsageError,
-			"defaults delete requires: delete <domain> <key>",
+			fmt.Sprintf("defaults delete requires exactly 2 args after `delete` (got %d): delete <domain> <key>", len(args)-1),
 			"Usage: hams defaults delete com.apple.dock autohide",
+			"To delete multiple keys, run the command once per key",
 		)
 	}
 

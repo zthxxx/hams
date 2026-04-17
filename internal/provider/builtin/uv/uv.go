@@ -44,6 +44,15 @@ func (p *Provider) Bootstrap(_ context.Context) error {
 }
 
 // Probe queries uv for installed tools.
+// Probe queries uv for installed tools.
+//
+// Cycle 189: state IDs with `==version` pins (pip convention — uv
+// uses pip's version-specifier syntax) strip the suffix before the
+// installed-map lookup. Pre-cycle-189 a pinned state entry never
+// matched — drift detection was broken for any user who pinned via
+// CLI like `hams uv install foo==1.2.3`. Also strips the broader
+// pip specifiers (`>=`, `<=`, `~=`, `>`, `<`) so uses consistent
+// drift detection for those too.
 func (p *Provider) Probe(ctx context.Context, sf *state.File) ([]provider.ProbeResult, error) {
 	output, err := p.runner.List(ctx)
 	if err != nil {
@@ -56,7 +65,8 @@ func (p *Provider) Probe(ctx context.Context, sf *state.File) ([]provider.ProbeR
 		if r.State == state.StateRemoved {
 			continue
 		}
-		if ver, ok := installed[id]; ok {
+		key := stripUvVersionPin(id)
+		if ver, ok := installed[key]; ok {
 			results = append(results, provider.ProbeResult{ID: id, State: state.StateOK, Version: ver})
 		} else {
 			results = append(results, provider.ProbeResult{ID: id, State: state.StateFailed})
@@ -65,11 +75,54 @@ func (p *Provider) Probe(ctx context.Context, sf *state.File) ([]provider.ProbeR
 	return results, nil
 }
 
+// stripUvVersionPin strips the pip-style version specifier suffix
+// from a uv tool ID. uv uses pip's syntax (`foo==1.2.3`, `foo>=1.0`,
+// etc.) rather than npm's `@` delimiter. Returns the bare tool name.
+func stripUvVersionPin(id string) string {
+	for _, sep := range []string{"==", ">=", "<=", "~=", ">", "<"} {
+		if idx := strings.Index(id, sep); idx > 0 {
+			return id[:idx]
+		}
+	}
+	return id
+}
+
+// suppressRedundantVersionRemoves drops ActionRemove entries whose
+// bare tool name (pip-specifier-stripped) matches an Install/Update/
+// Skip action and tombstones the stale state entry. Cycle 191/192 —
+// same rationale as npm. uv uses pip-style specifiers so the strip
+// function is stripUvVersionPin.
+func suppressRedundantVersionRemoves(actions []provider.Action, observed *state.File) []provider.Action {
+	keepBareNames := make(map[string]bool)
+	for _, a := range actions {
+		if a.Type == provider.ActionRemove {
+			continue
+		}
+		keepBareNames[stripUvVersionPin(a.ID)] = true
+	}
+	out := make([]provider.Action, 0, len(actions))
+	for _, a := range actions {
+		if a.Type == provider.ActionRemove && keepBareNames[stripUvVersionPin(a.ID)] {
+			slog.Info("uv: suppressing redundant version-pin remove (bare name overlaps install)",
+				"removing", a.ID)
+			if observed != nil {
+				observed.SetResource(a.ID, state.StateRemoved)
+			}
+			continue
+		}
+		out = append(out, a)
+	}
+	return out
+}
+
 // Plan computes actions for uv tools and attaches any
 // hamsfile-declared hooks to each action.
 func (p *Provider) Plan(_ context.Context, desired *hamsfile.File, observed *state.File) ([]provider.Action, error) {
 	apps := desired.ListApps()
 	actions := provider.ComputePlan(apps, observed, observed.ConfigHash)
+	// Cycle 191/192: drop redundant version-pinned removes + tombstone
+	// the stale state entry (same rationale as npm).
+	actions = suppressRedundantVersionRemoves(actions, observed)
 	return provider.PopulateActionHooks(actions, desired), nil
 }
 
