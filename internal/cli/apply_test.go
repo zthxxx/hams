@@ -887,17 +887,18 @@ func TestRunApply_PreApplyStateSaveFailureListIsAlphabetical(t *testing.T) {
 	captureStderr(t, func() {
 		// Capture stderr to consume slog output without polluting test
 		// output. The relevant assertion is on returned-error / stdout.
-		if err := runApply(context.Background(), flags, registry, sudo.NoopAcquirer{}, "", false, "", "", false, bootstrapMode{}); err != nil {
-			_ = err // err expected; pre-apply save failures don't surface as runApply error in dry-run
+		if err := runApply(context.Background(), flags, registry, sudo.NoopAcquirer{}, "", false, "", "", false, bootstrapMode{}); err == nil {
+			t.Fatal("expected ExitPartialFailure (state save failures in pre-apply refresh)")
 		}
 	})
 
-	// The stateSaveFailures slice is populated inside runApply but not
-	// returned directly. The dry-run early exit prints "No changes made"
-	// without surfacing the stateSaveFailures (a separate bug, tracked
-	// in cycle 154). What we CAN assert here: run apply N times, capture
-	// stderr (which carries the per-provider slog.Error lines from the
-	// pre-apply refresh save loop), and confirm the order of provider
+	// As of cycle 154 the dry-run early exit DOES surface
+	// stateSaveFailures with ExitPartialFailure (instead of silently
+	// printing "No changes made"). The separate dedicated test for
+	// that error shape is TestRunApply_DryRunStateSaveFailureSurfacesAsError.
+	// This test focuses on ordering: run apply N times, capture stderr
+	// (which carries the per-provider slog.Error lines from the pre-
+	// apply refresh save loop), and confirm the order of provider
 	// names is stable + alphabetical across runs.
 	//
 	// collect returns the order in which the 3 provider names APPEAR in
@@ -944,6 +945,82 @@ func TestRunApply_PreApplyStateSaveFailureListIsAlphabetical(t *testing.T) {
 	want := []string{"alpha", "mu", "zeta"}
 	if !slices.Equal(first, want) {
 		t.Errorf("provider error order = %v, want %v (alphabetical)", first, want)
+	}
+
+	_ = storeDir
+}
+
+// TestRunApply_DryRunStateSaveFailureSurfacesAsError locks in cycle 154:
+// `hams apply --dry-run` previously printed "[dry-run] No changes
+// made." + exit 0 even when every provider's pre-apply refresh state
+// save failed. Users had no clue their drift tracking was broken
+// until the next real apply. Same class of silent-exit-0 bug as
+// cycle 39 (skipped providers). Now: print a Warning naming the
+// providers and return ExitPartialFailure so CI scripts catch the
+// drift-tracking breakage during preview.
+func TestRunApply_DryRunStateSaveFailureSurfacesAsError(t *testing.T) {
+	storeDir, profileDir, stateDir, flags := setupApplyTestEnv(t, []string{"alpha"})
+	flags.DryRun = true
+
+	writeApplyTestFile(t, filepath.Join(profileDir, "alpha.hams.yaml"),
+		"packages:\n  - app: pkg-a\n")
+
+	registry := provider.NewRegistry()
+	p := &applyTestProvider{
+		manifest: provider.Manifest{
+			Name: "alpha", DisplayName: "alpha", FilePrefix: "alpha",
+			Platforms: []provider.Platform{provider.PlatformAll},
+		},
+		probeFn: func(_ context.Context, _ *state.File) ([]provider.ProbeResult, error) {
+			return []provider.ProbeResult{{ID: "pkg-a", State: state.StateOK}}, nil
+		},
+	}
+	if err := registry.Register(p); err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+
+	if err := os.MkdirAll(stateDir, 0o750); err != nil {
+		t.Fatalf("mkdir stateDir: %v", err)
+	}
+	if err := os.Chmod(stateDir, 0o500); err != nil {
+		t.Fatalf("chmod stateDir read-only: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := os.Chmod(stateDir, 0o700); err != nil {
+			t.Logf("restore stateDir perms: %v", err)
+		}
+	})
+
+	out := captureStdout(t, func() {
+		err := runApply(context.Background(), flags, registry, sudo.NoopAcquirer{}, "", false, "", "", false, bootstrapMode{})
+		if err == nil {
+			t.Fatal("expected ExitPartialFailure for dry-run state save failure")
+		}
+		var ufe *hamserr.UserFacingError
+		if !errors.As(err, &ufe) {
+			t.Fatalf("expected *UserFacingError, got %T: %v", err, err)
+		}
+		if ufe.Code != hamserr.ExitPartialFailure {
+			t.Errorf("Code = %d, want ExitPartialFailure (%d)", ufe.Code, hamserr.ExitPartialFailure)
+		}
+		if !strings.Contains(ufe.Message, "state save failure") {
+			t.Errorf("error should mention state save failure; got %q", ufe.Message)
+		}
+		// Suggestions teach the recovery path.
+		joined := strings.Join(ufe.Suggestions, "\n")
+		if !strings.Contains(joined, "permissions") && !strings.Contains(joined, "--no-refresh") {
+			t.Errorf("suggestions should hint at permissions or --no-refresh; got %v", ufe.Suggestions)
+		}
+	})
+
+	// Stdout should NOT show the "[dry-run] No changes made." line —
+	// that's the silent-success sentinel that the bug produced.
+	if strings.Contains(out, "No changes made") {
+		t.Errorf("dry-run with save failures should NOT print 'No changes made'; got:\n%s", out)
+	}
+	// Should show the explicit warning with the provider name.
+	if !strings.Contains(out, "alpha") || !strings.Contains(out, "failed to persist state") {
+		t.Errorf("dry-run output should warn about state save failure; got:\n%s", out)
 	}
 
 	_ = storeDir

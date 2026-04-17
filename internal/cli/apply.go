@@ -646,6 +646,23 @@ func runApply(ctx context.Context, flags *provider.GlobalFlags, registry *provid
 				"Use '--debug' for detailed error output",
 			)
 		}
+		// Pre-apply refresh state-save failures: surface them in dry-run
+		// too. Previously dry-run printed "No changes made" + exit 0 even
+		// when every state file was unwriteable — the user had no clue
+		// their drift tracking was broken until they ran the real apply.
+		// Same class of silent-exit-0 bug as cycle 39 (skipped providers
+		// in dry-run). Symmetric with the non-dry-run branch's
+		// stateSaveFailures handling at the end of runApply.
+		if len(stateSaveFailures) > 0 {
+			fmt.Printf("Warning: %d provider(s) failed to persist state during pre-apply refresh: %s\n",
+				len(stateSaveFailures), strings.Join(stateSaveFailures, ", "))
+			fmt.Println("  Drift tracking is broken for these providers. Fix permissions on the store, then re-run.")
+			return hamserr.NewUserError(hamserr.ExitPartialFailure,
+				fmt.Sprintf("[dry-run] %d state save failure(s) during refresh", len(stateSaveFailures)),
+				"Check filesystem permissions on the store's .state/ directory",
+				"Use '--no-refresh' to skip the pre-apply probe if state intentionally read-only",
+			)
+		}
 		fmt.Println("[dry-run] No changes made.")
 		return nil
 	}
