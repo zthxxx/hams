@@ -187,6 +187,10 @@ Spec corrections:
 
 Total commits in cycle 2: 15+ (still growing — iteration 3 adds hooks+OTel defer).
 
+### Cycle 131 — Whitespace-only `--only`/`--except` now surface usage errors
+
+- [x] Real user-workflow bug. `--only="   "` / `--only=,,` / `--only=" , , "` parsed to an empty set via parseCSV, fell through the filter, retained zero providers — downstream apply printed "No providers match" and exited 0, indistinguishable from a genuinely-empty-store install. A typo like `--only="   apt"` (stray whitespace before comma) would silently filter to nothing with no hint the input was malformed. Fix: after parseCSV, if the set is empty, return a UserFacingError{Code: ExitUsageError} naming which flag was bad and listing the valid provider names. Mirror guard for `--except`. 3 regression tests (`   `, `,,`, ` , , `). Separately: docs/cli/apply.mdx build failure on `/en/docs/cli/apply` — `{duti, mas}` in plain text was parsed as JSX expression, crashing prerender with `ReferenceError: duti is not defined`; escaped to `\{duti, mas\}` in both en + zh-CN. (commits `041bf06`, `6cd6a68`)
+
 ### Cycle 130 — Direct tests for `matchesPlatform`
 
 - [x] `matchesPlatform` had no direct tests — only exercised transitively via DAG resolution and RunBootstrap dep-filter paths. A regression flipping the empty-string=all semantic would silently drop every unfiltered `DependsOn` entry from bootstrap. 3 tests: wildcards (empty + PlatformAll), current runtime.GOOS match, bogus-GOOS false. Mirrors cycle 109's `IsPlatformsMatch` gate but at the dep-level instead of manifest-level. (commit `5e55492`)
