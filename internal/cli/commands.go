@@ -1324,6 +1324,26 @@ func runBinaryUpgrade(ctx context.Context, flags *provider.GlobalFlags) error {
 		return nil
 	}
 
+	// Resolve the expected SHA256 from the release's checksums.txt
+	// manifest BEFORE downloading the binary. Without this, the binary
+	// integrity check was skipped entirely (ReplaceBinary was called
+	// with expectedSHA256 = "" — see selfupdate.ReplaceBinary line:
+	// "if expectedSHA256 != ''"). HTTPS catches transport tampering
+	// but not a hostile origin or a swapped CDN object — the
+	// checksums file (published by .github/workflows/release.yml)
+	// is the integrity anchor.
+	expectedSHA, err := updater.LookupChecksum(ctx, release.Assets, wantName)
+	if err != nil {
+		return fmt.Errorf("verifying release integrity: %w", err)
+	}
+	if expectedSHA == "" {
+		// Older releases pre-date the checksums.txt manifest. Warn
+		// loudly so the user can opt to wait for a newer release that
+		// ships verified checksums.
+		slog.Warn("release does not publish checksums.txt; binary integrity will NOT be verified",
+			"release", release.Version, "asset", wantName)
+	}
+
 	fmt.Printf("Downloading %s (v%s -> v%s)...\n", wantName, current, release.Version)
 	body, err := updater.DownloadAsset(ctx, downloadURL)
 	if err != nil {
@@ -1336,7 +1356,7 @@ func runBinaryUpgrade(ctx context.Context, flags *provider.GlobalFlags) error {
 		return fmt.Errorf("resolving executable path: %w", err)
 	}
 
-	if err := selfupdate.ReplaceBinary(exePath, body, ""); err != nil {
+	if err := selfupdate.ReplaceBinary(exePath, body, expectedSHA); err != nil {
 		return fmt.Errorf("replacing binary: %w", err)
 	}
 

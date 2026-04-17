@@ -477,6 +477,123 @@ func readAll(r interface{ Read([]byte) (int, error) }) ([]byte, error) {
 	}
 }
 
+// TestLookupChecksum_HappyPath asserts cycle 159: when the release
+// includes a checksums.txt asset and the manifest contains the
+// requested binary, LookupChecksum returns the hex sha256.
+// Without this verification, runBinaryUpgrade was calling
+// ReplaceBinary with empty expectedSHA256 — skipping the integrity
+// check entirely. A MITM on the GitHub Releases CDN could swap the
+// binary undetected.
+func TestLookupChecksum_HappyPath(t *testing.T) {
+	t.Parallel()
+	const wantHash = "abc123def456000000000000000000000000000000000000000000000000abcd"
+	const otherHash = "ffeeddccbbaa99887766554433221100ffeeddccbbaa99887766554433221100"
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		// Body mimics `sha256sum hams-* > checksums.txt` output.
+		body := wantHash + "  hams-linux-amd64\n" +
+			otherHash + "  hams-darwin-arm64\n"
+		w.Write([]byte(body)) //nolint:errcheck // test handler
+	}))
+	defer srv.Close()
+
+	u := &Updater{HTTPClient: &http.Client{
+		Transport: &rewriteTransport{base: srv.Client().Transport, target: srv.URL},
+	}}
+
+	assets := []Asset{
+		{Name: "hams-linux-amd64", DownloadURL: "https://example.test/hams-linux-amd64"},
+		{Name: ChecksumAssetName, DownloadURL: "https://example.test/" + ChecksumAssetName},
+	}
+
+	got, err := u.LookupChecksum(context.Background(), assets, "hams-linux-amd64")
+	if err != nil {
+		t.Fatalf("LookupChecksum: %v", err)
+	}
+	if got != wantHash {
+		t.Errorf("hash = %q, want %q", got, wantHash)
+	}
+}
+
+// TestLookupChecksum_NoManifestAssetReturnsEmptyNoError asserts the
+// older-release fallback path: when checksums.txt is absent from the
+// asset list (older releases pre-date the manifest), LookupChecksum
+// returns ("", nil) so the caller can warn-and-proceed without
+// erroring out the upgrade.
+func TestLookupChecksum_NoManifestAssetReturnsEmptyNoError(t *testing.T) {
+	t.Parallel()
+	u := &Updater{HTTPClient: http.DefaultClient}
+
+	assets := []Asset{
+		{Name: "hams-linux-amd64", DownloadURL: "https://example.test/hams-linux-amd64"},
+		// No checksums.txt asset.
+	}
+
+	got, err := u.LookupChecksum(context.Background(), assets, "hams-linux-amd64")
+	if err != nil {
+		t.Errorf("expected nil err for missing manifest, got %v", err)
+	}
+	if got != "" {
+		t.Errorf("expected empty hash for missing manifest, got %q", got)
+	}
+}
+
+// TestLookupChecksum_ManifestPresentButBinaryMissingErrors asserts
+// the security-critical case: when checksums.txt IS present but
+// doesn't list the requested binary, LookupChecksum returns an
+// error instead of silently falling through. We must NOT skip
+// integrity verification when the manifest disagrees with our
+// expectations — that's the MITM attack surface we're trying to
+// close.
+func TestLookupChecksum_ManifestPresentButBinaryMissingErrors(t *testing.T) {
+	t.Parallel()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		// Manifest lists ONLY hams-darwin-arm64; not the requested linux build.
+		body := "1234567890123456789012345678901234567890123456789012345678901234  hams-darwin-arm64\n"
+		w.Write([]byte(body)) //nolint:errcheck // test handler
+	}))
+	defer srv.Close()
+
+	u := &Updater{HTTPClient: &http.Client{
+		Transport: &rewriteTransport{base: srv.Client().Transport, target: srv.URL},
+	}}
+
+	assets := []Asset{
+		{Name: ChecksumAssetName, DownloadURL: "https://example.test/" + ChecksumAssetName},
+	}
+
+	_, err := u.LookupChecksum(context.Background(), assets, "hams-linux-amd64")
+	if err == nil {
+		t.Fatal("expected error for binary missing from manifest")
+	}
+	if !strings.Contains(err.Error(), "hams-linux-amd64") {
+		t.Errorf("error should name the missing binary, got: %v", err)
+	}
+}
+
+// TestLookupChecksum_ManifestNetworkErrorPropagates asserts a
+// transient HTTP failure on the manifest fetch surfaces as an
+// error so we don't proceed with an unverified install.
+func TestLookupChecksum_ManifestNetworkErrorPropagates(t *testing.T) {
+	t.Parallel()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer srv.Close()
+
+	u := &Updater{HTTPClient: &http.Client{
+		Transport: &rewriteTransport{base: srv.Client().Transport, target: srv.URL},
+	}}
+
+	assets := []Asset{
+		{Name: ChecksumAssetName, DownloadURL: "https://example.test/" + ChecksumAssetName},
+	}
+
+	_, err := u.LookupChecksum(context.Background(), assets, "hams-linux-amd64")
+	if err == nil {
+		t.Fatal("expected error for 500 response")
+	}
+}
+
 // rewriteTransport redirects all requests to the test server.
 type rewriteTransport struct {
 	base   http.RoundTripper
