@@ -264,6 +264,13 @@ func runApply(ctx context.Context, flags *provider.GlobalFlags, registry *provid
 		}
 	}
 
+	// Safety net: ensureProfileConfigured is expected to populate both
+	// fields above, but a manually-edited config or an interactive
+	// prompt that opted to keep a blank would slip past. Surface the
+	// fallback once per invocation so the user sees WHY state landed
+	// in .state/unknown/ (matches refresh and list).
+	config.WarnIfDefaultsUsed(cfg)
+
 	stateDir := cfg.StateDir()
 	// Cycle 223: route through the shared acquireMutationLock seam
 	// (commands_seams.go → provider.AcquireMutationLock) instead of

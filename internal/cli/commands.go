@@ -124,6 +124,12 @@ func runRefresh(ctx context.Context, flags *provider.GlobalFlags, registry *prov
 	if err != nil {
 		return fmt.Errorf("loading config: %w", err)
 	}
+	// Surface empty profile_tag / machine_id once per invocation so
+	// refresh (which writes to <store>/default/ or .state/unknown/
+	// when either is missing) doesn't silently drift. Metadata
+	// commands (--help, --version) never reach this point, so they
+	// stay silent.
+	config.WarnIfDefaultsUsed(cfg)
 	if flags.Profile != "" {
 		// Cycle 219 puts the --profile overlay inside config.Load, so
 		// cfg.ProfileTag already reflects the override. Refresh still
@@ -1428,6 +1434,11 @@ func listCmd(registry *provider.Registry) *cli.Command {
 			if err != nil {
 				return fmt.Errorf("loading config: %w", err)
 			}
+			// Surface empty profile_tag / machine_id once per
+			// invocation so `hams list` (which reads state from
+			// .state/<machine-id>/) doesn't silently default to
+			// /unknown/ with no feedback.
+			config.WarnIfDefaultsUsed(cfg)
 
 			// Cycle 217 fixed the silent --profile drop in list; cycle
 			// 219 promoted the overlay into config.Load itself, so

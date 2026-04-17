@@ -648,11 +648,12 @@ func TestLoad_MalformedStoreYAMLSurfaces(t *testing.T) {
 	}
 }
 
-// TestValidate_WarnsOncePerProcess asserts that repeated Validate() calls
-// with empty profile_tag/machine_id fire at most one slog.Warn per field.
-// Before the once-guard, `hams list` duplicated the warnings 2x per
-// command (once during provider registration, once during command action).
-func TestValidate_WarnsOncePerProcess(t *testing.T) {
+// TestWarnIfDefaultsUsed_OncePerProcess asserts that repeated
+// WarnIfDefaultsUsed calls with empty profile_tag/machine_id fire at
+// most one slog.Warn per field. Action sites (apply, provider
+// wrappers) may end up invoking this more than once per invocation;
+// the once-guard keeps the log tape readable.
+func TestWarnIfDefaultsUsed_OncePerProcess(t *testing.T) {
 	// Reset to a known clean state; also arrange a buffer to capture logs.
 	ResetValidationWarnOnce()
 	t.Cleanup(ResetValidationWarnOnce)
@@ -664,9 +665,7 @@ func TestValidate_WarnsOncePerProcess(t *testing.T) {
 
 	c := &Config{StorePath: "/some/store"}
 	for range 5 {
-		if err := c.Validate(); err != nil {
-			t.Fatalf("Validate: %v", err)
-		}
+		WarnIfDefaultsUsed(c)
 	}
 
 	out := buf.String()
@@ -677,6 +676,46 @@ func TestValidate_WarnsOncePerProcess(t *testing.T) {
 	}
 	if machineCount != 1 {
 		t.Errorf("machine_id warning fired %d times, want 1", machineCount)
+	}
+}
+
+// TestValidate_IsSilent asserts that Validate never emits side-effect
+// logs — the earlier "using default" warnings have moved to
+// WarnIfDefaultsUsed, which action sites call after configuring the
+// structured logger.
+func TestValidate_IsSilent(t *testing.T) {
+	var buf strings.Builder
+	prev := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug})))
+	t.Cleanup(func() { slog.SetDefault(prev) })
+
+	c := &Config{StorePath: "/some/store"}
+	if err := c.Validate(); err != nil {
+		t.Fatalf("Validate: %v", err)
+	}
+	if out := buf.String(); out != "" {
+		t.Errorf("Validate emitted logs; want silent. got: %q", out)
+	}
+}
+
+// TestWarnIfDefaultsUsed_SilentWithoutStore asserts that a config
+// with no StorePath (fresh install, no hams.config.yaml) never
+// triggers the default-value warnings. Otherwise metadata commands
+// like `hams --help` would emit noise on brand new machines.
+func TestWarnIfDefaultsUsed_SilentWithoutStore(t *testing.T) {
+	ResetValidationWarnOnce()
+	t.Cleanup(ResetValidationWarnOnce)
+
+	var buf strings.Builder
+	prev := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelWarn})))
+	t.Cleanup(func() { slog.SetDefault(prev) })
+
+	WarnIfDefaultsUsed(&Config{})
+	WarnIfDefaultsUsed(nil)
+
+	if out := buf.String(); out != "" {
+		t.Errorf("WarnIfDefaultsUsed with empty/nil config emitted %q; want silent", out)
 	}
 }
 
