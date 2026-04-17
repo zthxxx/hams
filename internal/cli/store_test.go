@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"errors"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -191,6 +192,52 @@ func TestList_NonexistentStorePathEmitsUserError(t *testing.T) {
 	}
 	// Regression: the bad surface message is "No managed resources
 	// found" — assert it's NOT in the error.
+	if strings.Contains(ufe.Error(), "No managed resources found") {
+		t.Errorf("error should NOT use the misleading empty-store text; got %q", ufe.Error())
+	}
+}
+
+// TestList_NonexistentProfileEmitsUserError — cycle 217 guard.
+// `hams --profile=<typo> list` used to be a silent no-op: the list
+// Action never applied flags.Profile to cfg.ProfileTag, so the
+// override was dropped and the "No managed resources found" fallback
+// fired against whatever profile_tag the config file specified.
+// Apply (cycle 92) and refresh (cycle 93) already validate the
+// overridden profile dir; cycle 217 adds the same check to list.
+func TestList_NonexistentProfileEmitsUserError(t *testing.T) {
+	storeDir := t.TempDir()
+	// Seed a valid profile so cfg.Load finds store_path OK. The
+	// typo'd --profile value is the focus of this test.
+	if err := os.MkdirAll(filepath.Join(storeDir, "macOS"), 0o750); err != nil {
+		t.Fatalf("mkdir profile: %v", err)
+	}
+
+	registry := provider.NewRegistry()
+	p := &applyTestProvider{
+		manifest: provider.Manifest{
+			Name: "apt", DisplayName: "apt", FilePrefix: "apt",
+			Platforms: []provider.Platform{provider.PlatformAll},
+		},
+	}
+	if err := registry.Register(p); err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+
+	t.Setenv("HAMS_CONFIG_HOME", t.TempDir())
+	t.Setenv("HAMS_DATA_HOME", t.TempDir())
+
+	app := NewApp(registry, sudo.NoopAcquirer{})
+	err := app.Run(context.Background(), []string{"hams", "--store", storeDir, "--profile", "Typo", "list"})
+	if err == nil {
+		t.Fatal("expected ExitUsageError for typo'd profile")
+	}
+	var ufe *hamserr.UserFacingError
+	if !errors.As(err, &ufe) || ufe.Code != hamserr.ExitUsageError {
+		t.Fatalf("expected ExitUsageError, got %v (%T)", err, err)
+	}
+	if !strings.Contains(ufe.Message, "Typo") {
+		t.Errorf("error should name the bad profile; got %q", ufe.Message)
+	}
 	if strings.Contains(ufe.Error(), "No managed resources found") {
 		t.Errorf("error should NOT use the misleading empty-store text; got %q", ufe.Error())
 	}

@@ -1168,6 +1168,25 @@ func listCmd(registry *provider.Registry) *cli.Command {
 				return fmt.Errorf("loading config: %w", err)
 			}
 
+			// Cycle 217: apply `--profile` overlay (symmetric with
+			// apply cycle 92, refresh cycle 93). Pre-cycle-217 the
+			// list Action ignored flags.Profile entirely — `hams
+			// --profile=foo list` silently used the config-file's
+			// profile tag. When the overridden profile dir is absent,
+			// the "No managed resources found" fallback fired, which
+			// hid the real issue (misspelled --profile value).
+			if flags.Profile != "" {
+				cfg.ProfileTag = flags.Profile
+				profileDir := cfg.ProfileDir()
+				if info, statErr := os.Stat(profileDir); statErr != nil || !info.IsDir() {
+					return hamserr.NewUserError(hamserr.ExitUsageError,
+						fmt.Sprintf("profile %q not found at %s", flags.Profile, profileDir),
+						"Check available profiles: ls "+cfg.StorePath,
+						"Or create this profile: mkdir -p "+profileDir,
+					)
+				}
+			}
+
 			// Cycle 211: symmetric with cycle 87 (apply) and cycle 88
 			// (refresh) — when store_path is missing or not a directory,
 			// list previously printed "No managed resources found. Run
