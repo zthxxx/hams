@@ -81,6 +81,38 @@ func TestStoreStatus_SpecCompliantOutput(t *testing.T) {
 	}
 }
 
+// TestStoreStatus_HonorsProfileOverride — cycle 218 guard. Pre-cycle-218
+// `hams --profile=X store status` silently showed the config-file's
+// profile_tag, contradicting what apply/refresh/list would use for
+// the same invocation. The test seeds TWO profile dirs (config-file
+// profile "fromfile" and overridden profile "override") and asserts
+// that passing --profile=override makes the output show the override
+// value. Regression against forgetting the overlay step.
+func TestStoreStatus_HonorsProfileOverride(t *testing.T) {
+	storeDir := t.TempDir()
+	// Seed both profile dirs so neither triggers a "dir missing" path.
+	for _, p := range []string{"fromfile", "override"} {
+		if err := os.MkdirAll(filepath.Join(storeDir, p), 0o750); err != nil {
+			t.Fatalf("mkdir profile %s: %v", p, err)
+		}
+	}
+	t.Setenv("HAMS_CONFIG_HOME", t.TempDir())
+	t.Setenv("HAMS_DATA_HOME", t.TempDir())
+
+	got := captureStdout(t, func() {
+		registry := provider.NewRegistry()
+		app := NewApp(registry, sudo.NoopAcquirer{})
+		args := []string{"hams", "--store", storeDir, "--profile", "override", "store", "status"}
+		if err := app.Run(context.Background(), args); err != nil {
+			t.Fatalf("store status: %v", err)
+		}
+	})
+
+	if !strings.Contains(got, "override") {
+		t.Errorf("store status output missing overridden profile %q; full:\n%s", "override", got)
+	}
+}
+
 // TestStoreStatus_WithGitRepo asserts the Git status line is
 // surfaced when the store is a git repo. Uses a real `git init`
 // against a fresh tempdir so the test doesn't depend on network.

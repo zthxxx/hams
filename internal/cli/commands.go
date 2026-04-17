@@ -765,6 +765,20 @@ func storeCmd() *cli.Command {
 			return fmt.Errorf("loading config: %w", err)
 		}
 
+		// Cycle 218: apply --profile override so store status reflects
+		// the runtime-resolved profile, not the config-file default.
+		// Pre-cycle-218 `hams --profile=X store status` silently showed
+		// the config-file's profile_tag, which contradicted what
+		// apply/refresh/list (cycles 92/93/217) would use for the same
+		// invocation. Unlike those commands, status does NOT fail hard
+		// when the overridden profile dir is absent: a missing profile
+		// dir is a legitimate status observation (fresh store), and the
+		// hamsfiles count sentinel (-1) already surfaces it in JSON +
+		// text output below.
+		if flags.Profile != "" {
+			cfg.ProfileTag = flags.Profile
+		}
+
 		storePath := cfg.StorePath
 		if storePath == "" {
 			return hamserr.NewUserError(hamserr.ExitUsageError,
