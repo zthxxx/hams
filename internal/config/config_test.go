@@ -409,6 +409,79 @@ func TestWriteConfigKey_GlobalVsLocal(t *testing.T) {
 	}
 }
 
+// TestUnsetConfigKey_RemovesNonSensitiveFromGlobal asserts `config
+// unset <non-sensitive-key>` deletes the key from the global config
+// file (matching WriteConfigKey's routing). Idempotent: a second
+// unset returns nil without error and leaves the file unchanged.
+func TestUnsetConfigKey_RemovesNonSensitiveFromGlobal(t *testing.T) {
+	configHome := t.TempDir()
+	storeDir := t.TempDir()
+	paths := Paths{ConfigHome: configHome, DataHome: t.TempDir()}
+
+	// Seed by setting first.
+	if err := WriteConfigKey(paths, storeDir, "profile_tag", "macOS"); err != nil {
+		t.Fatalf("seed WriteConfigKey: %v", err)
+	}
+	globalPath := filepath.Join(configHome, "hams.config.yaml")
+
+	// Unset removes it.
+	if err := UnsetConfigKey(paths, storeDir, "profile_tag"); err != nil {
+		t.Fatalf("UnsetConfigKey: %v", err)
+	}
+	after, err := os.ReadFile(globalPath)
+	if err != nil {
+		t.Fatalf("read global config: %v", err)
+	}
+	if strings.Contains(string(after), "profile_tag") {
+		t.Errorf("global config still contains profile_tag after unset; got %q", after)
+	}
+
+	// Second unset is idempotent — no error even though key is now absent.
+	if err := UnsetConfigKey(paths, storeDir, "profile_tag"); err != nil {
+		t.Errorf("second unset should be idempotent, got %v", err)
+	}
+}
+
+// TestUnsetConfigKey_RemovesSensitiveFromLocal asserts sensitive
+// keys are deleted from hams.config.local.yaml (NOT global) so the
+// routing stays symmetric with WriteConfigKey.
+func TestUnsetConfigKey_RemovesSensitiveFromLocal(t *testing.T) {
+	configHome := t.TempDir()
+	storeDir := t.TempDir()
+	paths := Paths{ConfigHome: configHome, DataHome: t.TempDir()}
+
+	if err := WriteConfigKey(paths, storeDir, "notification.bark_token", "abc123"); err != nil {
+		t.Fatalf("seed WriteConfigKey: %v", err)
+	}
+	localPath := filepath.Join(storeDir, "hams.config.local.yaml")
+
+	if err := UnsetConfigKey(paths, storeDir, "notification.bark_token"); err != nil {
+		t.Fatalf("UnsetConfigKey: %v", err)
+	}
+	after, err := os.ReadFile(localPath)
+	if err != nil {
+		t.Fatalf("read local config: %v", err)
+	}
+	if strings.Contains(string(after), "bark_token") {
+		t.Errorf("local config still contains bark_token after unset; got %q", after)
+	}
+}
+
+// TestUnsetConfigKey_MissingFileIsNotError asserts unset on a
+// never-written key (no config file created yet) returns nil —
+// the user's intent is "this key shouldn't be set", and both
+// "not present" and "file missing" satisfy that intent. Previously
+// an implementation that called os.ReadFile without IsNotExist
+// guard would surface a confusing "reading config: no such file
+// or directory" error for first-run users trying to clean up a
+// template.
+func TestUnsetConfigKey_MissingFileIsNotError(t *testing.T) {
+	paths := Paths{ConfigHome: t.TempDir(), DataHome: t.TempDir()}
+	if err := UnsetConfigKey(paths, t.TempDir(), "profile_tag"); err != nil {
+		t.Errorf("unset on missing file should not error, got %v", err)
+	}
+}
+
 // TestLoad_MalformedGlobalYAMLSurfaces asserts that a malformed global
 // config file returns an error containing the file path, so users can
 // fix the broken file. Previously the error was silently ignored by

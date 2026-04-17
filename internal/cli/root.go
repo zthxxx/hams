@@ -103,7 +103,31 @@ Use 'hams apply' to replay all installations from config.`,
 			selfUpgradeCmd(),
 			versionCmd(),
 		},
+		// Enable urfave/cli's built-in fuzzy suggestion engine so
+		// `hams aply` prints "Did you mean 'apply'?" instead of
+		// silently dropping into the default help text.
+		Suggest: true,
 		Action: func(_ context.Context, cmd *cli.Command) error {
+			// `hams bogus-command` used to fall through to the root
+			// Action and print the help text with exit 0 — scripts
+			// couldn't detect typo'd subcommands and users had to
+			// re-read the command list to figure out what went wrong.
+			// Now: any trailing positional arg that didn't match a
+			// subcommand name is treated as a usage error with a
+			// pointer back at `--help`, plus a Levenshtein-closest
+			// suggestion from the known command list (same engine
+			// that powers `hams help <typo>`).
+			if cmd.Args().Len() > 0 {
+				unknown := cmd.Args().First()
+				suggestions := []string{"Run 'hams --help' to see the full list of subcommands"}
+				if suggested := cli.SuggestCommand(cmd.Commands, unknown); suggested != "" {
+					suggestions = append([]string{fmt.Sprintf("Did you mean 'hams %s'?", suggested)}, suggestions...)
+				}
+				return hamserr.NewUserError(hamserr.ExitUsageError,
+					fmt.Sprintf("unknown command: %q", unknown),
+					suggestions...,
+				)
+			}
 			return cli.ShowAppHelp(cmd)
 		},
 	}

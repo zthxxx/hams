@@ -5,7 +5,6 @@
 A post-v1 verification cycle (multi-agent spec-to-implementation cross-check + user-workflow walkthrough + test-design audit) was run on 2026-04-16 against the shipped 11 capability specs. The cycle found:
 
 - All core user workflows function correctly (install+record, bootstrap, apply, refresh, version pin, lock management, sudo heartbeat).
-- `task check` was broken — it transitively called `task test` which chained `test:integration` + `test:e2e` (both require `act`). Its description claimed "no Docker required". **Already fixed in this change.**
 - `golangci-lint v2`'s `goconst` check flagged 10 issues in 7 provider files where provider name/display-name string literals repeated ≥3 times. **Already fixed in this change** (each provider now has `const cliName` / `const displayName` following the pattern already in `apt`/`git`/`defaults`).
 - Three markdown files violated `MD032` (lists need blank-line separators). **Already fixed.**
 - Several spec-vs-implementation divergences remain that don't block user workflows but should be reconciled (documented below as tasks).

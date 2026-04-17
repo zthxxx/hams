@@ -99,7 +99,7 @@ func TestBootstrapFromRepo_LocalPath(t *testing.T) {
 	}
 
 	paths := config.Paths{DataHome: filepath.Join(dir, "data")}
-	storePath, err := bootstrapFromRepo(repoDir, paths)
+	storePath, err := bootstrapFromRepo(context.Background(), repoDir, paths)
 	if err != nil {
 		t.Fatalf("bootstrapFromRepo local: %v", err)
 	}
@@ -118,7 +118,7 @@ func TestBootstrapFromRepo_LocalPathPriority(t *testing.T) {
 	}
 
 	paths := config.Paths{DataHome: filepath.Join(dir, "data")}
-	storePath, err := bootstrapFromRepo(localDir, paths)
+	storePath, err := bootstrapFromRepo(context.Background(), localDir, paths)
 	if err != nil {
 		t.Fatalf("bootstrapFromRepo: %v", err)
 	}
@@ -233,7 +233,7 @@ func TestBootstrapFromRepo_LocalAttemptSurfacesError(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			paths := config.Paths{DataHome: t.TempDir()}
-			_, err := bootstrapFromRepo(tc.input, paths)
+			_, err := bootstrapFromRepo(context.Background(), tc.input, paths)
 			if err == nil {
 				t.Fatalf("expected error for %q", tc.input)
 			}

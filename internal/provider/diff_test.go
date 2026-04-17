@@ -101,6 +101,70 @@ func TestFormatDiffJSON_ValidJSON(t *testing.T) {
 	}
 }
 
+// TestDiffDesiredVsState_DeterministicOrder asserts that each
+// category in the returned DiffResult is sorted by ID. Without
+// this guarantee, Go's non-deterministic map iteration would
+// shuffle the rows of `hams <provider> list` on every call —
+// any user piping the output through grep/diff/snapshot tools
+// would see flaky results.
+func TestDiffDesiredVsState_DeterministicOrder(t *testing.T) {
+	t.Parallel()
+	hf := buildTestHamsfile([]string{"zsh", "git", "vim", "curl", "htop"})
+	sf := state.New("test", "machine")
+	// Mix of matched, diverged, and removed-from-desired so all 4
+	// categories are populated.
+	sf.SetResource("git", state.StateOK)
+	sf.SetResource("vim", state.StateFailed)
+	sf.SetResource("htop", state.StateOK)
+	sf.SetResource("orphan-a", state.StateOK)
+	sf.SetResource("orphan-b", state.StateOK)
+	sf.SetResource("orphan-c", state.StateOK)
+
+	first := provider.DiffDesiredVsState(hf, sf)
+
+	// Run 20 more times; every run must produce identical slices in
+	// every category. A non-deterministic order would flap somewhere
+	// across these reps.
+	for range 20 {
+		again := provider.DiffDesiredVsState(hf, sf)
+		assertEntrySliceEqual(t, "Additions", first.Additions, again.Additions)
+		assertEntrySliceEqual(t, "Removals", first.Removals, again.Removals)
+		assertEntrySliceEqual(t, "Matched", first.Matched, again.Matched)
+		assertEntrySliceEqual(t, "Diverged", first.Diverged, again.Diverged)
+	}
+
+	// Also assert each category is actually sorted, not merely stable
+	// (a stable but non-sorted result would still satisfy the loop
+	// above but break user expectations of alphabetical output).
+	assertSortedByID(t, "Additions", first.Additions)
+	assertSortedByID(t, "Removals", first.Removals)
+	assertSortedByID(t, "Matched", first.Matched)
+	assertSortedByID(t, "Diverged", first.Diverged)
+}
+
+func assertEntrySliceEqual(t *testing.T, name string, a, b []provider.DiffEntry) {
+	t.Helper()
+	if len(a) != len(b) {
+		t.Errorf("%s length differs across runs: %d vs %d", name, len(a), len(b))
+		return
+	}
+	for i := range a {
+		if a[i].ID != b[i].ID {
+			t.Errorf("%s[%d].ID differs across runs: %q vs %q", name, i, a[i].ID, b[i].ID)
+		}
+	}
+}
+
+func assertSortedByID(t *testing.T, name string, entries []provider.DiffEntry) {
+	t.Helper()
+	for i := 1; i < len(entries); i++ {
+		if entries[i-1].ID > entries[i].ID {
+			t.Errorf("%s not sorted: %q > %q at indices %d,%d",
+				name, entries[i-1].ID, entries[i].ID, i-1, i)
+		}
+	}
+}
+
 func buildTestHamsfile(apps []string) *hamsfile.File {
 	seq := &yaml.Node{Kind: yaml.SequenceNode}
 	for _, app := range apps {

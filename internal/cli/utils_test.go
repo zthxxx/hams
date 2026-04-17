@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/zthxxx/hams/internal/config"
@@ -91,6 +92,54 @@ func TestValidateProviderNames_UnknownReportedWithSuggestion(t *testing.T) {
 	suggestion := strings.Join(ufe.Suggestions, " ")
 	if !strings.Contains(suggestion, "brew") || !strings.Contains(suggestion, "apt") || !strings.Contains(suggestion, "pnpm") {
 		t.Errorf("suggestions should list available providers; got %v", ufe.Suggestions)
+	}
+}
+
+// TestValidateProviderNames_UnknownListIsAlphabetical locks in
+// cycle 152: when multiple typo'd providers are in the requested
+// set, the resulting error message lists them in stable,
+// alphabetical order across runs. Previously the unknown slice was
+// populated by iterating the requested map (Go map iteration is
+// non-deterministic), so a user typing `--only=foo,bar,baz` saw
+// the unknown providers in a different order on every run, breaking
+// any script grepping the error text. Symmetric with cycles 148-151.
+func TestValidateProviderNames_UnknownListIsAlphabetical(t *testing.T) {
+	t.Parallel()
+	requested := map[string]bool{"zfoo": true, "abar": true, "mbaz": true}
+	known := map[string]bool{"brew": true, "apt": true}
+	knownNames := []string{"brew", "apt"}
+
+	first := validateProviderNames(requested, known, knownNames)
+	if first == nil {
+		t.Fatal("expected error for 3 unknown providers")
+	}
+	var firstUFE *hamserr.UserFacingError
+	if !errors.As(first, &firstUFE) {
+		t.Fatalf("expected *UserFacingError, got %T", first)
+	}
+
+	// 20 reps must produce byte-identical Message + Suggestions.
+	for range 20 {
+		again := validateProviderNames(requested, known, knownNames)
+		var ufe *hamserr.UserFacingError
+		if !errors.As(again, &ufe) {
+			t.Fatalf("expected *UserFacingError, got %T", again)
+		}
+		if ufe.Message != firstUFE.Message {
+			t.Errorf("Message differs across runs:\nfirst:  %q\nlater:  %q", firstUFE.Message, ufe.Message)
+			break
+		}
+	}
+
+	// Assert alphabetical positioning of the three names.
+	idxA := strings.Index(firstUFE.Message, "abar")
+	idxM := strings.Index(firstUFE.Message, "mbaz")
+	idxZ := strings.Index(firstUFE.Message, "zfoo")
+	if idxA < 0 || idxM < 0 || idxZ < 0 {
+		t.Fatalf("Message missing one of the unknown names; got %q", firstUFE.Message)
+	}
+	if idxA >= idxM || idxM >= idxZ {
+		t.Errorf("unknown names not alphabetical (abar < mbaz < zfoo); got %q", firstUFE.Message)
 	}
 }
 
@@ -233,15 +282,24 @@ func TestPrintConfigKey_SensitiveKey_NoFile(t *testing.T) {
 }
 
 // captureStdout is the stdout twin of captureStderr.
+// captureStdoutMu serializes os.Stdout swaps across tests that run
+// in parallel. Without this, two Parallel tests both calling
+// captureStdout would race on the global os.Stdout variable — Go's
+// race detector flags this and the test suite fails.
+var captureStdoutMu sync.Mutex
+
 func captureStdout(t *testing.T, fn func()) string {
 	t.Helper()
+	captureStdoutMu.Lock()
+	defer captureStdoutMu.Unlock()
+
 	r, w, err := os.Pipe()
 	if err != nil {
 		t.Fatalf("os.Pipe: %v", err)
 	}
 	original := os.Stdout
 	os.Stdout = w
-	t.Cleanup(func() { os.Stdout = original })
+	defer func() { os.Stdout = original }()
 	fn()
 	if closeErr := w.Close(); closeErr != nil {
 		t.Fatalf("close pipe: %v", closeErr)
@@ -308,18 +366,26 @@ func TestLocalConfigPath(t *testing.T) {
 	}
 }
 
+// captureStderrMu serializes os.Stderr swaps, same rationale as
+// captureStdoutMu: concurrent -race runs flagged the global
+// variable mutation as a race.
+var captureStderrMu sync.Mutex
+
 // captureStderr swaps os.Stderr with a pipe for the duration of fn,
 // returns the captured output. Restores stderr on return regardless
 // of test outcome.
 func captureStderr(t *testing.T, fn func()) string {
 	t.Helper()
+	captureStderrMu.Lock()
+	defer captureStderrMu.Unlock()
+
 	r, w, err := os.Pipe()
 	if err != nil {
 		t.Fatalf("os.Pipe: %v", err)
 	}
 	original := os.Stderr
 	os.Stderr = w
-	t.Cleanup(func() { os.Stderr = original })
+	defer func() { os.Stderr = original }()
 
 	fn()
 	if closeErr := w.Close(); closeErr != nil {

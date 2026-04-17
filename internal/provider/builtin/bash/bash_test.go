@@ -3,7 +3,9 @@ package bash
 import (
 	"context"
 	"os/exec"
+	"strings"
 	"testing"
+	"time"
 
 	"gopkg.in/yaml.v3"
 
@@ -211,6 +213,51 @@ func TestRunCheck_Failure(t *testing.T) {
 	}
 }
 
+// TestRunCheck_HonorsContext locks in cycle 160: RunCheck previously
+// used bitfield/script which doesn't honor context cancellation, so
+// a hanging check command (e.g. `sleep 30`) kept running after the
+// caller's context was canceled. Now: switched to exec.CommandContext
+// so SIGINT/SIGTERM aborts the check promptly.
+//
+// Test pre-cancels the context, runs `sleep 30` as a check, asserts
+// the call returns much faster than the 30s sleep would take if the
+// process weren't being killed.
+func TestRunCheck_HonorsContext(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // pre-cancel: exec.CommandContext kills the process before/during start
+
+	start := time.Now()
+	_, ok := RunCheck(ctx, "sleep 30")
+	elapsed := time.Since(start)
+
+	if ok {
+		t.Errorf("canceled check should NOT report ok=true")
+	}
+	// Even with start-up overhead, 1s is way under the 30s sleep.
+	if elapsed > 1*time.Second {
+		t.Errorf("RunCheck with canceled ctx took %v; want < 1s (context not honored)", elapsed)
+	}
+}
+
+// TestRunBash_HonorsContext: same as TestRunCheck_HonorsContext but
+// for runBash, which is the entry point bash.Apply uses for
+// `run:` commands in the hamsfile.
+func TestRunBash_HonorsContext(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	start := time.Now()
+	err := runBash(ctx, "sleep 30")
+	elapsed := time.Since(start)
+
+	if err == nil {
+		t.Errorf("canceled runBash should return non-nil error")
+	}
+	if elapsed > 1*time.Second {
+		t.Errorf("runBash with canceled ctx took %v; want < 1s (context not honored)", elapsed)
+	}
+}
+
 func TestRunCheck_Empty(t *testing.T) {
 	_, ok := RunCheck(context.Background(), "")
 	if ok {
@@ -305,5 +352,57 @@ func TestProbe(t *testing.T) {
 	}
 	if results[0].ID != "init-zsh" {
 		t.Errorf("Probe result ID = %q, want 'init-zsh'", results[0].ID)
+	}
+}
+
+// TestProbe_CheckCmdPassingCapturesStdout asserts the branch where
+// the stored CheckCmd exits 0: state stays StateOK AND the stdout
+// is captured into ProbeResult.Stdout so upstream diff machinery
+// can distinguish "idempotent check ran, output matched" from
+// "no check defined". Previously 0% coverage on this branch.
+func TestProbe_CheckCmdPassingCapturesStdout(t *testing.T) {
+	p := New()
+	sf := state.New("bash", "test")
+	// A check that always passes (exit 0) and prints a stable line.
+	sf.SetResource("check-passes", state.StateOK,
+		state.WithCheckCmd("printf 'ok-line\\n'"))
+
+	results, err := p.Probe(context.Background(), sf)
+	if err != nil {
+		t.Fatalf("Probe error: %v", err)
+	}
+	if len(results) != 1 {
+		t.Fatalf("Probe returned %d results, want 1", len(results))
+	}
+	if results[0].State != state.StateOK {
+		t.Errorf("state = %v, want StateOK", results[0].State)
+	}
+	if !strings.Contains(results[0].Stdout, "ok-line") {
+		t.Errorf("stdout = %q, want to contain 'ok-line'", results[0].Stdout)
+	}
+}
+
+// TestProbe_CheckCmdFailingFlagsPending asserts the branch where
+// the stored CheckCmd exits non-zero: Probe flips the resource
+// state to StatePending so the next apply's ComputePlan re-runs
+// the Install action. This is the core drift-detection contract
+// for bash provider — previously 0% coverage.
+func TestProbe_CheckCmdFailingFlagsPending(t *testing.T) {
+	p := New()
+	sf := state.New("bash", "test")
+	// Explicit non-zero exit simulates a check that's drifted (the
+	// feature it asserts is no longer configured on the host).
+	sf.SetResource("check-fails", state.StateOK,
+		state.WithCheckCmd("exit 1"))
+
+	results, err := p.Probe(context.Background(), sf)
+	if err != nil {
+		t.Fatalf("Probe error: %v", err)
+	}
+	if len(results) != 1 {
+		t.Fatalf("Probe returned %d results, want 1", len(results))
+	}
+	if results[0].State != state.StatePending {
+		t.Errorf("state = %v, want StatePending (check failed → drift detected)", results[0].State)
 	}
 }

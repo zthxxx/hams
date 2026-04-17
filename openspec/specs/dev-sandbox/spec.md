@@ -1,7 +1,25 @@
 # dev-sandbox Specification
 
 ## Purpose
-TBD - created by archiving change dev-sandbox. Update Purpose after archive.
+
+The dev-sandbox capability gives hams contributors a reproducible,
+host-safe environment for running `hams apply` end-to-end against a
+real filesystem, state file writer, and package manager — without
+mutating the developer's own machine. Each sandbox scenario is a
+self-contained directory under `examples/<name>/` (git-tracked) that
+pairs a `Dockerfile` with a pre-seeded config + store + state layout;
+`task dev EXAMPLE=<name>` starts a Docker container that bind-mounts
+those dirs and drops the developer into a shell with a working
+`hams` binary on PATH.
+
+The capability exists because the core hams CLI mutates host state
+(package installs, config writes, state file rewrites) and the
+project's First Principle (CLAUDE.md) is that host mutations MUST
+be confined to isolated environments. Unit tests cover the DI-seam
+isolation; dev-sandbox covers the "run the real binary against a
+real Linux" gap that falls between unit tests and CI-driven
+Dockerized integration tests.
+
 ## Requirements
 ### Requirement: Example scenario fixtures under `examples/`
 

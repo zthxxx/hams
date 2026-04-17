@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -50,6 +51,17 @@ Only resources already tracked in state are probed — no new resources are disc
 			&cli.StringFlag{Name: "except", Usage: "Skip these providers (comma-separated)"},
 		},
 		Action: func(ctx context.Context, cmd *cli.Command) error {
+			// Same positional-args guard as `hams apply` (see apply.go
+			// for the rationale): refresh reads all hamsfiles/state
+			// by design, so a stray positional is almost certainly a
+			// typo (e.g. `hams refresh apt` instead of `--only=apt`).
+			if cmd.Args().Len() > 0 {
+				return hamserr.NewUserError(hamserr.ExitUsageError,
+					fmt.Sprintf("hams refresh does not take positional arguments (got %q)", cmd.Args().First()),
+					"To filter providers: hams refresh --only=<provider1>,<provider2>",
+					"To refresh everything: hams refresh",
+				)
+			}
 			flags := globalFlags(cmd)
 			return runRefresh(ctx, flags, registry, cmd.String("only"), cmd.String("except"))
 		},
@@ -166,8 +178,19 @@ func runRefresh(ctx context.Context, flags *provider.GlobalFlags, registry *prov
 	probeStart := time.Now()
 	probeResults := provider.ProbeAll(ctx, providers, stateDir, cfg.MachineID)
 	probeElapsed := time.Since(probeStart).Milliseconds()
+	// Sort the result-map keys before iterating so save errors and the
+	// per-provider slog.Error lines emerge in stable, alphabetical order
+	// across runs. Without this, the printed "failed to save" warning
+	// listed providers in shuffled order on each invocation, breaking
+	// log-grep / diff workflows. Symmetric with cycles 148/149/150.
+	probeNames := make([]string, 0, len(probeResults))
+	for name := range probeResults {
+		probeNames = append(probeNames, name)
+	}
+	sort.Strings(probeNames)
 	var saveFailures []string
-	for name, sf := range probeResults {
+	for _, name := range probeNames {
+		sf := probeResults[name]
 		statePath := filepath.Join(stateDir, name+".state.yaml")
 		if saveErr := sf.Save(statePath); saveErr != nil {
 			slog.Error("failed to save probed state", "provider", name, "path", statePath, "error", saveErr)
@@ -192,8 +215,9 @@ func runRefresh(ctx context.Context, flags *provider.GlobalFlags, registry *prov
 	// misleading "1 providers probed".
 	probed := len(probeResults)
 	planned := len(providers)
+	providersNoun := pluralize(planned, "provider", "providers")
 	if probed == planned && len(saveFailures) == 0 {
-		fmt.Printf("Refresh complete: %d providers probed\n", planned)
+		fmt.Printf("Refresh complete: %d %s probed\n", planned, providersNoun)
 		return nil
 	}
 	// Partial failure: some providers couldn't probe or their state
@@ -202,11 +226,11 @@ func runRefresh(ctx context.Context, flags *provider.GlobalFlags, registry *prov
 	// despite the log line warning of errors — a silent-exit-0 UX
 	// bug matching the apply --dry-run drift fixed in cycle 39.
 	if probed == planned {
-		fmt.Printf("Refresh complete: %d providers probed, but %d state file(s) failed to save: %s\n",
-			planned, len(saveFailures), strings.Join(saveFailures, ", "))
+		fmt.Printf("Refresh complete: %d %s probed, but %d state file(s) failed to save: %s\n",
+			planned, providersNoun, len(saveFailures), strings.Join(saveFailures, ", "))
 	} else {
-		fmt.Printf("Refresh complete: %d/%d providers probed (%d probe error(s); see log for details)\n",
-			probed, planned, planned-probed)
+		fmt.Printf("Refresh complete: %d/%d %s probed (%d probe error(s); see log for details)\n",
+			probed, planned, providersNoun, planned-probed)
 	}
 	if len(saveFailures) > 0 {
 		fmt.Printf("Warning: %d state save failure(s): %s — next run may re-probe these\n",
@@ -253,6 +277,7 @@ func configCmd() *cli.Command {
 							"profile_tag":       cfg.ProfileTag,
 							"machine_id":        cfg.MachineID,
 							"store_path":        cfg.StorePath,
+							"store_repo":        cfg.StoreRepo,
 							"llm_cli":           cfg.LLMCLI,
 							"provider_priority": cfg.ProviderPriority,
 						}
@@ -273,6 +298,9 @@ func configCmd() *cli.Command {
 					fmt.Printf("Profile tag:       %s\n", cfg.ProfileTag)
 					fmt.Printf("Machine ID:        %s\n", cfg.MachineID)
 					fmt.Printf("Store path:        %s\n", logging.TildePath(cfg.StorePath))
+					if cfg.StoreRepo != "" {
+						fmt.Printf("Store repo:        %s\n", cfg.StoreRepo)
+					}
 					fmt.Printf("LLM CLI:           %s\n", cfg.LLMCLI)
 					fmt.Printf("Provider priority: %v\n", cfg.ProviderPriority)
 					return nil
@@ -283,9 +311,14 @@ func configCmd() *cli.Command {
 				Usage:     "Get a configuration value",
 				ArgsUsage: "<key>",
 				Action: func(_ context.Context, cmd *cli.Command) error {
-					if cmd.Args().Len() < 1 {
+					// Strict arg count — without this, `hams config get
+					// profile_tag extra_arg` silently dropped extra_arg
+					// (the user might have meant "extra_arg" as the key,
+					// or had a typo in their script). Surface the
+					// mismatch immediately.
+					if cmd.Args().Len() != 1 {
 						return hamserr.NewUserError(hamserr.ExitUsageError,
-							"config get requires a key",
+							fmt.Sprintf("config get requires exactly one key (got %d args)", cmd.Args().Len()),
 							"Usage: hams config get <key>",
 						)
 					}
@@ -303,10 +336,18 @@ func configCmd() *cli.Command {
 				Usage:     "Set a configuration value",
 				ArgsUsage: "<key> <value>",
 				Action: func(_ context.Context, cmd *cli.Command) error {
-					if cmd.Args().Len() < 2 { //nolint:mnd // exactly 2 args required: key and value
+					// Strict arg count. The previous `< 2` check accepted
+					// 2 OR MORE args and silently dropped the rest — so
+					// `hams config set notification.bark_token abc def ghi`
+					// (user forgot to quote a token containing spaces)
+					// silently stored only "abc". Far worse than a typo:
+					// users believed their token was set correctly. Now:
+					// surface the mismatch with a hint about quoting.
+					if cmd.Args().Len() != 2 { //nolint:mnd // exactly 2 args required: key and value
 						return hamserr.NewUserError(hamserr.ExitUsageError,
-							"config set requires a key and value",
+							fmt.Sprintf("config set requires exactly one key and one value (got %d args)", cmd.Args().Len()),
 							"Usage: hams config set <key> <value>",
+							"Quote values containing spaces: hams config set <key> \"<value with spaces>\"",
 							"Valid keys: "+strings.Join(config.ValidConfigKeys, ", "),
 						)
 					}
@@ -329,14 +370,69 @@ func configCmd() *cli.Command {
 					}
 					flags := globalFlags(cmd)
 					paths := resolvePaths(flags)
-					if err := config.WriteConfigKey(paths, flags.Store, key, value); err != nil {
-						return fmt.Errorf("writing config: %w", err)
-					}
 					target := "global config"
 					if config.IsSensitiveKey(key) {
 						target = "local config"
 					}
+					// --dry-run: preview the target routing + value
+					// without mutating the YAML file. Previously
+					// `hams --dry-run config set ...` performed a real
+					// WriteConfigKey, contradicting the global flag's
+					// "no changes" contract. Same fix pattern as
+					// cycles 143/144 (store push/pull/init).
+					if flags.DryRun {
+						fmt.Printf("[dry-run] Would set %s = %s (in %s)\n", key, value, target)
+						return nil
+					}
+					if err := config.WriteConfigKey(paths, flags.Store, key, value); err != nil {
+						return fmt.Errorf("writing config: %w", err)
+					}
 					fmt.Printf("Set %s = %s (in %s)\n", key, value, target)
+					return nil
+				},
+			},
+			{
+				Name:      "unset",
+				Usage:     "Remove a configuration value",
+				ArgsUsage: "<key>",
+				Action: func(_ context.Context, cmd *cli.Command) error {
+					// Strict arg count — same rationale as `config get`
+					// and `config set`: silent excess-arg drop hides
+					// typos and quoting mistakes.
+					if cmd.Args().Len() != 1 {
+						return hamserr.NewUserError(hamserr.ExitUsageError,
+							fmt.Sprintf("config unset requires exactly one key (got %d args)", cmd.Args().Len()),
+							"Usage: hams config unset <key>",
+							"Valid keys: "+strings.Join(config.ValidConfigKeys, ", "),
+						)
+					}
+					key := cmd.Args().Get(0)
+					// Accept whitelisted keys OR sensitive-pattern keys —
+					// mirrors `config set`'s gate so users can unset any
+					// key they could previously set.
+					if !config.IsValidConfigKey(key) && !config.IsSensitiveKey(key) {
+						return hamserr.NewUserError(hamserr.ExitUsageError,
+							fmt.Sprintf("unknown config key %q", key),
+							"Valid keys: "+strings.Join(config.ValidConfigKeys, ", "),
+							"Or use a key containing token/key/secret/password/credential",
+						)
+					}
+					flags := globalFlags(cmd)
+					paths := resolvePaths(flags)
+					target := "global config"
+					if config.IsSensitiveKey(key) {
+						target = "local config"
+					}
+					// Mirror cycle 145's set dry-run guard: preview
+					// without mutating.
+					if flags.DryRun {
+						fmt.Printf("[dry-run] Would unset %s (from %s)\n", key, target)
+						return nil
+					}
+					if err := config.UnsetConfigKey(paths, flags.Store, key); err != nil {
+						return fmt.Errorf("unsetting config: %w", err)
+					}
+					fmt.Printf("Unset %s (from %s)\n", key, target)
 					return nil
 				},
 			},
@@ -348,6 +444,42 @@ func configCmd() *cli.Command {
 					paths := resolvePaths(flags)
 					configPath := paths.GlobalConfigPath()
 
+					editor := os.Getenv("EDITOR")
+					if editor == "" {
+						editor = os.Getenv("VISUAL")
+					}
+					if editor == "" {
+						editor = "vi"
+					}
+					// EDITOR can carry args (e.g. "code -w", "emacs -nw",
+					// "nvim -p"). Splitting on whitespace lets us exec the
+					// binary as the first field and forward the remaining
+					// fields as args. Without this, the whole string
+					// reached exec.CommandContext as a single binary path
+					// and the user got "executable file not found" for
+					// any non-bare $EDITOR. Quoted values with spaces in
+					// PATH (rare) are out of scope; users with such paths
+					// can wrap their editor in a script.
+					editorParts := strings.Fields(editor)
+					if len(editorParts) == 0 {
+						editorParts = []string{"vi"}
+					}
+
+					// --dry-run: preview the target path + editor
+					// without creating any directory/file or exec-ing
+					// the editor. Completes the dry-run consistency
+					// sweep (cycles 143-146) across all destructive
+					// commands: apply, refresh, store push/pull/init,
+					// config set/unset, and now config edit.
+					if flags.DryRun {
+						fmt.Printf("[dry-run] Would open %s in %s\n",
+							logging.TildePath(configPath), editor)
+						if _, statErr := os.Stat(configPath); os.IsNotExist(statErr) {
+							fmt.Printf("[dry-run]   (file does not exist; would be created with a stub header)\n")
+						}
+						return nil
+					}
+
 					// Ensure the config file exists.
 					if _, statErr := os.Stat(configPath); os.IsNotExist(statErr) {
 						if mkdirErr := os.MkdirAll(filepath.Dir(configPath), 0o750); mkdirErr != nil {
@@ -358,15 +490,10 @@ func configCmd() *cli.Command {
 						}
 					}
 
-					editor := os.Getenv("EDITOR")
-					if editor == "" {
-						editor = os.Getenv("VISUAL")
-					}
-					if editor == "" {
-						editor = "vi"
-					}
-
-					editorCmd := exec.CommandContext(ctx, editor, configPath) //nolint:gosec // editor is user-specified via $EDITOR
+					editorArgs := make([]string, 0, len(editorParts))
+					editorArgs = append(editorArgs, editorParts[1:]...)
+					editorArgs = append(editorArgs, configPath)
+					editorCmd := exec.CommandContext(ctx, editorParts[0], editorArgs...) //nolint:gosec // editor is user-specified via $EDITOR
 					editorCmd.Stdin = os.Stdin
 					editorCmd.Stdout = os.Stdout
 					editorCmd.Stderr = os.Stderr
@@ -543,7 +670,7 @@ func printConfigKey(cfg *config.Config, paths config.Paths, storePath, key strin
 }
 
 func storeCmd() *cli.Command {
-	storeStatusAction := func(_ context.Context, cmd *cli.Command) error {
+	storeStatusAction := func(ctx context.Context, cmd *cli.Command) error {
 		flags := globalFlags(cmd)
 		paths := resolvePaths(flags)
 		cfg, err := config.Load(paths, flags.Store)
@@ -593,7 +720,11 @@ func storeCmd() *cli.Command {
 		gitStatus := ""
 		gitChanges := 0
 		if _, err := os.Stat(filepath.Join(storePath, ".git")); err == nil {
-			cmdCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			// Derive from request ctx (not Background) so SIGINT/SIGTERM
+			// cancels the probe immediately. Without this, Ctrl+C during
+			// `hams store status` had to wait up to the 5s timeout
+			// because the cancel signal was never wired.
+			cmdCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 			defer cancel()
 			gs := exec.CommandContext(cmdCtx, "git", "-C", storePath, "status", "--short") //nolint:gosec // storePath is user-configured
 			out, gsErr := gs.Output()
@@ -679,6 +810,27 @@ func storeCmd() *cli.Command {
 							"no store directory configured",
 							"Set store_path first: hams config set store_path <path>",
 						)
+					}
+
+					// --dry-run must skip all side effects per the global
+					// flag contract: no TTY prompt (prompt's answer would
+					// be persisted via config.WriteConfigKey), no mkdir,
+					// no YAML/gitignore writes. Print the intent-level
+					// preview showing what WOULD be created. Previously
+					// `hams --dry-run store init` performed the real
+					// init — matches cycle 143's push/pull fix.
+					if flags.DryRun {
+						fmt.Printf("[dry-run] Would initialize store at %s\n", logging.TildePath(storePath))
+						fmt.Printf("  Would create profile dir:    %s\n", logging.TildePath(cfg.ProfileDir()))
+						fmt.Printf("  Would create state dir:      %s\n", logging.TildePath(cfg.StateDir()))
+						fmt.Printf("  Would create %s/hams.config.yaml (if missing)\n",
+							logging.TildePath(storePath))
+						fmt.Printf("  Would create %s/.gitignore (if missing)\n",
+							logging.TildePath(storePath))
+						if cfg.ProfileTag == "" && term.IsTerminal(int(os.Stdin.Fd())) { //nolint:gosec // Fd() returns uintptr that fits in int on all supported platforms
+							fmt.Println("  Would prompt for profile_tag + machine_id (TTY detected)")
+						}
+						return nil
 					}
 
 					// Prompt for profile tag when missing AND stdin is a
@@ -787,6 +939,20 @@ func storeCmd() *cli.Command {
 						commitMsg = "hams: update store"
 					}
 
+					// --dry-run means "preview without mutating" — for
+					// push, the mutation is a commit + network push. Skip
+					// both so the user gets the intent-level feedback
+					// ("this is what would happen") without any
+					// side effects. Previously `hams --dry-run store push`
+					// performed the real commit+push, contradicting the
+					// global flag's documented contract ("Show what would
+					// be done without making changes").
+					if flags.DryRun {
+						fmt.Printf("[dry-run] Would commit changes in %s with message %q and push to origin\n",
+							logging.TildePath(storePath), commitMsg)
+						return nil
+					}
+
 					return runStorePush(ctx, storePath, commitMsg)
 				},
 			},
@@ -813,6 +979,16 @@ func storeCmd() *cli.Command {
 						return err
 					}
 
+					// Mirror the push dry-run guard (cycle 143): pull is
+					// a network operation that mutates the working tree
+					// via rebase. Skip it under --dry-run so the global
+					// flag's "no changes" contract holds.
+					if flags.DryRun {
+						fmt.Printf("[dry-run] Would run: git -C %s pull --rebase\n",
+							logging.TildePath(storePath))
+						return nil
+					}
+
 					gitPull := exec.CommandContext(ctx, "git", "-C", storePath, "pull", "--rebase") //nolint:gosec // storePath is user-configured
 					gitPull.Stdin = os.Stdin
 					gitPull.Stdout = os.Stdout
@@ -829,6 +1005,16 @@ func storeCmd() *cli.Command {
 // Used by list --json's `name` field per the cli-architecture spec:
 // consumers that don't care about URN namespacing get just "htop"
 // from "urn:hams:apt:htop".
+// pluralize picks singular/plural based on count. Small helper to
+// avoid the `1 providers probed` / `5 providers probed` grammar
+// bug. Keeps CLI summary output correct regardless of count.
+func pluralize(count int, singular, plural string) string {
+	if count == 1 {
+		return singular
+	}
+	return plural
+}
+
 func shortName(id string) string {
 	const prefix = "urn:hams:"
 	if !strings.HasPrefix(id, prefix) {
@@ -877,6 +1063,17 @@ func listCmd(registry *provider.Registry) *cli.Command {
 			&cli.StringFlag{Name: "status", Usage: "Filter by resource status (ok, failed, pending, removed)"},
 		},
 		Action: func(_ context.Context, cmd *cli.Command) error {
+			// Same positional-args guard as `hams apply` / `hams refresh`:
+			// list reads all state by design. Stray positional args are
+			// almost certainly typos like `hams list apt` instead of
+			// `hams list --only=apt`.
+			if cmd.Args().Len() > 0 {
+				return hamserr.NewUserError(hamserr.ExitUsageError,
+					fmt.Sprintf("hams list does not take positional arguments (got %q)", cmd.Args().First()),
+					"To filter providers: hams list --only=<provider1>,<provider2>",
+					"To list everything: hams list",
+				)
+			}
 			flags := globalFlags(cmd)
 			paths := resolvePaths(flags)
 			cfg, err := config.Load(paths, flags.Store)
@@ -950,7 +1147,12 @@ func listCmd(registry *provider.Registry) *cli.Command {
 				}
 				hadAnyResources = true
 
-				// Collect filtered resources for this provider.
+				// Collect filtered resources for this provider, then sort
+				// by ID. Without the sort, Go's non-deterministic map
+				// iteration shuffles per-provider rows on every `hams list`
+				// invocation — breaks grep/diff/snapshot workflows over
+				// both text and --json output. Symmetric with cycle 148's
+				// fix in DiffDesiredVsState.
 				var filteredIDs []string
 				for id, r := range sf.Resources {
 					if statusSet != nil && !statusSet[string(r.State)] {
@@ -962,6 +1164,7 @@ func listCmd(registry *provider.Registry) *cli.Command {
 				if len(filteredIDs) == 0 {
 					continue
 				}
+				sort.Strings(filteredIDs)
 
 				if flags.JSON {
 					for _, id := range filteredIDs {
@@ -978,10 +1181,7 @@ func listCmd(registry *provider.Registry) *cli.Command {
 						})
 					}
 				} else {
-					noun := "resources"
-					if len(filteredIDs) == 1 {
-						noun = "resource"
-					}
+					noun := pluralize(len(filteredIDs), "resource", "resources")
 					fmt.Printf("\n%s (%d %s):\n", displayName, len(filteredIDs), noun)
 					for _, id := range filteredIDs {
 						r := sf.Resources[id]
@@ -1124,6 +1324,26 @@ func runBinaryUpgrade(ctx context.Context, flags *provider.GlobalFlags) error {
 		return nil
 	}
 
+	// Resolve the expected SHA256 from the release's checksums.txt
+	// manifest BEFORE downloading the binary. Without this, the binary
+	// integrity check was skipped entirely (ReplaceBinary was called
+	// with expectedSHA256 = "" — see selfupdate.ReplaceBinary line:
+	// "if expectedSHA256 != ''"). HTTPS catches transport tampering
+	// but not a hostile origin or a swapped CDN object — the
+	// checksums file (published by .github/workflows/release.yml)
+	// is the integrity anchor.
+	expectedSHA, err := updater.LookupChecksum(ctx, release.Assets, wantName)
+	if err != nil {
+		return fmt.Errorf("verifying release integrity: %w", err)
+	}
+	if expectedSHA == "" {
+		// Older releases pre-date the checksums.txt manifest. Warn
+		// loudly so the user can opt to wait for a newer release that
+		// ships verified checksums.
+		slog.Warn("release does not publish checksums.txt; binary integrity will NOT be verified",
+			"release", release.Version, "asset", wantName)
+	}
+
 	fmt.Printf("Downloading %s (v%s -> v%s)...\n", wantName, current, release.Version)
 	body, err := updater.DownloadAsset(ctx, downloadURL)
 	if err != nil {
@@ -1136,7 +1356,7 @@ func runBinaryUpgrade(ctx context.Context, flags *provider.GlobalFlags) error {
 		return fmt.Errorf("resolving executable path: %w", err)
 	}
 
-	if err := selfupdate.ReplaceBinary(exePath, body, ""); err != nil {
+	if err := selfupdate.ReplaceBinary(exePath, body, expectedSHA); err != nil {
 		return fmt.Errorf("replacing binary: %w", err)
 	}
 

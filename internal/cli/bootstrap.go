@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bufio"
+	"context"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -27,7 +28,7 @@ import (
 // local path turned into a confusing "authentication required" error against
 // https://github.com//<path>. Local-looking inputs now surface the real local
 // error (e.g., "not a git repository").
-func bootstrapFromRepo(repo string, paths config.Paths) (string, error) {
+func bootstrapFromRepo(ctx context.Context, repo string, paths config.Paths) (string, error) {
 	// Priority 1: check if repo is a local path.
 	localPath, err := resolveLocalRepo(repo)
 	if err == nil {
@@ -39,7 +40,7 @@ func bootstrapFromRepo(repo string, paths config.Paths) (string, error) {
 	}
 
 	// Priority 2: treat as remote URL (expand GitHub shorthand).
-	return cloneRemoteRepo(repo, paths)
+	return cloneRemoteRepo(ctx, repo, paths)
 }
 
 // resolveFromRepoStorePath picks the store path to use for a given
@@ -56,9 +57,9 @@ func bootstrapFromRepo(repo string, paths config.Paths) (string, error) {
 //   - path == "", done=true, err=nil  — caller returns nil (dry-run
 //     would clone)
 //   - path == "", done=false, err!=nil — caller propagates err
-func resolveFromRepoStorePath(repo string, paths config.Paths, dryRun bool) (storePath string, done bool, err error) {
+func resolveFromRepoStorePath(ctx context.Context, repo string, paths config.Paths, dryRun bool) (storePath string, done bool, err error) {
 	if !dryRun {
-		path, cloneErr := bootstrapFromRepo(repo, paths)
+		path, cloneErr := bootstrapFromRepo(ctx, repo, paths)
 		return path, false, cloneErr
 	}
 	if preview, ok := previewExistingStoreFromRepo(repo, paths); ok {
@@ -145,7 +146,7 @@ func resolveLocalRepo(repo string) (string, error) {
 }
 
 // cloneRemoteRepo clones a remote git repository into the data home.
-func cloneRemoteRepo(repo string, paths config.Paths) (string, error) {
+func cloneRemoteRepo(ctx context.Context, repo string, paths config.Paths) (string, error) {
 	// Expand GitHub shorthand.
 	repoURL := repo
 	if !strings.Contains(repo, "://") && !strings.HasPrefix(repo, "git@") {
@@ -156,7 +157,9 @@ func cloneRemoteRepo(repo string, paths config.Paths) (string, error) {
 	clonePath := resolveClonePath(repo, paths)
 
 	if _, err := os.Stat(filepath.Join(clonePath, ".git")); err == nil {
-		// Already cloned — pull latest.
+		// Already cloned — pull latest. PullContext (not Pull) so Ctrl+C
+		// aborts a hanging network fetch instead of waiting for go-git's
+		// default timeout (can be minutes).
 		slog.Info("pulling latest changes", "path", logging.TildePath(clonePath))
 		r, openErr := gogit.PlainOpen(clonePath)
 		if openErr != nil {
@@ -166,15 +169,18 @@ func cloneRemoteRepo(repo string, paths config.Paths) (string, error) {
 		if wtErr != nil {
 			return clonePath, fmt.Errorf("getting worktree: %w", wtErr)
 		}
-		if pullErr := w.Pull(&gogit.PullOptions{}); pullErr != nil && !errors.Is(pullErr, gogit.NoErrAlreadyUpToDate) {
+		if pullErr := w.PullContext(ctx, &gogit.PullOptions{}); pullErr != nil && !errors.Is(pullErr, gogit.NoErrAlreadyUpToDate) {
 			slog.Warn("pull failed, using existing state", "error", pullErr)
 		}
 		return clonePath, nil
 	}
 
-	// Clone.
+	// Clone. PlainCloneContext (not PlainClone) so Ctrl+C during the
+	// initial clone aborts promptly instead of waiting for network
+	// timeout. Previously users saw hams appear hung during
+	// --from-repo clones even after SIGINT.
 	fmt.Printf("Downloading Hams Store to %s\n", logging.TildePath(clonePath))
-	_, err := gogit.PlainClone(clonePath, false, &gogit.CloneOptions{
+	_, err := gogit.PlainCloneContext(ctx, clonePath, false, &gogit.CloneOptions{
 		URL:      repoURL,
 		Progress: os.Stdout,
 	})

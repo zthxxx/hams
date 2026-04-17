@@ -13,11 +13,15 @@ it at the right time.
 ## Usage
 
 ```bash
-# Run an Ansible-backed resource by its URN
-hams ansible run "urn:hams:ansible:setup-dev-env"
+# Run a playbook directly through hams (passes args to ansible-playbook).
+# The playbook path is relative to the store root.
+hams ansible playbooks/dev-env.yml
 
-# See what's managed
-hams ansible list
+# Or let apply run playbooks declared in ansible.hams.yaml
+hams apply --only=ansible
+
+# See what's managed (top-level list, filterable by provider)
+hams list --only=ansible
 ```
 
 ## Hamsfile example

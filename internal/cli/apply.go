@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"sort"
 	"strings"
 
 	"github.com/urfave/cli/v3"
@@ -45,6 +46,20 @@ Use --no-refresh to skip probing and apply based on state alone.`,
 			&cli.BoolFlag{Name: "no-bootstrap", Usage: "Fail fast when a provider prerequisite is missing. Skip the interactive consent prompt that would otherwise show on a TTY."},
 		},
 		Action: func(ctx context.Context, cmd *cli.Command) error {
+			// Reject positional args — apply reads all hamsfiles and
+			// applies everything by design; a stray positional arg
+			// is almost certainly a typo (e.g. `hams apply apt`
+			// where the user meant `--only=apt`). Previously these
+			// were silently ignored, causing hard-to-debug cases
+			// where `hams apply --only=apt pnpm` only filtered to
+			// apt while the user thought pnpm was also included.
+			if cmd.Args().Len() > 0 {
+				return hamserr.NewUserError(hamserr.ExitUsageError,
+					fmt.Sprintf("hams apply does not take positional arguments (got %q)", cmd.Args().First()),
+					"To filter providers: hams apply --only=<provider1>,<provider2>",
+					"To apply everything: hams apply",
+				)
+			}
 			flags := globalFlags(cmd)
 			return runApply(ctx, flags, registry, sudoAcq,
 				cmd.String("from-repo"),
@@ -148,7 +163,7 @@ func runApply(ctx context.Context, flags *provider.GlobalFlags, registry *provid
 	}
 	if effectiveFromRepo != "" {
 		slog.Info("from-repo specified", "repo", effectiveFromRepo)
-		resolvedPath, done, resolveErr := resolveFromRepoStorePath(effectiveFromRepo, paths, flags.DryRun)
+		resolvedPath, done, resolveErr := resolveFromRepoStorePath(ctx, effectiveFromRepo, paths, flags.DryRun)
 		if resolveErr != nil {
 			return fmt.Errorf("bootstrap from repo: %w", resolveErr)
 		}
@@ -434,7 +449,18 @@ func runApply(ctx context.Context, flags *provider.GlobalFlags, registry *provid
 	if !noRefresh {
 		slog.Info("refreshing state")
 		probeResults := provider.ProbeAll(ctx, sorted, stateDir, cfg.MachineID)
-		for filePrefix, sf := range probeResults {
+		// Sort the result-map keys before iterating so save errors and
+		// the per-provider slog.Error lines emerge in stable order across
+		// runs. Without this, the eventual "failed to persist state"
+		// summary listed providers in shuffled order — apply-side
+		// parallel of cycle 151's runRefresh fix.
+		probeNames := make([]string, 0, len(probeResults))
+		for name := range probeResults {
+			probeNames = append(probeNames, name)
+		}
+		sort.Strings(probeNames)
+		for _, filePrefix := range probeNames {
+			sf := probeResults[filePrefix]
 			statePath := filepath.Join(stateDir, filePrefix+".state.yaml")
 			if saveErr := sf.Save(statePath); saveErr != nil {
 				slog.Error("failed to save probed state", "provider", sf.Provider, "path", statePath, "error", saveErr)
@@ -620,6 +646,23 @@ func runApply(ctx context.Context, flags *provider.GlobalFlags, registry *provid
 				"Use '--debug' for detailed error output",
 			)
 		}
+		// Pre-apply refresh state-save failures: surface them in dry-run
+		// too. Previously dry-run printed "No changes made" + exit 0 even
+		// when every state file was unwriteable — the user had no clue
+		// their drift tracking was broken until they ran the real apply.
+		// Same class of silent-exit-0 bug as cycle 39 (skipped providers
+		// in dry-run). Symmetric with the non-dry-run branch's
+		// stateSaveFailures handling at the end of runApply.
+		if len(stateSaveFailures) > 0 {
+			fmt.Printf("Warning: %d provider(s) failed to persist state during pre-apply refresh: %s\n",
+				len(stateSaveFailures), strings.Join(stateSaveFailures, ", "))
+			fmt.Println("  Drift tracking is broken for these providers. Fix permissions on the store, then re-run.")
+			return hamserr.NewUserError(hamserr.ExitPartialFailure,
+				fmt.Sprintf("[dry-run] %d state save failure(s) during refresh", len(stateSaveFailures)),
+				"Check filesystem permissions on the store's .state/ directory",
+				"Use '--no-refresh' to skip the pre-apply probe if state intentionally read-only",
+			)
+		}
 		fmt.Println("[dry-run] No changes made.")
 		return nil
 	}
@@ -740,6 +783,16 @@ func filterProviders(providers []provider.Provider, only, except string, knownNa
 
 	if only != "" {
 		onlySet := parseCSV(only)
+		// Whitespace-only input (e.g., `--only="   "` or `--only=,,`)
+		// parses to an empty set. Without this guard we'd silently filter
+		// to zero providers — indistinguishable from "no providers match"
+		// the user saw on a fresh store, masking the user's typo.
+		if len(onlySet) == 0 {
+			return nil, hamserr.NewUserError(hamserr.ExitUsageError,
+				"--only value is empty after trimming whitespace",
+				fmt.Sprintf("Pass a comma-separated list: --only=%s", strings.Join(knownNames, ",")),
+			)
+		}
 		if err := validateProviderNames(onlySet, knownSet, knownNames); err != nil {
 			return nil, err
 		}
@@ -753,6 +806,15 @@ func filterProviders(providers []provider.Provider, only, except string, knownNa
 	}
 
 	exceptSet := parseCSV(except)
+	// Mirror of the --only empty-after-trim guard. A whitespace-only
+	// --except would otherwise be a silent no-op (keeps every provider)
+	// and mask a typo where the user MEANT to exclude something.
+	if len(exceptSet) == 0 {
+		return nil, hamserr.NewUserError(hamserr.ExitUsageError,
+			"--except value is empty after trimming whitespace",
+			fmt.Sprintf("Pass a comma-separated list: --except=%s", strings.Join(knownNames, ",")),
+		)
+	}
 	if err := validateProviderNames(exceptSet, knownSet, knownNames); err != nil {
 		return nil, err
 	}
@@ -773,6 +835,12 @@ func validateProviderNames(requested, known map[string]bool, knownNames []string
 		}
 	}
 	if len(unknown) > 0 {
+		// Sort the unknown list before formatting so a user typing
+		// `--only=foo,bar,baz` with all three being typos sees the
+		// same error message across runs. Without the sort, Go's
+		// non-deterministic map iteration shuffled the order on
+		// every invocation. Symmetric with cycles 148-151.
+		sort.Strings(unknown)
 		return hamserr.NewUserError(hamserr.ExitUsageError,
 			fmt.Sprintf("unknown provider(s): %s", strings.Join(unknown, ", ")),
 			fmt.Sprintf("Available providers: %s", strings.Join(knownNames, ", ")),
@@ -817,7 +885,8 @@ func printDryRunActions(name, displayName string, actions []provider.Action) {
 	}
 	fmt.Printf("[dry-run] %s (%s):\n", displayName, name)
 	if len(installs) == 0 && len(updates) == 0 && len(removes) == 0 {
-		fmt.Printf("  no changes (%d resources already at desired state)\n", len(skips))
+		fmt.Printf("  no changes (%d %s already at desired state)\n",
+			len(skips), pluralize(len(skips), "resource", "resources"))
 		return
 	}
 	for _, id := range installs {
@@ -830,7 +899,8 @@ func printDryRunActions(name, displayName string, actions []provider.Action) {
 		fmt.Printf("  - remove  %s\n", id)
 	}
 	if len(skips) > 0 {
-		fmt.Printf("  (%d resources unchanged)\n", len(skips))
+		fmt.Printf("  (%d %s unchanged)\n",
+			len(skips), pluralize(len(skips), "resource", "resources"))
 	}
 }
 

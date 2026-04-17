@@ -43,6 +43,7 @@ hams apply --except=ansible
 | `--from-repo` | string | 从远端 GitHub 仓库克隆 store 再 apply。适合新机器开荒。 |
 | `--only` | string | 只跑指定的 provider，逗号分隔 |
 | `--except` | string | 排除掉指定的 provider，其他都跑 |
+| `--no-refresh` | bool | 跳过 apply 前的 refresh 阶段。默认 apply 会先扫一遍机器状态捕获 drift；加了 `--no-refresh` 就直接信任 `.state/` 里的数据去算 diff。适合刚跑完 `hams refresh` 想再 apply 一次的场景 |
 | `--prune-orphans` | bool | 对那些只有 state 文件、没有对应 hamsfile 的 provider 做清理：把 state 里登记的所有资源都卸掉。**有破坏性，默认关闭。** 适合那种"我已经不用这个工具了，让 hams 帮我清理"的场景。注意：用之前确认 hamsfile 不是因为半截 git pull 缺失的，否则会一次性卸掉一堆 |
 | `--bootstrap` | bool | 当某个 provider 的前置工具没装时（典型如 Homebrew），自动跑该 provider 声明的 bootstrap 脚本。**会从网上跑 bash 脚本**，所以要显式开启。默认关闭；交互终端下会改为 `[y/N/s]` 提示 |
 | `--no-bootstrap` | bool | 关闭交互终端下的 bootstrap 提示。CI 里如果你希望前置工具缺失时立刻失败、而不是挂起等你输入，用它 |
@@ -91,7 +92,7 @@ hams apply --except=ansible
 hams **永远不会**在没有你明确授权的情况下，从网上跑 install 脚本。这和 `--prune-orphans` 一脉相承：
 凡是有破坏性或者会访问外部网络的默认行为，一律要显式 opt-in。
 
-brew → {duti, mas} 的链一条 `hams apply --bootstrap` 就能跑完 —— DAG 保证 brew 先装，
+brew → \{duti, mas\} 的链一条 `hams apply --bootstrap` 就能跑完 —— DAG 保证 brew 先装，
 brew 装好之后 `brew install duti` 能顺利走下去。
 
 <Callout type="warning">

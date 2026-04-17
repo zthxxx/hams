@@ -1,6 +1,8 @@
 package provider
 
 import (
+	"sort"
+
 	"github.com/zthxxx/hams/internal/state"
 )
 
@@ -48,7 +50,16 @@ func ComputePlan(desired []string, observed *state.File, lastConfigHash string) 
 
 	// Resources in state but not in desired → remove candidates.
 	// Only consider resources that were in the last-applied config (baseline).
+	// Collect → sort → emit so the Remove block is in stable, alphabetical
+	// order. Without the sort, Go's non-deterministic map iteration
+	// shuffled remove actions on every apply, which:
+	//   - made `hams apply --dry-run` output flap across runs (breaks
+	//     CI preview comparison),
+	//   - shuffled the per-removal log order (breaks log-grep tooling),
+	//   - fired pre_remove/post_remove hooks in non-deterministic order.
+	// Symmetric with cycles 148/149.
 	if lastConfigHash != "" {
+		var removeIDs []string
 		for id, r := range observed.Resources {
 			if desiredSet[id] {
 				continue
@@ -56,6 +67,10 @@ func ComputePlan(desired []string, observed *state.File, lastConfigHash string) 
 			if r.State == state.StateRemoved {
 				continue
 			}
+			removeIDs = append(removeIDs, id)
+		}
+		sort.Strings(removeIDs)
+		for _, id := range removeIDs {
 			actions = append(actions, Action{ID: id, Type: ActionRemove})
 		}
 	}

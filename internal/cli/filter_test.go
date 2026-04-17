@@ -191,6 +191,42 @@ func TestFilterProviders_UnknownExceptNameErrors(t *testing.T) {
 	}
 }
 
+// TestFilterProviders_WhitespaceOnlyOnlyErrors asserts --only
+// with only whitespace / commas (e.g. `--only="   "` or
+// `--only=,,`) surfaces a usage error rather than silently
+// filtering to zero providers (which previously looked
+// identical to an empty store, masking a typo).
+func TestFilterProviders_WhitespaceOnlyOnlyErrors(t *testing.T) {
+	t.Parallel()
+	input := []provider.Provider{&namedProvider{name: "apt"}}
+
+	for _, bogus := range []string{"   ", ",,", " , , "} {
+		_, err := filterProviders(input, bogus, "", []string{"apt", "brew"})
+		if err == nil {
+			t.Errorf("--only=%q should error (empty after trim)", bogus)
+			continue
+		}
+		if !strings.Contains(err.Error(), "empty after trimming") {
+			t.Errorf("error should mention 'empty after trimming', got: %v", err)
+		}
+	}
+}
+
+// TestFilterProviders_WhitespaceOnlyExceptErrors mirrors the --only
+// check for --except.
+func TestFilterProviders_WhitespaceOnlyExceptErrors(t *testing.T) {
+	t.Parallel()
+	input := []provider.Provider{&namedProvider{name: "apt"}}
+
+	_, err := filterProviders(input, "", "  ", []string{"apt"})
+	if err == nil {
+		t.Fatalf("--except with whitespace should error")
+	}
+	if !strings.Contains(err.Error(), "empty after trimming") {
+		t.Errorf("error should mention 'empty after trimming', got: %v", err)
+	}
+}
+
 // TestParseCSV_DropsEmptyAndTrimsWhitespace pins the CSV parser's
 // contract. Used to detect drift if someone "optimizes" the parser
 // and accidentally keeps empty-after-trim entries as map keys.

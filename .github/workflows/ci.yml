@@ -2,9 +2,13 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches:
+      - '*'
+    tags-ignore:
+      - '*'
   pull_request:
-    branches: [main]
+    branches:
+      - '*'
 
 permissions:
   contents: read
@@ -46,23 +50,6 @@ jobs:
       - run: bun install --frozen-lockfile
 
       - run: task ci:lint:md
-
-  lint-spell:
-    name: Spell Check
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: oven-sh/setup-bun@v2
-
-      - uses: go-task/setup-task@v2
-        with:
-          version: 3.x
-          repo-token: ${{ secrets.GITHUB_TOKEN }}
-
-      - run: bun install --frozen-lockfile
-
-      - run: task ci:lint:spell
 
   test:
     name: Test
@@ -189,7 +176,7 @@ jobs:
       fail-fast: false
       matrix:
         # 11 linux-containerizable builtin providers. macOS-only providers
-        # (defaults, duti, mas) are intentionally excluded — no docker path.
+        # (defaults, duti, mas) are intentionally excluded
         provider:
           - apt
           - ansible

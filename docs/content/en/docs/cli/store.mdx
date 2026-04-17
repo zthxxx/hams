@@ -51,7 +51,7 @@ hams store status
 
 Sample output:
 
-```
+```text
 Store:       /Users/you/Projects/hams-store
 Branch:      main (up to date with origin/main)
 Profile:     macOS
@@ -67,19 +67,20 @@ Untracked:
 
 ### `hams store push`
 
-Stage, commit, and push Hamsfile changes in a single step. Let hams generate a commit message
-from the diff, or pass your own.
+Stage, commit, and push Hamsfile changes in a single step. Uses a generic default commit
+message or accepts your own via `-m`.
 
 ```bash
-# The full shortcut
+# The full shortcut — uses the default "hams: update store" message
 hams store push
 
-# Use your own message
+# Use your own message (recommended for audit-friendly history)
 hams store push -m "Add ripgrep and htop"
-
-# Only the current profile's changes (skip cross-profile edits for now)
-hams store push --profile-only
 ```
+
+A clean working tree short-circuits to a friendly "nothing to commit" message and exits zero —
+running `hams store push` right after `hams refresh` (which only mutates gitignored `.state/`
+files) doesn't fail.
 
 `store push` won't push `.state/` or `*.local.*` files — those are already gitignored.
 

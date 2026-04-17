@@ -7,6 +7,8 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
+	"sort"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -60,13 +62,47 @@ func (p *CloneProvider) Probe(_ context.Context, sf *state.File) ([]provider.Pro
 			continue
 		}
 
-		if _, err := os.Stat(localPath); os.IsNotExist(err) {
+		// Expand leading `~/` so hamsfiles shared across machines work
+		// out-of-the-box — each user's $HOME is resolved per-invocation
+		// rather than hard-coded into the YAML. Without this, a hamsfile
+		// with `path: ~/repos/foo` would make os.Stat check a literal
+		// `~/repos/foo` directory (typically non-existent), flagging
+		// every tracked clone as StateFailed on machines where the user
+		// didn't explicitly materialize a `~` subdirectory.
+		if expanded, expErr := config.ExpandHome(localPath); expErr == nil {
+			localPath = expanded
+		}
+
+		// A bare path-exists check is not enough: if the user removes
+		// `.git/` (or the bare-repo HEAD file) but leaves sibling files,
+		// Stat still succeeds, Probe said StateOK, and the next apply
+		// would skip the resource despite the clone being semantically
+		// broken. Require the same markers that ensureStoreIsGitRepo
+		// uses at the CLI layer: either `.git` (non-bare repo) or
+		// `HEAD` (bare repo). Absence of both flips the resource to
+		// StateFailed so the next apply re-clones.
+		if !isGitRepoPath(localPath) {
 			results = append(results, provider.ProbeResult{ID: id, State: state.StateFailed})
 		} else {
 			results = append(results, provider.ProbeResult{ID: id, State: state.StateOK})
 		}
 	}
 	return results, nil
+}
+
+// isGitRepoPath reports whether path contains either a `.git` entry
+// (non-bare repo) or a `HEAD` file (bare repo). Distinguishes
+// "directory exists AND is still a git repo" from "directory exists
+// but no longer a repo" — the latter used to probe as StateOK,
+// masking drift that a subsequent apply would silently skip.
+func isGitRepoPath(path string) bool {
+	if _, err := os.Stat(filepath.Join(path, ".git")); err == nil {
+		return true
+	}
+	if _, err := os.Stat(filepath.Join(path, "HEAD")); err == nil {
+		return true
+	}
+	return false
 }
 
 // cloneResource holds parsed fields from a git-clone hamsfile entry.
@@ -116,6 +152,35 @@ func (p *CloneProvider) Apply(ctx context.Context, action provider.Action) error
 		return fmt.Errorf("git-clone: resource must have remote and path")
 	}
 
+	// Expand `~/` in the destination so git clone targets the real
+	// home directory instead of creating a literal `~` subdirectory
+	// in CWD. The hamsfile intentionally keeps the unexpanded form so
+	// it remains portable across machines (see Probe for the same
+	// expansion on the read-side).
+	if expanded, expErr := config.ExpandHome(localPath); expErr == nil {
+		localPath = expanded
+	}
+
+	// Guard the "dir exists but isn't a git repo" case that Probe
+	// now flags as StateFailed (cycle 135) — without this check,
+	// ComputePlan promotes StateFailed → ActionInstall → git clone
+	// fails with "destination path X already exists and is not an
+	// empty directory", leaving the user with a cryptic error. Surface
+	// an actionable UserFacingError instead so the user knows exactly
+	// what to do.
+	if info, statErr := os.Stat(localPath); statErr == nil && info.IsDir() {
+		if !isGitRepoPath(localPath) {
+			return hamserr.NewUserError(hamserr.ExitGeneralError,
+				fmt.Sprintf("git-clone target %q already exists but is not a git repository", localPath),
+				"Either delete the directory and re-run apply: rm -rf "+localPath,
+				"Or initialize it in place: cd "+localPath+" && git init && git remote add origin "+remote,
+			)
+		}
+		// Already a git repo at this path — skip clone (idempotent).
+		slog.Info("git-clone: target already exists as a git repo, skipping clone", "path", localPath)
+		return nil
+	}
+
 	slog.Info("git clone", "remote", remote, "path", localPath)
 	args := []string{"clone"}
 	if branch != "" {
@@ -137,9 +202,19 @@ func (p *CloneProvider) Remove(_ context.Context, resourceID string) error {
 
 // List returns cloned repos with status.
 func (p *CloneProvider) List(_ context.Context, _ *hamsfile.File, sf *state.File) (string, error) {
+	// Sort IDs before iteration so `hams git-clone list` produces stable
+	// alphabetical row order across invocations. Without the sort, Go's
+	// non-deterministic map iteration shuffled the rows on every call —
+	// breaks grep/diff/snapshot workflows over the output. Symmetric
+	// with cycles 148-153.
+	ids := make([]string, 0, len(sf.Resources))
+	for id := range sf.Resources {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
 	var sb strings.Builder
-	for id, r := range sf.Resources {
-		fmt.Fprintf(&sb, "  %-60s %s\n", id, r.State)
+	for _, id := range ids {
+		fmt.Fprintf(&sb, "  %-60s %s\n", id, sf.Resources[id].State)
 	}
 	return sb.String(), nil
 }
@@ -154,8 +229,7 @@ func (p *CloneProvider) HandleCommand(ctx context.Context, args []string, hamsFl
 	case "remove":
 		return p.handleRemove(remaining, hamsFlags, flags)
 	case "list":
-		fmt.Println("git clone managed repositories:")
-		return nil
+		return p.handleList(ctx, hamsFlags, flags)
 	default:
 		// Passthrough: treat as raw git clone.
 		if len(args) < 2 {
@@ -187,18 +261,61 @@ func (p *CloneProvider) handleAdd(ctx context.Context, args []string, hamsFlags 
 		)
 	}
 
+	// Expand `~/` for the git clone invocation but keep `localPath`
+	// unexpanded for the hamsfile record — the stored form is what
+	// ships to another machine, so a literal `~/` there is a feature
+	// (each machine's $HOME resolves per-invocation in Apply/Probe).
+	cloneTarget := localPath
+	if expanded, expErr := config.ExpandHome(localPath); expErr == nil {
+		cloneTarget = expanded
+	}
+
 	if flags.DryRun {
-		fmt.Printf("[dry-run] Would clone: git clone %s %s\n", remote, localPath)
+		fmt.Printf("[dry-run] Would clone: git clone %s %s\n", remote, cloneTarget)
 		return nil
 	}
 
-	cmd := exec.CommandContext(ctx, "git", "clone", remote, localPath) //nolint:gosec // git clone from CLI input
+	// Mirror Apply's cycle-136 guard: detect non-git-but-existing dir
+	// and already-a-valid-repo cases before shelling out to git.
+	// Without this, users of `hams git-clone add` hit the same cryptic
+	// "destination already exists" shell error that declarative apply
+	// users hit before cycle 136.
+	if info, statErr := os.Stat(cloneTarget); statErr == nil && info.IsDir() {
+		if !isGitRepoPath(cloneTarget) {
+			return hamserr.NewUserError(hamserr.ExitGeneralError,
+				fmt.Sprintf("git-clone target %q already exists but is not a git repository", cloneTarget),
+				"Either delete the directory and re-run: rm -rf "+cloneTarget,
+				"Or initialize it in place: cd "+cloneTarget+" && git init && git remote add origin "+remote,
+			)
+		}
+		// Already a git repo — skip the clone but still record in the
+		// hamsfile so the user's explicit `add` intent is captured.
+		// Common scenario: user manually cloned the repo earlier, now
+		// wants hams to track it.
+		slog.Info("git-clone: target already a git repo, recording in hamsfile without cloning", "path", cloneTarget)
+		return p.recordAdd(remote, localPath, hamsFlags, flags)
+	}
+
+	cmd := exec.CommandContext(ctx, "git", "clone", remote, cloneTarget) //nolint:gosec // git clone from CLI input
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	if err := cmd.Run(); err != nil {
 		return err
 	}
 
+	return p.recordAdd(remote, localPath, hamsFlags, flags)
+}
+
+// recordAdd persists the just-cloned resource to the hamsfile (with
+// the unexpanded path so the YAML is portable across machines) and
+// the state file (StateOK). Extracted from handleAdd so the auto-record
+// bookkeeping is unit-testable independently of the git clone exec
+// call. Failure writing either file is surfaced with a wrapped
+// error — a half-recorded state where hamsfile has the entry but
+// state doesn't (or vice versa) is worse than reporting the failure
+// because the user would then see drift on the next apply without
+// understanding why.
+func (p *CloneProvider) recordAdd(remote, localPath string, hamsFlags map[string]string, flags *provider.GlobalFlags) error {
 	// Record in hamsfile using "remote -> local-path" as the resource ID.
 	resourceID := remote + " -> " + localPath
 	hf, err := p.loadOrCreateHamsfile(hamsFlags, flags)
@@ -208,6 +325,18 @@ func (p *CloneProvider) handleAdd(ctx context.Context, args []string, hamsFlags 
 	hf.AddApp("repos", resourceID, "")
 	if err := hf.Write(); err != nil {
 		return fmt.Errorf("git-clone: failed to write hamsfile: %w", err)
+	}
+
+	// Mirror CP-1 auto-record: write state as well so `hams list`
+	// immediately reflects the new resource without requiring a
+	// separate `hams refresh`. Same contract satisfied by apt,
+	// homebrew, git-config, defaults, duti, and the 7 Package-class
+	// providers covered by the 2026-04-16-package-provider-auto-record-gap
+	// change.
+	sf := p.loadOrCreateStateFile(flags)
+	sf.SetResource(resourceID, state.StateOK)
+	if saveErr := sf.Save(p.statePath(flags)); saveErr != nil {
+		return fmt.Errorf("git-clone: failed to write state: %w", saveErr)
 	}
 
 	slog.Info("git-clone: cloned and recorded", "remote", remote, "path", localPath)
@@ -232,18 +361,99 @@ func (p *CloneProvider) handleRemove(args []string, hamsFlags map[string]string,
 	if err != nil {
 		return err
 	}
+	sf := p.loadOrCreateStateFile(flags)
+
+	// Validate the ID exists in hamsfile OR state before mutating
+	// either. Without this check, a typo like `hams git-clone remove
+	// git@github.com:foo/br` (missing `ar`) would silently succeed:
+	// RemoveApp no-ops (returns false, ignored) and the state file
+	// gets a useless StateRemoved tombstone for a nonexistent ID.
+	// Surface a clear error with the list of tracked IDs so the user
+	// can retry with a valid one.
+	inHamsfile := slices.Contains(hf.ListApps(), resourceID)
+	_, inState := sf.Resources[resourceID]
+	if !inHamsfile && !inState {
+		tracked := append([]string(nil), hf.ListApps()...)
+		for id := range sf.Resources {
+			if !slices.Contains(tracked, id) {
+				tracked = append(tracked, id)
+			}
+		}
+		// Sort the tracked-IDs suggestion list so the user sees the same
+		// "Tracked IDs: …" text on each typo retry. hf.ListApps preserves
+		// hamsfile source order; the state-only IDs from the loop above
+		// were appended in non-deterministic map-iteration order. Sorting
+		// the merged list gives a single deterministic surface. Symmetric
+		// with cycles 148-153.
+		sort.Strings(tracked)
+		suggestions := []string{"Run 'hams git-clone list' to see tracked repos"}
+		if len(tracked) > 0 {
+			suggestions = append(suggestions, "Tracked IDs: "+strings.Join(tracked, ", "))
+		}
+		return hamserr.NewUserError(hamserr.ExitUsageError,
+			fmt.Sprintf("git-clone: no tracked resource with ID %q", resourceID),
+			suggestions...,
+		)
+	}
+
 	hf.RemoveApp(resourceID)
 	if err := hf.Write(); err != nil {
 		return fmt.Errorf("git-clone: failed to write hamsfile: %w", err)
+	}
+
+	// Mirror git-config's doRemove: mark the state resource as
+	// StateRemoved so `hams list` / `hams refresh` see a tombstone
+	// rather than a stale StateOK that would look orphaned (or worse
+	// re-clone on next apply). Matches the auto-record contract other
+	// CLI-writing providers (apt, homebrew, git-config, defaults,
+	// duti) satisfy for their remove paths.
+	sf.SetResource(resourceID, state.StateRemoved)
+	if err := sf.Save(p.statePath(flags)); err != nil {
+		return fmt.Errorf("git-clone: failed to write state: %w", err)
 	}
 
 	slog.Warn("git-clone: entry removed from Hamsfile. Local directory was NOT deleted.", "resource", resourceID)
 	return nil
 }
 
+// handleList loads the hamsfile + state and prints the enumerated
+// managed repositories. Previously `case "list":` printed only the
+// header — users ran the command and saw nothing below it, giving
+// no hint whether state existed or was empty. Now: header + either
+// the tracked repositories (id, state) or an actionable empty-state
+// hint pointing at `git-clone add`.
+func (p *CloneProvider) handleList(ctx context.Context, hamsFlags map[string]string, flags *provider.GlobalFlags) error {
+	hf, err := p.loadOrCreateHamsfile(hamsFlags, flags)
+	if err != nil {
+		return err
+	}
+	sf := p.loadOrCreateStateFile(flags)
+
+	output, err := p.List(ctx, hf, sf)
+	if err != nil {
+		return err
+	}
+
+	fmt.Println("git clone managed repositories:")
+	if output == "" {
+		fmt.Println("  (no clones tracked yet — add one with: hams git-clone add <remote> --hams-path=<path>)")
+		return nil
+	}
+	fmt.Print(output)
+	return nil
+}
+
 func (p *CloneProvider) clonePassthrough(ctx context.Context, args []string, flags *provider.GlobalFlags) error {
 	remote := args[0]
 	localPath := args[1]
+
+	// Expand `~/` for parity with the recorded add path and with
+	// Apply/Probe — without this, `hams git-clone <remote> "~/repos/foo"`
+	// would create a literal `~` subdirectory in CWD rather than
+	// cloning under $HOME.
+	if expanded, expErr := config.ExpandHome(localPath); expErr == nil {
+		localPath = expanded
+	}
 
 	if flags.DryRun {
 		fmt.Printf("[dry-run] Would clone: git clone %s %s\n", remote, localPath)
@@ -285,6 +495,29 @@ func (p *CloneProvider) hamsfilePath(hamsFlags map[string]string, flags *provide
 	}
 
 	return filepath.Join(cfg.ProfileDir(), p.Manifest().FilePrefix+suffix), nil
+}
+
+// statePath returns the absolute path to git-clone's state file for
+// the currently active machine under the active profile. Mirrors
+// ConfigProvider.statePath from hamsfile.go.
+func (p *CloneProvider) statePath(flags *provider.GlobalFlags) string {
+	cfg := p.effectiveConfig(flags)
+	return filepath.Join(cfg.StateDir(), p.Manifest().FilePrefix+".state.yaml")
+}
+
+// loadOrCreateStateFile reads git-clone's state file for the active
+// machine, returning a fresh empty document when the file does not
+// yet exist OR is unreadable. Fail-open matches ConfigProvider's
+// behavior: the next Save() will replace a corrupted file rather
+// than blocking the user on a disk/permission issue unrelated to
+// what they're trying to do.
+func (p *CloneProvider) loadOrCreateStateFile(flags *provider.GlobalFlags) *state.File {
+	cfg := p.effectiveConfig(flags)
+	sf, err := state.Load(p.statePath(flags))
+	if err != nil {
+		return state.New(p.Manifest().Name, cfg.MachineID)
+	}
+	return sf
 }
 
 func (p *CloneProvider) effectiveConfig(flags *provider.GlobalFlags) *config.Config {

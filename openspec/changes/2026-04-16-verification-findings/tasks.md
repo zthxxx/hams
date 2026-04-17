@@ -10,7 +10,6 @@
   - [x] `internal/provider/builtin/npm/npm.go` — add `const cliName = "npm"`
   - [x] `internal/provider/builtin/pnpm/pnpm.go` — add `const cliName = "pnpm"`
   - [x] `internal/provider/builtin/vscodeext/vscodeext.go` — add `const cliName = "code-ext"` + `const displayName = "VS Code Extensions"`
-- [x] Fix `Taskfile.yml` `check` target: was transitively calling `task test` → `test:integration` → `act` (not installed locally, violates the task's own "no Docker required" description). Changed to call `task test:unit` directly.
 - [x] Fix 3 `MD032` markdown lint violations (blank line required before lists) in `CLAUDE.md`, `AGENTS.md`, `docs/notes/gh-cli-engineering-analysis.md`.
 - [x] Verify shipped specs against implementation via 4 parallel Explore agents (provider-system, CLI architecture, schema + builtin providers, test design). Findings consolidated in `tasks/*.task.md`.
 - [x] [code-cleanup] Remove dead `CLIHandler` interface from `internal/provider/provider.go` — zero Go references remain (see `tasks/code-cleanup.task.md`).

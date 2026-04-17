@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/zthxxx/hams/internal/provider"
 	"github.com/zthxxx/hams/internal/sudo"
@@ -108,6 +109,47 @@ func TestStoreStatus_WithGitRepo(t *testing.T) {
 	}
 }
 
+// TestStoreStatus_CanceledContextAbortsPromptly locks in cycle 157:
+// `hams store status` on a git repo previously used context.Background()
+// for the inner `git status --short` probe (with a 5s timeout), so
+// SIGINT/SIGTERM during the probe was ignored and the user had to
+// wait up to 5s for the timeout. Now: derives from the request ctx
+// so cancellation propagates immediately. Asserts: pre-canceling
+// the context returns from the action much faster than the 5s
+// timeout (using a 2s upper bound for noisy CI environments).
+func TestStoreStatus_CanceledContextAbortsPromptly(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not available")
+	}
+	storeDir, _, _, _ := setupApplyTestEnv(t, []string{"apt"})
+
+	if err := exec.CommandContext(context.Background(), "git", "-C", storeDir, "init", "-q").Run(); err != nil {
+		t.Fatalf("git init: %v", err)
+	}
+
+	// Pre-cancel the context. exec.CommandContext fires the kill
+	// signal on cancel, so the git status invocation should abort
+	// nearly immediately instead of running the full ~ms timeout
+	// budget. Even with timing noise on CI, 2s should be plenty.
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	start := time.Now()
+	registry := provider.NewRegistry()
+	app := NewApp(registry, sudo.NoopAcquirer{})
+	// Errors from the captureStdout body are intentionally swallowed
+	// here — we only care about cancellation timing for this test.
+	captureStdout(t, func() {
+		if err := app.Run(ctx, []string{"hams", "--store", storeDir, "store", "status"}); err != nil {
+			t.Logf("store status (expected possibly-error on cancel): %v", err)
+		}
+	})
+	elapsed := time.Since(start)
+	if elapsed > 2*time.Second {
+		t.Errorf("store status with canceled ctx took %v; want < 2s (5s timeout was being honored, ignoring ctx)", elapsed)
+	}
+}
+
 // TestList_FilterExcludedAll_DistinctMessage asserts cycle-55: when
 // resources exist but --status filters them all out, the output
 // tells the user the filter excluded the matches rather than
@@ -150,6 +192,42 @@ resources:
 	}
 	if strings.Contains(got, "Run 'hams <provider> install") {
 		t.Errorf("filter-excluded should NOT show the empty-store install hint; got:\n%s", got)
+	}
+}
+
+// TestConfigList_IncludesStoreRepo locks in cycle 124: both the
+// text and JSON outputs of `hams config list` include store_repo.
+// Previously store_repo was omitted — users who set it via
+// `hams config set store_repo ...` couldn't see it in `list`
+// (only via `config get store_repo`).
+func TestConfigList_IncludesStoreRepo(t *testing.T) {
+	configHome := t.TempDir()
+	t.Setenv("HAMS_CONFIG_HOME", configHome)
+	t.Setenv("HAMS_DATA_HOME", t.TempDir())
+	// Seed a global config with store_repo set.
+	writeApplyTestFile(t, filepath.Join(configHome, "hams.config.yaml"),
+		"profile_tag: t\nmachine_id: m\nstore_repo: github.com/zthxxx/hams-store\n")
+
+	// Text output should include the Store repo line.
+	textOut := captureStdout(t, func() {
+		app := NewApp(provider.NewRegistry(), sudo.NoopAcquirer{})
+		if err := app.Run(context.Background(), []string{"hams", "config", "list"}); err != nil {
+			t.Fatalf("config list text: %v", err)
+		}
+	})
+	if !strings.Contains(textOut, "Store repo:") || !strings.Contains(textOut, "github.com/zthxxx/hams-store") {
+		t.Errorf("text output missing store_repo; got:\n%s", textOut)
+	}
+
+	// JSON output should have the store_repo key.
+	jsonOut := captureStdout(t, func() {
+		app := NewApp(provider.NewRegistry(), sudo.NoopAcquirer{})
+		if err := app.Run(context.Background(), []string{"hams", "--json", "config", "list"}); err != nil {
+			t.Fatalf("config list json: %v", err)
+		}
+	})
+	if !strings.Contains(jsonOut, `"store_repo": "github.com/zthxxx/hams-store"`) {
+		t.Errorf("JSON output missing store_repo; got:\n%s", jsonOut)
 	}
 }
 
@@ -231,6 +309,152 @@ resources:
 	// Value MUST appear after the status, using the ` = <value>` format.
 	if !strings.Contains(got, "= zthxxx") {
 		t.Errorf("text output missing value `= zthxxx`; got:\n%s", got)
+	}
+}
+
+// TestList_DeterministicOrderAcrossRuns locks in cycle 149: per-provider
+// rows in `hams list` (text and JSON) must be in stable, alphabetical
+// order across invocations. Previously the IDs were collected by
+// iterating sf.Resources (a Go map) — non-deterministic, so each
+// `hams list` shuffled the rows. Broke grep/diff/snapshot workflows.
+// Symmetric with cycle 148's fix in DiffDesiredVsState (covers a
+// different code path: the listCmd flow does not go through
+// DiffDesiredVsState — it iterates state directly).
+func TestList_DeterministicOrderAcrossRuns(t *testing.T) {
+	storeDir, _, stateDir, _ := setupApplyTestEnv(t, []string{"apt"})
+
+	// Seed an apt state file with 6 resources whose alphabetical order
+	// is unrelated to insertion order — increases the chance Go's map
+	// iteration would shuffle them differently across invocations.
+	statePath := filepath.Join(stateDir, "apt.state.yaml")
+	writeApplyTestFile(t, statePath, `provider: apt
+machine_id: test-machine
+resources:
+  zsh:
+    state: ok
+    version: "5.9"
+  htop:
+    state: ok
+    version: "3.2.2"
+  curl:
+    state: ok
+    version: "7.81"
+  ack:
+    state: ok
+    version: "3.5"
+  jq:
+    state: ok
+    version: "1.6"
+  vim:
+    state: ok
+    version: "8.2"
+`)
+
+	registry := provider.NewRegistry()
+	p := &applyTestProvider{
+		manifest: provider.Manifest{
+			Name: "apt", DisplayName: "apt", FilePrefix: "apt",
+			Platforms: []provider.Platform{provider.PlatformAll},
+		},
+	}
+	if err := registry.Register(p); err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+
+	runOnce := func() string {
+		return captureStdout(t, func() {
+			app := NewApp(registry, sudo.NoopAcquirer{})
+			if err := app.Run(context.Background(),
+				[]string{"hams", "--store", storeDir, "list"}); err != nil {
+				t.Fatalf("list: %v", err)
+			}
+		})
+	}
+
+	first := runOnce()
+	for range 20 {
+		got := runOnce()
+		if got != first {
+			t.Errorf("list output differs across runs:\nfirst:\n%s\n\nlater:\n%s", first, got)
+			break
+		}
+	}
+
+	// Assert alphabetical ordering: ack < curl < htop < jq < vim < zsh.
+	want := []string{"ack", "curl", "htop", "jq", "vim", "zsh"}
+	last := -1
+	for _, name := range want {
+		idx := strings.Index(first, name)
+		if idx < 0 {
+			t.Errorf("output missing %q; got:\n%s", name, first)
+			continue
+		}
+		if idx <= last {
+			t.Errorf("output not alphabetical: %q at idx %d should come after previous (idx %d)", name, idx, last)
+		}
+		last = idx
+	}
+}
+
+// TestList_JSON_DeterministicOrder asserts the same per-provider
+// determinism for the --json output path. Scripts consuming
+// `hams list --json` would otherwise see the array elements
+// shuffled across runs.
+func TestList_JSON_DeterministicOrder(t *testing.T) {
+	storeDir, _, stateDir, _ := setupApplyTestEnv(t, []string{"apt"})
+
+	statePath := filepath.Join(stateDir, "apt.state.yaml")
+	writeApplyTestFile(t, statePath, `provider: apt
+machine_id: test-machine
+resources:
+  zsh: {state: ok, version: "5.9"}
+  htop: {state: ok, version: "3.2.2"}
+  curl: {state: ok, version: "7.81"}
+  ack: {state: ok, version: "3.5"}
+`)
+
+	registry := provider.NewRegistry()
+	p := &applyTestProvider{
+		manifest: provider.Manifest{
+			Name: "apt", DisplayName: "apt", FilePrefix: "apt",
+			Platforms: []provider.Platform{provider.PlatformAll},
+		},
+	}
+	if err := registry.Register(p); err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+
+	runOnce := func() string {
+		return captureStdout(t, func() {
+			app := NewApp(registry, sudo.NoopAcquirer{})
+			if err := app.Run(context.Background(),
+				[]string{"hams", "--store", storeDir, "--json", "list"}); err != nil {
+				t.Fatalf("list: %v", err)
+			}
+		})
+	}
+
+	first := runOnce()
+	for range 20 {
+		if got := runOnce(); got != first {
+			t.Errorf("list --json output differs across runs:\nfirst:\n%s\n\nlater:\n%s", first, got)
+			break
+		}
+	}
+
+	// Validate alphabetical ordering by checking ID positions.
+	want := []string{`"id": "ack"`, `"id": "curl"`, `"id": "htop"`, `"id": "zsh"`}
+	last := -1
+	for _, frag := range want {
+		idx := strings.Index(first, frag)
+		if idx < 0 {
+			t.Errorf("JSON missing %s; got:\n%s", frag, first)
+			continue
+		}
+		if idx <= last {
+			t.Errorf("JSON not alphabetical: %s at idx %d should come after previous (idx %d)", frag, idx, last)
+		}
+		last = idx
 	}
 }
 
