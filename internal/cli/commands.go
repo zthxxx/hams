@@ -94,6 +94,15 @@ Only resources already tracked in state are probed — no new resources are disc
 }
 
 func runRefresh(ctx context.Context, flags *provider.GlobalFlags, registry *provider.Registry, only, except string) (retErr error) {
+	// Cycle 238: capture wall-clock start so the user-facing summary
+	// (text + JSON) can surface total elapsed time. Pre-cycle-238 only
+	// the probe phase was timed (via OTel-only `hams.probe.duration`).
+	// Users debugging slow refreshes had to scrape slog timestamps;
+	// CI scripts had no way to alert on regression. The OTel metric
+	// stays where it is — the summary number is the user-facing
+	// equivalent.
+	refreshStart := time.Now()
+
 	// Same --only/--except exclusion as runApply — check before config
 	// load so a misconfigured store doesn't mask the args error.
 	if only != "" && except != "" {
@@ -309,6 +318,10 @@ func runRefresh(ctx context.Context, flags *provider.GlobalFlags, registry *prov
 				// path too so the JSON shape stays consistent across
 				// branches.
 				"dry_run": flags.DryRun,
+				// Cycle 238: total elapsed time so CI alerting can
+				// trigger on regression. Same field name + units as
+				// the completion-branch summary below.
+				"elapsed_ms": time.Since(refreshStart).Milliseconds(),
 			}
 			out, mErr := json.MarshalIndent(data, "", "  ")
 			if mErr != nil {
@@ -360,6 +373,10 @@ func runRefresh(ctx context.Context, flags *provider.GlobalFlags, registry *prov
 			"probe_failed_providers": probeFailedProviders,
 			"success":                probed == planned && len(saveFailures) == 0,
 			"dry_run":                flags.DryRun,
+			// Cycle 238: total elapsed wall-clock time. Helps CI
+			// dashboards spot regressions; complements the
+			// per-probe `hams.probe.duration` OTel metric.
+			"elapsed_ms": time.Since(refreshStart).Milliseconds(),
 		}
 		if saveFailures == nil {
 			data["save_failures"] = []string{}
@@ -381,7 +398,10 @@ func runRefresh(ctx context.Context, flags *provider.GlobalFlags, registry *prov
 	}
 
 	if probed == planned && len(saveFailures) == 0 {
-		fmt.Printf("Refresh complete: %d %s probed\n", planned, providersNoun)
+		// Cycle 238: append "(took Xms)" so interactive users can
+		// spot slowdowns without grepping slog timestamps.
+		fmt.Printf("Refresh complete: %d %s probed (took %dms)\n",
+			planned, providersNoun, time.Since(refreshStart).Milliseconds())
 		return nil
 	}
 	// Partial failure: some providers couldn't probe or their state

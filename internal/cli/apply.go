@@ -14,6 +14,7 @@ import (
 	"slices"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/urfave/cli/v3"
 	"golang.org/x/term"
@@ -83,6 +84,13 @@ type bootstrapMode struct {
 }
 
 func runApply(ctx context.Context, flags *provider.GlobalFlags, registry *provider.Registry, sudoAcq sudo.Acquirer, fromRepo string, noRefresh bool, only, except string, pruneOrphans bool, boot bootstrapMode) (retErr error) {
+	// Cycle 238: capture wall-clock start so the user-facing summary
+	// (text + JSON) can surface total elapsed time. CI dashboards
+	// alert on regression; interactive users debugging slow runs see
+	// the duration without grepping slog timestamps. Same field name
+	// + units as runRefresh's cycle-238 addition.
+	applyStart := time.Now()
+
 	if boot.Allow && boot.Deny {
 		return hamserr.NewUserError(hamserr.ExitUsageError,
 			"--bootstrap and --no-bootstrap are mutually exclusive",
@@ -778,7 +786,7 @@ func runApply(ctx context.Context, flags *provider.GlobalFlags, registry *provid
 	// failures programmatically rather than parsing the prose output.
 	// Symmetric with cycles 181 (version) / 182 (refresh).
 	if flags.JSON {
-		data := buildApplyJSONSummary(merged, failedProviders, skippedProviders, stateSaveFailures, probeFailedProviders)
+		data := buildApplyJSONSummary(merged, failedProviders, skippedProviders, stateSaveFailures, probeFailedProviders, time.Since(applyStart).Milliseconds())
 		out, mErr := json.MarshalIndent(data, "", "  ")
 		if mErr != nil {
 			return fmt.Errorf("marshaling apply JSON: %w", mErr)
@@ -795,8 +803,10 @@ func runApply(ctx context.Context, flags *provider.GlobalFlags, registry *provid
 		return nil
 	}
 
-	fmt.Printf("\nhams apply complete: %d installed, %d updated, %d removed, %d skipped, %d failed\n",
-		merged.Installed, merged.Updated, merged.Removed, merged.Skipped, merged.Failed)
+	// Cycle 238: append elapsed time to the summary so interactive
+	// users can spot slowdowns without scraping slog timestamps.
+	fmt.Printf("\nhams apply complete: %d installed, %d updated, %d removed, %d skipped, %d failed (took %dms)\n",
+		merged.Installed, merged.Updated, merged.Removed, merged.Skipped, merged.Failed, time.Since(applyStart).Milliseconds())
 
 	// Cycle 235: name the providers whose Apply produced any failed
 	// action. Symmetric with cycle 231's JSON failed_providers list
@@ -898,7 +908,7 @@ func reportNoProvidersMatch(cfg *config.Config, profileDir string, stageOneProvi
 // state_save_errors, probe_failed_providers, success, dry_run) with
 // per-field nil-to-empty normalization pushed the surrounding
 // `if flags.JSON` block past golangci-lint's nestif threshold.
-func buildApplyJSONSummary(merged provider.ExecuteResult, failedProviders, skippedProviders, stateSaveFailures, probeFailedProviders []string) map[string]any {
+func buildApplyJSONSummary(merged provider.ExecuteResult, failedProviders, skippedProviders, stateSaveFailures, probeFailedProviders []string, elapsedMs int64) map[string]any {
 	// Normalize nil → empty slice so consumers don't need to
 	// nil-check before iterating.
 	failedNorm := failedProviders
@@ -924,6 +934,9 @@ func buildApplyJSONSummary(merged provider.ExecuteResult, failedProviders, skipp
 	// (presence == dry-run because the dry-run path uses
 	// emitDryRunJSON). Always-present `dry_run` field gives
 	// machine consumers a stable schema across modes.
+	// Cycle 238: elapsed_ms surfaces total wall-clock duration so
+	// CI dashboards can alert on regression. Same field name +
+	// units as runRefresh's cycle-238 addition.
 	return map[string]any{
 		"installed":              merged.Installed,
 		"updated":                merged.Updated,
@@ -936,6 +949,7 @@ func buildApplyJSONSummary(merged provider.ExecuteResult, failedProviders, skipp
 		"probe_failed_providers": probeFailNorm,
 		"success":                merged.Failed == 0 && len(skippedProviders) == 0 && len(stateSaveFailures) == 0,
 		"dry_run":                false,
+		"elapsed_ms":             elapsedMs,
 	}
 }
 

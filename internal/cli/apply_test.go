@@ -1149,10 +1149,14 @@ func TestRunApply_JSONOutput(t *testing.T) {
 	if err := json.Unmarshal([]byte(out), &data); err != nil {
 		t.Fatalf("output not valid JSON: %v\nraw: %q", err, out)
 	}
-	for _, key := range []string{"installed", "updated", "removed", "skipped", "failed", "failed_providers", "skipped_providers", "state_save_errors", "success", "dry_run"} {
+	for _, key := range []string{"installed", "updated", "removed", "skipped", "failed", "failed_providers", "skipped_providers", "state_save_errors", "success", "dry_run", "elapsed_ms"} {
 		if _, ok := data[key]; !ok {
 			t.Errorf("JSON missing required key %q; got: %v", key, data)
 		}
+	}
+	// Cycle 238: elapsed_ms must be a non-negative number.
+	if elapsed, ok := data["elapsed_ms"].(float64); !ok || elapsed < 0 {
+		t.Errorf("elapsed_ms = %v (ok=%v), want non-negative", data["elapsed_ms"], ok)
 	}
 	if data["success"] != true {
 		t.Errorf("success = %v, want true on happy-path apply", data["success"])

@@ -216,10 +216,14 @@ func TestRunRefresh_JSONOutput(t *testing.T) {
 		t.Fatalf("output not valid JSON: %v\nraw: %q", err, out)
 	}
 
-	for _, key := range []string{"probed", "planned", "save_failures", "probe_failures", "probe_failed_providers", "success", "dry_run"} {
+	for _, key := range []string{"probed", "planned", "save_failures", "probe_failures", "probe_failed_providers", "success", "dry_run", "elapsed_ms"} {
 		if _, ok := data[key]; !ok {
 			t.Errorf("JSON missing required key %q; got: %v", key, data)
 		}
+	}
+	// Cycle 238: elapsed_ms must be a non-negative number.
+	if elapsed, ok := data["elapsed_ms"].(float64); !ok || elapsed < 0 {
+		t.Errorf("elapsed_ms = %v (ok=%v), want non-negative number", data["elapsed_ms"], ok)
 	}
 	if data["success"] != true {
 		t.Errorf("success = %v, want true", data["success"])
