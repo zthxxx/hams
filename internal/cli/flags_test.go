@@ -105,6 +105,68 @@ func TestSplitHamsFlags_ExplicitTrueKeepsFlag(t *testing.T) {
 	}
 }
 
+// TestSplitHamsFlags_LastOccurrenceWinsWhenFalsey locks in cycle 201:
+// when a key appears more than once and the LAST occurrence is false-y,
+// the key must NOT appear in the resulting map. Pre-cycle-201 the
+// `hamsFlagFalsey` branch just did `continue`, leaving the map entry
+// from an earlier bare (truthy) occurrence — so `--hams-local --hams-local=false`
+// wrongly enabled `local`, flipping the user's last-stated intent.
+// Rapid's property test caught this as: "last-occurrence of 'a' is false-y but
+// key is in map".
+func TestSplitHamsFlags_LastOccurrenceWinsWhenFalsey(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name string
+		args []string
+		key  string
+	}{
+		{"bare-then-false", []string{"--hams-local", "--hams-local=false"}, "local"},
+		{"bare-then-zero", []string{"--hams-local", "--hams-local=0"}, "local"},
+		{"true-then-false", []string{"--hams-local=true", "--hams-local=false"}, "local"},
+		{"many-bares-then-zero", []string{"--hams-a", "--hams-a", "--hams-a", "--hams-a", "--hams-a=0"}, "a"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			hams, _ := splitHamsFlags(tc.args)
+			if _, ok := hams[tc.key]; ok {
+				t.Errorf("hams[%q] should NOT exist (last occurrence is false-y); got map %v", tc.key, hams)
+			}
+		})
+	}
+}
+
+// TestSplitHamsFlags_LastOccurrenceWinsWhenTruthy is the symmetric
+// invariant: if a falsey occurrence appears FIRST and a truthy one
+// LAST, the key must be present with the truthy value — so
+// `--hams-local=false --hams-local` correctly enables the flag.
+func TestSplitHamsFlags_LastOccurrenceWinsWhenTruthy(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name string
+		args []string
+		key  string
+		want string
+	}{
+		{"false-then-bare", []string{"--hams-local=false", "--hams-local"}, "local", ""},
+		{"zero-then-true", []string{"--hams-local=0", "--hams-local=true"}, "local", "true"},
+		{"false-then-value", []string{"--hams-tag=false", "--hams-tag=devtools"}, "tag", "devtools"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			hams, _ := splitHamsFlags(tc.args)
+			got, ok := hams[tc.key]
+			if !ok {
+				t.Fatalf("hams[%q] should exist (last occurrence is truthy); got map %v", tc.key, hams)
+			}
+			if got != tc.want {
+				t.Errorf("hams[%q] = %q, want %q", tc.key, got, tc.want)
+			}
+		})
+	}
+}
+
 func TestSplitHamsFlags_ForceForward(t *testing.T) {
 	t.Parallel()
 	hams, pass := splitHamsFlags([]string{"install", "--", "--hams-tag=foo", "--cask"})

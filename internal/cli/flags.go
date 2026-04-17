@@ -47,6 +47,16 @@ func splitHamsFlags(args []string) (hamsFlags map[string]string, passthrough []s
 			key, value := parseHamsFlag(arg[len(hamsFlagPrefix):])
 			if hamsFlagFalsey(value) {
 				// Cycle 162: explicit false-y values disable the flag.
+				// Cycle 201: the falsey branch MUST also delete any
+				// earlier truthy occurrence of the same key so
+				// last-occurrence-wins is honored. Pre-cycle-201 code
+				// just did `continue`, leaving a stale `hamsFlags[key]
+				// = ""` set by the earlier bare flag — downstream
+				// presence checks (`if _, ok := hamsFlags["local"]`)
+				// then saw the flag as enabled even though the user's
+				// LAST invocation was `--hams-local=false`. Found by
+				// the rapid property test.
+				delete(hamsFlags, key)
 				continue
 			}
 			hamsFlags[key] = value
