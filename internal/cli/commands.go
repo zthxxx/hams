@@ -239,6 +239,38 @@ func runRefresh(ctx context.Context, flags *provider.GlobalFlags, registry *prov
 	probed := len(probeResults)
 	planned := len(providers)
 	providersNoun := pluralize(planned, "provider", "providers")
+
+	// Cycle 182: emit a JSON summary when --json is set. CI scripts
+	// that run `hams refresh` in a loop need to detect partial
+	// failures programmatically rather than parsing the prose output.
+	// The non-JSON branches print the same fields in human form.
+	if flags.JSON {
+		data := map[string]any{
+			"probed":         probed,
+			"planned":        planned,
+			"save_failures":  saveFailures,
+			"probe_failures": planned - probed,
+			"success":        probed == planned && len(saveFailures) == 0,
+		}
+		if saveFailures == nil {
+			data["save_failures"] = []string{}
+		}
+		out, mErr := json.MarshalIndent(data, "", "  ")
+		if mErr != nil {
+			return fmt.Errorf("marshaling refresh JSON: %w", mErr)
+		}
+		fmt.Println(string(out))
+		if probed == planned && len(saveFailures) == 0 {
+			return nil
+		}
+		return hamserr.NewUserError(hamserr.ExitPartialFailure,
+			fmt.Sprintf("%d of %d providers failed to probe, %d state saves failed",
+				planned-probed, planned, len(saveFailures)),
+			"Check slog output above for the specific error(s)",
+			"Use '--debug' for detailed error output",
+		)
+	}
+
 	if probed == planned && len(saveFailures) == 0 {
 		fmt.Printf("Refresh complete: %d %s probed\n", planned, providersNoun)
 		return nil
