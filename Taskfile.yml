@@ -408,11 +408,11 @@ tasks:
       - go mod tidy
 
   check:
-    desc: Run all local checks (fmt, lint, unit tests) — no Docker required
+    desc: Run all local checks (fmt, lint, all tests includes e2e)
     cmds:
       - task: fmt
       - task: lint
-      - task: test:unit
+      - task: test
 
   clean:
     desc: Clean build artifacts

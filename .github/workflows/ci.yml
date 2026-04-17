@@ -176,7 +176,7 @@ jobs:
       fail-fast: false
       matrix:
         # 11 linux-containerizable builtin providers. macOS-only providers
-        # (defaults, duti, mas) are intentionally excluded — no docker path.
+        # (defaults, duti, mas) are intentionally excluded
         provider:
           - apt
           - ansible

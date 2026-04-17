@@ -2640,8 +2640,7 @@ exactly two files:
 **In scope** (11 providers): apt, ansible, bash, cargo, git (config +
 clone), goinstall, homebrew, npm, pnpm, uv, vscodeext.
 
-**Out of scope** (macOS-only): defaults, duti, mas. No docker path
-exists; a macOS CI runner would be required.
+**Out of scope** (macOS-only): defaults, duti, mas. a macOS CI runner would be required.
 
 **Base image**:
 
