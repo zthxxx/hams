@@ -4,8 +4,11 @@ package npm
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io/fs"
 	"log/slog"
+	"path/filepath"
 	"strings"
 
 	"github.com/zthxxx/hams/internal/config"
@@ -226,10 +229,23 @@ func (p *Provider) handleInstall(ctx context.Context, args []string, hamsFlags m
 	if err != nil {
 		return err
 	}
+	sf, err := p.loadOrCreateStateFile(flags)
+	if err != nil {
+		return err
+	}
 	for _, pkg := range pkgs {
 		hf.AddApp(tagCLI, pkg, "")
+		// Cycle 204: state write is additive. Without this,
+		// `hams list --only=npm` returned empty right after a
+		// successful install because `list` reads state only.
+		// Same auto-record gap as cycle 96 (homebrew) / 202 (mas) /
+		// 203 (cargo).
+		sf.SetResource(pkg, state.StateOK)
 	}
-	return hf.Write()
+	if writeErr := hf.Write(); writeErr != nil {
+		return writeErr
+	}
+	return sf.Save(p.statePath(flags))
 }
 
 // handleRemove runs `npm uninstall -g <pkg>` via the CmdRunner seam
@@ -263,10 +279,41 @@ func (p *Provider) handleRemove(ctx context.Context, args []string, hamsFlags ma
 	if err != nil {
 		return err
 	}
+	sf, err := p.loadOrCreateStateFile(flags)
+	if err != nil {
+		return err
+	}
 	for _, pkg := range pkgs {
 		hf.RemoveApp(pkg)
+		sf.SetResource(pkg, state.StateRemoved)
 	}
-	return hf.Write()
+	if writeErr := hf.Write(); writeErr != nil {
+		return writeErr
+	}
+	return sf.Save(p.statePath(flags))
+}
+
+// statePath returns the absolute path to npm.state.yaml for the
+// active machine. Mirrors homebrew/mas/cargo.statePath.
+func (p *Provider) statePath(flags *provider.GlobalFlags) string {
+	cfg := p.effectiveConfig(flags)
+	return filepath.Join(cfg.StateDir(), p.Manifest().FilePrefix+".state.yaml")
+}
+
+// loadOrCreateStateFile reads npm.state.yaml or returns a fresh one
+// when the file is absent. Non-ErrNotExist load failures propagate so
+// the CLI handler surfaces a user-facing error instead of silently
+// overwriting unparseable state.
+func (p *Provider) loadOrCreateStateFile(flags *provider.GlobalFlags) (*state.File, error) {
+	cfg := p.effectiveConfig(flags)
+	sf, err := state.Load(p.statePath(flags))
+	if err == nil {
+		return sf, nil
+	}
+	if errors.Is(err, fs.ErrNotExist) {
+		return state.New(p.Name(), cfg.MachineID), nil
+	}
+	return nil, fmt.Errorf("loading npm state %s: %w", p.statePath(flags), err)
 }
 
 // packageArgs filters positional tokens from args: flags (leading `-`)
