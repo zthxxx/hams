@@ -764,6 +764,19 @@ func runApply(ctx context.Context, flags *provider.GlobalFlags, registry *provid
 		}()
 	}
 
+	// Cycle 254: sort the failure-provider lists alphabetically so
+	// both the dry-run and real-run paths emit them in a canonical
+	// order. Pre-cycle-254 these slices appended providers in DAG /
+	// provider-priority iteration order — stable for a given config
+	// but not alphabetical, inconsistent with `probe_failed_providers`
+	// (cycle 232) and the text-mode `failedProviders` warning (cycle
+	// 235). Sort here so every downstream consumer (dry-run JSON,
+	// dry-run text, real-run JSON, real-run text) sees the same
+	// alphabetical order.
+	sort.Strings(failedProviders)
+	sort.Strings(skippedProviders)
+	sort.Strings(stateSaveFailures)
+
 	// Dry-run: all providers have been planned and printed; skip
 	// enrichment and the execute-phase summary. Report skipped providers
 	// and return ExitPartialFailure so CI scripts and `hams apply`
@@ -869,10 +882,11 @@ func runApply(ctx context.Context, flags *provider.GlobalFlags, registry *provid
 	// summary said `... %d failed` (count only) — interactive users
 	// had to grep slog to find WHICH providers failed.
 	if len(failedProviders) > 0 {
-		sortedFailed := append([]string(nil), failedProviders...)
-		sort.Strings(sortedFailed)
+		// Cycle 254: failedProviders is now sorted upstream (right
+		// after merged := provider.MergeResults). Drop the local
+		// copy+sort.
 		fmt.Printf("Warning: %d provider(s) had failed actions: %s\n",
-			len(sortedFailed), strings.Join(sortedFailed, ", "))
+			len(failedProviders), strings.Join(failedProviders, ", "))
 		fmt.Println("  Re-run with --debug for the underlying error from each provider's runner.")
 	}
 	if len(skippedProviders) > 0 {

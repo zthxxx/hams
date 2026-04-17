@@ -1484,6 +1484,92 @@ func TestRunApply_DryRunJSONHasNoProse(t *testing.T) {
 	_ = storeDir
 }
 
+// TestRunApply_JSONOutput_FailureListsAreSorted locks in cycle 254:
+// when multiple providers land in `failed_providers` /
+// `skipped_providers` / `state_save_errors`, the JSON output MUST
+// sort the names alphabetically. Pre-cycle-254 these slices held
+// DAG-iteration order — which can differ from alphabetical when
+// providers have `DependsOn` relationships that force a
+// non-alphabetical topological sort. Inconsistent with
+// `probe_failed_providers` (cycle 232 sorts that one) and the
+// text-mode `failedProviders` warning (cycle 235 sorts that one).
+// With cycle 254 every JSON failure list is alphabetical, matching
+// probe_failed_providers and text-mode text.
+//
+// Construct a dependency chain that forces a non-alphabetical DAG
+// order: zeta (root) → alpha (depends on zeta) → beta (depends on
+// alpha). DAG topo-sort: zeta, alpha, beta. If cycle 254's sort is
+// removed, failed_providers would land in that same order. With the
+// sort, it becomes alpha, beta, zeta.
+func TestRunApply_JSONOutput_FailureListsAreSorted(t *testing.T) {
+	// Priority slice doesn't affect DAG resolution once DependsOn
+	// edges are set; we just need them registered.
+	_, profileDir, _, flags := setupApplyTestEnv(t, []string{"zeta", "alpha", "beta"})
+	flags.JSON = true
+
+	for _, name := range []string{"zeta", "alpha", "beta"} {
+		writeApplyTestFile(t, filepath.Join(profileDir, name+".hams.yaml"),
+			"packages:\n  - app: always-fails\n")
+	}
+
+	// Dependency chain zeta → alpha → beta forces DAG order
+	// zeta, alpha, beta (non-alphabetical).
+	depsByName := map[string][]provider.DependOn{
+		"zeta":  nil,
+		"alpha": {{Provider: "zeta"}},
+		"beta":  {{Provider: "alpha"}},
+	}
+
+	registry := provider.NewRegistry()
+	for _, name := range []string{"zeta", "alpha", "beta"} {
+		n := name
+		p := &applyTestProvider{
+			manifest: provider.Manifest{
+				Name: n, DisplayName: n, FilePrefix: n,
+				Platforms: []provider.Platform{provider.PlatformAll},
+				DependsOn: depsByName[n],
+			},
+			planFn: func(_ context.Context, _ *hamsfile.File, _ *state.File) ([]provider.Action, error) {
+				return []provider.Action{{ID: "always-fails", Type: provider.ActionInstall}}, nil
+			},
+			applyFn: func(_ context.Context, _ provider.Action) error {
+				return fmt.Errorf("synthetic failure from %s", n)
+			},
+		}
+		if err := registry.Register(p); err != nil {
+			t.Fatalf("Register %s: %v", n, err)
+		}
+	}
+
+	var data map[string]any
+	out := captureStdout(t, func() {
+		err := runApply(context.Background(), flags, registry, sudo.NoopAcquirer{}, "", true, "", "", false, bootstrapMode{})
+		// Expect ExitPartialFailure UFE — apply had failing actions.
+		if err == nil {
+			t.Fatalf("runApply should error when every provider fails")
+		}
+	})
+	if err := json.Unmarshal([]byte(strings.TrimSpace(out)), &data); err != nil {
+		t.Fatalf("output not parseable as JSON: %v\nraw: %q", err, out)
+	}
+
+	failedProviders, ok := data["failed_providers"].([]any)
+	if !ok || len(failedProviders) != 3 {
+		t.Fatalf("failed_providers should have 3 entries; got %v", data["failed_providers"])
+	}
+	want := []string{"alpha", "beta", "zeta"}
+	for i, expected := range want {
+		got, ok := failedProviders[i].(string)
+		if !ok {
+			t.Fatalf("failed_providers[%d] not a string: %T", i, failedProviders[i])
+		}
+		if got != expected {
+			t.Errorf("failed_providers[%d] = %q, want %q (list should be alphabetical, not DAG order zeta/alpha/beta)",
+				i, got, expected)
+		}
+	}
+}
+
 // TestRunApply_DryRunFromRepoNotCached_JSONEmits locks in cycle 251:
 // when `hams --json --dry-run apply --from-repo=<X>` is invoked and
 // <X> is not a local path AND not already cached under
