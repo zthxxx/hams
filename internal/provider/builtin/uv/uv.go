@@ -3,8 +3,11 @@ package uv
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io/fs"
 	"log/slog"
+	"path/filepath"
 	"strings"
 
 	"github.com/zthxxx/hams/internal/config"
@@ -191,10 +194,19 @@ func (p *Provider) handleInstall(ctx context.Context, args []string, hamsFlags m
 	if err != nil {
 		return err
 	}
+	sf, err := p.loadOrCreateStateFile(flags)
+	if err != nil {
+		return err
+	}
 	for _, tool := range tools {
 		hf.AddApp(tagCLI, tool, "")
+		// Cycle 206: state write matches 96/202/203/204/205.
+		sf.SetResource(tool, state.StateOK)
 	}
-	return hf.Write()
+	if writeErr := hf.Write(); writeErr != nil {
+		return writeErr
+	}
+	return sf.Save(p.statePath(flags))
 }
 
 // handleRemove runs `uv tool uninstall <tool>` via the CmdRunner seam
@@ -228,10 +240,39 @@ func (p *Provider) handleRemove(ctx context.Context, args []string, hamsFlags ma
 	if err != nil {
 		return err
 	}
+	sf, err := p.loadOrCreateStateFile(flags)
+	if err != nil {
+		return err
+	}
 	for _, tool := range tools {
 		hf.RemoveApp(tool)
+		sf.SetResource(tool, state.StateRemoved)
 	}
-	return hf.Write()
+	if writeErr := hf.Write(); writeErr != nil {
+		return writeErr
+	}
+	return sf.Save(p.statePath(flags))
+}
+
+// statePath returns the absolute path to uv.state.yaml for the
+// active machine. Mirrors homebrew/mas/cargo/npm/pnpm.statePath.
+func (p *Provider) statePath(flags *provider.GlobalFlags) string {
+	cfg := p.effectiveConfig(flags)
+	return filepath.Join(cfg.StateDir(), p.Manifest().FilePrefix+".state.yaml")
+}
+
+// loadOrCreateStateFile reads uv.state.yaml or returns a fresh one
+// when the file is absent. Non-ErrNotExist load failures propagate.
+func (p *Provider) loadOrCreateStateFile(flags *provider.GlobalFlags) (*state.File, error) {
+	cfg := p.effectiveConfig(flags)
+	sf, err := state.Load(p.statePath(flags))
+	if err == nil {
+		return sf, nil
+	}
+	if errors.Is(err, fs.ErrNotExist) {
+		return state.New(p.Name(), cfg.MachineID), nil
+	}
+	return nil, fmt.Errorf("loading uv state %s: %w", p.statePath(flags), err)
 }
 
 // toolArgs filters positional tokens: flags (leading `-`) are excluded.
