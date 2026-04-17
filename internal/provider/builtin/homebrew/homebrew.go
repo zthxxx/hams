@@ -485,9 +485,23 @@ func (p *Provider) handleInstall(ctx context.Context, args []string, hamsFlags m
 	if tag == tagCLI && caskFlag {
 		tag = tagCask
 	}
-	// Auto-detect tap format (user/repo with exactly one slash, no formula suffix).
-	if tag == tagCLI && len(packages) > 0 && isTapFormat(packages[0]) {
-		tag = "tap"
+	// Cycle 176: reject tap-format args in `brew install`. A user
+	// typing `hams brew install user/repo` almost always intends a
+	// tap, but `brew install user/repo` actually triggers a `brew
+	// tap` as a side effect THEN tries to install a formula named
+	// "repo" from that tap (which usually doesn't exist) — leaving
+	// the host tapped but with no hamsfile/state record of it. The
+	// pre-cycle-176 auto-tag-as-"tap" code at this point was a
+	// no-op safety net that recorded under "tap" tag IF the install
+	// somehow succeeded; in practice it nearly always failed and
+	// the tap leaked. Send the user at the dedicated `brew tap`
+	// verb (handleTap) which auto-records cleanly.
+	if len(packages) > 0 && isTapFormat(packages[0]) {
+		return hamserr.NewUserError(hamserr.ExitUsageError,
+			fmt.Sprintf("brew install does not support tap-format args (%q looks like user/repo)", packages[0]),
+			"Use `hams brew tap "+packages[0]+"` instead — it taps the repo AND auto-records it",
+			"To install a formula from a tap, first tap it then install: hams brew tap user/repo && hams brew install <formula>",
+		)
 	}
 	if len(packages) == 0 {
 		return hamserr.NewUserError(hamserr.ExitUsageError,

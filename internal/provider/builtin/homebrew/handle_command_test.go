@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/zthxxx/hams/internal/config"
+	hamserr "github.com/zthxxx/hams/internal/error"
 	"github.com/zthxxx/hams/internal/hamsfile"
 	"github.com/zthxxx/hams/internal/provider"
 	"github.com/zthxxx/hams/internal/state"
@@ -85,6 +86,56 @@ func (h *brewHarness) stateResources() map[string]state.ResourceState {
 		out[id] = r.State
 	}
 	return out
+}
+
+// TestHandleCommand_TapFormatInInstallErrors locks in cycle 176:
+// `hams brew install user/repo` previously had a quirky path —
+// `brew install user/repo` triggers a `brew tap` as a side effect
+// then tries to install a formula named "repo" from that tap (which
+// usually doesn't exist), leaving the host tapped but with no
+// hamsfile record of the tap. Now: detect tap-format args at the
+// install verb and direct the user at `hams brew tap` instead.
+func TestHandleCommand_TapFormatInInstallErrors(t *testing.T) {
+	t.Parallel()
+	h := newBrewHarness(t)
+
+	err := h.provider.HandleCommand(context.Background(),
+		[]string{"install", "homebrew/cask-fonts"}, nil, h.flags)
+	if err == nil {
+		t.Fatal("expected error for tap-format arg in install")
+	}
+	if !strings.Contains(err.Error(), "tap-format") {
+		t.Errorf("error should mention 'tap-format'; got %q", err.Error())
+	}
+	// Suggestions must point at `hams brew tap`.
+	var ufe *hamserr.UserFacingError
+	if !errors.As(err, &ufe) {
+		t.Fatalf("expected *UserFacingError, got %T", err)
+	}
+	joined := strings.Join(ufe.Suggestions, " | ")
+	if !strings.Contains(joined, "hams brew tap") {
+		t.Errorf("suggestions should mention 'hams brew tap'; got %q", joined)
+	}
+	// Brew MUST NOT have been invoked.
+	if h.runner.CallCount(fakeOpInstall, "homebrew/cask-fonts") > 0 {
+		t.Errorf("brew install must not be invoked for tap-format args")
+	}
+}
+
+// TestHandleCommand_FormulaInstallStillWorks asserts the cycle-176
+// fix doesn't break legitimate non-tap formula installs (regression
+// gate: ensure `hams brew install htop` still works).
+func TestHandleCommand_FormulaInstallStillWorks(t *testing.T) {
+	t.Parallel()
+	h := newBrewHarness(t)
+
+	if err := h.provider.HandleCommand(context.Background(),
+		[]string{"install", "htop"}, nil, h.flags); err != nil {
+		t.Fatalf("install: %v", err)
+	}
+	if h.runner.CallCount(fakeOpInstall, "htop") != 1 {
+		t.Errorf("brew install(htop) calls = %d, want 1", h.runner.CallCount(fakeOpInstall, "htop"))
+	}
 }
 
 // TestHandleCommand_CaskWithConflictingTagErrors locks in cycle 175:
