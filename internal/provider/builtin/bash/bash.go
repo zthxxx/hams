@@ -404,3 +404,35 @@ func (p *Provider) effectiveConfig(flags *provider.GlobalFlags) *config.Config {
 	}
 	return &cfg
 }
+
+// HamsfileHasSudoEntries reports whether the given bash hamsfile
+// contains at least one entry with `sudo: true`. Used by runApply's
+// cycle-227 sudo-gating check: when bash is in the planned set and
+// its hamsfile has sudo entries, the outer sudoAcq.Acquire must be
+// called so the interactive prompt fires ONCE upfront rather than
+// N times (one per sudo script) during execution.
+//
+// Returns false on any error (missing hamsfile, malformed YAML,
+// etc.) — fail-open here is safer than failing-closed because a
+// false positive forces a harmless sudo prompt, while a false
+// negative causes the multiple-prompt regression this helper
+// exists to prevent. Callers can log the error separately if they
+// want to surface it.
+//
+// Cycle 232.
+func HamsfileHasSudoEntries(path string) bool {
+	hf, err := hamsfile.Read(path)
+	if err != nil {
+		return false
+	}
+	resources, err := bashParseResources(hf)
+	if err != nil {
+		return false
+	}
+	for _, r := range resources {
+		if r.Sudo {
+			return true
+		}
+	}
+	return false
+}

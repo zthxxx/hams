@@ -24,6 +24,7 @@ import (
 	"github.com/zthxxx/hams/internal/hamsfile"
 	"github.com/zthxxx/hams/internal/logging"
 	"github.com/zthxxx/hams/internal/provider"
+	"github.com/zthxxx/hams/internal/provider/builtin/bash"
 	"github.com/zthxxx/hams/internal/state"
 	"github.com/zthxxx/hams/internal/sudo"
 )
@@ -495,7 +496,7 @@ func runApply(ctx context.Context, flags *provider.GlobalFlags, registry *provid
 	// require sudo SHALL NOT prompt for credentials". The check
 	// runs after dry-run + filter so `--only=cargo` on an apt+cargo
 	// profile correctly suppresses the prompt.
-	if !flags.DryRun && providersNeedSudo(sorted) {
+	if !flags.DryRun && providersNeedSudo(sorted, profileDir) {
 		if sudoErr := sudoAcq.Acquire(ctx); sudoErr != nil {
 			// Cycle 228: cli-architecture/spec.md §"Sudo not granted"
 			// scenario mandates exit code 10 (ExitSudoError) when the
@@ -1117,14 +1118,32 @@ func parseCSV(s string) map[string]bool {
 // provider in dry-run mode. Groups by action type so the user can
 // quickly scan what install / update / remove operations would run.
 // providersNeedSudo reports whether any provider in the slice has
-// `Manifest.RequiresSudo == true`. Cycle 227 — wired into runApply's
-// startup path so the password prompt only appears when an apt-bearing
-// (or future-sudo-bearing) profile is being applied. Empty slice
-// returns false, consistent with the early-return paths upstream.
-func providersNeedSudo(providers []provider.Provider) bool {
+// `Manifest.RequiresSudo == true`, OR (cycle 232) is a bash provider
+// whose hamsfile contains at least one `sudo: true` entry.
+//
+// Cycle 227 wired Manifest.RequiresSudo into runApply's startup path
+// so the password prompt only fires for apt-bearing profiles. But bash
+// can't declare RequiresSudo statically — each bash hamsfile entry
+// optionally sets `sudo: true`, and that's not knowable until the
+// hamsfile is read. Pre-cycle-232: a bash-only profile with sudo: true
+// scripts silently skipped sudoAcq.Acquire, then prompted for
+// password EACH TIME a sudo script ran during Execute. Cycle 232:
+// detect sudo-using bash hamsfiles via bash.HamsfileHasSudoEntries
+// and surface them as a sudo-needing provider so the upfront
+// acquire fires ONCE.
+//
+// profileDir is used to resolve the bash hamsfile path when a bash
+// provider is in the slice.
+func providersNeedSudo(providers []provider.Provider, profileDir string) bool {
 	for _, p := range providers {
 		if p.Manifest().RequiresSudo {
 			return true
+		}
+		if p.Manifest().Name == "bash" {
+			bashPath := filepath.Join(profileDir, "bash.hams.yaml")
+			if bash.HamsfileHasSudoEntries(bashPath) {
+				return true
+			}
 		}
 	}
 	return false
