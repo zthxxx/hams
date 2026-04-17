@@ -16,7 +16,13 @@ import (
 	"github.com/zthxxx/hams/internal/hamsfile"
 	"github.com/zthxxx/hams/internal/provider"
 	"github.com/zthxxx/hams/internal/state"
+	"github.com/zthxxx/hams/internal/urn"
 )
+
+// bashProviderName is the canonical manifest name and URN namespace
+// segment. Used in the Manifest + URN validation so a future rename
+// (if any) is a one-line change.
+const bashProviderName = "bash"
 
 // bootstrapExecCommand is the exec seam used by RunScript. Replaced in
 // tests that want to assert the command line without forking a real
@@ -289,6 +295,24 @@ func bashParseResources(f *hamsfile.File) (map[string]bashResource, error) {
 						"run", res.Run, "check", res.Check)
 				}
 				continue
+			}
+			// Cycle 229: warn on URN shape mismatch per schema-design
+			// spec §"Malformed URN is rejected" / "URN with colon in
+			// resource ID is rejected". The spec SHALL-rejects these
+			// at the hamsfile SDK level; we soft-warn (continue
+			// processing) to stay backwards-compatible with hamsfiles
+			// that pre-date this guard. Users see a clear slog.Warn in
+			// the session log (cycle 65/67 dual-sink) instead of
+			// silently accumulating malformed entries.
+			if u, parseErr := urn.Parse(id); parseErr != nil || u.Provider != bashProviderName {
+				var reason string
+				if parseErr != nil {
+					reason = parseErr.Error()
+				} else {
+					reason = fmt.Sprintf("urn provider is %q, expected %q", u.Provider, bashProviderName)
+				}
+				slog.Warn("bash provider: urn does not match 'urn:hams:bash:<id>' shape — processing anyway, but consider fixing",
+					"urn", id, "reason", reason)
 			}
 			// Cycle 193: warn on duplicate URNs. Silent last-write-
 			// wins means ComputePlan's first-occurrence-wins dedup

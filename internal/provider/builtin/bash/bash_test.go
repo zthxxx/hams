@@ -433,6 +433,78 @@ install:
 	}
 }
 
+// TestBashParseResources_WarnsOnMalformedURN locks in cycle 229:
+// a bash hamsfile entry whose `urn:` field doesn't match the
+// urn:hams:bash:<id> shape (per schema-design spec) must emit a
+// slog.Warn describing the mismatch, while still processing the
+// entry so pre-cycle-229 hamsfiles keep working (soft-warn
+// semantic, not a hard reject).
+func TestBashParseResources_WarnsOnMalformedURN(t *testing.T) {
+	origStderr := os.Stderr
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("Pipe: %v", err)
+	}
+	os.Stderr = w
+	defer func() { os.Stderr = origStderr }()
+	defer slog.SetDefault(slog.Default())
+	slog.SetDefault(slog.New(slog.NewTextHandler(w, nil)))
+
+	// Three cases: missing 'urn:' prefix, wrong provider, and one
+	// valid entry that should NOT emit a warning.
+	yamlDoc := `
+install:
+  - urn: "not-a-real-urn"
+    run: "echo malformed"
+  - urn: "urn:hams:apt:wrong-provider"
+    run: "echo wrong"
+  - urn: "urn:hams:bash:valid"
+    run: "echo ok"
+`
+	var root yaml.Node
+	if uErr := yaml.Unmarshal([]byte(yamlDoc), &root); uErr != nil {
+		t.Fatalf("unmarshal: %v", uErr)
+	}
+	hf := &hamsfile.File{Path: "test.yaml", Root: &root}
+
+	resourceByID, parseErr := bashParseResources(hf)
+	if parseErr != nil {
+		t.Fatalf("bashParseResources: %v", parseErr)
+	}
+
+	if cerr := w.Close(); cerr != nil {
+		t.Logf("close pipe writer: %v", cerr)
+	}
+	stderrBuf, readErr := io.ReadAll(r)
+	if readErr != nil {
+		t.Fatalf("read pipe: %v", readErr)
+	}
+	if cerr := r.Close(); cerr != nil {
+		t.Logf("close pipe reader: %v", cerr)
+	}
+
+	// Soft-warn: all three entries still in the map.
+	for _, id := range []string{"not-a-real-urn", "urn:hams:apt:wrong-provider", "urn:hams:bash:valid"} {
+		if _, ok := resourceByID[id]; !ok {
+			t.Errorf("entry %q should be parsed despite warning; got map %v", id, resourceByID)
+		}
+	}
+
+	stderr := string(stderrBuf)
+	if !strings.Contains(stderr, "not-a-real-urn") {
+		t.Errorf("expected warning naming 'not-a-real-urn'; stderr=%q", stderr)
+	}
+	if !strings.Contains(stderr, "urn:hams:apt:wrong-provider") {
+		t.Errorf("expected warning naming the wrong-provider URN; stderr=%q", stderr)
+	}
+	// Valid URN MUST NOT produce a warning. Count the "does not match" substring —
+	// should appear exactly twice (once per malformed entry), never three times.
+	count := strings.Count(stderr, "urn does not match")
+	if count != 2 {
+		t.Errorf("expected exactly 2 URN-mismatch warnings (one per malformed entry); got %d in %q", count, stderr)
+	}
+}
+
 // TestPlan_ParsesAndEnrichesActions drives bashParseResources → Plan
 // end to end: a hamsfile with two bash URNs (one with check+sudo, one
 // plain) should produce two Install actions, each enriched with the
