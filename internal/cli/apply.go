@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -693,6 +694,48 @@ func runApply(ctx context.Context, flags *provider.GlobalFlags, registry *provid
 	}
 
 	merged := provider.MergeResults(allResults)
+
+	// Cycle 183: emit a JSON summary when --json is set. CI scripts
+	// that orchestrate multi-machine applies need to detect partial
+	// failures programmatically rather than parsing the prose output.
+	// Symmetric with cycles 181 (version) / 182 (refresh).
+	if flags.JSON {
+		// Normalize nil → empty slice so consumers don't need to
+		// nil-check before iterating.
+		skippedNorm := skippedProviders
+		if skippedNorm == nil {
+			skippedNorm = []string{}
+		}
+		saveFailNorm := stateSaveFailures
+		if saveFailNorm == nil {
+			saveFailNorm = []string{}
+		}
+		data := map[string]any{
+			"installed":         merged.Installed,
+			"updated":           merged.Updated,
+			"removed":           merged.Removed,
+			"skipped":           merged.Skipped,
+			"failed":            merged.Failed,
+			"skipped_providers": skippedNorm,
+			"state_save_errors": saveFailNorm,
+			"success":           merged.Failed == 0 && len(skippedProviders) == 0 && len(stateSaveFailures) == 0,
+		}
+		out, mErr := json.MarshalIndent(data, "", "  ")
+		if mErr != nil {
+			return fmt.Errorf("marshaling apply JSON: %w", mErr)
+		}
+		fmt.Println(string(out))
+		if merged.Failed > 0 || len(skippedProviders) > 0 || len(stateSaveFailures) > 0 {
+			return hamserr.NewUserError(hamserr.ExitPartialFailure,
+				fmt.Sprintf("%d resources failed, %d providers skipped, %d state saves failed",
+					merged.Failed, len(skippedProviders), len(stateSaveFailures)),
+				"Run 'hams apply' again to retry failed resources",
+				"Use '--debug' for detailed error output",
+			)
+		}
+		return nil
+	}
+
 	fmt.Printf("\nhams apply complete: %d installed, %d updated, %d removed, %d skipped, %d failed\n",
 		merged.Installed, merged.Updated, merged.Removed, merged.Skipped, merged.Failed)
 

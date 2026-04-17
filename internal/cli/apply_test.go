@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -945,6 +946,63 @@ func TestRunApply_PreApplyStateSaveFailureListIsAlphabetical(t *testing.T) {
 	want := []string{"alpha", "mu", "zeta"}
 	if !slices.Equal(first, want) {
 		t.Errorf("provider error order = %v, want %v (alphabetical)", first, want)
+	}
+
+	_ = storeDir
+}
+
+// TestRunApply_JSONOutput locks in cycle 183: `hams --json apply`
+// previously printed the prose summary and ignored --json. CI
+// scripts orchestrating multi-machine applies need a parseable
+// shape to detect partial failures programmatically.
+func TestRunApply_JSONOutput(t *testing.T) {
+	storeDir, profileDir, _, flags := setupApplyTestEnv(t, []string{"alpha"})
+	flags.JSON = true
+
+	writeApplyTestFile(t, filepath.Join(profileDir, "alpha.hams.yaml"),
+		"packages:\n  - app: pkg-a\n")
+
+	registry := provider.NewRegistry()
+	p := &applyTestProvider{
+		manifest: provider.Manifest{
+			Name: "alpha", DisplayName: "alpha", FilePrefix: "alpha",
+			Platforms: []provider.Platform{provider.PlatformAll},
+		},
+		planFn: func(_ context.Context, _ *hamsfile.File, _ *state.File) ([]provider.Action, error) {
+			return []provider.Action{{ID: "pkg-a", Type: provider.ActionInstall}}, nil
+		},
+		applyFn: func(_ context.Context, _ provider.Action) error {
+			return nil
+		},
+	}
+	if err := registry.Register(p); err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+
+	out := captureStdout(t, func() {
+		if err := runApply(context.Background(), flags, registry, sudo.NoopAcquirer{}, "", true, "", "", false, bootstrapMode{}); err != nil {
+			t.Fatalf("apply: %v", err)
+		}
+	})
+
+	var data map[string]any
+	if err := json.Unmarshal([]byte(out), &data); err != nil {
+		t.Fatalf("output not valid JSON: %v\nraw: %q", err, out)
+	}
+	for _, key := range []string{"installed", "updated", "removed", "skipped", "failed", "skipped_providers", "state_save_errors", "success"} {
+		if _, ok := data[key]; !ok {
+			t.Errorf("JSON missing required key %q; got: %v", key, data)
+		}
+	}
+	if data["success"] != true {
+		t.Errorf("success = %v, want true on happy-path apply", data["success"])
+	}
+	// nil-safety: empty arrays should be [] not null.
+	if sp, ok := data["skipped_providers"].([]any); !ok || len(sp) != 0 {
+		t.Errorf("skipped_providers = %v, want []", data["skipped_providers"])
+	}
+	if sse, ok := data["state_save_errors"].([]any); !ok || len(sse) != 0 {
+		t.Errorf("state_save_errors = %v, want []", data["state_save_errors"])
 	}
 
 	_ = storeDir
