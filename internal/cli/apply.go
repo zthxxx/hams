@@ -496,7 +496,22 @@ func runApply(ctx context.Context, flags *provider.GlobalFlags, registry *provid
 	// profile correctly suppresses the prompt.
 	if !flags.DryRun && providersNeedSudo(sorted) {
 		if sudoErr := sudoAcq.Acquire(ctx); sudoErr != nil {
-			slog.Warn("sudo acquisition failed; some providers may fail", "error", sudoErr)
+			// Cycle 228: cli-architecture/spec.md §"Sudo not granted"
+			// scenario mandates exit code 10 (ExitSudoError) when the
+			// user cancels the prompt or sudo times out. Pre-cycle-228
+			// the failure was downgraded to a slog.Warn and apply kept
+			// going — so apt's runner.Install would fail later with a
+			// generic provider error, the user got the wrong exit code,
+			// and CI scripts couldn't distinguish "user canceled" from
+			// "apt-get returned 100". Now: if any provider in the
+			// resolved set requires sudo AND we failed to acquire, exit
+			// hard with ExitSudoError + the recovery hints.
+			return hamserr.NewUserError(hamserr.ExitSudoError,
+				fmt.Sprintf("sudo acquisition failed: %v", sudoErr),
+				"Re-run and enter the sudo password when prompted",
+				"Or arrange passwordless sudo for this user (NOPASSWD entry in sudoers)",
+				"Or filter out sudo-requiring providers: hams apply --except=apt",
+			)
 		}
 	}
 

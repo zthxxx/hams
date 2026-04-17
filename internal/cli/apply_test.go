@@ -262,6 +262,66 @@ func TestRunApply_SudoPromptWhenAptIncluded(t *testing.T) {
 	}
 }
 
+// failingAcquirer is a sudo.Acquirer that always returns an error
+// from Acquire — used to exercise the cycle-228 ExitSudoError path.
+type failingAcquirer struct {
+	stopped bool
+}
+
+func (f *failingAcquirer) Acquire(_ context.Context) error {
+	return fmt.Errorf("user canceled sudo prompt")
+}
+
+func (f *failingAcquirer) Stop() { f.stopped = true }
+
+// TestRunApply_SudoFailureExitsWithSudoError — cycle 228. Per
+// cli-architecture/spec.md §"Sudo not granted": "WHEN the user
+// cancels the sudo prompt or sudo times out during startup THEN the
+// process SHALL exit with code 10". Pre-cycle-228 a failed Acquire
+// was downgraded to a slog.Warn and apply continued — apt's later
+// runner.Install would fail with a generic provider error, the user
+// got the wrong exit code, and CI scripts couldn't tell apart "user
+// canceled" from "apt-get errored". Now: hard-exit with
+// ExitSudoError + recovery hints.
+func TestRunApply_SudoFailureExitsWithSudoError(t *testing.T) {
+	_, profileDir, _, flags := setupApplyTestEnv(t, []string{"apt"})
+	hamsfilePath := filepath.Join(profileDir, "apt.hams.yaml")
+	writeApplyTestFile(t, hamsfilePath, "cli:\n  - app: htop\n")
+
+	p := &applyTestProvider{
+		manifest: provider.Manifest{
+			Name:         "apt",
+			DisplayName:  "apt",
+			Platforms:    []provider.Platform{provider.PlatformAll},
+			FilePrefix:   "apt",
+			RequiresSudo: true,
+		},
+		// planFn shouldn't be reached — the sudo failure short-circuits.
+		planFn: func(_ context.Context, _ *hamsfile.File, _ *state.File) ([]provider.Action, error) {
+			t.Fatal("Plan should not be called after sudo acquisition fails")
+			return nil, nil
+		},
+	}
+
+	registry := provider.NewRegistry()
+	if err := registry.Register(p); err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+
+	failer := &failingAcquirer{}
+	err := runApply(context.Background(), flags, registry, failer, "", true, "", "", false, bootstrapMode{})
+	if err == nil {
+		t.Fatal("expected ExitSudoError, got nil")
+	}
+	var ufe *hamserr.UserFacingError
+	if !errors.As(err, &ufe) || ufe.Code != hamserr.ExitSudoError {
+		t.Fatalf("expected ExitSudoError (code %d), got %v (%T)", hamserr.ExitSudoError, err, err)
+	}
+	if !strings.Contains(ufe.Message, "sudo acquisition failed") {
+		t.Errorf("error message should mention sudo failure; got %q", ufe.Message)
+	}
+}
+
 func TestRunApply_PersistsConfigHashAndRemovesOnNextRun(t *testing.T) {
 	_, profileDir, stateDir, flags := setupApplyTestEnv(t, []string{"brew"})
 	hamsfilePath := filepath.Join(profileDir, "Homebrew.hams.yaml")
