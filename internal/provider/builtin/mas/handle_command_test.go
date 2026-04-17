@@ -10,6 +10,7 @@ import (
 	"github.com/zthxxx/hams/internal/config"
 	"github.com/zthxxx/hams/internal/hamsfile"
 	"github.com/zthxxx/hams/internal/provider"
+	"github.com/zthxxx/hams/internal/state"
 )
 
 type masHarness struct {
@@ -55,6 +56,20 @@ func (h *masHarness) hamsfileApps() []string {
 		h.t.Fatalf("read hamsfile: %v", err)
 	}
 	return f.ListApps()
+}
+
+// stateResource returns the state of a resource in the on-disk state file,
+// or "" if the state file or resource doesn't exist.
+func (h *masHarness) stateResource(id string) state.ResourceState {
+	h.t.Helper()
+	sf, err := state.Load(h.provider.statePath(h.flags))
+	if err != nil {
+		return ""
+	}
+	if r, ok := sf.Resources[id]; ok {
+		return r.State
+	}
+	return ""
 }
 
 func TestHandleCommand_U1_InstallAddsAppIDToHamsfile(t *testing.T) {
@@ -186,5 +201,70 @@ func TestHandleCommand_U10_FlagsOnlyReturnsUsage(t *testing.T) {
 	}
 	if h.runner.CallCount(fakeOpInstall, "") != 0 {
 		t.Errorf("runner should not be called")
+	}
+}
+
+// TestHandleCommand_U11_InstallWritesStateFile locks in cycle 201:
+// after a successful `hams mas install <id>`, the state file MUST
+// contain an OK entry for that ID. Without this, `hams list --only=mas`
+// silently returned empty immediately after install (list reads state
+// only) — the user had to run `hams refresh` first. Same
+// auto-record-gap class as cycle 96 (homebrew) / cycle 97 refactor.
+func TestHandleCommand_U11_InstallWritesStateFile(t *testing.T) {
+	h := newMasHarness(t)
+	if err := h.provider.HandleCommand(context.Background(), []string{"install", "497799835"}, nil, h.flags); err != nil {
+		t.Fatalf("install: %v", err)
+	}
+	if got := h.stateResource("497799835"); got != state.StateOK {
+		t.Errorf("state[497799835] = %q, want %q", got, state.StateOK)
+	}
+}
+
+// TestHandleCommand_U12_RemoveMarksStateRemoved locks in the symmetric
+// contract: a successful `hams mas remove <id>` MUST mark the state
+// resource as Removed (tombstone) so Probe/apply skip it on the next
+// cycle. Pre-cycle-201 the state file was never updated by the CLI
+// handler, so Probe would re-dispatch the removed ID as "desired but
+// missing" until a subsequent `hams refresh`.
+func TestHandleCommand_U12_RemoveMarksStateRemoved(t *testing.T) {
+	h := newMasHarness(t)
+	if err := h.provider.HandleCommand(context.Background(), []string{"install", "1444383602"}, nil, h.flags); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+	if err := h.provider.HandleCommand(context.Background(), []string{"remove", "1444383602"}, nil, h.flags); err != nil {
+		t.Fatalf("remove: %v", err)
+	}
+	if got := h.stateResource("1444383602"); got != state.StateRemoved {
+		t.Errorf("state[1444383602] = %q, want %q", got, state.StateRemoved)
+	}
+}
+
+// TestHandleCommand_U13_InstallFailureLeavesStateUntouched ensures the
+// atomic-on-failure contract also holds at the state layer: if the
+// runner rejects an install, the state file MUST NOT gain a spurious
+// OK entry. Matches the existing U3 contract for hamsfile.
+func TestHandleCommand_U13_InstallFailureLeavesStateUntouched(t *testing.T) {
+	h := newMasHarness(t)
+	h.runner.WithInstallError("999999999", errors.New("mas: not found"))
+	if err := h.provider.HandleCommand(context.Background(), []string{"install", "999999999"}, nil, h.flags); err == nil {
+		t.Fatal("expected install error")
+	}
+	if got := h.stateResource("999999999"); got != "" {
+		t.Errorf("state should not have an entry, got %q", got)
+	}
+}
+
+// TestHandleCommand_U14_DryRunSkipsStateWrite mirrors U6 at the state
+// layer: a `--dry-run` install must not produce an on-disk state file.
+// A silent state write during dry-run would violate the "--dry-run has
+// zero side effects" contract (cycles 39/41/84/86/118).
+func TestHandleCommand_U14_DryRunSkipsStateWrite(t *testing.T) {
+	h := newMasHarness(t)
+	h.flags.DryRun = true
+	if err := h.provider.HandleCommand(context.Background(), []string{"install", "497799835"}, nil, h.flags); err != nil {
+		t.Fatalf("dry-run: %v", err)
+	}
+	if _, err := os.Stat(h.provider.statePath(h.flags)); err == nil {
+		t.Error("dry-run should not create state file")
 	}
 }
