@@ -503,7 +503,12 @@ func configCmd() *cli.Command {
 					if loadErr != nil {
 						return fmt.Errorf("loading config: %w", loadErr)
 					}
-					return printConfigKey(cfg, paths, flags.Store, cmd.Args().First())
+					// Cycle 236: respect --json. The legacy printConfigKey
+					// helper emits plain text; the new printConfigKeyMode
+					// switches to a structured object when flags.JSON is
+					// set so machine consumers can distinguish "set to
+					// empty" from "unset".
+					return printConfigKeyMode(cfg, paths, flags.Store, cmd.Args().First(), flags.JSON)
 				},
 			},
 			{
@@ -815,28 +820,59 @@ func localConfigPath(paths config.Paths, storePath string) string {
 }
 
 func printConfigKey(cfg *config.Config, paths config.Paths, storePath, key string) error {
+	return printConfigKeyMode(cfg, paths, storePath, key, false)
+}
+
+// printConfigKeyMode is the JSON-aware variant of printConfigKey.
+// Cycle 236: when jsonMode is true, emit `{"key":"...", "value":"...",
+// "set": true|false}` so CI consumers can distinguish "key set to
+// empty string" from "key unset" — pre-cycle-236 both produced an
+// empty stdout line, indistinguishable to a downstream pipeline.
+// The "set" field is true when the key has a value (struct field
+// non-empty OR sensitive key resolved via ReadRawConfigKey); false
+// when the slot exists but is unset.
+func printConfigKeyMode(cfg *config.Config, paths config.Paths, storePath, key string, jsonMode bool) error {
+	emit := func(value string, isSet bool) error {
+		if jsonMode {
+			data := map[string]any{
+				"key":   key,
+				"value": value,
+				"set":   isSet,
+			}
+			out, err := json.MarshalIndent(data, "", "  ")
+			if err != nil {
+				return fmt.Errorf("marshaling config get JSON: %w", err)
+			}
+			fmt.Println(string(out))
+			return nil
+		}
+		// Text mode: preserve the pre-cycle-236 contract that unset
+		// keys produce zero stdout (no value, no trailing newline).
+		// CI scripts pipe the output and check `[[ -n "$value" ]]` to
+		// detect set-vs-unset; an extra newline would break that
+		// idiom by giving every key a non-empty 1-character value.
+		if !isSet {
+			return nil
+		}
+		fmt.Println(value)
+		return nil
+	}
+
 	switch key {
 	case "profile_tag":
-		fmt.Println(cfg.ProfileTag)
-		return nil
+		return emit(cfg.ProfileTag, cfg.ProfileTag != "")
 	case "machine_id":
-		fmt.Println(cfg.MachineID)
-		return nil
+		return emit(cfg.MachineID, cfg.MachineID != "")
 	case "store_path":
-		fmt.Println(logging.TildePath(cfg.StorePath))
-		return nil
+		return emit(logging.TildePath(cfg.StorePath), cfg.StorePath != "")
 	case "store_repo":
-		fmt.Println(cfg.StoreRepo)
-		return nil
+		return emit(cfg.StoreRepo, cfg.StoreRepo != "")
 	case "llm_cli":
-		fmt.Println(cfg.LLMCLI)
-		return nil
+		return emit(cfg.LLMCLI, cfg.LLMCLI != "")
 	case "config_home":
-		fmt.Println(logging.TildePath(paths.ConfigHome))
-		return nil
+		return emit(logging.TildePath(paths.ConfigHome), paths.ConfigHome != "")
 	case "data_home":
-		fmt.Println(logging.TildePath(paths.DataHome))
-		return nil
+		return emit(logging.TildePath(paths.DataHome), paths.DataHome != "")
 	}
 
 	// Arbitrary sensitive keys (e.g., notification.bark_token) aren't
@@ -847,11 +883,7 @@ func printConfigKey(cfg *config.Config, paths config.Paths, storePath, key strin
 		if err != nil {
 			return err
 		}
-		if !ok {
-			return nil // key unset → empty output, exit 0 (scripting-friendly)
-		}
-		fmt.Println(value)
-		return nil
+		return emit(value, ok)
 	}
 
 	return hamserr.NewUserError(hamserr.ExitUsageError,
