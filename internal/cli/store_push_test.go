@@ -3,7 +3,13 @@ package cli
 import (
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
+
+	"github.com/zthxxx/hams/internal/provider"
+	"github.com/zthxxx/hams/internal/sudo"
 )
 
 // fakeStorePushRunner records calls and scripts return values for
@@ -149,6 +155,49 @@ func TestRunStorePush_CommitErrorShortCircuits(t *testing.T) {
 	}
 	if fake.gotPushCalls != 0 {
 		t.Errorf("commit error should skip push; got push=%d", fake.gotPushCalls)
+	}
+}
+
+// TestStorePushDryRun_SkipsAllSideEffects locks in cycle 143:
+// `hams --dry-run store push` prints the intent-level preview and
+// returns without invoking any git operation. Previously --dry-run
+// was ignored entirely: the command performed the real commit +
+// push, contradicting the global flag's documented "no changes"
+// contract.
+func TestStorePushDryRun_SkipsAllSideEffects(t *testing.T) {
+	fake := &fakeStorePushRunner{statusValue: " M foo.yaml"}
+	t.Cleanup(withPushRunner(fake))
+
+	configHome := t.TempDir()
+	dataHome := t.TempDir()
+	storeDir := t.TempDir()
+	t.Setenv("HAMS_CONFIG_HOME", configHome)
+	t.Setenv("HAMS_DATA_HOME", dataHome)
+	// Seed a .git so ensureStoreIsGitRepo passes.
+	if err := os.MkdirAll(filepath.Join(storeDir, ".git"), 0o750); err != nil {
+		t.Fatalf("seed .git: %v", err)
+	}
+	writeApplyTestFile(t, filepath.Join(configHome, "hams.config.yaml"),
+		"profile_tag: t\nmachine_id: m\nstore_path: "+storeDir+"\n")
+
+	out := captureStdout(t, func() {
+		app := NewApp(provider.NewRegistry(), sudo.NoopAcquirer{})
+		if err := app.Run(context.Background(),
+			[]string{"hams", "--dry-run", "store", "push", "-m", "test message"}); err != nil {
+			t.Fatalf("dry-run store push: %v", err)
+		}
+	})
+
+	if !strings.Contains(out, "[dry-run]") {
+		t.Errorf("dry-run output missing [dry-run] prefix; got:\n%s", out)
+	}
+	if !strings.Contains(out, "test message") {
+		t.Errorf("dry-run output should echo commit message; got:\n%s", out)
+	}
+	// Fake runner MUST NOT have been invoked at all.
+	if fake.gotStatusCalls != 0 || fake.gotAddAllCalls != 0 || fake.gotCommitCalls != 0 || fake.gotPushCalls != 0 {
+		t.Errorf("dry-run should not invoke any git step; got status=%d add=%d commit=%d push=%d",
+			fake.gotStatusCalls, fake.gotAddAllCalls, fake.gotCommitCalls, fake.gotPushCalls)
 	}
 }
 

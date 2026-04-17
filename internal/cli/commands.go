@@ -839,6 +839,20 @@ func storeCmd() *cli.Command {
 						commitMsg = "hams: update store"
 					}
 
+					// --dry-run means "preview without mutating" — for
+					// push, the mutation is a commit + network push. Skip
+					// both so the user gets the intent-level feedback
+					// ("this is what would happen") without any
+					// side effects. Previously `hams --dry-run store push`
+					// performed the real commit+push, contradicting the
+					// global flag's documented contract ("Show what would
+					// be done without making changes").
+					if flags.DryRun {
+						fmt.Printf("[dry-run] Would commit changes in %s with message %q and push to origin\n",
+							logging.TildePath(storePath), commitMsg)
+						return nil
+					}
+
 					return runStorePush(ctx, storePath, commitMsg)
 				},
 			},
@@ -863,6 +877,16 @@ func storeCmd() *cli.Command {
 
 					if err := ensureStoreIsGitRepo(storePath); err != nil {
 						return err
+					}
+
+					// Mirror the push dry-run guard (cycle 143): pull is
+					// a network operation that mutates the working tree
+					// via rebase. Skip it under --dry-run so the global
+					// flag's "no changes" contract holds.
+					if flags.DryRun {
+						fmt.Printf("[dry-run] Would run: git -C %s pull --rebase\n",
+							logging.TildePath(storePath))
+						return nil
 					}
 
 					gitPull := exec.CommandContext(ctx, "git", "-C", storePath, "pull", "--rebase") //nolint:gosec // storePath is user-configured
