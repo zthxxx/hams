@@ -625,6 +625,23 @@ func configCmd() *cli.Command {
 						}
 					}
 
+					// Cycle 228: pre-check the editor binary exists on PATH
+					// (or is an absolute path that stat's cleanly). Without
+					// this, a missing $EDITOR surfaces as the opaque
+					// "fork/exec <editor>: no such file or directory"
+					// error from exec.Run. Replace with an actionable UFE
+					// that names the missing editor AND how to fix it.
+					// LookPath handles both bare names (searches PATH) and
+					// absolute paths (just stats) so both `EDITOR=nvim`
+					// and `EDITOR=/usr/bin/nvim` surface the same error.
+					if _, lookErr := exec.LookPath(editorParts[0]); lookErr != nil {
+						return hamserr.NewUserError(hamserr.ExitNotFound,
+							fmt.Sprintf("editor %q not found (from $EDITOR/$VISUAL or the 'vi' fallback)", editorParts[0]),
+							"Install the editor, or set $EDITOR to a different one: export EDITOR=vim",
+							"Edit the config file directly: "+logging.TildePath(configPath),
+						)
+					}
+
 					editorArgs := make([]string, 0, len(editorParts))
 					editorArgs = append(editorArgs, editorParts[1:]...)
 					editorArgs = append(editorArgs, configPath)
