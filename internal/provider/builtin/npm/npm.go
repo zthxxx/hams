@@ -108,7 +108,48 @@ func stripNpmVersionPin(id string) string {
 func (p *Provider) Plan(_ context.Context, desired *hamsfile.File, observed *state.File) ([]provider.Action, error) {
 	apps := desired.ListApps()
 	actions := provider.ComputePlan(apps, observed, observed.ConfigHash)
+	// Cycle 191: when a pin-upgrade produces both Install X@5.4 and
+	// Remove X@5.3 actions in the same apply, drop the Remove.
+	// Rationale: npm uninstall with a version-pinned arg is treated
+	// by npm as bare-name uninstall — running it AFTER the new
+	// version was just installed would uninstall the new version
+	// too. State-side, ComputePlan already marks X@5.3 as removed;
+	// the host-side exec is what we skip.
+	actions = suppressRedundantVersionRemoves(actions)
 	return provider.PopulateActionHooks(actions, desired), nil
+}
+
+// suppressRedundantVersionRemoves drops ActionRemove entries whose
+// bare package name (version-stripped) matches an Install/Update/Skip
+// action's bare name in the same plan. The provider's Remove exec
+// would otherwise run `npm uninstall <pkg>@<old-ver>` which npm
+// interprets as bare uninstall, clobbering the fresh install.
+// The state write still happens via ComputePlan's ActionRemove
+// bookkeeping on the next save — we only suppress the host-side
+// exec side effect.
+//
+// This is npm-family-specific; the same helper is duplicated in
+// pnpm/uv/vscodeext because extracting it into provider/plan.go
+// would require coupling to pin-stripping functions that differ
+// per ecosystem.
+func suppressRedundantVersionRemoves(actions []provider.Action) []provider.Action {
+	keepBareNames := make(map[string]bool)
+	for _, a := range actions {
+		if a.Type == provider.ActionRemove {
+			continue
+		}
+		keepBareNames[stripNpmVersionPin(a.ID)] = true
+	}
+	out := make([]provider.Action, 0, len(actions))
+	for _, a := range actions {
+		if a.Type == provider.ActionRemove && keepBareNames[stripNpmVersionPin(a.ID)] {
+			slog.Info("npm: suppressing redundant version-pin remove (bare name overlaps install)",
+				"removing", a.ID)
+			continue
+		}
+		out = append(out, a)
+	}
+	return out
 }
 
 // Apply installs an npm package globally.

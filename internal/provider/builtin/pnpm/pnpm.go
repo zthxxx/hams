@@ -138,11 +138,37 @@ func stripPnpmVersionPin(id string) string {
 	return id[:idx]
 }
 
+// suppressRedundantVersionRemoves drops ActionRemove entries whose
+// bare package name (version-stripped) matches an Install/Update/Skip
+// action. Cycle 191 — same rationale as npm.
+func suppressRedundantVersionRemoves(actions []provider.Action) []provider.Action {
+	keepBareNames := make(map[string]bool)
+	for _, a := range actions {
+		if a.Type == provider.ActionRemove {
+			continue
+		}
+		keepBareNames[stripPnpmVersionPin(a.ID)] = true
+	}
+	out := make([]provider.Action, 0, len(actions))
+	for _, a := range actions {
+		if a.Type == provider.ActionRemove && keepBareNames[stripPnpmVersionPin(a.ID)] {
+			slog.Info("pnpm: suppressing redundant version-pin remove (bare name overlaps install)",
+				"removing", a.ID)
+			continue
+		}
+		out = append(out, a)
+	}
+	return out
+}
+
 // Plan computes actions for pnpm packages and attaches any
 // hamsfile-declared hooks to each action.
 func (p *Provider) Plan(_ context.Context, desired *hamsfile.File, observed *state.File) ([]provider.Action, error) {
 	apps := desired.ListApps()
 	actions := provider.ComputePlan(apps, observed, observed.ConfigHash)
+	// Cycle 191: drop redundant version-pinned removes (same rationale
+	// as npm).
+	actions = suppressRedundantVersionRemoves(actions)
 	return provider.PopulateActionHooks(actions, desired), nil
 }
 

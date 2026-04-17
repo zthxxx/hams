@@ -5,6 +5,9 @@ import (
 	"errors"
 	"testing"
 
+	"gopkg.in/yaml.v3"
+
+	"github.com/zthxxx/hams/internal/hamsfile"
 	"github.com/zthxxx/hams/internal/provider"
 	"github.com/zthxxx/hams/internal/state"
 )
@@ -177,6 +180,77 @@ func TestProbe_MatchesPinnedVersionIDs(t *testing.T) {
 	// Scoped without pin: NOT in fake's installed → StateFailed (still bare vs "@scope/bare").
 	if byID["@scope/bare"].State != state.StateFailed {
 		t.Errorf("@scope/bare (absent): state=%v, want StateFailed", byID["@scope/bare"].State)
+	}
+}
+
+// buildNpmHamsfile constructs an in-memory *hamsfile.File with the
+// given apps under a "cli" tag. Used by Plan tests that need a
+// real desired-state source. Mirrors the diff-test helper.
+func buildNpmHamsfile(apps []string) *hamsfile.File {
+	seq := &yaml.Node{Kind: yaml.SequenceNode}
+	for _, app := range apps {
+		seq.Content = append(seq.Content, &yaml.Node{
+			Kind: yaml.MappingNode,
+			Content: []*yaml.Node{
+				{Kind: yaml.ScalarNode, Value: "app", Tag: "!!str"},
+				{Kind: yaml.ScalarNode, Value: app, Tag: "!!str"},
+			},
+		})
+	}
+	mapping := &yaml.Node{
+		Kind: yaml.MappingNode,
+		Content: []*yaml.Node{
+			{Kind: yaml.ScalarNode, Value: "cli", Tag: "!!str"},
+			seq,
+		},
+	}
+	return &hamsfile.File{
+		Path: "/tmp/npm.hams.yaml",
+		Root: &yaml.Node{Kind: yaml.DocumentNode, Content: []*yaml.Node{mapping}},
+	}
+}
+
+// TestPlan_SuppressesRedundantVersionPinRemoves locks in cycle 191:
+// when the user upgrades a pinned package (e.g. typescript@5.3.3 →
+// typescript@5.4.0 in the hamsfile), ComputePlan emits BOTH an
+// Install typescript@5.4.0 AND a Remove typescript@5.3.3 in the
+// same plan. The Remove exec `npm uninstall typescript@5.3.3`
+// is interpreted by npm as bare-name uninstall — it would uninstall
+// the freshly-installed 5.4.0. Plan now filters out Remove actions
+// whose bare name overlaps an Install/Skip action.
+func TestPlan_SuppressesRedundantVersionPinRemoves(t *testing.T) {
+	t.Parallel()
+	p := New(nil, NewFakeCmdRunner())
+
+	// Desired: typescript@5.4.0 (new pin).
+	// Observed: typescript@5.3.3 (old pin, last-applied).
+	hf := buildNpmHamsfile([]string{"typescript@5.4.0"})
+	sf := state.New("npm", "test-machine")
+	sf.SetResource("typescript@5.3.3", state.StateOK)
+	sf.ConfigHash = "baseline" // needed for ComputePlan to emit Remove
+
+	actions, err := p.Plan(context.Background(), hf, sf)
+	if err != nil {
+		t.Fatalf("Plan: %v", err)
+	}
+
+	var installs, removes []string
+	for _, a := range actions {
+		switch a.Type {
+		case provider.ActionInstall:
+			installs = append(installs, a.ID)
+		case provider.ActionRemove:
+			removes = append(removes, a.ID)
+		}
+	}
+
+	if len(installs) != 1 || installs[0] != "typescript@5.4.0" {
+		t.Errorf("installs = %v, want [typescript@5.4.0]", installs)
+	}
+	// The Remove typescript@5.3.3 MUST have been suppressed — it shares
+	// the bare name "typescript" with the Install action above.
+	if len(removes) != 0 {
+		t.Errorf("removes = %v, want [] (redundant bare-name remove suppressed)", removes)
 	}
 }
 
