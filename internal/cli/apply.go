@@ -184,6 +184,17 @@ func runApply(ctx context.Context, flags *provider.GlobalFlags, registry *provid
 			return fmt.Errorf("bootstrap from repo: %w", resolveErr)
 		}
 		if done {
+			// Cycle 251: dry-run with --from-repo pointing at a repo
+			// that isn't already cloned. The preview message went to
+			// stderr (cycle 250), but pre-cycle-251 stdout was empty
+			// in JSON mode — `hams --json --dry-run apply
+			// --from-repo=<X> | jq .` errored on zero bytes. Emit the
+			// dry-run JSON summary shape with zero planned actions so
+			// CI consumers see a parseable object that says "nothing
+			// to do (would clone, no providers planned yet)".
+			if flags.JSON {
+				return emitDryRunJSON(nil, nil, nil, time.Since(applyStart).Milliseconds())
+			}
 			return nil
 		}
 		storePath = resolvedPath

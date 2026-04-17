@@ -1484,6 +1484,52 @@ func TestRunApply_DryRunJSONHasNoProse(t *testing.T) {
 	_ = storeDir
 }
 
+// TestRunApply_DryRunFromRepoNotCached_JSONEmits locks in cycle 251:
+// when `hams --json --dry-run apply --from-repo=<X>` is invoked and
+// <X> is not a local path AND not already cached under
+// ${HAMS_DATA_HOME}/repo/, runApply takes the "Would clone" exit
+// path. Pre-cycle-251 this path was `return nil` with zero bytes on
+// stdout — CI scripts running `... | jq .` failed on empty input.
+// Now: JSON mode emits the empty dry-run summary shape so consumers
+// get a parseable object.
+func TestRunApply_DryRunFromRepoNotCached_JSONEmits(t *testing.T) {
+	// Isolate HOME paths so the clone-cache lookup definitely misses.
+	configHome := t.TempDir()
+	dataHome := t.TempDir()
+	t.Setenv("HAMS_CONFIG_HOME", configHome)
+	t.Setenv("HAMS_DATA_HOME", dataHome)
+
+	flags := &provider.GlobalFlags{
+		JSON:   true,
+		DryRun: true,
+	}
+
+	out := captureStdout(t, func() {
+		err := runApply(context.Background(), flags, provider.NewRegistry(), sudo.NoopAcquirer{},
+			"owner/nonexistent-dry-run-repo-"+t.Name(),
+			true, "", "", false, bootstrapMode{})
+		if err != nil {
+			t.Fatalf("runApply: %v", err)
+		}
+	})
+
+	// Stdout must parse as JSON (not be empty, not contain prose).
+	trimmed := strings.TrimSpace(out)
+	if trimmed == "" {
+		t.Fatalf("stdout is empty; expected a dry-run JSON summary")
+	}
+	var data map[string]any
+	if err := json.Unmarshal([]byte(trimmed), &data); err != nil {
+		t.Fatalf("output not parseable as JSON: %v\nraw: %q", err, out)
+	}
+	if data["dry_run"] != true {
+		t.Errorf("dry_run = %v, want true", data["dry_run"])
+	}
+	if data["success"] != true {
+		t.Errorf("success = %v, want true (no providers planned, trivially successful)", data["success"])
+	}
+}
+
 // TestRunApply_NoProvidersMatch_JSONMode locks in cycle 247: when
 // the stage-1 artifact filter produces zero providers (no hamsfile,
 // no state), `hams --json apply` must emit a parseable JSON object,
