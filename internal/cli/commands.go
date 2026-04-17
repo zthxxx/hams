@@ -451,6 +451,19 @@ func configCmd() *cli.Command {
 					if editor == "" {
 						editor = "vi"
 					}
+					// EDITOR can carry args (e.g. "code -w", "emacs -nw",
+					// "nvim -p"). Splitting on whitespace lets us exec the
+					// binary as the first field and forward the remaining
+					// fields as args. Without this, the whole string
+					// reached exec.CommandContext as a single binary path
+					// and the user got "executable file not found" for
+					// any non-bare $EDITOR. Quoted values with spaces in
+					// PATH (rare) are out of scope; users with such paths
+					// can wrap their editor in a script.
+					editorParts := strings.Fields(editor)
+					if len(editorParts) == 0 {
+						editorParts = []string{"vi"}
+					}
 
 					// --dry-run: preview the target path + editor
 					// without creating any directory/file or exec-ing
@@ -477,7 +490,10 @@ func configCmd() *cli.Command {
 						}
 					}
 
-					editorCmd := exec.CommandContext(ctx, editor, configPath) //nolint:gosec // editor is user-specified via $EDITOR
+					editorArgs := make([]string, 0, len(editorParts))
+					editorArgs = append(editorArgs, editorParts[1:]...)
+					editorArgs = append(editorArgs, configPath)
+					editorCmd := exec.CommandContext(ctx, editorParts[0], editorArgs...) //nolint:gosec // editor is user-specified via $EDITOR
 					editorCmd.Stdin = os.Stdin
 					editorCmd.Stdout = os.Stdout
 					editorCmd.Stderr = os.Stderr

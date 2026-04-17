@@ -159,6 +159,64 @@ func TestRunStorePush_CommitErrorShortCircuits(t *testing.T) {
 	}
 }
 
+// TestConfigEdit_EditorWithArgs locks in cycle 158: $EDITOR can
+// carry args (e.g. "code -w", "emacs -nw", "nvim -p"). The
+// pre-cycle-158 implementation passed the whole string to
+// exec.CommandContext as a single binary path → "executable file
+// not found" for any non-bare $EDITOR. Now: split on whitespace,
+// exec the first field as the binary and forward the rest plus
+// the config path as args.
+//
+// Test wires $EDITOR to a fake script that writes its argv to a
+// marker file, then asserts the marker shows the args were
+// forwarded correctly.
+func TestConfigEdit_EditorWithArgs(t *testing.T) {
+	configHome := t.TempDir()
+	dataHome := t.TempDir()
+	t.Setenv("HAMS_CONFIG_HOME", configHome)
+	t.Setenv("HAMS_DATA_HOME", dataHome)
+
+	// Write a tiny shell script that records its args and exits 0.
+	scriptDir := t.TempDir()
+	markerPath := filepath.Join(scriptDir, "args.txt")
+	scriptPath := filepath.Join(scriptDir, "fake-editor.sh")
+	scriptBody := "#!/bin/sh\nfor a in \"$@\"; do echo \"$a\"; done > " + markerPath + "\n"
+	if err := os.WriteFile(scriptPath, []byte(scriptBody), 0o755); err != nil {
+		t.Fatalf("write fake editor: %v", err)
+	}
+
+	// $EDITOR carries TWO args (-x foo) AND the script path. The pre-
+	// cycle-158 code would try to exec the whole literal string as a
+	// binary path and fail.
+	t.Setenv("EDITOR", scriptPath+" -x foo")
+
+	app := NewApp(provider.NewRegistry(), sudo.NoopAcquirer{})
+	if err := app.Run(context.Background(), []string{"hams", "config", "edit"}); err != nil {
+		t.Fatalf("config edit with multi-arg EDITOR: %v", err)
+	}
+
+	body, err := os.ReadFile(markerPath)
+	if err != nil {
+		t.Fatalf("read marker: %v", err)
+	}
+	gotArgs := strings.Split(strings.TrimSpace(string(body)), "\n")
+
+	// We expect: ["-x", "foo", "<configPath>"]
+	if len(gotArgs) != 3 {
+		t.Fatalf("expected 3 args (-x foo <configPath>); got %d: %v", len(gotArgs), gotArgs)
+	}
+	if gotArgs[0] != "-x" {
+		t.Errorf("args[0] = %q, want '-x'", gotArgs[0])
+	}
+	if gotArgs[1] != "foo" {
+		t.Errorf("args[1] = %q, want 'foo'", gotArgs[1])
+	}
+	wantConfigPath := filepath.Join(configHome, "hams.config.yaml")
+	if gotArgs[2] != wantConfigPath {
+		t.Errorf("args[2] = %q, want %q", gotArgs[2], wantConfigPath)
+	}
+}
+
 // TestConfigEditDryRun_SkipsMutationsAndEditor locks in cycle
 // 146: `hams --dry-run config edit` prints "Would open <path> in
 // <editor>" and returns without (a) creating the config dir, (b)
