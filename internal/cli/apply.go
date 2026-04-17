@@ -450,7 +450,8 @@ func runApply(ctx context.Context, flags *provider.GlobalFlags, registry *provid
 	var allResults []provider.ExecuteResult
 	var skippedProviders []string
 	var stateSaveFailures []string
-	var failedProviders []string // cycle 231: per-provider failure attribution
+	var failedProviders []string      // cycle 231: per-provider failure attribution
+	var probeFailedProviders []string // cycle 237: symmetric with refresh
 
 	if !noRefresh {
 		slog.Info("refreshing state")
@@ -472,6 +473,30 @@ func runApply(ctx context.Context, flags *provider.GlobalFlags, registry *provid
 				slog.Error("failed to save probed state", "provider", sf.Provider, "path", statePath, "error", saveErr)
 				stateSaveFailures = append(stateSaveFailures, sf.Provider)
 			}
+		}
+
+		// Cycle 237: compute probe-failed providers (symmetric with
+		// runRefresh's probe_failed_providers JSON field). ProbeAll
+		// silently drops failing providers from its result map; the
+		// per-goroutine slog.Warn is easy to miss in a long apply log.
+		// Tracking the set-difference here lets the summary surface
+		// how many providers couldn't be probed BEFORE the install
+		// phase ran (so the user knows drift detection was incomplete).
+		// Apply proceeds either way — stale state is a known-acceptable
+		// fallback for best-effort pre-apply refresh — but an explicit
+		// aggregated warning primes users to expect potential re-install
+		// surprises.
+		for _, p := range sorted {
+			name := p.Manifest().Name
+			prefix := provider.ManifestFilePrefix(p.Manifest())
+			if _, ok := probeResults[prefix]; !ok {
+				probeFailedProviders = append(probeFailedProviders, name)
+			}
+		}
+		sort.Strings(probeFailedProviders)
+		if len(probeFailedProviders) > 0 {
+			slog.Warn("pre-apply refresh: some providers failed to probe; drift detection incomplete",
+				"count", len(probeFailedProviders), "providers", probeFailedProviders)
 		}
 	}
 
@@ -753,42 +778,7 @@ func runApply(ctx context.Context, flags *provider.GlobalFlags, registry *provid
 	// failures programmatically rather than parsing the prose output.
 	// Symmetric with cycles 181 (version) / 182 (refresh).
 	if flags.JSON {
-		// Normalize nil → empty slice so consumers don't need to
-		// nil-check before iterating.
-		skippedNorm := skippedProviders
-		if skippedNorm == nil {
-			skippedNorm = []string{}
-		}
-		saveFailNorm := stateSaveFailures
-		if saveFailNorm == nil {
-			saveFailNorm = []string{}
-		}
-		// Cycle 230: include dry_run = false so the apply JSON shape
-		// matches refresh's (cycle 229). Without this, the only way
-		// for a CI consumer to tell apart a dry-run preview from a
-		// real run is to check whether `dry_run` is present at all
-		// (presence == dry-run because the dry-run path uses
-		// emitDryRunJSON). Always-present `dry_run` field gives
-		// machine consumers a stable schema across modes.
-		// Cycle 231: failed_providers names which providers had any
-		// failed action so retry scripts can target just the failed
-		// subset (e.g. `hams apply --only=$(jq .failed_providers)`).
-		failedNorm := failedProviders
-		if failedNorm == nil {
-			failedNorm = []string{}
-		}
-		data := map[string]any{
-			"installed":         merged.Installed,
-			"updated":           merged.Updated,
-			"removed":           merged.Removed,
-			"skipped":           merged.Skipped,
-			"failed":            merged.Failed,
-			"failed_providers":  failedNorm,
-			"skipped_providers": skippedNorm,
-			"state_save_errors": saveFailNorm,
-			"success":           merged.Failed == 0 && len(skippedProviders) == 0 && len(stateSaveFailures) == 0,
-			"dry_run":           false,
-		}
+		data := buildApplyJSONSummary(merged, failedProviders, skippedProviders, stateSaveFailures, probeFailedProviders)
 		out, mErr := json.MarshalIndent(data, "", "  ")
 		if mErr != nil {
 			return fmt.Errorf("marshaling apply JSON: %w", mErr)
@@ -899,6 +889,54 @@ func reportNoProvidersMatch(cfg *config.Config, profileDir string, stageOneProvi
 	sort.Strings(available)
 	fmt.Printf("  Available profiles in this store: %s\n", strings.Join(available, ", "))
 	fmt.Println("  Fix: hams config set profile_tag <profile>  OR  pass --profile=<profile>")
+}
+
+// buildApplyJSONSummary constructs the map used by the `--json`
+// real-run branch of runApply. Factored out of the inline block in
+// cycle 237 because the growing schema (installed, updated, removed,
+// skipped, failed, failed_providers, skipped_providers,
+// state_save_errors, probe_failed_providers, success, dry_run) with
+// per-field nil-to-empty normalization pushed the surrounding
+// `if flags.JSON` block past golangci-lint's nestif threshold.
+func buildApplyJSONSummary(merged provider.ExecuteResult, failedProviders, skippedProviders, stateSaveFailures, probeFailedProviders []string) map[string]any {
+	// Normalize nil → empty slice so consumers don't need to
+	// nil-check before iterating.
+	failedNorm := failedProviders
+	if failedNorm == nil {
+		failedNorm = []string{}
+	}
+	skippedNorm := skippedProviders
+	if skippedNorm == nil {
+		skippedNorm = []string{}
+	}
+	saveFailNorm := stateSaveFailures
+	if saveFailNorm == nil {
+		saveFailNorm = []string{}
+	}
+	probeFailNorm := probeFailedProviders
+	if probeFailNorm == nil {
+		probeFailNorm = []string{}
+	}
+	// Cycle 230: include dry_run = false so the apply JSON shape
+	// matches refresh's (cycle 229). Without this, the only way
+	// for a CI consumer to tell apart a dry-run preview from a
+	// real run is to check whether `dry_run` is present at all
+	// (presence == dry-run because the dry-run path uses
+	// emitDryRunJSON). Always-present `dry_run` field gives
+	// machine consumers a stable schema across modes.
+	return map[string]any{
+		"installed":              merged.Installed,
+		"updated":                merged.Updated,
+		"removed":                merged.Removed,
+		"skipped":                merged.Skipped,
+		"failed":                 merged.Failed,
+		"failed_providers":       failedNorm,
+		"skipped_providers":      skippedNorm,
+		"state_save_errors":      saveFailNorm,
+		"probe_failed_providers": probeFailNorm,
+		"success":                merged.Failed == 0 && len(skippedProviders) == 0 && len(stateSaveFailures) == 0,
+		"dry_run":                false,
+	}
 }
 
 // onlyMissingArtifacts returns the subset of `--only=<csv>` names

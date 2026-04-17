@@ -33,14 +33,19 @@ func New(cfg *config.Config, runner CmdRunner) *Provider {
 	return &Provider{cfg: cfg, runner: runner}
 }
 
+// cliName is the cargo provider's manifest + CLI name + file prefix.
+// Single source of truth so the goconst lint can't flag the
+// repeated literal.
+const cliName = "cargo"
+
 // Manifest returns the cargo provider metadata.
 func (p *Provider) Manifest() provider.Manifest {
 	return provider.Manifest{
-		Name:          "cargo",
-		DisplayName:   "cargo",
+		Name:          cliName,
+		DisplayName:   cliName,
 		Platforms:     []provider.Platform{provider.PlatformAll},
 		ResourceClass: provider.ClassPackage,
-		FilePrefix:    "cargo",
+		FilePrefix:    cliName,
 	}
 }
 
@@ -114,7 +119,7 @@ func (p *Provider) HandleCommand(ctx context.Context, args []string, hamsFlags m
 		// desired-vs-observed diff, matching `hams list --only=cargo`.
 		return provider.HandleListCmd(ctx, p, p.effectiveConfig(flags))
 	default:
-		return provider.WrapExecPassthrough(ctx, "cargo", args, nil)
+		return provider.WrapExecPassthrough(ctx, cliName, args, nil)
 	}
 }
 
@@ -278,10 +283,10 @@ func crateArgs(args []string) []string {
 }
 
 // Name returns the CLI name.
-func (p *Provider) Name() string { return "cargo" }
+func (p *Provider) Name() string { return cliName }
 
 // DisplayName returns the display name.
-func (p *Provider) DisplayName() string { return "cargo" }
+func (p *Provider) DisplayName() string { return cliName }
 
 // parseCargoList parses `cargo install --list` output.
 // Lines with a package have the form "name v1.2.3:".
