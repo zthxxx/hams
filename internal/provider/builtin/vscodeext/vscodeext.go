@@ -271,16 +271,20 @@ func (p *Provider) handleRemove(ctx context.Context, args []string, hamsFlags ma
 	return sf.Save(p.statePath(flags))
 }
 
-// statePath returns the absolute path to code-ext.state.yaml for the
-// active machine. Note the FilePrefix is "code-ext" for consistency
-// with the CLI name and hamsfile (code-ext.hams.yaml).
+// statePath returns the absolute path to vscodeext.state.yaml for the
+// active machine. The FilePrefix is "vscodeext" (NOT "code-ext") for
+// historical reasons: early v1 shipped `vscodeext.hams.yaml` as the
+// canonical filename before the CLI name was finalized as `code-ext`.
+// Renaming the prefix now would invalidate every existing user's
+// hamsfile and state paths, so CLI and file-layer names diverge by
+// design. Mirrors homebrew/mas/cargo/npm/pnpm/uv/goinstall.statePath.
 func (p *Provider) statePath(flags *provider.GlobalFlags) string {
 	cfg := p.effectiveConfig(flags)
 	return filepath.Join(cfg.StateDir(), p.Manifest().FilePrefix+".state.yaml")
 }
 
-// loadOrCreateStateFile reads code-ext.state.yaml or returns a fresh
-// one when the file is absent.
+// loadOrCreateStateFile reads vscodeext.state.yaml or returns a fresh
+// one when the file is absent. Non-ErrNotExist load failures propagate.
 func (p *Provider) loadOrCreateStateFile(flags *provider.GlobalFlags) (*state.File, error) {
 	cfg := p.effectiveConfig(flags)
 	sf, err := state.Load(p.statePath(flags))
