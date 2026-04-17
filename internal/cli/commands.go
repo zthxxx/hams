@@ -1168,6 +1168,28 @@ func listCmd(registry *provider.Registry) *cli.Command {
 				return fmt.Errorf("loading config: %w", err)
 			}
 
+			// Cycle 211: symmetric with cycle 87 (apply) and cycle 88
+			// (refresh) — when store_path is missing or not a directory,
+			// list previously printed "No managed resources found. Run
+			// 'hams <provider> install <package>' ..." which incorrectly
+			// pointed the user at installing packages when the real
+			// issue was a misaimed store_path. Now: surface the typo'd
+			// path with the same recovery hints apply/refresh show.
+			// Empty store_path is still allowed — some users may run
+			// `hams list` before a store is set up and we don't want
+			// to block that exploratory case; the empty-state message
+			// below still fires.
+			if cfg.StorePath != "" {
+				if info, statErr := os.Stat(cfg.StorePath); statErr != nil || !info.IsDir() {
+					return hamserr.NewUserError(hamserr.ExitUsageError,
+						fmt.Sprintf("store_path %q does not exist or is not a directory", cfg.StorePath),
+						"Fix store_path in ~/.config/hams/hams.config.yaml",
+						"Or clone a store: hams apply --from-repo=<user/repo>",
+						"Or initialize one: hams store init",
+					)
+				}
+			}
+
 			providers, filterErr := filterProviders(
 				registry.Ordered(cfg.ProviderPriority),
 				cmd.String("only"),

@@ -2,12 +2,14 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
+	hamserr "github.com/zthxxx/hams/internal/error"
 	"github.com/zthxxx/hams/internal/provider"
 	"github.com/zthxxx/hams/internal/sudo"
 )
@@ -147,6 +149,50 @@ func TestStoreStatus_CanceledContextAbortsPromptly(t *testing.T) {
 	elapsed := time.Since(start)
 	if elapsed > 2*time.Second {
 		t.Errorf("store status with canceled ctx took %v; want < 2s (5s timeout was being honored, ignoring ctx)", elapsed)
+	}
+}
+
+// TestList_NonexistentStorePathEmitsUserError locks in cycle 211:
+// `hams list --store=/ghost` (where the path doesn't exist) previously
+// printed "No managed resources found. Run 'hams <provider> install
+// <package>' ..." — misleading because the user's real issue was a
+// misaimed store_path, not an empty store. Now: surface an
+// ExitUsageError naming the bad path with the same recovery hints as
+// apply (cycle 87) / refresh (cycle 88).
+func TestList_NonexistentStorePathEmitsUserError(t *testing.T) {
+	ghostStore := filepath.Join(t.TempDir(), "ghost-store-does-not-exist")
+
+	registry := provider.NewRegistry()
+	p := &applyTestProvider{
+		manifest: provider.Manifest{
+			Name: "apt", DisplayName: "apt", FilePrefix: "apt",
+			Platforms: []provider.Platform{provider.PlatformAll},
+		},
+	}
+	if err := registry.Register(p); err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+
+	// Redirect config dirs so the test doesn't pick up the user's real config.
+	t.Setenv("HAMS_CONFIG_HOME", t.TempDir())
+	t.Setenv("HAMS_DATA_HOME", t.TempDir())
+
+	app := NewApp(registry, sudo.NoopAcquirer{})
+	err := app.Run(context.Background(), []string{"hams", "--store", ghostStore, "list"})
+	if err == nil {
+		t.Fatal("expected ExitUsageError for missing store_path")
+	}
+	var ufe *hamserr.UserFacingError
+	if !errors.As(err, &ufe) || ufe.Code != hamserr.ExitUsageError {
+		t.Fatalf("expected ExitUsageError, got %v (%T)", err, err)
+	}
+	if !strings.Contains(ufe.Message, ghostStore) {
+		t.Errorf("error should name the bad path; got %q", ufe.Message)
+	}
+	// Regression: the bad surface message is "No managed resources
+	// found" — assert it's NOT in the error.
+	if strings.Contains(ufe.Error(), "No managed resources found") {
+		t.Errorf("error should NOT use the misleading empty-store text; got %q", ufe.Error())
 	}
 }
 
