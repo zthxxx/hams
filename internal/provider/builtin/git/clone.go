@@ -159,6 +159,26 @@ func (p *CloneProvider) Apply(ctx context.Context, action provider.Action) error
 		localPath = expanded
 	}
 
+	// Guard the "dir exists but isn't a git repo" case that Probe
+	// now flags as StateFailed (cycle 135) — without this check,
+	// ComputePlan promotes StateFailed → ActionInstall → git clone
+	// fails with "destination path X already exists and is not an
+	// empty directory", leaving the user with a cryptic error. Surface
+	// an actionable UserFacingError instead so the user knows exactly
+	// what to do.
+	if info, statErr := os.Stat(localPath); statErr == nil && info.IsDir() {
+		if !isGitRepoPath(localPath) {
+			return hamserr.NewUserError(hamserr.ExitGeneralError,
+				fmt.Sprintf("git-clone target %q already exists but is not a git repository", localPath),
+				"Either delete the directory and re-run apply: rm -rf "+localPath,
+				"Or initialize it in place: cd "+localPath+" && git init && git remote add origin "+remote,
+			)
+		}
+		// Already a git repo at this path — skip clone (idempotent).
+		slog.Info("git-clone: target already exists as a git repo, skipping clone", "path", localPath)
+		return nil
+	}
+
 	slog.Info("git clone", "remote", remote, "path", localPath)
 	args := []string{"clone"}
 	if branch != "" {
