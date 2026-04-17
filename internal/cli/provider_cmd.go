@@ -41,8 +41,8 @@ func routeToProvider(ctx context.Context, handler ProviderHandler, args []string
 		// --help was found.
 		return showProviderHelp(handler)
 	}
-	// Cycle 241: honor --debug for per-provider CLI invocations.
-	// Pre-cycle-241 only apply / refresh applied flags.Debug to slog
+	// Cycle 242: honor --debug for per-provider CLI invocations.
+	// Pre-cycle-242 only apply / refresh applied flags.Debug to slog
 	// (via logging.Setup), so `hams cargo install foo --debug` parsed
 	// the flag into flags.Debug but never raised the slog level →
 	// the user got no extra output despite asking for it. Use the

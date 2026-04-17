@@ -28,8 +28,8 @@ func TestSetup_CreatesLogFile(t *testing.T) {
 	}
 }
 
-// TestSetupDebugOnly_DebugLevelEmitsDebugLines — cycle 241. With
-// debug=true, slog.Debug calls SHOULD reach stderr. Pre-cycle-241
+// TestSetupDebugOnly_DebugLevelEmitsDebugLines — cycle 242. With
+// debug=true, slog.Debug calls SHOULD reach stderr. Pre-cycle-242
 // the global default level was INFO so debug-level lines were
 // silently dropped for short commands like `hams cargo install foo
 // --debug`. Captures stderr around a Debug + Info call and asserts
@@ -62,8 +62,8 @@ func TestSetupDebugOnly_DebugLevelEmitsDebugLines(t *testing.T) {
 
 	debugOut := captureStderr(func() {
 		SetupDebugOnly(true)
-		slog.Debug("debug-line", "phase", "cycle-241")
-		slog.Info("info-line", "phase", "cycle-241")
+		slog.Debug("debug-line", "phase", "cycle-242")
+		slog.Info("info-line", "phase", "cycle-242")
 	})
 	if !strings.Contains(debugOut, "debug-line") {
 		t.Errorf("debug=true should emit debug-line; got %q", debugOut)
@@ -74,8 +74,8 @@ func TestSetupDebugOnly_DebugLevelEmitsDebugLines(t *testing.T) {
 
 	infoOut := captureStderr(func() {
 		SetupDebugOnly(false)
-		slog.Debug("debug-line-suppressed", "phase", "cycle-241")
-		slog.Info("info-line-kept", "phase", "cycle-241")
+		slog.Debug("debug-line-suppressed", "phase", "cycle-242")
+		slog.Info("info-line-kept", "phase", "cycle-242")
 	})
 	if strings.Contains(infoOut, "debug-line-suppressed") {
 		t.Errorf("debug=false should suppress debug-line; got %q", infoOut)

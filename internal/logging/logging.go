@@ -20,11 +20,11 @@ import (
 // command" line that's useful when debugging `hams cargo install foo
 // --debug`).
 //
-// Pre-cycle-241 only Setup (full logging with file rotation) honored
+// Pre-cycle-242 only Setup (full logging with file rotation) honored
 // --debug. Short commands parsed --debug into flags.Debug but never
 // applied it, so the user got no extra output despite asking for it.
 //
-// Cycle 241.
+// Cycle 242.
 func SetupDebugOnly(debug bool) {
 	level := slog.LevelInfo
 	if debug {
