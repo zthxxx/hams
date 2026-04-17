@@ -61,7 +61,7 @@ func TestResolvePaths_DirectOverride(t *testing.T) {
 
 func TestLoad_EmptyStore(t *testing.T) {
 	paths := Paths{ConfigHome: t.TempDir(), DataHome: t.TempDir()}
-	cfg, err := Load(paths, "")
+	cfg, err := Load(paths, "", "")
 	if err != nil {
 		t.Fatalf("Load error: %v", err)
 	}
@@ -94,7 +94,7 @@ func TestLoad_4LevelMerge(t *testing.T) {
 	writeYAML(t, localCfg, "llm_cli: codex\n")
 
 	paths := Paths{ConfigHome: configHome, DataHome: t.TempDir()}
-	cfg, err := Load(paths, storeDir)
+	cfg, err := Load(paths, storeDir, "")
 	if err != nil {
 		t.Fatalf("Load error: %v", err)
 	}
@@ -112,7 +112,7 @@ func TestLoad_4LevelMerge(t *testing.T) {
 
 func TestLoad_MissingFilesOK(t *testing.T) {
 	paths := Paths{ConfigHome: t.TempDir(), DataHome: t.TempDir()}
-	cfg, err := Load(paths, t.TempDir())
+	cfg, err := Load(paths, t.TempDir(), "")
 	if err != nil {
 		t.Fatalf("Load should not error on missing files: %v", err)
 	}
@@ -268,7 +268,7 @@ func TestLoad_C1_StoreProfileTagRejected(t *testing.T) {
 	writeYAML(t, projectCfg, "profile_tag: dev\n")
 
 	paths := Paths{ConfigHome: configHome, DataHome: t.TempDir()}
-	_, err := Load(paths, storeDir)
+	_, err := Load(paths, storeDir, "")
 	if err == nil {
 		t.Fatal("Load should reject store-level profile_tag")
 	}
@@ -293,7 +293,7 @@ func TestLoad_C2_StoreMachineIDRejected(t *testing.T) {
 	writeYAML(t, projectCfg, "machine_id: sandbox\n")
 
 	paths := Paths{ConfigHome: configHome, DataHome: t.TempDir()}
-	_, err := Load(paths, storeDir)
+	_, err := Load(paths, storeDir, "")
 	if err == nil {
 		t.Fatal("Load should reject store-level machine_id")
 	}
@@ -315,7 +315,7 @@ func TestLoad_C3_StoreLocalMachineScopedRejected(t *testing.T) {
 	writeYAML(t, localCfg, "profile_tag: dev\n")
 
 	paths := Paths{ConfigHome: configHome, DataHome: t.TempDir()}
-	_, err := Load(paths, storeDir)
+	_, err := Load(paths, storeDir, "")
 	if err == nil {
 		t.Fatal("Load should reject store-local profile_tag (symmetric with tracked file)")
 	}
@@ -333,7 +333,7 @@ func TestLoad_C4_GlobalMachineScopedAccepted(t *testing.T) {
 	writeYAML(t, globalCfg, "profile_tag: macOS\nmachine_id: MacM5X\n")
 
 	paths := Paths{ConfigHome: configHome, DataHome: t.TempDir()}
-	cfg, err := Load(paths, storeDir)
+	cfg, err := Load(paths, storeDir, "")
 	if err != nil {
 		t.Fatalf("Load should accept global machine-scoped fields: %v", err)
 	}
@@ -357,7 +357,7 @@ func TestLoad_C5_StoreWithoutMachineScopedOk(t *testing.T) {
 	writeYAML(t, projectCfg, "llm_cli: claude\nprovider_priority:\n  - bash\n  - apt\n")
 
 	paths := Paths{ConfigHome: configHome, DataHome: t.TempDir()}
-	cfg, err := Load(paths, storeDir)
+	cfg, err := Load(paths, storeDir, "")
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
@@ -572,7 +572,7 @@ func TestLoad_MalformedGlobalYAMLSurfaces(t *testing.T) {
 	writeYAML(t, globalCfg, "not : valid : yaml: at all")
 
 	paths := Paths{ConfigHome: configHome, DataHome: t.TempDir()}
-	_, err := Load(paths, "")
+	_, err := Load(paths, "", "")
 	if err == nil {
 		t.Fatal("expected error loading malformed YAML")
 	}
@@ -593,7 +593,7 @@ func TestLoad_MalformedStoreYAMLSurfaces(t *testing.T) {
 	writeYAML(t, projectCfg, "not : valid : yaml: at all")
 
 	paths := Paths{ConfigHome: configHome, DataHome: t.TempDir()}
-	_, err := Load(paths, storeDir)
+	_, err := Load(paths, storeDir, "")
 	if err == nil {
 		t.Fatal("expected error loading malformed store YAML")
 	}
@@ -652,7 +652,7 @@ func TestLoad_StorePathTildeExpansion(t *testing.T) {
 	}
 
 	paths := Paths{ConfigHome: configHome, DataHome: t.TempDir()}
-	cfg, err := Load(paths, "")
+	cfg, err := Load(paths, "", "")
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}

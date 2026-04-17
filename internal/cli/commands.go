@@ -108,15 +108,16 @@ func runRefresh(ctx context.Context, flags *provider.GlobalFlags, registry *prov
 	cleanupLog := SetupLogging(flags)
 	defer cleanupLog()
 
-	cfg, err := config.Load(paths, flags.Store)
+	cfg, err := config.Load(paths, flags.Store, flags.Profile)
 	if err != nil {
 		return fmt.Errorf("loading config: %w", err)
 	}
 	if flags.Profile != "" {
-		cfg.ProfileTag = flags.Profile
-		// Symmetric to cycle 92: when --profile is explicit, validate
-		// the profile dir exists. Same "silent no-op on typo" problem
-		// that cycle 92 fixed for apply.
+		// Cycle 219 puts the --profile overlay inside config.Load, so
+		// cfg.ProfileTag already reflects the override. Refresh still
+		// hard-fails when the resulting profile dir doesn't exist
+		// (cycle 93's no-silent-typo guarantee), so the validation
+		// stays in place.
 		profileDir := cfg.ProfileDir()
 		if info, statErr := os.Stat(profileDir); statErr != nil || !info.IsDir() {
 			return hamserr.NewUserError(hamserr.ExitUsageError,
@@ -130,7 +131,8 @@ func runRefresh(ctx context.Context, flags *provider.GlobalFlags, registry *prov
 	// here; cycle 91 promoted that guarantee into `config.Load` itself
 	// (explicitStoreOverride), so the override now fires for every
 	// config.Load caller (apply / refresh / list / store-status /
-	// config-* / register) without duplication.
+	// config-* / register) without duplication. Cycle 219 did the
+	// same for `--profile`.
 
 	// Validate the configured/supplied store path exists as a directory.
 	// Without this, refresh against a typo'd store_path silently reported
@@ -342,7 +344,7 @@ func configCmd() *cli.Command {
 				Action: func(_ context.Context, cmd *cli.Command) error {
 					flags := globalFlags(cmd)
 					paths := resolvePaths(flags)
-					cfg, loadErr := config.Load(paths, flags.Store)
+					cfg, loadErr := config.Load(paths, flags.Store, flags.Profile)
 					if loadErr != nil {
 						return fmt.Errorf("loading config: %w", loadErr)
 					}
@@ -411,7 +413,7 @@ func configCmd() *cli.Command {
 					}
 					flags := globalFlags(cmd)
 					paths := resolvePaths(flags)
-					cfg, loadErr := config.Load(paths, flags.Store)
+					cfg, loadErr := config.Load(paths, flags.Store, flags.Profile)
 					if loadErr != nil {
 						return fmt.Errorf("loading config: %w", loadErr)
 					}
@@ -760,25 +762,17 @@ func storeCmd() *cli.Command {
 	storeStatusAction := func(ctx context.Context, cmd *cli.Command) error {
 		flags := globalFlags(cmd)
 		paths := resolvePaths(flags)
-		cfg, err := config.Load(paths, flags.Store)
+		cfg, err := config.Load(paths, flags.Store, flags.Profile)
 		if err != nil {
 			return fmt.Errorf("loading config: %w", err)
 		}
 
-		// Cycle 218: apply --profile override so store status reflects
-		// the runtime-resolved profile, not the config-file default.
-		// Pre-cycle-218 `hams --profile=X store status` silently showed
-		// the config-file's profile_tag, which contradicted what
-		// apply/refresh/list (cycles 92/93/217) would use for the same
-		// invocation. Unlike those commands, status does NOT fail hard
-		// when the overridden profile dir is absent: a missing profile
-		// dir is a legitimate status observation (fresh store), and the
-		// hamsfiles count sentinel (-1) already surfaces it in JSON +
-		// text output below.
-		if flags.Profile != "" {
-			cfg.ProfileTag = flags.Profile
-		}
-
+		// Cycle 219 makes `--profile` overlay live inside config.Load,
+		// so the value is already on cfg.ProfileTag. Status does NOT
+		// fail hard when the overridden profile dir is absent — a
+		// missing profile dir is a legitimate status observation
+		// (fresh store) and the hamsfiles count sentinel (-1) already
+		// surfaces "(profile dir not found)" in JSON + text output.
 		storePath := cfg.StorePath
 		if storePath == "" {
 			return hamserr.NewUserError(hamserr.ExitUsageError,
@@ -900,7 +894,7 @@ func storeCmd() *cli.Command {
 				Action: func(_ context.Context, cmd *cli.Command) error {
 					flags := globalFlags(cmd)
 					paths := resolvePaths(flags)
-					cfg, err := config.Load(paths, flags.Store)
+					cfg, err := config.Load(paths, flags.Store, flags.Profile)
 					if err != nil {
 						return fmt.Errorf("loading config: %w", err)
 					}
@@ -1018,7 +1012,7 @@ func storeCmd() *cli.Command {
 				Action: func(ctx context.Context, cmd *cli.Command) error {
 					flags := globalFlags(cmd)
 					paths := resolvePaths(flags)
-					cfg, err := config.Load(paths, flags.Store)
+					cfg, err := config.Load(paths, flags.Store, flags.Profile)
 					if err != nil {
 						return fmt.Errorf("loading config: %w", err)
 					}
@@ -1063,7 +1057,7 @@ func storeCmd() *cli.Command {
 				Action: func(ctx context.Context, cmd *cli.Command) error {
 					flags := globalFlags(cmd)
 					paths := resolvePaths(flags)
-					cfg, err := config.Load(paths, flags.Store)
+					cfg, err := config.Load(paths, flags.Store, flags.Profile)
 					if err != nil {
 						return fmt.Errorf("loading config: %w", err)
 					}
@@ -1177,20 +1171,18 @@ func listCmd(registry *provider.Registry) *cli.Command {
 			}
 			flags := globalFlags(cmd)
 			paths := resolvePaths(flags)
-			cfg, err := config.Load(paths, flags.Store)
+			cfg, err := config.Load(paths, flags.Store, flags.Profile)
 			if err != nil {
 				return fmt.Errorf("loading config: %w", err)
 			}
 
-			// Cycle 217: apply `--profile` overlay (symmetric with
-			// apply cycle 92, refresh cycle 93). Pre-cycle-217 the
-			// list Action ignored flags.Profile entirely — `hams
-			// --profile=foo list` silently used the config-file's
-			// profile tag. When the overridden profile dir is absent,
-			// the "No managed resources found" fallback fired, which
-			// hid the real issue (misspelled --profile value).
+			// Cycle 217 fixed the silent --profile drop in list; cycle
+			// 219 promoted the overlay into config.Load itself, so
+			// cfg.ProfileTag already reflects the override here. Keep
+			// the per-command stat: list still hard-fails on a
+			// missing/typo'd --profile so users don't see the
+			// misleading "No managed resources found" fallback.
 			if flags.Profile != "" {
-				cfg.ProfileTag = flags.Profile
 				profileDir := cfg.ProfileDir()
 				if info, statErr := os.Stat(profileDir); statErr != nil || !info.IsDir() {
 					return hamserr.NewUserError(hamserr.ExitUsageError,

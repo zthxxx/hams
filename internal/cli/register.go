@@ -88,18 +88,16 @@ func loadBuiltinProviderConfig() *config.Config {
 
 	paths := resolvePaths(flags)
 
-	cfg, err := config.Load(paths, flags.Store)
+	cfg, err := config.Load(paths, flags.Store, flags.Profile)
 	if err != nil {
 		slog.Warn("failed to load config for builtin providers", "error", err)
 		cfg = &config.Config{}
 	}
 
-	if flags.Store != "" {
-		cfg.StorePath = flags.Store
-	}
-	if flags.Profile != "" {
-		cfg.ProfileTag = flags.Profile
-	}
-
+	// config.Load already overlays --store (cycle 91) and --profile
+	// (cycle 219); no further per-builtin manipulation needed. The
+	// cfg returned here is shared by every provider's effectiveConfig
+	// helper, which still re-applies the same overlays per call so
+	// late-arriving flags from sub-CLI dispatch do not get lost.
 	return cfg
 }
