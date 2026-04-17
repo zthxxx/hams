@@ -8,6 +8,7 @@ output:
   formats:
     text:
       path: stdout
+  sort-results: true
   sort-order:
     - linter
     - severity
