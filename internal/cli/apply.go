@@ -292,6 +292,17 @@ func runApply(ctx context.Context, flags *provider.GlobalFlags, registry *provid
 		return filterErr
 	}
 	if len(providers) == 0 {
+		// Cycle 247: JSON consumers need a parseable stdout even when
+		// the stage-1 filter produces zero providers (e.g. `hams --json
+		// apply --only=apt` on a store with no apt artifacts). Pre-
+		// cycle-247 this path printed the prose "no providers match"
+		// message unconditionally — `hams --json apply ... | jq .` then
+		// errored on invalid JSON. Emit the empty-apply summary shape
+		// (same fields as a successful zero-work apply) so CI scripts
+		// don't need a special-case parser.
+		if flags.JSON {
+			return emitEmptyApplyJSON(applyStart)
+		}
 		reportNoProvidersMatch(cfg, profileDir, len(stageOneProviders),
 			only, allProviders, stageOneProviders)
 		return nil
@@ -319,6 +330,12 @@ func runApply(ctx context.Context, flags *provider.GlobalFlags, registry *provid
 		slog.Debug("provider skipped (state-only without --prune-orphans)", "provider", p.Manifest().Name)
 	}
 	if len(sorted) == 0 {
+		// Cycle 247: symmetric with the stage-1 empty branch above —
+		// JSON mode returns the empty-apply shape; text mode prints
+		// the human-readable reason.
+		if flags.JSON {
+			return emitEmptyApplyJSON(applyStart)
+		}
 		fmt.Println("No providers match: every selected provider is state-only and --prune-orphans was not given.")
 		return nil
 	}
@@ -968,6 +985,25 @@ func marshalDryRunActions(entries []dryRunProviderEntry) []map[string]any {
 		})
 	}
 	return out
+}
+
+// emitEmptyApplyJSON writes the apply summary for the
+// "no-providers-match" exit paths (stage-1 empty, or state-only
+// dropped). Uses buildApplyJSONSummary with zero-valued inputs so the
+// schema is identical to a healthy zero-work apply — CI consumers
+// don't need special-case parsing for the empty case. Cycle 247.
+func emitEmptyApplyJSON(applyStart time.Time) error {
+	data := buildApplyJSONSummary(
+		provider.ExecuteResult{},
+		nil, nil, nil, nil,
+		time.Since(applyStart).Milliseconds(),
+	)
+	out, mErr := json.MarshalIndent(data, "", "  ")
+	if mErr != nil {
+		return fmt.Errorf("marshaling empty-apply JSON: %w", mErr)
+	}
+	fmt.Println(string(out))
+	return nil
 }
 
 // buildApplyJSONSummary constructs the map used by the `--json`

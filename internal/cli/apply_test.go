@@ -1484,6 +1484,79 @@ func TestRunApply_DryRunJSONHasNoProse(t *testing.T) {
 	_ = storeDir
 }
 
+// TestRunApply_NoProvidersMatch_JSONMode locks in cycle 247: when
+// the stage-1 artifact filter produces zero providers (no hamsfile,
+// no state), `hams --json apply` must emit a parseable JSON object,
+// not the prose "no providers match" message.
+//
+// Pre-cycle-247, runApply called reportNoProvidersMatch
+// unconditionally, so `hams --json apply --only=alpha` (on a profile
+// with no alpha artifacts) dumped text to stdout. CI scripts piping
+// through `jq` got a parse error instead of an empty-apply summary.
+//
+// Now: flags.JSON routes through emitEmptyApplyJSON which emits the
+// same shape as a healthy zero-work real apply (installed=0,
+// failed=0, skipped=0, success=true, dry_run=false, elapsed_ms≥0,
+// plus the normalized empty slice fields). Consumers distinguish
+// "no providers selected" from "all succeeded with zero resources"
+// via the aggregate counts — but both yield valid JSON.
+func TestRunApply_NoProvidersMatch_JSONMode(t *testing.T) {
+	_, _, _, flags := setupApplyTestEnv(t, []string{"alpha"})
+	flags.JSON = true
+	// Note: NO hamsfile written — alpha has no artifacts at all.
+
+	registry := provider.NewRegistry()
+	p := &applyTestProvider{
+		manifest: provider.Manifest{
+			Name: "alpha", DisplayName: "alpha", FilePrefix: "alpha",
+			Platforms: []provider.Platform{provider.PlatformAll},
+		},
+	}
+	if err := registry.Register(p); err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+
+	out := captureStdout(t, func() {
+		if err := runApply(context.Background(), flags, registry, sudo.NoopAcquirer{}, "", true, "", "", false, bootstrapMode{}); err != nil {
+			t.Fatalf("runApply: %v", err)
+		}
+	})
+
+	// Output MUST parse as JSON.
+	var data map[string]any
+	if err := json.Unmarshal([]byte(strings.TrimSpace(out)), &data); err != nil {
+		t.Fatalf("JSON mode output not parseable: %v\nraw: %q", err, out)
+	}
+
+	// Must NOT contain the text-mode prose.
+	proseMarkers := []string{
+		"No providers match:",
+		"no hamsfile or state file",
+	}
+	for _, marker := range proseMarkers {
+		if strings.Contains(out, marker) {
+			t.Errorf("JSON mode contains prose marker %q; got:\n%s", marker, out)
+		}
+	}
+
+	// success=true (trivially — nothing to do), dry_run=false, and
+	// every aggregate is zero.
+	if data["success"] != true {
+		t.Errorf("success = %v, want true (empty apply succeeds trivially)", data["success"])
+	}
+	if data["dry_run"] != false {
+		t.Errorf("dry_run = %v, want false", data["dry_run"])
+	}
+	for _, field := range []string{"installed", "updated", "removed", "skipped", "failed"} {
+		if v, ok := data[field].(float64); !ok || v != 0 {
+			t.Errorf("%s = %v (ok=%v), want 0", field, data[field], ok)
+		}
+	}
+	if _, ok := data["elapsed_ms"].(float64); !ok {
+		t.Errorf("elapsed_ms missing or wrong type: %v", data["elapsed_ms"])
+	}
+}
+
 // TestRunApply_DryRunSkipsStateSaveEntirely locks in cycle 241.
 // cli-architecture/spec.md §--dry-run mandates: "No Hamsfile writes,
 // state file writes, lock acquisitions, or wrapped CLI invocations
