@@ -87,6 +87,69 @@ func (h *brewHarness) stateResources() map[string]state.ResourceState {
 	return out
 }
 
+// TestHandleCommand_CaskWithConflictingTagErrors locks in cycle 175:
+// `hams brew install iterm2 --cask --hams-tag=apps` would previously
+// record the entry under "apps" tag with NO cask metadata. caskApps()
+// in Plan only flags entries under the "cask" tag with IsCask=true,
+// so the next `hams apply` would run `brew install iterm2` (no
+// --cask), which fails because iterm2 has no formula. Now: surface
+// the conflict at the CLI layer with a UserFacingError pointing at
+// the resolution.
+func TestHandleCommand_CaskWithConflictingTagErrors(t *testing.T) {
+	t.Parallel()
+	h := newBrewHarness(t)
+
+	err := h.provider.HandleCommand(context.Background(),
+		[]string{"install", "iterm2", "--cask"},
+		map[string]string{"tag": "apps"},
+		h.flags)
+	if err == nil {
+		t.Fatal("expected error for --cask with conflicting --hams-tag")
+	}
+	if !strings.Contains(err.Error(), "--cask is incompatible") {
+		t.Errorf("error should mention --cask incompatibility; got %q", err.Error())
+	}
+	// Must NOT have invoked brew or written hamsfile.
+	if h.runner.CallCount(fakeOpInstall, "iterm2") > 0 {
+		t.Errorf("brew install must not be invoked on usage error")
+	}
+	if apps := h.hamsfileApps(); len(apps) != 0 {
+		t.Errorf("hamsfile should be empty on usage error, got %v", apps)
+	}
+}
+
+// TestHandleCommand_CaskWithExplicitCaskTag asserts the friendly
+// path: --cask + --hams-tag=cask is the canonical form and works.
+func TestHandleCommand_CaskWithExplicitCaskTag(t *testing.T) {
+	t.Parallel()
+	h := newBrewHarness(t)
+
+	if err := h.provider.HandleCommand(context.Background(),
+		[]string{"install", "iterm2", "--cask"},
+		map[string]string{"tag": "cask"},
+		h.flags); err != nil {
+		t.Fatalf("install: %v", err)
+	}
+	if h.runner.CallCount(fakeOpInstall, "iterm2") != 1 {
+		t.Errorf("brew install(iterm2) calls = %d, want 1", h.runner.CallCount(fakeOpInstall, "iterm2"))
+	}
+}
+
+// TestHandleCommand_CaskAutoTaggedAsCask asserts the default path
+// (no --hams-tag): --cask alone routes to the "cask" tag.
+func TestHandleCommand_CaskAutoTaggedAsCask(t *testing.T) {
+	t.Parallel()
+	h := newBrewHarness(t)
+
+	if err := h.provider.HandleCommand(context.Background(),
+		[]string{"install", "iterm2", "--cask"}, nil, h.flags); err != nil {
+		t.Fatalf("install: %v", err)
+	}
+	if h.runner.CallCount(fakeOpInstall, "iterm2") != 1 {
+		t.Errorf("brew install(iterm2) calls = %d, want 1", h.runner.CallCount(fakeOpInstall, "iterm2"))
+	}
+}
+
 // TestHandleUntap_AutoRecordsRemoval locks in cycle 167: `hams brew
 // untap user/repo` previously fell through to the raw passthrough,
 // which exec'd `brew untap` but NEVER updated the hamsfile/state.

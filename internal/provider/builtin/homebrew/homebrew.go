@@ -466,8 +466,23 @@ func (p *Provider) handleInstall(ctx context.Context, args []string, hamsFlags m
 
 	packages := packageArgs(args)
 	tag := parseInstallTag(hamsFlags)
+	caskFlag := hasCaskFlag(args)
+	// Cycle 175: --cask MUST land under the "cask" tag because
+	// caskApps() (Plan-side) only marks entries under that tag with
+	// IsCask=true. Without this guard, `hams brew install iterm2
+	// --cask --hams-tag=apps` would auto-record under "apps" with
+	// no cask metadata. Next `hams apply` would then run
+	// `brew install iterm2` (no --cask), which fails because iterm2
+	// has no formula. Surface the conflict instead of silently
+	// breaking the apply replay.
+	if caskFlag && tag != tagCLI && tag != tagCask {
+		return hamserr.NewUserError(hamserr.ExitUsageError,
+			fmt.Sprintf("--cask is incompatible with --hams-tag=%q (cask entries must live under the %q tag so apply replay invokes brew --cask)", tag, tagCask),
+			"Use --hams-tag=cask explicitly, or omit --hams-tag entirely (defaults to cask when --cask is set)",
+		)
+	}
 	// If --cask is present in args and no explicit tag was set, use "cask" as the tag.
-	if tag == tagCLI && hasCaskFlag(args) {
+	if tag == tagCLI && caskFlag {
 		tag = tagCask
 	}
 	// Auto-detect tap format (user/repo with exactly one slash, no formula suffix).
