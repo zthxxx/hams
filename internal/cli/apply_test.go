@@ -1426,6 +1426,11 @@ func TestRunApply_DryRunJSONHasNoProse(t *testing.T) {
 	if data["success"] != true {
 		t.Errorf("success = %v, want true on happy dry-run", data["success"])
 	}
+	// Cycle 240: dry-run JSON must include elapsed_ms (schema parity
+	// with real-run JSON from cycle 238).
+	if elapsed, ok := data["elapsed_ms"].(float64); !ok || elapsed < 0 {
+		t.Errorf("elapsed_ms = %v (ok=%v), want non-negative", data["elapsed_ms"], ok)
+	}
 
 	_ = storeDir
 }

@@ -721,7 +721,7 @@ func runApply(ctx context.Context, flags *provider.GlobalFlags, registry *provid
 		// dry-run outcome instead of the prose warnings — CI scripts
 		// need to parse the result without grepping prose lines.
 		if flags.JSON {
-			return emitDryRunJSON(skippedProviders, stateSaveFailures)
+			return emitDryRunJSON(skippedProviders, stateSaveFailures, time.Since(applyStart).Milliseconds())
 		}
 
 		if len(skippedProviders) > 0 {
@@ -1004,7 +1004,7 @@ func onlyMissingArtifacts(only string, allProviders, stageOneProviders []provide
 // and returns the matching ExitPartialFailure when appropriate. The
 // JSON shape mirrors the full-apply JSON (cycle 183) with a
 // `dry_run: true` marker so CI scripts can distinguish both modes.
-func emitDryRunJSON(skippedProviders, stateSaveFailures []string) error {
+func emitDryRunJSON(skippedProviders, stateSaveFailures []string, elapsedMs int64) error {
 	skippedNorm := skippedProviders
 	if skippedNorm == nil {
 		skippedNorm = []string{}
@@ -1013,11 +1013,17 @@ func emitDryRunJSON(skippedProviders, stateSaveFailures []string) error {
 	if saveFailNorm == nil {
 		saveFailNorm = []string{}
 	}
+	// Cycle 240: include elapsed_ms so dry-run JSON shape matches the
+	// real-run shape (cycle 238). CI dashboards that diff dry-run
+	// previews against real applies need the same field set on both
+	// sides; without elapsed_ms on dry-run, regression tests had to
+	// special-case the field as "may be missing on the dry-run path".
 	data := map[string]any{
 		"dry_run":           true,
 		"skipped_providers": skippedNorm,
 		"state_save_errors": saveFailNorm,
 		"success":           len(skippedProviders) == 0 && len(stateSaveFailures) == 0,
+		"elapsed_ms":        elapsedMs,
 	}
 	out, mErr := json.MarshalIndent(data, "", "  ")
 	if mErr != nil {
