@@ -2,6 +2,9 @@ package bash
 
 import (
 	"context"
+	"io"
+	"log/slog"
+	"os"
 	"os/exec"
 	"strings"
 	"testing"
@@ -309,6 +312,68 @@ func TestRemove_NoCommand(t *testing.T) {
 	err := p.Remove(context.Background(), "some-script")
 	if err != nil {
 		t.Fatalf("Remove without command should be no-op: %v", err)
+	}
+}
+
+// TestBashParseResources_WarnsOnMissingURN locks in cycle 180:
+// hamsfile entries with `run:` but no `urn:` are common user typos
+// (forgot the URN line). Pre-cycle-180 they were silently dropped:
+// ListApps skipped them, bashParseResources skipped them, the script
+// never ran, and the user had no clue why. Now: emit a slog.Warn so
+// the user sees their typo when they run with debug or check logs.
+func TestBashParseResources_WarnsOnMissingURN(t *testing.T) {
+	// Capture slog output via stderr redirection.
+	origStderr := os.Stderr
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("Pipe: %v", err)
+	}
+	os.Stderr = w
+	defer func() { os.Stderr = origStderr }()
+
+	// Force slog to write to the new stderr.
+	defer slog.SetDefault(slog.Default())
+	slog.SetDefault(slog.New(slog.NewTextHandler(w, nil)))
+
+	yamlDoc := `
+install:
+  - run: "echo hello"
+  - urn: urn:hams:bash:legitimate
+    run: "echo legit"
+`
+	var root yaml.Node
+	if uErr := yaml.Unmarshal([]byte(yamlDoc), &root); uErr != nil {
+		t.Fatalf("unmarshal: %v", uErr)
+	}
+	hf := &hamsfile.File{Path: "test.yaml", Root: &root}
+
+	resourceByID, parseErr := bashParseResources(hf)
+	if parseErr != nil {
+		t.Fatalf("bashParseResources: %v", parseErr)
+	}
+
+	if cerr := w.Close(); cerr != nil {
+		t.Logf("close pipe writer: %v", cerr)
+	}
+	stderrBuf, readErr := io.ReadAll(r)
+	if readErr != nil {
+		t.Fatalf("read pipe: %v", readErr)
+	}
+	if cerr := r.Close(); cerr != nil {
+		t.Logf("close pipe reader: %v", cerr)
+	}
+
+	// Only the legitimate entry should be in the map.
+	if _, ok := resourceByID["urn:hams:bash:legitimate"]; !ok {
+		t.Errorf("legitimate entry should be parsed; got map %v", resourceByID)
+	}
+
+	stderr := string(stderrBuf)
+	if !strings.Contains(stderr, "no urn") {
+		t.Errorf("expected warning about missing urn; stderr=%q", stderr)
+	}
+	if !strings.Contains(stderr, "echo hello") {
+		t.Errorf("warning should include the run command; stderr=%q", stderr)
 	}
 }
 

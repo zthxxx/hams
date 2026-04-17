@@ -267,6 +267,16 @@ func bashParseResources(f *hamsfile.File) (map[string]bashResource, error) {
 			}
 
 			if id == "" {
+				// Cycle 180: emit a slog.Warn when an entry has fields
+				// like `run:` but no `urn:` — this is a common user typo
+				// (forgot to add the URN line). Pre-cycle-180 the entry
+				// was silently dropped: ListApps skipped it (no app/urn
+				// field), bashParseResources skipped it here, so the
+				// user's script never ran and they had no clue why.
+				if res.Run != "" || res.Check != "" || res.Remove != "" {
+					slog.Warn("bash provider: entry has run/check/remove but no urn — silently ignored",
+						"run", res.Run, "check", res.Check)
+				}
 				continue
 			}
 			resourceByID[id] = res
