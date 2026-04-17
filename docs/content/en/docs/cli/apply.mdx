@@ -45,6 +45,7 @@ hams apply --except=ansible
 | `--from-repo` | string | Clone the store from a remote GitHub repo and apply. Perfect for a new machine |
 | `--only` | string | Comma-separated providers to run. Everything else is skipped |
 | `--except` | string | Comma-separated providers to skip. Everything else runs |
+| `--no-refresh` | bool | Skip the refresh phase. hams normally probes the environment first to catch drift; `--no-refresh` trusts whatever's in `.state/` and skips straight to the diff. Useful when you just ran `hams refresh` and want to re-apply without re-probing |
 | `--prune-orphans` | bool | Process providers that have a state file but no hamsfile by removing every state-tracked resource. **Destructive; default off.** Useful when you've stopped tracking a tool and want hams to clean up. Be sure your hamsfiles are present (not in a half-pulled worktree) before using this — on a partial checkout this would mass-uninstall |
 | `--bootstrap` | bool | Auto-run a missing provider's bootstrap script (e.g. Homebrew's `install.sh`). **Runs remote bash from the internet** — opt in explicitly. Default off; interactive shells get a `[y/N/s]` prompt instead |
 | `--no-bootstrap` | bool | Skip the interactive bootstrap prompt that would otherwise appear on a TTY. Useful in CI when you want fail-fast behavior and don't want hams to ever auto-install anything |

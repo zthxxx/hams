@@ -49,7 +49,7 @@ hams store status
 
 示例输出：
 
-```
+```text
 Store:       /Users/you/Projects/hams-store
 Branch:      main (up to date with origin/main)
 Profile:     macOS
@@ -65,18 +65,20 @@ Untracked:
 
 ### `hams store push`
 
-把 Hamsfile 的改动暂存、提交、推送远端 —— 一条命令搞定。commit message 可以自己填，或者让 hams 根据 diff 自动生成一条。
+把 Hamsfile 的改动暂存、提交、推送远端 —— 一条命令搞定。不指定 `-m` 时用通用默认 commit message
+"hams: update store"；指定 `-m` 可以自定义。
 
 ```bash
-# 一把梭
+# 一把梭 —— 用默认的 "hams: update store" 作为 commit message
 hams store push
 
-# 指定 commit message
+# 指定 commit message（推荐，便于事后回溯）
 hams store push -m "Add ripgrep and htop"
-
-# 只暂存当前 profile 下的改动（跨 profile 的先不推）
-hams store push --profile-only
 ```
+
+如果工作区干净（没有可提交改动）会友好短路，打印 "Nothing to commit — the store is clean."
+后以退出码 0 返回 —— 刚跑完 `hams refresh`（只改了 gitignore 的 `.state/`）接着跑
+`hams store push` 不会报错。
 
 store push 不会推 `.state/` 和 `*.local.*` 文件 —— 这些本来就 gitignore 掉了。
 
