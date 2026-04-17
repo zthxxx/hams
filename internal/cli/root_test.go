@@ -165,6 +165,65 @@ func TestNewApp_UnknownCommandSuggestsClosestMatch(t *testing.T) {
 	}
 }
 
+// TestNewApp_ApplyRejectsPositionalArgs asserts that `hams apply
+// bogus-arg` returns a UserFacingError instead of silently
+// ignoring the stray arg. Common typo: `hams apply apt` meaning
+// `hams apply --only=apt`. Without this guard the apt filter is
+// silently dropped and apply runs for everything, which the user
+// could miss until drift appears.
+func TestNewApp_ApplyRejectsPositionalArgs(t *testing.T) {
+	registry := provider.NewRegistry()
+	app := NewApp(registry, sudo.NoopAcquirer{})
+
+	err := app.Run(context.Background(), []string{"hams", "apply", "bogus"})
+	if err == nil {
+		t.Fatal("expected error for positional arg")
+	}
+	var ufe *hamserr.UserFacingError
+	if !errors.As(err, &ufe) {
+		t.Fatalf("error should be *UserFacingError, got %T: %v", err, err)
+	}
+	if !strings.Contains(ufe.Error(), "positional") {
+		t.Errorf("error should mention 'positional', got: %v", ufe.Error())
+	}
+	if !strings.Contains(ufe.Error(), "bogus") {
+		t.Errorf("error should name the bad arg, got: %v", ufe.Error())
+	}
+	if ufe.Code != hamserr.ExitUsageError {
+		t.Errorf("exit code = %d, want ExitUsageError", ufe.Code)
+	}
+}
+
+// TestNewApp_RefreshRejectsPositionalArgs mirrors the apply check
+// for refresh — same class of typo.
+func TestNewApp_RefreshRejectsPositionalArgs(t *testing.T) {
+	registry := provider.NewRegistry()
+	app := NewApp(registry, sudo.NoopAcquirer{})
+
+	err := app.Run(context.Background(), []string{"hams", "refresh", "foo"})
+	if err == nil {
+		t.Fatal("expected error for positional arg")
+	}
+	if !strings.Contains(err.Error(), "positional") {
+		t.Errorf("error should mention 'positional', got: %v", err)
+	}
+}
+
+// TestNewApp_ListRejectsPositionalArgs mirrors the apply check
+// for list — same class of typo.
+func TestNewApp_ListRejectsPositionalArgs(t *testing.T) {
+	registry := provider.NewRegistry()
+	app := NewApp(registry, sudo.NoopAcquirer{})
+
+	err := app.Run(context.Background(), []string{"hams", "list", "bar"})
+	if err == nil {
+		t.Fatal("expected error for positional arg")
+	}
+	if !strings.Contains(err.Error(), "positional") {
+		t.Errorf("error should mention 'positional', got: %v", err)
+	}
+}
+
 // TestNewApp_NoArgsShowsHelpNotError asserts that bare `hams` (no
 // subcommand) still prints the help text and exits 0, preserving
 // the prior behavior for the empty-args path — the usage-error

@@ -45,6 +45,20 @@ Use --no-refresh to skip probing and apply based on state alone.`,
 			&cli.BoolFlag{Name: "no-bootstrap", Usage: "Fail fast when a provider prerequisite is missing. Skip the interactive consent prompt that would otherwise show on a TTY."},
 		},
 		Action: func(ctx context.Context, cmd *cli.Command) error {
+			// Reject positional args — apply reads all hamsfiles and
+			// applies everything by design; a stray positional arg
+			// is almost certainly a typo (e.g. `hams apply apt`
+			// where the user meant `--only=apt`). Previously these
+			// were silently ignored, causing hard-to-debug cases
+			// where `hams apply --only=apt pnpm` only filtered to
+			// apt while the user thought pnpm was also included.
+			if cmd.Args().Len() > 0 {
+				return hamserr.NewUserError(hamserr.ExitUsageError,
+					fmt.Sprintf("hams apply does not take positional arguments (got %q)", cmd.Args().First()),
+					"To filter providers: hams apply --only=<provider1>,<provider2>",
+					"To apply everything: hams apply",
+				)
+			}
 			flags := globalFlags(cmd)
 			return runApply(ctx, flags, registry, sudoAcq,
 				cmd.String("from-repo"),

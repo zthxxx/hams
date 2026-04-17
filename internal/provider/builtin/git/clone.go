@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -349,6 +350,34 @@ func (p *CloneProvider) handleRemove(args []string, hamsFlags map[string]string,
 	if err != nil {
 		return err
 	}
+	sf := p.loadOrCreateStateFile(flags)
+
+	// Validate the ID exists in hamsfile OR state before mutating
+	// either. Without this check, a typo like `hams git-clone remove
+	// git@github.com:foo/br` (missing `ar`) would silently succeed:
+	// RemoveApp no-ops (returns false, ignored) and the state file
+	// gets a useless StateRemoved tombstone for a nonexistent ID.
+	// Surface a clear error with the list of tracked IDs so the user
+	// can retry with a valid one.
+	inHamsfile := slices.Contains(hf.ListApps(), resourceID)
+	_, inState := sf.Resources[resourceID]
+	if !inHamsfile && !inState {
+		tracked := append([]string(nil), hf.ListApps()...)
+		for id := range sf.Resources {
+			if !slices.Contains(tracked, id) {
+				tracked = append(tracked, id)
+			}
+		}
+		suggestions := []string{"Run 'hams git-clone list' to see tracked repos"}
+		if len(tracked) > 0 {
+			suggestions = append(suggestions, "Tracked IDs: "+strings.Join(tracked, ", "))
+		}
+		return hamserr.NewUserError(hamserr.ExitUsageError,
+			fmt.Sprintf("git-clone: no tracked resource with ID %q", resourceID),
+			suggestions...,
+		)
+	}
+
 	hf.RemoveApp(resourceID)
 	if err := hf.Write(); err != nil {
 		return fmt.Errorf("git-clone: failed to write hamsfile: %w", err)
@@ -360,7 +389,6 @@ func (p *CloneProvider) handleRemove(args []string, hamsFlags map[string]string,
 	// re-clone on next apply). Matches the auto-record contract other
 	// CLI-writing providers (apt, homebrew, git-config, defaults,
 	// duti) satisfy for their remove paths.
-	sf := p.loadOrCreateStateFile(flags)
 	sf.SetResource(resourceID, state.StateRemoved)
 	if err := sf.Save(p.statePath(flags)); err != nil {
 		return fmt.Errorf("git-clone: failed to write state: %w", err)

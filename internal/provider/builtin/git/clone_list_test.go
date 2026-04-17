@@ -315,6 +315,59 @@ func TestHandleAdd_ExistingValidRepoRecordsWithoutCloning(t *testing.T) {
 	}
 }
 
+// TestHandleRemove_UnknownIDErrors locks in cycle 140: `hams
+// git-clone remove <typo>` against a tracked-ID set that doesn't
+// contain the typo surfaces a UserFacingError instead of silently
+// writing a StateRemoved tombstone for the nonexistent entry. The
+// error lists the tracked IDs so the user can retry with a valid
+// value.
+func TestHandleRemove_UnknownIDErrors(t *testing.T) {
+	t.Parallel()
+	p, flags, stateDir := newCloneHarness(t)
+
+	// Seed one valid tracked resource.
+	validID := "git@github.com:foo/bar -> /tmp/bar"
+	sf := state.New(p.Manifest().Name, "test-machine")
+	sf.SetResource(validID, state.StateOK)
+	if err := sf.Save(filepath.Join(stateDir, "git-clone.state.yaml")); err != nil {
+		t.Fatalf("seed state: %v", err)
+	}
+
+	// User types a typo'd ID that doesn't exist.
+	err := p.HandleCommand(context.Background(),
+		[]string{"remove", "git@github.com:foo/br -> /tmp/br"}, // typo: br vs bar
+		nil, flags)
+	if err == nil {
+		t.Fatalf("remove on nonexistent ID should error")
+	}
+	var ufe *hamserr.UserFacingError
+	if !errors.As(err, &ufe) {
+		t.Fatalf("expected *UserFacingError, got %T: %v", err, err)
+	}
+	if !strings.Contains(ufe.Message, "no tracked resource") {
+		t.Errorf("error message should mention 'no tracked resource', got: %q", ufe.Message)
+	}
+	// Suggestions must include the valid tracked IDs so user can
+	// retry.
+	joined := strings.Join(ufe.Suggestions, " | ")
+	if !strings.Contains(joined, validID) {
+		t.Errorf("suggestions should list valid tracked IDs, got: %q", joined)
+	}
+
+	// State MUST NOT have a tombstone for the typo'd ID.
+	sf2, err := state.Load(filepath.Join(stateDir, "git-clone.state.yaml"))
+	if err != nil {
+		t.Fatalf("reload state: %v", err)
+	}
+	if _, ok := sf2.Resources["git@github.com:foo/br -> /tmp/br"]; ok {
+		t.Errorf("typo'd ID should NOT have a state entry, but found one")
+	}
+	// The valid ID should still be StateOK (not accidentally touched).
+	if r, ok := sf2.Resources[validID]; !ok || r.State != state.StateOK {
+		t.Errorf("valid ID should still be StateOK, got ok=%v state=%v", ok, r)
+	}
+}
+
 // keysOf is a tiny helper for the state-assertion error message.
 func keysOf(m map[string]*state.Resource) []string {
 	out := make([]string, 0, len(m))

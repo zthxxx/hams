@@ -50,6 +50,17 @@ Only resources already tracked in state are probed — no new resources are disc
 			&cli.StringFlag{Name: "except", Usage: "Skip these providers (comma-separated)"},
 		},
 		Action: func(ctx context.Context, cmd *cli.Command) error {
+			// Same positional-args guard as `hams apply` (see apply.go
+			// for the rationale): refresh reads all hamsfiles/state
+			// by design, so a stray positional is almost certainly a
+			// typo (e.g. `hams refresh apt` instead of `--only=apt`).
+			if cmd.Args().Len() > 0 {
+				return hamserr.NewUserError(hamserr.ExitUsageError,
+					fmt.Sprintf("hams refresh does not take positional arguments (got %q)", cmd.Args().First()),
+					"To filter providers: hams refresh --only=<provider1>,<provider2>",
+					"To refresh everything: hams refresh",
+				)
+			}
 			flags := globalFlags(cmd)
 			return runRefresh(ctx, flags, registry, cmd.String("only"), cmd.String("except"))
 		},
@@ -928,6 +939,17 @@ func listCmd(registry *provider.Registry) *cli.Command {
 			&cli.StringFlag{Name: "status", Usage: "Filter by resource status (ok, failed, pending, removed)"},
 		},
 		Action: func(_ context.Context, cmd *cli.Command) error {
+			// Same positional-args guard as `hams apply` / `hams refresh`:
+			// list reads all state by design. Stray positional args are
+			// almost certainly typos like `hams list apt` instead of
+			// `hams list --only=apt`.
+			if cmd.Args().Len() > 0 {
+				return hamserr.NewUserError(hamserr.ExitUsageError,
+					fmt.Sprintf("hams list does not take positional arguments (got %q)", cmd.Args().First()),
+					"To filter providers: hams list --only=<provider1>,<provider2>",
+					"To list everything: hams list",
+				)
+			}
 			flags := globalFlags(cmd)
 			paths := resolvePaths(flags)
 			cfg, err := config.Load(paths, flags.Store)
