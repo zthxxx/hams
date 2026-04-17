@@ -153,25 +153,40 @@ func TestSplitHamsFlags_Property_PartitionInvariants(t *testing.T) {
 			}
 		}
 
-		// Invariant 1: all --hams- flags before the first -- are captured,
-		// EXCEPT explicit-false-y values (cycle 162: `--hams-X=false`/`=0`
-		// disables the flag, leaving the key absent from the map).
+		// Invariant 1: for each KEY appearing in --hams- flags before the
+		// first --, the LAST occurrence determines presence. Last-occurrence
+		// false-y → absent; last-occurrence truthy → present (cycle 162's
+		// strip-on-false interacts naturally with later truthy overrides
+		// because the parser walks args in order). The pre-cycle-178 test
+		// only checked per-arg invariants, which broke when the same key
+		// appeared with both a false-y AND truthy value (last-wins).
 		beforeSep := args
 		if firstSep >= 0 {
 			beforeSep = args[:firstSep]
 		}
+		// Build last-occurrence map: key → last (key, value) pair.
+		lastByKey := make(map[string]struct {
+			arg   string
+			value string
+		})
 		for _, a := range beforeSep {
 			if strings.HasPrefix(a, hamsFlagPrefix) {
-				key, value := parseHamsFlag(a[7:])
-				if hamsFlagFalsey(value) {
-					if _, ok := hams[key]; ok {
-						t.Errorf("hams flag %q with false-y value should NOT be captured", a)
-					}
-					continue
+				k, v := parseHamsFlag(a[7:])
+				lastByKey[k] = struct {
+					arg   string
+					value string
+				}{a, v}
+			}
+		}
+		for k, last := range lastByKey {
+			if hamsFlagFalsey(last.value) {
+				if _, ok := hams[k]; ok {
+					t.Errorf("last-occurrence of %q is false-y (%q) but key is in map", k, last.arg)
 				}
-				if _, ok := hams[key]; !ok {
-					t.Errorf("hams flag %q before separator not captured", a)
-				}
+				continue
+			}
+			if _, ok := hams[k]; !ok {
+				t.Errorf("last-occurrence of %q is truthy (%q) but key is NOT in map", k, last.arg)
 			}
 		}
 
