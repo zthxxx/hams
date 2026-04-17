@@ -217,6 +217,16 @@ func runRefresh(ctx context.Context, flags *provider.GlobalFlags, registry *prov
 		return filterErr
 	}
 	if len(providers) == 0 {
+		// Cycle 248: emit parseable JSON on the no-providers-match
+		// exit path so `hams --json refresh --only=apt` on a profile
+		// with no apt artifacts doesn't dump text through `jq .`.
+		// Symmetric with cycle 247's fix on runApply's matching path.
+		// The JSON shape mirrors the success path (probed=planned=0,
+		// success=true, dry_run flag preserved, empty save/probe
+		// failure slices).
+		if flags.JSON {
+			return emitEmptyRefreshJSON(flags.DryRun, refreshStart)
+		}
 		// Distinguish stage-1 empty (no artifacts anywhere) from stage-2
 		// empty (artifacts exist but --only/--except excluded them all).
 		switch {
@@ -446,6 +456,30 @@ func runRefresh(ctx context.Context, flags *provider.GlobalFlags, registry *prov
 		"Check slog output above for the specific error(s)",
 		"Use '--debug' for detailed error output",
 	)
+}
+
+// emitEmptyRefreshJSON writes the refresh summary for the
+// no-providers-match exit path. Same shape as the completion branch
+// (probed = planned = 0, success = true, no save/probe failures),
+// preserving dry_run and elapsed_ms so CI scripts see a consistent
+// schema across real/empty/interrupted paths. Cycle 248.
+func emitEmptyRefreshJSON(dryRun bool, refreshStart time.Time) error {
+	data := map[string]any{
+		"probed":                 0,
+		"planned":                0,
+		"save_failures":          []string{},
+		"probe_failures":         0,
+		"probe_failed_providers": []string{},
+		"success":                true,
+		"dry_run":                dryRun,
+		"elapsed_ms":             time.Since(refreshStart).Milliseconds(),
+	}
+	out, mErr := json.MarshalIndent(data, "", "  ")
+	if mErr != nil {
+		return fmt.Errorf("marshaling empty-refresh JSON: %w", mErr)
+	}
+	fmt.Println(string(out))
+	return nil
 }
 
 func configCmd() *cli.Command {
