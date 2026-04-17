@@ -58,10 +58,10 @@ Each provider gets an atomic commit wiring auto-record + a regression test suite
 
 ## 9. Spec delta archive
 
-- [ ] Deploy-time step: archive this change folder into `openspec/archive/` and merge the CP-1 auto-record Requirement into `openspec/specs/builtin-providers/spec.md` using `openspec archive 2026-04-16-package-provider-auto-record-gap`.
+- [x] Deploy-time step: archive this change folder into `openspec/changes/archive/`. The CP-1 auto-record Requirement is already merged into `openspec/specs/builtin-providers/spec.md` (auto-record scope sections at lines 964/1026/1140/1170/1180); folder moved to archive 2026-04-17 in the v1 cleanup pass.
 
 ## 10. Close-out
 
 - [x] Final `task check` across the full change (each cycle verified independently; final green after cycle 83).
 - [x] Update AGENTS.md progress log with the cycle summary.
-- [ ] Archive this change folder after deploy — deferred to release time.
+- [x] Archive this change folder after deploy — archived 2026-04-17 in the v1 cleanup pass.

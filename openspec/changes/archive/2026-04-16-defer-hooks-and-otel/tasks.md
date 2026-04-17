@@ -29,4 +29,4 @@ the OTel section (lines 728–756) describe the lifted/wired behavior.
 - [x] Manual spec edits — already applied (see cli-architecture/spec.md
       lines 699–756).
 - [x] `task check` passes — verified 2026-04-17, 32/32 packages PASS.
-- [ ] Archive this change folder at release time (deferred).
+- [x] Archive this change folder at release time — archived 2026-04-17 in the v1 cleanup pass.
