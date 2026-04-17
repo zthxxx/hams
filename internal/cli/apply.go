@@ -283,7 +283,8 @@ func runApply(ctx context.Context, flags *provider.GlobalFlags, registry *provid
 		return filterErr
 	}
 	if len(providers) == 0 {
-		reportNoProvidersMatch(cfg, profileDir, len(stageOneProviders))
+		reportNoProvidersMatch(cfg, profileDir, len(stageOneProviders),
+			only, allProviders, stageOneProviders)
 		return nil
 	}
 
@@ -483,7 +484,17 @@ func runApply(ctx context.Context, flags *provider.GlobalFlags, registry *provid
 
 	// Acquire sudo credentials once before any provider operations (after dry-run check).
 	// Dry-run skips sudo acquisition — no commands will actually run.
-	if !flags.DryRun {
+	//
+	// Cycle 227: only prompt when at least one provider in the
+	// resolved `sorted` set has Manifest.RequiresSudo == true.
+	// Pre-cycle-227 `hams apply` unconditionally prompted for sudo
+	// even on profiles containing only cargo / npm / brew / pnpm /
+	// uv / git-clone (none of which need sudo) — contradicting the
+	// cli-architecture spec scenario "Operations that do not
+	// require sudo SHALL NOT prompt for credentials". The check
+	// runs after dry-run + filter so `--only=cargo` on an apt+cargo
+	// profile correctly suppresses the prompt.
+	if !flags.DryRun && providersNeedSudo(sorted) {
 		if sudoErr := sudoAcq.Acquire(ctx); sudoErr != nil {
 			slog.Warn("sudo acquisition failed; some providers may fail", "error", sudoErr)
 		}
@@ -786,8 +797,28 @@ func runApply(ctx context.Context, flags *provider.GlobalFlags, registry *provid
 // previously both produced the bare "no providers match" message,
 // leaving users who cloned a store without their profile_tag
 // confused about what was missing.
-func reportNoProvidersMatch(cfg *config.Config, profileDir string, stageOneProvidersLen int) {
+//
+// Cycle 226: when `--only=X` is set and X is a VALID registered
+// provider but has no hamsfile/state for the current profile, the
+// old "--only/--except excluded every provider that has artifacts"
+// message misled the user — they named the provider explicitly and
+// the message suggested the filter removed something the user
+// wanted. New message names the artifact-less providers from the
+// --only list so the user's attention goes to "X has no artifacts",
+// not "my filter is wrong".
+func reportNoProvidersMatch(cfg *config.Config, profileDir string, stageOneProvidersLen int,
+	only string, allProviders, stageOneProviders []provider.Provider,
+) {
 	if stageOneProvidersLen > 0 {
+		if missing := onlyMissingArtifacts(only, allProviders, stageOneProviders); len(missing) > 0 {
+			verb := pluralize(len(missing), "has", "have")
+			fmt.Printf("No providers match: %s %s no hamsfile or state file for the current profile — nothing to apply.\n",
+				strings.Join(missing, ", "), verb)
+			fmt.Printf("  Profile: %s (%s)\n", cfg.ProfileTag, logging.TildePath(profileDir))
+			fmt.Printf("  Run 'hams %s install <pkg>' to start tracking, or omit --only to apply every provider with artifacts.\n",
+				missing[0])
+			return
+		}
 		fmt.Println("No providers match: --only/--except excluded every provider that has artifacts.")
 		return
 	}
@@ -813,6 +844,51 @@ func reportNoProvidersMatch(cfg *config.Config, profileDir string, stageOneProvi
 	sort.Strings(available)
 	fmt.Printf("  Available profiles in this store: %s\n", strings.Join(available, ", "))
 	fmt.Println("  Fix: hams config set profile_tag <profile>  OR  pass --profile=<profile>")
+}
+
+// onlyMissingArtifacts returns the subset of `--only=<csv>` names
+// that are VALID registered providers but lack a hamsfile/state file
+// for the active profile. Empty slice when `only` is empty, when the
+// parsed CSV is empty, or when every named provider already has
+// artifacts.
+//
+// Cycle 226: powers the user-facing "X has no hamsfile/state" message
+// so the user sees the actual reason their --only filter produced
+// zero matches. Names preserved in --only input order so output is
+// predictable for users and scripts.
+func onlyMissingArtifacts(only string, allProviders, stageOneProviders []provider.Provider) []string {
+	if only == "" {
+		return nil
+	}
+	parsed := parseCSV(only)
+	if len(parsed) == 0 {
+		return nil
+	}
+
+	allNames := make(map[string]bool, len(allProviders))
+	for _, p := range allProviders {
+		allNames[strings.ToLower(p.Manifest().Name)] = true
+	}
+	haveArtifacts := make(map[string]bool, len(stageOneProviders))
+	for _, p := range stageOneProviders {
+		haveArtifacts[strings.ToLower(p.Manifest().Name)] = true
+	}
+
+	var missing []string
+	for raw := range strings.SplitSeq(only, ",") {
+		name := strings.ToLower(strings.TrimSpace(raw))
+		if name == "" {
+			continue
+		}
+		if !allNames[name] {
+			continue // unknown name is caught upstream; don't surface here
+		}
+		if haveArtifacts[name] {
+			continue
+		}
+		missing = append(missing, name)
+	}
+	return missing
 }
 
 // emitDryRunJSON writes a pure JSON summary of a dry-run to stdout
@@ -998,6 +1074,20 @@ func parseCSV(s string) map[string]bool {
 // printDryRunActions prints the list of planned actions for one
 // provider in dry-run mode. Groups by action type so the user can
 // quickly scan what install / update / remove operations would run.
+// providersNeedSudo reports whether any provider in the slice has
+// `Manifest.RequiresSudo == true`. Cycle 227 — wired into runApply's
+// startup path so the password prompt only appears when an apt-bearing
+// (or future-sudo-bearing) profile is being applied. Empty slice
+// returns false, consistent with the early-return paths upstream.
+func providersNeedSudo(providers []provider.Provider) bool {
+	for _, p := range providers {
+		if p.Manifest().RequiresSudo {
+			return true
+		}
+	}
+	return false
+}
+
 func printDryRunActions(name, displayName string, actions []provider.Action) {
 	var installs, updates, removes, skips []string
 	for _, a := range actions {

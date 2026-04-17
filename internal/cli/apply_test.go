@@ -87,6 +87,14 @@ func TestRunApply_UsesFilePrefixStatePathAndProviderPlan(t *testing.T) {
 			DisplayName: "Homebrew",
 			Platforms:   []provider.Platform{provider.PlatformAll},
 			FilePrefix:  "Homebrew",
+			// Cycle 227: this test asserts the sudo lifecycle (Acquire
+			// + Stop) wires correctly. Pre-cycle-227 sudo was acquired
+			// unconditionally; cycle 227 gates on Manifest.RequiresSudo.
+			// Set it true here so the test continues to exercise the
+			// Acquire → Stop path. The dedicated
+			// TestRunApply_NoSudoPromptWhenNoProviderRequiresIt asserts
+			// the inverse (RequiresSudo=false → no prompt).
+			RequiresSudo: true,
 		},
 		planFn: func(_ context.Context, desired *hamsfile.File, observed *state.File) ([]provider.Action, error) {
 			planCalls++
@@ -159,6 +167,98 @@ func TestRunApply_UsesFilePrefixStatePathAndProviderPlan(t *testing.T) {
 
 	if gotStore := flags.Store; gotStore != storeDir {
 		t.Fatalf("flags.Store = %q, want %q", gotStore, storeDir)
+	}
+}
+
+// TestRunApply_NoSudoPromptWhenNoProviderRequiresIt — cycle 227.
+// `hams apply` previously called sudoAcq.Acquire unconditionally,
+// prompting for a password even when the active profile only had
+// non-sudo providers (cargo / npm / pnpm / uv / brew / git-clone).
+// Spec §"Sudo management": "Operations that do not require sudo
+// SHALL NOT prompt for credentials." Cycle 227 gates Acquire on
+// `Manifest.RequiresSudo` for at least one selected provider.
+func TestRunApply_NoSudoPromptWhenNoProviderRequiresIt(t *testing.T) {
+	_, profileDir, _, flags := setupApplyTestEnv(t, []string{"cargo"})
+	hamsfilePath := filepath.Join(profileDir, "cargo.hams.yaml")
+	writeApplyTestFile(t, hamsfilePath, "cli:\n  - app: ripgrep\n")
+
+	p := &applyTestProvider{
+		manifest: provider.Manifest{
+			Name:        "cargo",
+			DisplayName: "cargo",
+			Platforms:   []provider.Platform{provider.PlatformAll},
+			FilePrefix:  "cargo",
+			// RequiresSudo intentionally false — this is the no-prompt path.
+		},
+		planFn: func(_ context.Context, _ *hamsfile.File, _ *state.File) ([]provider.Action, error) {
+			return []provider.Action{{
+				ID: "ripgrep", Type: provider.ActionInstall, Resource: "ripgrep",
+			}}, nil
+		},
+		applyFn: func(_ context.Context, _ provider.Action) error { return nil },
+	}
+
+	registry := provider.NewRegistry()
+	if err := registry.Register(p); err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+
+	spy := &sudo.SpyAcquirer{}
+	if err := runApply(context.Background(), flags, registry, spy, "", true, "", "", false, bootstrapMode{}); err != nil {
+		t.Fatalf("runApply: %v", err)
+	}
+
+	if spy.AcquireCalls != 0 {
+		t.Errorf("Acquire calls = %d, want 0 (no provider has RequiresSudo)", spy.AcquireCalls)
+	}
+	// Stop is wired via defer at runApply entry, so it always fires.
+	if spy.StopCalls != 1 {
+		t.Errorf("Stop calls = %d, want 1 (defer always fires regardless of Acquire)", spy.StopCalls)
+	}
+}
+
+// TestRunApply_SudoPromptWhenAptIncluded — cycle 227 inverse guard.
+// When the resolved provider set includes a RequiresSudo=true entry
+// (apt is the canonical v1 case), runApply MUST prompt exactly once
+// at startup — matching the spec's "Sudo acquired once for full
+// apply" scenario. The seed manifest below mirrors apt's by setting
+// RequiresSudo=true.
+func TestRunApply_SudoPromptWhenAptIncluded(t *testing.T) {
+	_, profileDir, _, flags := setupApplyTestEnv(t, []string{"apt"})
+	hamsfilePath := filepath.Join(profileDir, "apt.hams.yaml")
+	writeApplyTestFile(t, hamsfilePath, "cli:\n  - app: htop\n")
+
+	p := &applyTestProvider{
+		manifest: provider.Manifest{
+			Name:         "apt",
+			DisplayName:  "apt",
+			Platforms:    []provider.Platform{provider.PlatformAll},
+			FilePrefix:   "apt",
+			RequiresSudo: true,
+		},
+		planFn: func(_ context.Context, _ *hamsfile.File, _ *state.File) ([]provider.Action, error) {
+			return []provider.Action{{
+				ID: "htop", Type: provider.ActionInstall, Resource: "htop",
+			}}, nil
+		},
+		applyFn: func(_ context.Context, _ provider.Action) error { return nil },
+	}
+
+	registry := provider.NewRegistry()
+	if err := registry.Register(p); err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+
+	spy := &sudo.SpyAcquirer{}
+	if err := runApply(context.Background(), flags, registry, spy, "", true, "", "", false, bootstrapMode{}); err != nil {
+		t.Fatalf("runApply: %v", err)
+	}
+
+	if spy.AcquireCalls != 1 {
+		t.Errorf("Acquire calls = %d, want 1 (apt has RequiresSudo=true)", spy.AcquireCalls)
+	}
+	if spy.StopCalls != 1 {
+		t.Errorf("Stop calls = %d, want 1", spy.StopCalls)
 	}
 }
 
@@ -1467,5 +1567,52 @@ func TestRunApply_FromRepoAndStoreAreMutuallyExclusive(t *testing.T) {
 	joined := strings.Join(ufe.Suggestions, "\n")
 	if !strings.Contains(joined, "HAMS_DATA_HOME") {
 		t.Errorf("suggestions should explain where --from-repo clones; got %v", ufe.Suggestions)
+	}
+}
+
+// TestOnlyMissingArtifacts pins cycle 226's helper contract: given a
+// --only CSV and two provider lists, return the subset of --only names
+// that are VALID registered providers but lack artifacts for the
+// active profile. Empty inputs → nil. Unknown names → silently
+// skipped (validation happens upstream in filterProviders). Order
+// matches --only input order so the user-facing message is
+// predictable.
+func TestOnlyMissingArtifacts(t *testing.T) {
+	t.Parallel()
+
+	brew := &applyTestProvider{manifest: provider.Manifest{Name: "brew", FilePrefix: "brew"}}
+	apt := &applyTestProvider{manifest: provider.Manifest{Name: "apt", FilePrefix: "apt"}}
+	cargo := &applyTestProvider{manifest: provider.Manifest{Name: "cargo", FilePrefix: "cargo"}}
+	all := []provider.Provider{brew, apt, cargo}
+	stage1 := []provider.Provider{apt} // only apt has artifacts
+
+	cases := []struct {
+		name string
+		only string
+		want []string
+	}{
+		{"empty-only", "", nil},
+		{"whitespace-only", "   ", nil},
+		{"single-missing", "brew", []string{"brew"}},
+		{"single-present", "apt", nil},
+		{"mixed-csv", "brew,apt,cargo", []string{"brew", "cargo"}},
+		{"unknown-skipped", "bogus", nil},
+		{"mixed-unknown-and-missing", "bogus,brew", []string{"brew"}},
+		{"csv-spaces", " brew , cargo ", []string{"brew", "cargo"}},
+		{"case-insensitive", "BREW", []string{"brew"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got := onlyMissingArtifacts(tc.only, all, stage1)
+			if len(got) != len(tc.want) {
+				t.Fatalf("got %v, want %v", got, tc.want)
+			}
+			for i, w := range tc.want {
+				if got[i] != w {
+					t.Errorf("[%d] got %q, want %q", i, got[i], w)
+				}
+			}
+		})
 	}
 }

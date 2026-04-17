@@ -45,6 +45,11 @@ func (p *Provider) Manifest() provider.Manifest {
 		Platforms:     []provider.Platform{provider.PlatformLinux},
 		ResourceClass: provider.ClassPackage,
 		FilePrefix:    cliName,
+		// Cycle 227: declare sudo requirement so runApply only
+		// prompts for the password when an apt-bearing profile is
+		// being applied. apt-get install / remove require root —
+		// every apt CmdBuilder.Command call prepends sudo.
+		RequiresSudo: true,
 	}
 }
 
