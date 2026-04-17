@@ -162,6 +162,79 @@ func TestHandleRemove_TapFormatRoutesToUntap(t *testing.T) {
 	}
 }
 
+// TestHandleTap_WritesStateAndHamsfile locks in cycle 212: a
+// successful `hams brew tap <user/repo>` now writes a StateOK entry
+// to Homebrew.state.yaml so `hams list --only=brew` surfaces the
+// tap immediately, instead of users needing to `hams refresh` first.
+// Also asserts the tap call routes through the CmdRunner seam (not
+// the old WrapExecPassthrough path), which is what makes this
+// writeback unit-testable in the first place.
+func TestHandleTap_WritesStateAndHamsfile(t *testing.T) {
+	t.Parallel()
+	h := newBrewHarness(t)
+
+	if err := h.provider.HandleCommand(context.Background(),
+		[]string{"tap", "homebrew/cask-fonts"}, nil, h.flags); err != nil {
+		t.Fatalf("tap: %v", err)
+	}
+	if h.runner.CallCount(fakeOpTap, "homebrew/cask-fonts") != 1 {
+		t.Errorf("runner.Tap calls = %d, want 1", h.runner.CallCount(fakeOpTap, "homebrew/cask-fonts"))
+	}
+	if got := h.stateResources()["homebrew/cask-fonts"]; got != state.StateOK {
+		t.Errorf("state[homebrew/cask-fonts] = %q, want %q", got, state.StateOK)
+	}
+	apps := h.hamsfileApps()
+	if len(apps) != 1 || apps[0] != "homebrew/cask-fonts" {
+		t.Errorf("hamsfile apps = %v, want [homebrew/cask-fonts]", apps)
+	}
+}
+
+// TestHandleTap_FailureLeavesStateAndHamsfileUntouched ensures that
+// when the runner rejects the tap (e.g. network error), neither the
+// hamsfile nor the state file gains a spurious entry. Atomic-on-
+// failure matches all the install/remove paths.
+func TestHandleTap_FailureLeavesStateAndHamsfileUntouched(t *testing.T) {
+	t.Parallel()
+	h := newBrewHarness(t)
+	h.runner.WithTapError("homebrew/bogus", errors.New("brew: tap refused"))
+
+	err := h.provider.HandleCommand(context.Background(),
+		[]string{"tap", "homebrew/bogus"}, nil, h.flags)
+	if err == nil {
+		t.Fatal("expected tap error")
+	}
+	if _, statErr := os.Stat(h.hamsfilePath); statErr == nil {
+		t.Error("hamsfile should not be created on tap failure")
+	}
+	if _, statErr := os.Stat(h.statePath); statErr == nil {
+		t.Error("state file should not be created on tap failure")
+	}
+}
+
+// TestHandleTap_DryRunSkipsRunnerAndState asserts dry-run: no runner
+// call, no hamsfile, no state file. --dry-run is a preview-only
+// contract everywhere else; it's a contract bug if this branch ever
+// leaks a side effect.
+func TestHandleTap_DryRunSkipsRunnerAndState(t *testing.T) {
+	t.Parallel()
+	h := newBrewHarness(t)
+	h.flags.DryRun = true
+
+	if err := h.provider.HandleCommand(context.Background(),
+		[]string{"tap", "homebrew/cask-fonts"}, nil, h.flags); err != nil {
+		t.Fatalf("dry-run: %v", err)
+	}
+	if h.runner.CallCount(fakeOpTap, "") != 0 {
+		t.Errorf("runner.Tap should not be called on dry-run")
+	}
+	if _, statErr := os.Stat(h.hamsfilePath); statErr == nil {
+		t.Error("hamsfile should not be created on dry-run")
+	}
+	if _, statErr := os.Stat(h.statePath); statErr == nil {
+		t.Error("state file should not be created on dry-run")
+	}
+}
+
 // TestHandleRemove_FormulaStillUsesUninstall is the regression gate
 // for cycle 177's routing change: non-tap-format IDs continue to
 // route through Uninstall (NOT Untap) as before.

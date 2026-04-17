@@ -448,7 +448,13 @@ func (p *Provider) handleTap(ctx context.Context, args []string, hamsFlags map[s
 		return nil
 	}
 
-	if err := provider.WrapExecPassthrough(ctx, "brew", []string{"tap", repo}, nil); err != nil {
+	// Cycle 212: route via the CmdRunner seam (which already exists
+	// for handleUntap cycle 177) instead of WrapExecPassthrough.
+	// Two benefits: (a) the state-write path becomes DI-testable, (b)
+	// symmetric with every other brew CLI handler (install / remove /
+	// untap). The real runner still exec's brew via exec.CommandContext
+	// internally, so the end-user behavior is identical.
+	if err := p.runner.Tap(ctx, repo); err != nil {
 		return err
 	}
 
@@ -456,9 +462,22 @@ func (p *Provider) handleTap(ctx context.Context, args []string, hamsFlags map[s
 	if err != nil {
 		return err
 	}
+	sf, err := p.loadOrCreateStateFile(flags)
+	if err != nil {
+		return err
+	}
 
 	hf.AddApp("tap", repo, "")
-	return hf.Write()
+	// Cycle 212: state write matches cycle 96 (handleInstall) and
+	// cycle 177's handleUntap fix. Without this, `hams list --only=brew`
+	// showed nothing after a successful `hams brew tap <user/repo>`
+	// because `list` reads state only.
+	sf.SetResource(repo, state.StateOK)
+
+	if writeErr := hf.Write(); writeErr != nil {
+		return writeErr
+	}
+	return sf.Save(p.statePath(flags))
 }
 
 func (p *Provider) handleInstall(ctx context.Context, args []string, hamsFlags map[string]string, flags *provider.GlobalFlags) error {
