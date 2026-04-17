@@ -261,6 +261,14 @@ func resolveClonePath(repo string, paths config.Paths) string {
 }
 
 // promptProfileInit asks the user for profile tag and machine ID.
+//
+// Cycle 198: validates non-empty input via isValidConfigSegment. The
+// cycle 195 sanitizer silently collapses invalid values to fallback
+// at runtime; cycle 197 rejects them at config.WriteConfigKey; here
+// we reject at the prompt so the user gets an immediate error
+// instead of a confusing "typed-but-not-stored" discrepancy (the
+// in-memory cfg.ProfileTag would hold the invalid value while the
+// persisted YAML rejected the write and defaulted).
 func promptProfileInit() (tag, machineID string, err error) {
 	reader := bufio.NewReader(os.Stdin)
 
@@ -283,6 +291,13 @@ func promptProfileInit() (tag, machineID string, err error) {
 	}
 	if machineID == "" {
 		machineID = "unknown"
+	}
+
+	if !config.IsValidPathSegment(tag) {
+		return "", "", fmt.Errorf("invalid profile tag %q: must be a simple identifier (letters, digits, '.', '-', '_' — no path separators or '..')", tag)
+	}
+	if !config.IsValidPathSegment(machineID) {
+		return "", "", fmt.Errorf("invalid machine ID %q: must be a simple identifier (letters, digits, '.', '-', '_' — no path separators or '..')", machineID)
 	}
 
 	return tag, machineID, nil

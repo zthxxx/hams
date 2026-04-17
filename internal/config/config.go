@@ -201,11 +201,13 @@ func (c *Config) StateDir() string {
 	return filepath.Join(c.StorePath, ".state", id)
 }
 
-// isValidPathSegment returns true when s is safe to use as a single
+// IsValidPathSegment returns true when s is safe to use as a single
 // directory name under StorePath. Mirrors the sanitize rules (cycle
 // 195) but returns bool so callers can reject at write time rather
-// than collapse-to-fallback at read time. Cycle 197.
-func isValidPathSegment(s string) bool {
+// than collapse-to-fallback at read time. Cycle 197; exported in
+// cycle 198 so the CLI's profile-init prompt can share the
+// validation without circular imports.
+func IsValidPathSegment(s string) bool {
 	if s == "" {
 		return false
 	}
@@ -409,7 +411,7 @@ func UnsetConfigKey(paths Paths, storePath, key string) error {
 // fallback at runtime, which confused users who ran `hams config
 // get profile_tag` and saw "../etc" but apply used "default").
 func WriteConfigKey(paths Paths, storePath, key, value string) error {
-	if (key == "profile_tag" || key == "machine_id") && !isValidPathSegment(value) {
+	if (key == "profile_tag" || key == "machine_id") && !IsValidPathSegment(value) {
 		return fmt.Errorf("invalid value for %s: %q must be a simple identifier (letters, digits, '.', '-', '_' — no path separators or '..')", key, value)
 	}
 	var targetPath string
