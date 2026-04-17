@@ -566,3 +566,73 @@ func TestProbe_CheckCmdFailingFlagsPending(t *testing.T) {
 		t.Errorf("state = %v, want StatePending (check failed → drift detected)", results[0].State)
 	}
 }
+
+// TestHandleCommand_NoArgsReturnsUsageError pins cycle 215:
+// `hams bash` without a subcommand must produce an actionable
+// ExitUsageError showing the valid list/run/remove surface.
+func TestHandleCommand_NoArgsReturnsUsageError(t *testing.T) {
+	t.Parallel()
+	p := New(nil)
+	err := p.HandleCommand(context.Background(), nil, nil, &provider.GlobalFlags{})
+	if err == nil {
+		t.Fatal("expected usage error on empty args")
+	}
+	if !strings.Contains(err.Error(), "subcommand") {
+		t.Errorf("error should mention 'subcommand'; got %q", err.Error())
+	}
+}
+
+// TestHandleCommand_ListVerbNoStoreReturnsUsageError pins cycle 215:
+// the `list` verb needs a configured store_path. Without one, the
+// shared HandleListCmd helper returns ExitUsageError. Pre-cycle-215
+// `hams bash list` returned "unknown command" before any config was
+// even checked, because bash had no HandleCommand at all.
+func TestHandleCommand_ListVerbNoStoreReturnsUsageError(t *testing.T) {
+	t.Parallel()
+	p := New(nil) // no cfg → effectiveConfig returns empty StorePath
+	err := p.HandleCommand(context.Background(), []string{"list"}, nil, &provider.GlobalFlags{})
+	if err == nil {
+		t.Fatal("expected ExitUsageError when no store configured")
+	}
+	if !strings.Contains(err.Error(), "store") {
+		t.Errorf("error should mention 'store'; got %q", err.Error())
+	}
+}
+
+// TestHandleCommand_RunAndRemoveVerbsReturnV1Gap pins cycle 215's
+// deferred-verb messaging. Spec promises `hams bash run <urn>` /
+// `hams bash remove <urn>`, but wiring hamsfile-edit into bash's
+// HandleCommand is planned for v1.1. Rather than exec'ing a real
+// bash command or silently failing, the CLI returns a clear
+// "planned for v1.1" ExitUsageError that points the user at the
+// apply-from-hamsfile fallback.
+func TestHandleCommand_RunAndRemoveVerbsReturnV1Gap(t *testing.T) {
+	t.Parallel()
+	for _, verb := range []string{"run", "remove"} {
+		t.Run(verb, func(t *testing.T) {
+			t.Parallel()
+			p := New(nil)
+			err := p.HandleCommand(context.Background(), []string{verb, "urn:hams:bash:foo"}, nil, &provider.GlobalFlags{})
+			if err == nil {
+				t.Fatal("expected v1.1-gap error")
+			}
+			if !strings.Contains(err.Error(), "v1.1") {
+				t.Errorf("error should mention 'v1.1'; got %q", err.Error())
+			}
+		})
+	}
+}
+
+// TestNameAndDisplayName locks in the two-method ProviderHandler
+// contract cycle 215 introduced for bash. A future refactor that
+// drops either method breaks provider registration.
+func TestNameAndDisplayName(t *testing.T) {
+	t.Parallel()
+	p := New(nil)
+	if p.Name() != "bash" {
+		t.Errorf("Name() = %q, want 'bash'", p.Name())
+	}
+	if p.DisplayName() != "Bash" {
+		t.Errorf("DisplayName() = %q, want 'Bash'", p.DisplayName())
+	}
+}
