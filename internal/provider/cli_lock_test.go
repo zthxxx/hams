@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/zthxxx/hams/internal/config"
 	hamserr "github.com/zthxxx/hams/internal/error"
 	"github.com/zthxxx/hams/internal/state"
 )
@@ -86,4 +87,88 @@ func TestAcquireMutationLock_StaleLockReclaimed(t *testing.T) {
 		t.Fatalf("Acquire: %v", err)
 	}
 	t.Cleanup(release)
+}
+
+// TestAcquireMutationLockFromCfg_DryRunNoOp: the per-provider wrapper
+// short-circuits to a no-op release under --dry-run so the .lock
+// file is never created. Asserts the returned closure is non-nil
+// (never the production lock) and the .lock file is absent post-call.
+func TestAcquireMutationLockFromCfg_DryRunNoOp(t *testing.T) {
+	stateDir := t.TempDir()
+	cfg := &config.Config{StorePath: stateDir, MachineID: "m1"}
+	flags := &GlobalFlags{DryRun: true}
+
+	release, err := AcquireMutationLockFromCfg(cfg, flags, "test cmd")
+	if err != nil {
+		t.Fatalf("AcquireFromCfg: %v", err)
+	}
+	if release == nil {
+		t.Fatal("release closure must not be nil")
+	}
+	release()
+
+	// The .lock file would land under cfg.StateDir(). Either the
+	// state subdir doesn't exist OR it does but contains no .lock.
+	stateSub := cfg.StateDir()
+	if _, statErr := os.Stat(filepath.Join(stateSub, ".lock")); !os.IsNotExist(statErr) {
+		t.Errorf("dry-run should not create .lock file; stat err: %v", statErr)
+	}
+}
+
+// TestAcquireMutationLockFromCfg_RealAcquireOnNonDryRun: when
+// flags.DryRun is false, the wrapper delegates to AcquireMutationLock
+// which writes the .lock file under cfg.StateDir(). Round-trip
+// acquire + release leaves the dir clean.
+func TestAcquireMutationLockFromCfg_RealAcquireOnNonDryRun(t *testing.T) {
+	stateDir := t.TempDir()
+	cfg := &config.Config{StorePath: stateDir, MachineID: "m1"}
+	flags := &GlobalFlags{DryRun: false}
+
+	release, err := AcquireMutationLockFromCfg(cfg, flags, "test cmd")
+	if err != nil {
+		t.Fatalf("AcquireFromCfg: %v", err)
+	}
+	if release == nil {
+		t.Fatal("release closure must not be nil")
+	}
+	stateSub := cfg.StateDir()
+	if _, statErr := os.Stat(filepath.Join(stateSub, ".lock")); statErr != nil {
+		t.Errorf("non-dry-run should create .lock file; stat err: %v", statErr)
+	}
+	release()
+	if _, statErr := os.Stat(filepath.Join(stateSub, ".lock")); !os.IsNotExist(statErr) {
+		t.Errorf("release should remove .lock file; stat err: %v", statErr)
+	}
+}
+
+// TestAcquireMutationLockFromCfg_NilFlagsTreatedAsDryRun: nil flags
+// (e.g., from defensive callers) is treated as dry-run mode rather
+// than panicking. Returns the no-op release.
+func TestAcquireMutationLockFromCfg_NilFlagsTreatedAsDryRun(t *testing.T) {
+	stateDir := t.TempDir()
+	cfg := &config.Config{StorePath: stateDir, MachineID: "m1"}
+
+	release, err := AcquireMutationLockFromCfg(cfg, nil, "test cmd")
+	if err != nil {
+		t.Fatalf("AcquireFromCfg with nil flags: %v", err)
+	}
+	if release == nil {
+		t.Fatal("release closure must not be nil")
+	}
+	release()
+}
+
+// TestAcquireMutationLockFromCfg_NilCfgUsageError: a non-dry-run call
+// with nil cfg returns ExitUsageError so the user sees an actionable
+// configuration message rather than a nil-pointer panic.
+func TestAcquireMutationLockFromCfg_NilCfgUsageError(t *testing.T) {
+	release, err := AcquireMutationLockFromCfg(nil, &GlobalFlags{}, "test cmd")
+	if err == nil {
+		release()
+		t.Fatal("expected ExitUsageError for nil cfg")
+	}
+	var ufe *hamserr.UserFacingError
+	if !errors.As(err, &ufe) || ufe.Code != hamserr.ExitUsageError {
+		t.Errorf("expected ExitUsageError, got %v (%T)", err, err)
+	}
 }

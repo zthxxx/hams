@@ -244,6 +244,13 @@ func (p *Provider) handleInstall(ctx context.Context, args []string, hamsFlags m
 		return nil
 	}
 
+	// Cycle 222: acquire single-writer state lock per cli-architecture spec.
+	release, lockErr := provider.AcquireMutationLockFromCfg(p.effectiveConfig(flags), flags, "apt install")
+	if lockErr != nil {
+		return lockErr
+	}
+	defer release()
+
 	// Forward args verbatim so passthrough flags (e.g. --no-install-recommends)
 	// reach apt-get AND the multi-package install runs as one transaction
 	// (apt-get errors atomically if any package fails dependency resolution).
@@ -348,6 +355,13 @@ func (p *Provider) handleRemove(ctx context.Context, args []string, hamsFlags ma
 		fmt.Printf("[dry-run] Would remove: sudo apt-get remove -y %s\n", strings.Join(args, " "))
 		return nil
 	}
+
+	// Cycle 222: acquire single-writer state lock per cli-architecture spec.
+	release, lockErr := provider.AcquireMutationLockFromCfg(p.effectiveConfig(flags), flags, "apt remove")
+	if lockErr != nil {
+		return lockErr
+	}
+	defer release()
 
 	// Forward args verbatim — preserves passthrough flags (e.g. --purge) and
 	// runs the multi-package remove as one transaction.

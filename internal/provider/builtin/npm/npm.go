@@ -224,6 +224,13 @@ func (p *Provider) handleInstall(ctx context.Context, args []string, hamsFlags m
 		return nil
 	}
 
+	// Cycle 222: acquire single-writer state lock per cli-architecture spec.
+	release, lockErr := provider.AcquireMutationLockFromCfg(p.effectiveConfig(flags), flags, "npm install")
+	if lockErr != nil {
+		return lockErr
+	}
+	defer release()
+
 	for _, pkg := range pkgs {
 		if err := p.runner.Install(ctx, pkg); err != nil {
 			return err
@@ -273,6 +280,13 @@ func (p *Provider) handleRemove(ctx context.Context, args []string, hamsFlags ma
 		fmt.Printf("[dry-run] Would remove: npm uninstall -g %s\n", strings.Join(args, " "))
 		return nil
 	}
+
+	// Cycle 222: acquire single-writer state lock per cli-architecture spec.
+	release, lockErr := provider.AcquireMutationLockFromCfg(p.effectiveConfig(flags), flags, "npm remove")
+	if lockErr != nil {
+		return lockErr
+	}
+	defer release()
 
 	for _, pkg := range pkgs {
 		if err := p.runner.Uninstall(ctx, pkg); err != nil {

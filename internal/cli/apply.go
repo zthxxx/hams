@@ -234,18 +234,17 @@ func runApply(ctx context.Context, flags *provider.GlobalFlags, registry *provid
 	}
 
 	stateDir := cfg.StateDir()
-	lock := state.NewLock(stateDir)
+	// Cycle 223: route through the shared acquireMutationLock seam
+	// (commands_seams.go → provider.AcquireMutationLock) instead of
+	// inlining state.NewLock + Acquire. Unifies apply's lock path with
+	// refresh's (cycle 221), gives the same ExitLockError shape, and
+	// makes the acquisition DI-testable via the package seam.
 	if !flags.DryRun {
-		if lockErr := lock.Acquire("hams apply"); lockErr != nil {
-			return hamserr.NewUserError(hamserr.ExitLockError, lockErr.Error(),
-				fmt.Sprintf("Remove %s/.lock if the previous run crashed", stateDir),
-			)
+		release, lockErr := acquireMutationLock(stateDir, "hams apply")
+		if lockErr != nil {
+			return lockErr
 		}
-		defer func() {
-			if releaseErr := lock.Release(); releaseErr != nil {
-				slog.Error("failed to release lock", "error", releaseErr)
-			}
-		}()
+		defer release()
 	}
 
 	defer sudoAcq.Stop()

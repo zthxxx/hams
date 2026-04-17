@@ -4,9 +4,11 @@ import (
 	"fmt"
 	"log/slog"
 
+	"github.com/zthxxx/hams/internal/config"
 	hamserr "github.com/zthxxx/hams/internal/error"
 	"github.com/zthxxx/hams/internal/state"
 )
+
 
 // AcquireMutationLock acquires the single-writer state lock per
 // `cli-architecture/spec.md` §"Lock file for single-writer enforcement".
@@ -52,4 +54,38 @@ func AcquireMutationLock(stateDir, cmdName string) (release func(), err error) {
 			slog.Error("failed to release state lock", "error", releaseErr, "stateDir", stateDir)
 		}
 	}, nil
+}
+
+// AcquireMutationLockFromCfg is the per-provider convenience wrapper
+// for `AcquireMutationLock` used by every CLI install/remove handler
+// (cycle 222 sweep). It pulls `stateDir` from `cfg.StateDir()` and
+// short-circuits to a no-op release when `flags.DryRun` is true so
+// dry-run keeps its "zero side effects" contract (acquiring would
+// itself create the .lock file).
+//
+// Caller pattern at the top of every CLI handler, after the args
+// validation + dry-run preview but before any runner.Install /
+// hf.Write / sf.Save:
+//
+//	release, lockErr := provider.AcquireMutationLockFromCfg(
+//	    p.effectiveConfig(flags), flags, "cargo install")
+//	if lockErr != nil {
+//	    return lockErr
+//	}
+//	defer release()
+//
+// Passing a nil flags is treated as "dry-run mode": returns the
+// no-op release. This keeps callers from having to nil-check before
+// invoking us.
+func AcquireMutationLockFromCfg(cfg *config.Config, flags *GlobalFlags, cmdName string) (release func(), err error) {
+	if flags == nil || flags.DryRun {
+		return func() {}, nil
+	}
+	if cfg == nil {
+		return nil, hamserr.NewUserError(hamserr.ExitUsageError,
+			"no store directory configured (cfg is nil)",
+			"Set store_path in hams config or pass --store",
+		)
+	}
+	return AcquireMutationLock(cfg.StateDir(), cmdName)
 }

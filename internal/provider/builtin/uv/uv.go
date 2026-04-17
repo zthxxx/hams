@@ -189,6 +189,13 @@ func (p *Provider) handleInstall(ctx context.Context, args []string, hamsFlags m
 		return nil
 	}
 
+	// Cycle 222: acquire single-writer state lock per cli-architecture spec.
+	release, lockErr := provider.AcquireMutationLockFromCfg(p.effectiveConfig(flags), flags, "uv install")
+	if lockErr != nil {
+		return lockErr
+	}
+	defer release()
+
 	for _, tool := range tools {
 		if err := p.runner.Install(ctx, tool); err != nil {
 			return err
@@ -234,6 +241,13 @@ func (p *Provider) handleRemove(ctx context.Context, args []string, hamsFlags ma
 		fmt.Printf("[dry-run] Would remove: uv tool uninstall %s\n", strings.Join(args, " "))
 		return nil
 	}
+
+	// Cycle 222: acquire single-writer state lock per cli-architecture spec.
+	release, lockErr := provider.AcquireMutationLockFromCfg(p.effectiveConfig(flags), flags, "uv remove")
+	if lockErr != nil {
+		return lockErr
+	}
+	defer release()
 
 	for _, tool := range tools {
 		if err := p.runner.Uninstall(ctx, tool); err != nil {

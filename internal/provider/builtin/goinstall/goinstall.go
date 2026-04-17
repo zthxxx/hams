@@ -158,6 +158,13 @@ func (p *Provider) handleInstall(ctx context.Context, args []string, hamsFlags m
 		return nil
 	}
 
+	// Cycle 222: acquire single-writer state lock per cli-architecture spec.
+	release, lockErr := provider.AcquireMutationLockFromCfg(p.effectiveConfig(flags), flags, "goinstall install")
+	if lockErr != nil {
+		return lockErr
+	}
+	defer release()
+
 	for _, pkg := range pkgs {
 		if err := p.runner.Install(ctx, pkg); err != nil {
 			return err

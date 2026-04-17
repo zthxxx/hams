@@ -353,6 +353,13 @@ func (p *Provider) handleUntap(ctx context.Context, args []string, hamsFlags map
 		return nil
 	}
 
+	// Cycle 222: acquire single-writer state lock per cli-architecture spec.
+	release, lockErr := provider.AcquireMutationLockFromCfg(p.effectiveConfig(flags), flags, "brew untap")
+	if lockErr != nil {
+		return lockErr
+	}
+	defer release()
+
 	if err := p.runner.Untap(ctx, repo); err != nil {
 		return err
 	}
@@ -460,6 +467,13 @@ func (p *Provider) handleTap(ctx context.Context, args []string, hamsFlags map[s
 		return nil
 	}
 
+	// Cycle 222: acquire single-writer state lock per cli-architecture spec.
+	release, lockErr := provider.AcquireMutationLockFromCfg(p.effectiveConfig(flags), flags, "brew tap")
+	if lockErr != nil {
+		return lockErr
+	}
+	defer release()
+
 	// Cycle 212: route via the CmdRunner seam (which already exists
 	// for handleUntap cycle 177) instead of WrapExecPassthrough.
 	// Two benefits: (a) the state-write path becomes DI-testable, (b)
@@ -554,6 +568,13 @@ func (p *Provider) handleInstall(ctx context.Context, args []string, hamsFlags m
 		return nil
 	}
 
+	// Cycle 222: acquire single-writer state lock per cli-architecture spec.
+	release, lockErr := provider.AcquireMutationLockFromCfg(p.effectiveConfig(flags), flags, "brew install")
+	if lockErr != nil {
+		return lockErr
+	}
+	defer release()
+
 	isCask := hasCaskFlag(args)
 	// Drive the runner per-package so the flow is DI-testable
 	// (previously `provider.WrapExecPassthrough` shelled out directly,
@@ -611,6 +632,13 @@ func (p *Provider) handleRemove(ctx context.Context, args []string, hamsFlags ma
 		fmt.Printf("[dry-run] Would remove: brew uninstall %s\n", strings.Join(args, " "))
 		return nil
 	}
+
+	// Cycle 222: acquire single-writer state lock per cli-architecture spec.
+	release, lockErr := provider.AcquireMutationLockFromCfg(p.effectiveConfig(flags), flags, "brew remove")
+	if lockErr != nil {
+		return lockErr
+	}
+	defer release()
 
 	// Cycle 177: route tap-format IDs through Untap so `hams brew
 	// remove user/repo` works symmetrically with the apply path

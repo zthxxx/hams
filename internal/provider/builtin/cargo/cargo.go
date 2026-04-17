@@ -144,6 +144,16 @@ func (p *Provider) handleInstall(ctx context.Context, args []string, hamsFlags m
 		return nil
 	}
 
+	// Cycle 222: acquire single-writer state lock per the
+	// cli-architecture spec. Pre-cycle-222 only apply/refresh held
+	// the lock; a `hams cargo install ripgrep` could race with an
+	// in-flight `hams apply` and clobber cargo.state.yaml.
+	release, lockErr := provider.AcquireMutationLockFromCfg(p.effectiveConfig(flags), flags, "cargo install")
+	if lockErr != nil {
+		return lockErr
+	}
+	defer release()
+
 	// Run every install first; only record once all succeed. This
 	// mirrors apt's all-or-nothing auto-record semantics — partial
 	// failures force the user to retry rather than leaving a mixed
@@ -198,6 +208,13 @@ func (p *Provider) handleRemove(ctx context.Context, args []string, hamsFlags ma
 		fmt.Printf("[dry-run] Would remove: cargo uninstall %s\n", strings.Join(args, " "))
 		return nil
 	}
+
+	// Cycle 222: same lock-acquisition contract as handleInstall.
+	release, lockErr := provider.AcquireMutationLockFromCfg(p.effectiveConfig(flags), flags, "cargo remove")
+	if lockErr != nil {
+		return lockErr
+	}
+	defer release()
 
 	for _, crate := range crates {
 		if err := p.runner.Uninstall(ctx, crate); err != nil {

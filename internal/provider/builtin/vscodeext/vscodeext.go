@@ -205,6 +205,13 @@ func (p *Provider) handleInstall(ctx context.Context, args []string, hamsFlags m
 		return nil
 	}
 
+	// Cycle 222: acquire single-writer state lock per cli-architecture spec.
+	release, lockErr := provider.AcquireMutationLockFromCfg(p.effectiveConfig(flags), flags, "code-ext install")
+	if lockErr != nil {
+		return lockErr
+	}
+	defer release()
+
 	for _, ext := range exts {
 		if err := p.runner.Install(ctx, ext); err != nil {
 			return err
@@ -252,6 +259,13 @@ func (p *Provider) handleRemove(ctx context.Context, args []string, hamsFlags ma
 		fmt.Printf("[dry-run] Would remove: code --uninstall-extension %s\n", strings.Join(exts, " "))
 		return nil
 	}
+
+	// Cycle 222: acquire single-writer state lock per cli-architecture spec.
+	release, lockErr := provider.AcquireMutationLockFromCfg(p.effectiveConfig(flags), flags, "code-ext remove")
+	if lockErr != nil {
+		return lockErr
+	}
+	defer release()
 
 	for _, ext := range exts {
 		if err := p.runner.Uninstall(ctx, ext); err != nil {

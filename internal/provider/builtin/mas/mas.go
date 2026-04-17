@@ -168,6 +168,13 @@ func (p *Provider) handleInstall(ctx context.Context, args []string, hamsFlags m
 		return nil
 	}
 
+	// Cycle 222: acquire single-writer state lock per cli-architecture spec.
+	release, lockErr := provider.AcquireMutationLockFromCfg(p.effectiveConfig(flags), flags, "mas install")
+	if lockErr != nil {
+		return lockErr
+	}
+	defer release()
+
 	for _, id := range ids {
 		if err := p.runner.Install(ctx, id); err != nil {
 			return err
@@ -216,6 +223,13 @@ func (p *Provider) handleRemove(ctx context.Context, args []string, hamsFlags ma
 		fmt.Printf("[dry-run] Would remove: mas uninstall %s\n", strings.Join(args, " "))
 		return nil
 	}
+
+	// Cycle 222: acquire single-writer state lock per cli-architecture spec.
+	release, lockErr := provider.AcquireMutationLockFromCfg(p.effectiveConfig(flags), flags, "mas remove")
+	if lockErr != nil {
+		return lockErr
+	}
+	defer release()
 
 	for _, id := range ids {
 		if err := p.runner.Uninstall(ctx, id); err != nil {
