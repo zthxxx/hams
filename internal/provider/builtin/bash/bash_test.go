@@ -213,6 +213,45 @@ func TestRunCheck_Failure(t *testing.T) {
 	}
 }
 
+// TestList_DelegatesToProviderDiff asserts the bash provider's
+// List method is a thin wrapper around provider.DiffDesiredVsState
+// + provider.FormatDiff (the standard diff path that cycle 148
+// fixed for determinism). A regression that bypassed the diff
+// machinery would silently flap output OR omit the "+ not installed"
+// markers — both already caught upstream, but a wrapper-level
+// regression test makes the dependency explicit.
+func TestList_DelegatesToProviderDiff(t *testing.T) {
+	p := New()
+	yamlDoc := `
+install:
+  - urn: urn:hams:bash:zsh-setup
+    run: "echo zsh"
+  - urn: urn:hams:bash:vim-setup
+    run: "echo vim"
+`
+	var root yaml.Node
+	if err := yaml.Unmarshal([]byte(yamlDoc), &root); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	hf := &hamsfile.File{Path: "test.yaml", Root: &root}
+	sf := state.New("bash", "test")
+
+	out, err := p.List(context.Background(), hf, sf)
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	// Both URNs are in desired but not in state → both appear as "+ not installed".
+	if !strings.Contains(out, "urn:hams:bash:zsh-setup") {
+		t.Errorf("output should contain zsh-setup, got:\n%s", out)
+	}
+	if !strings.Contains(out, "urn:hams:bash:vim-setup") {
+		t.Errorf("output should contain vim-setup, got:\n%s", out)
+	}
+	if !strings.Contains(out, "(not installed)") {
+		t.Errorf("output should contain '(not installed)' marker, got:\n%s", out)
+	}
+}
+
 // TestRunCheck_HonorsContext locks in cycle 160: RunCheck previously
 // used bitfield/script which doesn't honor context cancellation, so
 // a hanging check command (e.g. `sleep 30`) kept running after the
