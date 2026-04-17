@@ -273,6 +273,20 @@ func TestRunRefresh_SaveFailureListIsAlphabetical(t *testing.T) {
 	// must be read-only so AtomicWrite's CreateTemp + Rename both fail
 	// with EACCES → sf.Save returns an error → the provider lands in
 	// the saveFailures slice.
+	//
+	// Cycle 221 added single-writer lock acquisition to runRefresh,
+	// which would also fail on a read-only stateDir and short-circuit
+	// the test before it reaches the save-failure branch under test.
+	// Stub the package-level acquireMutationLock seam to a no-op so
+	// the read-only chmod still selectively breaks Save while the
+	// "lock" succeeds. The lock semantics themselves are covered by
+	// TestAcquireMutationLock_* in internal/provider.
+	originalLock := acquireMutationLock
+	t.Cleanup(func() { acquireMutationLock = originalLock })
+	acquireMutationLock = func(_, _ string) (func(), error) {
+		return func() {}, nil
+	}
+
 	if err := os.MkdirAll(stateDir, 0o750); err != nil {
 		t.Fatalf("mkdir stateDir: %v", err)
 	}
@@ -336,6 +350,88 @@ func TestRunRefresh_SaveFailureListIsAlphabetical(t *testing.T) {
 
 	// Silence unused-var warnings on storeDir.
 	_ = storeDir
+}
+
+// TestRunRefresh_AcquiresMutationLock — cycle 221 guard. Per the
+// cli-architecture spec §"Lock file for single-writer enforcement",
+// refresh MUST acquire the single-writer lock for the duration of
+// its mutation. Pre-cycle-221 only runApply did this. We use the
+// acquireMutationLock seam to record that exactly one acquire +
+// matching release happened, with the canonical "hams refresh"
+// command label going into the lock file.
+func TestRunRefresh_AcquiresMutationLock(t *testing.T) {
+	_, profileDir, _, flags := setupApplyTestEnv(t, []string{"apt"})
+	writeApplyTestFile(t, filepath.Join(profileDir, "apt.hams.yaml"), "cli:\n  - app: htop\n")
+
+	var acquireCount, releaseCount int
+	var gotCmd string
+	originalLock := acquireMutationLock
+	t.Cleanup(func() { acquireMutationLock = originalLock })
+	acquireMutationLock = func(_, cmd string) (func(), error) {
+		acquireCount++
+		gotCmd = cmd
+		return func() { releaseCount++ }, nil
+	}
+
+	registry := provider.NewRegistry()
+	p := &applyTestProvider{
+		manifest: provider.Manifest{
+			Name: "apt", DisplayName: "apt", FilePrefix: "apt",
+			Platforms: []provider.Platform{provider.PlatformAll},
+		},
+	}
+	if err := registry.Register(p); err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+
+	if err := runRefresh(context.Background(), flags, registry, "", ""); err != nil {
+		t.Fatalf("runRefresh: %v", err)
+	}
+	if acquireCount != 1 {
+		t.Errorf("acquireCount = %d, want 1", acquireCount)
+	}
+	if releaseCount != 1 {
+		t.Errorf("releaseCount = %d, want 1 (deferred release must fire)", releaseCount)
+	}
+	if gotCmd != "hams refresh" {
+		t.Errorf("lock cmd label = %q, want %q", gotCmd, "hams refresh")
+	}
+}
+
+// TestRunRefresh_DryRunSkipsLock — cycle 221 invariant: dry-run is
+// a pure preview per the global flag's "no side effects" contract,
+// so refresh MUST NOT acquire the lock under --dry-run (acquiring
+// would itself write the .lock file).
+func TestRunRefresh_DryRunSkipsLock(t *testing.T) {
+	_, profileDir, _, flags := setupApplyTestEnv(t, []string{"apt"})
+	flags.DryRun = true
+	writeApplyTestFile(t, filepath.Join(profileDir, "apt.hams.yaml"), "cli:\n  - app: htop\n")
+
+	var acquireCount int
+	originalLock := acquireMutationLock
+	t.Cleanup(func() { acquireMutationLock = originalLock })
+	acquireMutationLock = func(_, _ string) (func(), error) {
+		acquireCount++
+		return func() {}, nil
+	}
+
+	registry := provider.NewRegistry()
+	p := &applyTestProvider{
+		manifest: provider.Manifest{
+			Name: "apt", DisplayName: "apt", FilePrefix: "apt",
+			Platforms: []provider.Platform{provider.PlatformAll},
+		},
+	}
+	if err := registry.Register(p); err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+
+	if err := runRefresh(context.Background(), flags, registry, "", ""); err != nil {
+		t.Fatalf("runRefresh dry-run: %v", err)
+	}
+	if acquireCount != 0 {
+		t.Errorf("dry-run must NOT acquire the lock; acquireCount = %d", acquireCount)
+	}
 }
 
 // TestRunRefresh_InterruptedContextReportsExplicitly locks in cycle

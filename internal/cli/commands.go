@@ -168,6 +168,29 @@ func runRefresh(ctx context.Context, flags *provider.GlobalFlags, registry *prov
 	stateDir := cfg.StateDir()
 	profileDir := cfg.ProfileDir()
 
+	// Cycle 221: refresh writes state files (one per probed provider),
+	// so per the cli-architecture spec it MUST acquire the
+	// single-writer lock for the duration. Pre-cycle-221 only runApply
+	// did this, so a `hams refresh` could race with an in-flight
+	// `hams apply` (or another refresh) and clobber state. Skip the
+	// lock under --dry-run because dry-run has zero side effects;
+	// taking the lock would itself write the .lock file. The lock
+	// must come AFTER store_path/profile validation so a typo'd flag
+	// surfaces as a usage error rather than a confusing lock-file
+	// touch on a non-existent stateDir.
+	//
+	// Indirected through `acquireMutationLock` (see commands_seams.go)
+	// so DI-isolated tests that exercise sub-paths (e.g., the
+	// save-failure-ordering test) can inject a no-op lock without
+	// touching the real .lock file under the test's tempdir.
+	if !flags.DryRun {
+		release, lockErr := acquireMutationLock(stateDir, "hams refresh")
+		if lockErr != nil {
+			return lockErr
+		}
+		defer release()
+	}
+
 	// Two-stage provider filter (same shape as runApply):
 	//   Stage 1 — artifact presence (hamsfile OR state file).
 	//   Stage 2 — user-supplied --only / --except.
