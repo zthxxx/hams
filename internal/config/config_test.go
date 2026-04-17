@@ -142,6 +142,53 @@ func TestStateDir(t *testing.T) {
 	}
 }
 
+// TestProfileDir_RejectsPathTraversal locks in cycle 195: a
+// profile_tag like "../foo" used to escape StorePath via
+// filepath.Join's path cleaning. Now: sanitizePathSegment
+// collapses any value containing path separators or "." / ".." to
+// the fallback "default", preventing filesystem escape regardless
+// of how the invalid value reached the config struct.
+func TestProfileDir_RejectsPathTraversal(t *testing.T) {
+	t.Parallel()
+	cases := map[string]string{
+		"../etc":      "/store/default", // escapes via ..
+		"..":          "/store/default",
+		".":           "/store/default",
+		"/etc/passwd": "/store/default", // leading / (absolute)
+		"foo/bar":     "/store/default", // nested
+		"foo\\bar":    "/store/default", // Windows separator
+		"":            "/store/default", // empty → fallback
+		"macOS":       "/store/macOS",   // valid
+		"linux-arm64": "/store/linux-arm64",
+		"prod.v2":     "/store/prod.v2",
+		"team_alpha":  "/store/team_alpha",
+	}
+	for tag, want := range cases {
+		cfg := &Config{StorePath: "/store", ProfileTag: tag}
+		if got := cfg.ProfileDir(); got != want {
+			t.Errorf("ProfileDir(tag=%q) = %q, want %q", tag, got, want)
+		}
+	}
+}
+
+// TestStateDir_RejectsPathTraversal is the parallel for machine_id.
+func TestStateDir_RejectsPathTraversal(t *testing.T) {
+	t.Parallel()
+	cases := map[string]string{
+		"../..":      "/store/.state/unknown",
+		"/etc":       "/store/.state/unknown",
+		"foo/bar":    "/store/.state/unknown",
+		"MyMac":      "/store/.state/MyMac",
+		"machine-42": "/store/.state/machine-42",
+	}
+	for id, want := range cases {
+		cfg := &Config{StorePath: "/store", MachineID: id}
+		if got := cfg.StateDir(); got != want {
+			t.Errorf("StateDir(id=%q) = %q, want %q", id, got, want)
+		}
+	}
+}
+
 func TestIsSensitiveKey_ExactMatch(t *testing.T) {
 	t.Parallel()
 	if !IsSensitiveKey("llm_cli") {

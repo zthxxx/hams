@@ -186,21 +186,43 @@ func ExpandHome(path string) (string, error) {
 func expandHome(path string) (string, error) { return ExpandHome(path) }
 
 // ProfileDir returns the absolute path to the active profile directory.
+// Cycle 195: sanitizes ProfileTag so a malicious or mistyped value
+// like `../etc` cannot escape StorePath via filepath.Join's clean-up.
 func (c *Config) ProfileDir() string {
-	tag := c.ProfileTag
-	if tag == "" {
-		tag = "default"
-	}
+	tag := sanitizePathSegment(c.ProfileTag, "default")
 	return filepath.Join(c.StorePath, tag)
 }
 
 // StateDir returns the absolute path to the state directory for this machine.
+// Cycle 195: sanitizes MachineID for the same reason — `machine_id: ../..`
+// previously wrote state files under StorePath's parent.
 func (c *Config) StateDir() string {
-	id := c.MachineID
-	if id == "" {
-		id = "unknown"
-	}
+	id := sanitizePathSegment(c.MachineID, "unknown")
 	return filepath.Join(c.StorePath, ".state", id)
+}
+
+// sanitizePathSegment collapses any path traversal / separator chars to
+// the fallback. The only valid forms are a bare identifier: letters,
+// digits, `.`, `-`, `_`. Empty → fallback. Anything else → fallback.
+// Rejection is silent (returns fallback) rather than erroring because
+// these are derived fields read at many call sites; validating once at
+// config.Load would be cleaner but violates the cycle 92 contract that
+// explicit --profile is accepted as-is. The sanitize here is a
+// last-defense that prevents the filesystem-escape regardless of how
+// the invalid value entered the config.
+func sanitizePathSegment(s, fallback string) string {
+	if s == "" {
+		return fallback
+	}
+	// Reject path separators (both Unix and Windows conventions).
+	if strings.ContainsAny(s, `/\`) {
+		return fallback
+	}
+	// Reject "." and ".." which could collapse via filepath.Clean.
+	if s == "." || s == ".." {
+		return fallback
+	}
+	return s
 }
 
 // warnOnceProfileTag and warnOnceMachineID dedup the "using default"
