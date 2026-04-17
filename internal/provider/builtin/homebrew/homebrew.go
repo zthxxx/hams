@@ -382,8 +382,6 @@ func (p *Provider) Name() string { return cliName }
 func (p *Provider) DisplayName() string { return brewDisplayName }
 
 func (p *Provider) handleList(hamsFlags map[string]string, flags *provider.GlobalFlags) error {
-	fmt.Println("Homebrew managed packages:")
-
 	hf, err := p.loadOrCreateHamsfile(hamsFlags, flags)
 	if err != nil {
 		return err
@@ -404,14 +402,22 @@ func (p *Provider) handleList(hamsFlags map[string]string, flags *provider.Globa
 
 	diff := provider.DiffDesiredVsState(hf, sf)
 	if flags.JSON {
+		// Cycle 186: emit PURE JSON with no prose header. The pre-
+		// cycle-186 code printed "Homebrew managed packages:" on
+		// stdout BEFORE the JSON object, making the output
+		// unparseable via `hams brew list --json | jq`. Consumers
+		// had to pipe through a heuristic stripper. Now the text
+		// branch still prints the friendly header, but --json is
+		// strictly machine-readable.
 		out, jsonErr := provider.FormatDiffJSON(&diff)
 		if jsonErr != nil {
 			return jsonErr
 		}
 		fmt.Println(out)
-	} else {
-		fmt.Print(provider.FormatDiff(&diff))
+		return nil
 	}
+	fmt.Println("Homebrew managed packages:")
+	fmt.Print(provider.FormatDiff(&diff))
 	return nil
 }
 

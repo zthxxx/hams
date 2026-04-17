@@ -2,10 +2,13 @@ package homebrew
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/zthxxx/hams/internal/config"
@@ -14,6 +17,37 @@ import (
 	"github.com/zthxxx/hams/internal/provider"
 	"github.com/zthxxx/hams/internal/state"
 )
+
+// captureStdoutForHomebrew captures os.Stdout while fn runs.
+// Mu serializes across concurrent tests so the global swap doesn't
+// race (cycle 127 pattern).
+var captureStdoutForHomebrewMu sync.Mutex //nolint:gochecknoglobals // test-only serializer
+
+func captureStdoutForHomebrew(t *testing.T, fn func()) string {
+	t.Helper()
+	captureStdoutForHomebrewMu.Lock()
+	defer captureStdoutForHomebrewMu.Unlock()
+
+	orig := os.Stdout
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("Pipe: %v", err)
+	}
+	os.Stdout = w
+	fn()
+	if cerr := w.Close(); cerr != nil {
+		t.Logf("close pipe: %v", cerr)
+	}
+	os.Stdout = orig
+	out, rerr := io.ReadAll(r)
+	if rerr != nil {
+		t.Fatalf("read: %v", rerr)
+	}
+	if cerr := r.Close(); cerr != nil {
+		t.Logf("close reader: %v", cerr)
+	}
+	return string(out)
+}
 
 // brewHarness wires a homebrew.Provider against a FakeCmdRunner +
 // tempdir profile + tempdir state dir so HandleCommand tests can
@@ -292,6 +326,53 @@ func TestHandleCommand_CaskAutoTaggedAsCask(t *testing.T) {
 	}
 	if h.runner.CallCount(fakeOpInstall, "iterm2") != 1 {
 		t.Errorf("brew install(iterm2) calls = %d, want 1", h.runner.CallCount(fakeOpInstall, "iterm2"))
+	}
+}
+
+// TestHandleList_JSONHasNoProseHeader locks in cycle 186: `hams
+// --json brew list` previously printed the prose header
+// "Homebrew managed packages:" BEFORE the JSON, making the output
+// unparseable via `jq` or `json.Unmarshal`. Now: JSON mode emits
+// pure JSON; text mode keeps the friendly header.
+func TestHandleList_JSONHasNoProseHeader(t *testing.T) {
+	t.Parallel()
+	h := newBrewHarness(t)
+	h.flags.JSON = true
+
+	out := captureStdoutForHomebrew(t, func() {
+		if err := h.provider.HandleCommand(context.Background(),
+			[]string{"list"}, nil, h.flags); err != nil {
+			t.Fatalf("list --json: %v", err)
+		}
+	})
+
+	// MUST NOT contain the prose header.
+	if strings.Contains(out, "Homebrew managed packages:") {
+		t.Errorf("--json output must NOT contain prose header; got:\n%s", out)
+	}
+	// Output MUST be parseable as JSON.
+	var data map[string]any
+	if err := json.Unmarshal([]byte(strings.TrimSpace(out)), &data); err != nil {
+		t.Errorf("--json output not parseable JSON: %v\nraw: %q", err, out)
+	}
+}
+
+// TestHandleList_TextHasProseHeader asserts the cycle-186 fix
+// didn't accidentally remove the friendly header from the text
+// path. Text mode still shows "Homebrew managed packages:".
+func TestHandleList_TextHasProseHeader(t *testing.T) {
+	t.Parallel()
+	h := newBrewHarness(t)
+
+	out := captureStdoutForHomebrew(t, func() {
+		if err := h.provider.HandleCommand(context.Background(),
+			[]string{"list"}, nil, h.flags); err != nil {
+			t.Fatalf("list: %v", err)
+		}
+	})
+
+	if !strings.Contains(out, "Homebrew managed packages:") {
+		t.Errorf("text-mode list should contain prose header; got:\n%s", out)
 	}
 }
 
