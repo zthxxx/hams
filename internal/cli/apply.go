@@ -458,8 +458,9 @@ func runApply(ctx context.Context, flags *provider.GlobalFlags, registry *provid
 	var allResults []provider.ExecuteResult
 	var skippedProviders []string
 	var stateSaveFailures []string
-	var failedProviders []string      // cycle 231: per-provider failure attribution
-	var probeFailedProviders []string // cycle 237: symmetric with refresh
+	var failedProviders []string            // cycle 231: per-provider failure attribution
+	var probeFailedProviders []string       // cycle 237: symmetric with refresh
+	var dryRunActions []dryRunProviderEntry // cycle 244: JSON dry-run planned actions
 
 	if !noRefresh {
 		slog.Info("refreshing state")
@@ -665,7 +666,20 @@ func runApply(ctx context.Context, flags *provider.GlobalFlags, registry *provid
 		// — the final JSON summary at the end of the dry-run branch is
 		// the machine-readable surface for CI consumers.
 		if flags.DryRun {
-			if !flags.JSON {
+			if flags.JSON {
+				// Cycle 244: collect per-provider planned actions for
+				// the JSON summary. Spec §Dry-run apply shows planned
+				// actions requires listing each action's type + target.
+				// Pre-cycle-244 emitDryRunJSON emitted only aggregates
+				// (skipped_providers, success) — CI scripts that
+				// wanted to verify "would this apply install htop?"
+				// without running it had to parse the prose preview.
+				dryRunActions = append(dryRunActions, dryRunProviderEntry{
+					Name:        name,
+					DisplayName: manifest.DisplayName,
+					Actions:     actions,
+				})
+			} else {
 				printDryRunActions(name, manifest.DisplayName, actions)
 			}
 			continue
@@ -732,7 +746,7 @@ func runApply(ctx context.Context, flags *provider.GlobalFlags, registry *provid
 		// dry-run outcome instead of the prose warnings — CI scripts
 		// need to parse the result without grepping prose lines.
 		if flags.JSON {
-			return emitDryRunJSON(skippedProviders, stateSaveFailures, time.Since(applyStart).Milliseconds())
+			return emitDryRunJSON(skippedProviders, stateSaveFailures, dryRunActions, time.Since(applyStart).Milliseconds())
 		}
 
 		if len(skippedProviders) > 0 {
@@ -914,6 +928,48 @@ func reportNoProvidersMatch(cfg *config.Config, profileDir string, stageOneProvi
 	fmt.Println("  Fix: hams config set profile_tag <profile>  OR  pass --profile=<profile>")
 }
 
+// dryRunProviderEntry groups a provider's dry-run planned actions
+// for the JSON summary. Cycle 244.
+type dryRunProviderEntry struct {
+	Name        string
+	DisplayName string
+	Actions     []provider.Action
+}
+
+// marshalDryRunActions converts the planned-actions slice into a
+// JSON-friendly shape with stable field names (provider, display_name,
+// actions). Each action becomes {type, id, requires_sudo?} so CI
+// scripts can drive decisions without parsing prose. Cycle 244.
+//
+// The `id` field uses Action.ID verbatim (matches text mode's
+// printDryRunActions output). `type` is the lowercase action verb
+// (install / update / remove / skip). Skipped actions are included
+// so consumers see the full plan.
+func marshalDryRunActions(entries []dryRunProviderEntry) []map[string]any {
+	out := make([]map[string]any, 0, len(entries))
+	for _, e := range entries {
+		acts := make([]map[string]string, 0, len(e.Actions))
+		for _, a := range e.Actions {
+			id := a.ID
+			if a.Resource != nil {
+				if token, ok := a.Resource.(string); ok && token != "" {
+					id = token
+				}
+			}
+			acts = append(acts, map[string]string{
+				"type": a.Type.String(),
+				"id":   id,
+			})
+		}
+		out = append(out, map[string]any{
+			"provider":     e.Name,
+			"display_name": e.DisplayName,
+			"actions":      acts,
+		})
+	}
+	return out
+}
+
 // buildApplyJSONSummary constructs the map used by the `--json`
 // real-run branch of runApply. Factored out of the inline block in
 // cycle 237 because the growing schema (installed, updated, removed,
@@ -1015,7 +1071,7 @@ func onlyMissingArtifacts(only string, allProviders, stageOneProviders []provide
 // and returns the matching ExitPartialFailure when appropriate. The
 // JSON shape mirrors the full-apply JSON (cycle 183) with a
 // `dry_run: true` marker so CI scripts can distinguish both modes.
-func emitDryRunJSON(skippedProviders, stateSaveFailures []string, elapsedMs int64) error {
+func emitDryRunJSON(skippedProviders, stateSaveFailures []string, plannedActions []dryRunProviderEntry, elapsedMs int64) error {
 	skippedNorm := skippedProviders
 	if skippedNorm == nil {
 		skippedNorm = []string{}
@@ -1024,6 +1080,15 @@ func emitDryRunJSON(skippedProviders, stateSaveFailures []string, elapsedMs int6
 	if saveFailNorm == nil {
 		saveFailNorm = []string{}
 	}
+	// Cycle 244: planned_actions lists the would-do actions each
+	// provider planned (per the spec §"Dry-run apply shows planned
+	// actions"). Pre-cycle-244 JSON dry-run only emitted aggregates
+	// — CI scripts had to grep the prose preview to know WHAT hams
+	// would install. Now a direct array consumers can iterate.
+	plannedNorm := plannedActions
+	if plannedNorm == nil {
+		plannedNorm = []dryRunProviderEntry{}
+	}
 	// Cycle 240: include elapsed_ms so dry-run JSON shape matches the
 	// real-run shape (cycle 238). CI dashboards that diff dry-run
 	// previews against real applies need the same field set on both
@@ -1031,6 +1096,7 @@ func emitDryRunJSON(skippedProviders, stateSaveFailures []string, elapsedMs int6
 	// special-case the field as "may be missing on the dry-run path".
 	data := map[string]any{
 		"dry_run":           true,
+		"planned_actions":   marshalDryRunActions(plannedNorm),
 		"skipped_providers": skippedNorm,
 		"state_save_errors": saveFailNorm,
 		"success":           len(skippedProviders) == 0 && len(stateSaveFailures) == 0,

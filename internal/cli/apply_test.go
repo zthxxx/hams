@@ -1448,6 +1448,38 @@ func TestRunApply_DryRunJSONHasNoProse(t *testing.T) {
 	if elapsed, ok := data["elapsed_ms"].(float64); !ok || elapsed < 0 {
 		t.Errorf("elapsed_ms = %v (ok=%v), want non-negative", data["elapsed_ms"], ok)
 	}
+	// Cycle 244: planned_actions must be present and list the one
+	// install action the test's planFn returned. Per cli-architecture
+	// spec §"Dry-run apply shows planned actions" — dry-run output
+	// SHALL display each action with its type and resource identity.
+	planned, ok := data["planned_actions"].([]any)
+	if !ok {
+		t.Fatalf("planned_actions missing or wrong type: %v", data["planned_actions"])
+	}
+	if len(planned) != 1 {
+		t.Fatalf("planned_actions len = %d, want 1 (alpha): %v", len(planned), planned)
+	}
+	entry, ok := planned[0].(map[string]any)
+	if !ok {
+		t.Fatalf("planned_actions[0] not a map: %T", planned[0])
+	}
+	if entry["provider"] != "alpha" {
+		t.Errorf("provider = %v, want alpha", entry["provider"])
+	}
+	actions, ok := entry["actions"].([]any)
+	if !ok || len(actions) != 1 {
+		t.Fatalf("actions = %v, want 1 install", actions)
+	}
+	act, ok := actions[0].(map[string]any)
+	if !ok {
+		t.Fatalf("actions[0] not a map: %T", actions[0])
+	}
+	if act["type"] != "install" {
+		t.Errorf("action type = %v, want install", act["type"])
+	}
+	if act["id"] != "pkg-a" {
+		t.Errorf("action id = %v, want pkg-a", act["id"])
+	}
 
 	_ = storeDir
 }
