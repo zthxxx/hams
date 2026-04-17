@@ -135,7 +135,49 @@ func EnsureStoreScaffolded(ctx context.Context, paths config.Paths, flags *provi
 		slog.Warn("failed to persist store_path after scaffold", "error", persistErr)
 	}
 
+	// Seed machine-scoped identity (profile_tag + machine_id) so the
+	// user does not see the "using 'default'/'unknown'" nudge on every
+	// subsequent `hams <provider>` invocation. This makes the
+	// first-time onboarding loop single-shot: `hams brew install htop`
+	// produces a complete, silent, committable config in one command.
+	//
+	// Only seed keys that are still empty — respects a user who ran
+	// `hams config set profile_tag macOS` before their first provider
+	// install. WriteConfigKey is keychain-aware but these two keys
+	// are plain identifiers (not secrets), so they land in the
+	// global config file, not a keychain entry.
+	seedIfMissing(paths, "profile_tag", func() string { return config.DefaultProfileTag })
+	seedIfMissing(paths, "machine_id", config.DeriveMachineID)
+
 	return storePath, nil
+}
+
+// seedIfMissing writes `value` to the global config file under `key`
+// when and only when that key is currently empty (or the config file
+// does not yet exist). Failures are logged but not propagated — the
+// scaffold path is best-effort and the surrounding command should not
+// fail because an optional identity key could not be written.
+func seedIfMissing(paths config.Paths, key string, value func() string) {
+	cfg, err := config.Load(paths, "", "")
+	if err == nil {
+		switch key {
+		case "profile_tag":
+			if cfg.ProfileTag != "" {
+				return
+			}
+		case "machine_id":
+			if cfg.MachineID != "" {
+				return
+			}
+		}
+	}
+	v := value()
+	if v == "" {
+		return
+	}
+	if wErr := config.WriteConfigKey(paths, "", key, v); wErr != nil {
+		slog.Warn("failed to seed config key after scaffold", "key", key, "error", wErr)
+	}
 }
 
 // scaffoldStoreFiles runs `git init` + writes the embedded template

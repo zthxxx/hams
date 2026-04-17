@@ -7,11 +7,17 @@ import (
 	"github.com/zthxxx/hams/internal/i18n"
 )
 
-// defaultProfileTag is returned when no CLI flag, config value, or
+// DefaultProfileTag is returned when no CLI flag, config value, or
 // other source supplies a tag. Matches the existing fallback in
 // sanitizePathSegment, so `<store>/default/` is the historical home
-// for profile-less stores.
-const defaultProfileTag = "default"
+// for profile-less stores. Exported so the CLI scaffolder can seed
+// an identical literal into a fresh global config (keeps the
+// on-disk value and the runtime fallback in lock-step).
+const DefaultProfileTag = "default"
+
+// defaultProfileTag is the pre-export alias kept for the local
+// references in this package. New code should prefer DefaultProfileTag.
+const defaultProfileTag = DefaultProfileTag
 
 // ResolveCLITagOverride picks a single CLI-supplied profile tag from
 // the `--tag` and `--profile` flag values, which are aliases. Returns:

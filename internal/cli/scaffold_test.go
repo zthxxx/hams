@@ -131,6 +131,101 @@ func TestEnsureStoreScaffolded_Idempotent(t *testing.T) {
 	}
 }
 
+// TestEnsureStoreScaffolded_SeedsIdentityKeys asserts that first-time
+// scaffold populates profile_tag + machine_id in the global config,
+// not just store_path. Without this, every subsequent `hams
+// <provider> …` invocation fired "profile_tag is empty / machine_id
+// is empty" warnings — making the post-onboarding experience look
+// broken even though the tool was working correctly. The seeded
+// values are conservative defaults (profile_tag="default",
+// machine_id=DeriveMachineID()) that the user can override later
+// with `hams config set`.
+func TestEnsureStoreScaffolded_SeedsIdentityKeys(t *testing.T) {
+	root := t.TempDir()
+	configHome := filepath.Join(root, "config")
+	dataHome := filepath.Join(root, "data")
+	t.Setenv("HAMS_CONFIG_HOME", configHome)
+	t.Setenv("HAMS_DATA_HOME", dataHome)
+	t.Setenv("HAMS_STORE", "")
+	// Pin DeriveMachineID to a deterministic value so the assertion
+	// doesn't depend on the test host's real hostname.
+	origLookup := config.HostnameLookup
+	t.Cleanup(func() { config.HostnameLookup = origLookup })
+	config.HostnameLookup = func() (string, error) { return "testbox", nil }
+
+	origGitInit := gitInitExec
+	t.Cleanup(func() { gitInitExec = origGitInit })
+	gitInitExec = func(_ context.Context, dir string) error {
+		return os.MkdirAll(filepath.Join(dir, ".git"), 0o750)
+	}
+
+	paths := config.ResolvePaths()
+	flags := &provider.GlobalFlags{}
+	if _, err := EnsureStoreScaffolded(context.Background(), paths, flags); err != nil {
+		t.Fatalf("scaffold: %v", err)
+	}
+
+	cfg, err := config.Load(paths, "", "")
+	if err != nil {
+		t.Fatalf("reload config: %v", err)
+	}
+	if cfg.ProfileTag != "default" {
+		t.Errorf("profile_tag = %q, want %q after scaffold", cfg.ProfileTag, "default")
+	}
+	if cfg.MachineID != "testbox" {
+		t.Errorf("machine_id = %q, want %q after scaffold", cfg.MachineID, "testbox")
+	}
+}
+
+// TestEnsureStoreScaffolded_DoesNotClobberUserIdentity asserts that
+// scaffold respects an already-set profile_tag or machine_id. A user
+// who ran `hams config set profile_tag macOS` before their first
+// provider install must keep "macOS", not be silently overwritten
+// with "default".
+func TestEnsureStoreScaffolded_DoesNotClobberUserIdentity(t *testing.T) {
+	root := t.TempDir()
+	configHome := filepath.Join(root, "config")
+	dataHome := filepath.Join(root, "data")
+	t.Setenv("HAMS_CONFIG_HOME", configHome)
+	t.Setenv("HAMS_DATA_HOME", dataHome)
+	t.Setenv("HAMS_STORE", "")
+
+	// Pre-seed global config with a user-chosen profile_tag + machine_id.
+	if err := os.MkdirAll(configHome, 0o750); err != nil {
+		t.Fatalf("mkdir configHome: %v", err)
+	}
+	userConfig := "profile_tag: macOS\nmachine_id: laptop-m5x\n"
+	if err := os.WriteFile(filepath.Join(configHome, "hams.config.yaml"),
+		[]byte(userConfig), 0o600); err != nil {
+		t.Fatalf("write user config: %v", err)
+	}
+
+	origGitInit := gitInitExec
+	t.Cleanup(func() { gitInitExec = origGitInit })
+	gitInitExec = func(_ context.Context, dir string) error {
+		return os.MkdirAll(filepath.Join(dir, ".git"), 0o750)
+	}
+
+	paths := config.ResolvePaths()
+	flags := &provider.GlobalFlags{}
+	if _, err := EnsureStoreScaffolded(context.Background(), paths, flags); err != nil {
+		t.Fatalf("scaffold: %v", err)
+	}
+
+	cfg, err := config.Load(paths, "", "")
+	if err != nil {
+		t.Fatalf("reload config: %v", err)
+	}
+	if cfg.ProfileTag != "macOS" {
+		t.Errorf("scaffold clobbered user's profile_tag: got %q, want %q",
+			cfg.ProfileTag, "macOS")
+	}
+	if cfg.MachineID != "laptop-m5x" {
+		t.Errorf("scaffold clobbered user's machine_id: got %q, want %q",
+			cfg.MachineID, "laptop-m5x")
+	}
+}
+
 // TestEnsureStoreScaffolded_RespectsHamsStoreEnv verifies that
 // `HAMS_STORE=<path>` overrides the default under `HAMS_DATA_HOME`.
 // Users who want the store somewhere specific (e.g. `~/Projects/
