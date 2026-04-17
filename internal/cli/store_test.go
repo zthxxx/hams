@@ -270,6 +270,152 @@ resources:
 	}
 }
 
+// TestList_DeterministicOrderAcrossRuns locks in cycle 149: per-provider
+// rows in `hams list` (text and JSON) must be in stable, alphabetical
+// order across invocations. Previously the IDs were collected by
+// iterating sf.Resources (a Go map) — non-deterministic, so each
+// `hams list` shuffled the rows. Broke grep/diff/snapshot workflows.
+// Symmetric with cycle 148's fix in DiffDesiredVsState (covers a
+// different code path: the listCmd flow does not go through
+// DiffDesiredVsState — it iterates state directly).
+func TestList_DeterministicOrderAcrossRuns(t *testing.T) {
+	storeDir, _, stateDir, _ := setupApplyTestEnv(t, []string{"apt"})
+
+	// Seed an apt state file with 6 resources whose alphabetical order
+	// is unrelated to insertion order — increases the chance Go's map
+	// iteration would shuffle them differently across invocations.
+	statePath := filepath.Join(stateDir, "apt.state.yaml")
+	writeApplyTestFile(t, statePath, `provider: apt
+machine_id: test-machine
+resources:
+  zsh:
+    state: ok
+    version: "5.9"
+  htop:
+    state: ok
+    version: "3.2.2"
+  curl:
+    state: ok
+    version: "7.81"
+  ack:
+    state: ok
+    version: "3.5"
+  jq:
+    state: ok
+    version: "1.6"
+  vim:
+    state: ok
+    version: "8.2"
+`)
+
+	registry := provider.NewRegistry()
+	p := &applyTestProvider{
+		manifest: provider.Manifest{
+			Name: "apt", DisplayName: "apt", FilePrefix: "apt",
+			Platforms: []provider.Platform{provider.PlatformAll},
+		},
+	}
+	if err := registry.Register(p); err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+
+	runOnce := func() string {
+		return captureStdout(t, func() {
+			app := NewApp(registry, sudo.NoopAcquirer{})
+			if err := app.Run(context.Background(),
+				[]string{"hams", "--store", storeDir, "list"}); err != nil {
+				t.Fatalf("list: %v", err)
+			}
+		})
+	}
+
+	first := runOnce()
+	for range 20 {
+		got := runOnce()
+		if got != first {
+			t.Errorf("list output differs across runs:\nfirst:\n%s\n\nlater:\n%s", first, got)
+			break
+		}
+	}
+
+	// Assert alphabetical ordering: ack < curl < htop < jq < vim < zsh.
+	want := []string{"ack", "curl", "htop", "jq", "vim", "zsh"}
+	last := -1
+	for _, name := range want {
+		idx := strings.Index(first, name)
+		if idx < 0 {
+			t.Errorf("output missing %q; got:\n%s", name, first)
+			continue
+		}
+		if idx <= last {
+			t.Errorf("output not alphabetical: %q at idx %d should come after previous (idx %d)", name, idx, last)
+		}
+		last = idx
+	}
+}
+
+// TestList_JSON_DeterministicOrder asserts the same per-provider
+// determinism for the --json output path. Scripts consuming
+// `hams list --json` would otherwise see the array elements
+// shuffled across runs.
+func TestList_JSON_DeterministicOrder(t *testing.T) {
+	storeDir, _, stateDir, _ := setupApplyTestEnv(t, []string{"apt"})
+
+	statePath := filepath.Join(stateDir, "apt.state.yaml")
+	writeApplyTestFile(t, statePath, `provider: apt
+machine_id: test-machine
+resources:
+  zsh: {state: ok, version: "5.9"}
+  htop: {state: ok, version: "3.2.2"}
+  curl: {state: ok, version: "7.81"}
+  ack: {state: ok, version: "3.5"}
+`)
+
+	registry := provider.NewRegistry()
+	p := &applyTestProvider{
+		manifest: provider.Manifest{
+			Name: "apt", DisplayName: "apt", FilePrefix: "apt",
+			Platforms: []provider.Platform{provider.PlatformAll},
+		},
+	}
+	if err := registry.Register(p); err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+
+	runOnce := func() string {
+		return captureStdout(t, func() {
+			app := NewApp(registry, sudo.NoopAcquirer{})
+			if err := app.Run(context.Background(),
+				[]string{"hams", "--store", storeDir, "--json", "list"}); err != nil {
+				t.Fatalf("list: %v", err)
+			}
+		})
+	}
+
+	first := runOnce()
+	for range 20 {
+		if got := runOnce(); got != first {
+			t.Errorf("list --json output differs across runs:\nfirst:\n%s\n\nlater:\n%s", first, got)
+			break
+		}
+	}
+
+	// Validate alphabetical ordering by checking ID positions.
+	want := []string{`"id": "ack"`, `"id": "curl"`, `"id": "htop"`, `"id": "zsh"`}
+	last := -1
+	for _, frag := range want {
+		idx := strings.Index(first, frag)
+		if idx < 0 {
+			t.Errorf("JSON missing %s; got:\n%s", frag, first)
+			continue
+		}
+		if idx <= last {
+			t.Errorf("JSON not alphabetical: %s at idx %d should come after previous (idx %d)", frag, idx, last)
+		}
+		last = idx
+	}
+}
+
 // TestList_JSON_IncludesValueAndLastError locks in the cycle-116
 // enhancement: `hams list --json` surfaces the Resource.Value
 // (relevant for KV-Config providers: defaults/duti/git-config) and

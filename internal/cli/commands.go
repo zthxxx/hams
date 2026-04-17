@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -1099,7 +1100,12 @@ func listCmd(registry *provider.Registry) *cli.Command {
 				}
 				hadAnyResources = true
 
-				// Collect filtered resources for this provider.
+				// Collect filtered resources for this provider, then sort
+				// by ID. Without the sort, Go's non-deterministic map
+				// iteration shuffles per-provider rows on every `hams list`
+				// invocation — breaks grep/diff/snapshot workflows over
+				// both text and --json output. Symmetric with cycle 148's
+				// fix in DiffDesiredVsState.
 				var filteredIDs []string
 				for id, r := range sf.Resources {
 					if statusSet != nil && !statusSet[string(r.State)] {
@@ -1111,6 +1117,7 @@ func listCmd(registry *provider.Registry) *cli.Command {
 				if len(filteredIDs) == 0 {
 					continue
 				}
+				sort.Strings(filteredIDs)
 
 				if flags.JSON {
 					for _, id := range filteredIDs {
