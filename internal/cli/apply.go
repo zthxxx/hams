@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"sort"
 	"strings"
 
 	"github.com/urfave/cli/v3"
@@ -806,6 +807,12 @@ func validateProviderNames(requested, known map[string]bool, knownNames []string
 		}
 	}
 	if len(unknown) > 0 {
+		// Sort the unknown list before formatting so a user typing
+		// `--only=foo,bar,baz` with all three being typos sees the
+		// same error message across runs. Without the sort, Go's
+		// non-deterministic map iteration shuffled the order on
+		// every invocation. Symmetric with cycles 148-151.
+		sort.Strings(unknown)
 		return hamserr.NewUserError(hamserr.ExitUsageError,
 			fmt.Sprintf("unknown provider(s): %s", strings.Join(unknown, ", ")),
 			fmt.Sprintf("Available providers: %s", strings.Join(knownNames, ", ")),

@@ -95,6 +95,54 @@ func TestValidateProviderNames_UnknownReportedWithSuggestion(t *testing.T) {
 	}
 }
 
+// TestValidateProviderNames_UnknownListIsAlphabetical locks in
+// cycle 152: when multiple typo'd providers are in the requested
+// set, the resulting error message lists them in stable,
+// alphabetical order across runs. Previously the unknown slice was
+// populated by iterating the requested map (Go map iteration is
+// non-deterministic), so a user typing `--only=foo,bar,baz` saw
+// the unknown providers in a different order on every run, breaking
+// any script grepping the error text. Symmetric with cycles 148-151.
+func TestValidateProviderNames_UnknownListIsAlphabetical(t *testing.T) {
+	t.Parallel()
+	requested := map[string]bool{"zfoo": true, "abar": true, "mbaz": true}
+	known := map[string]bool{"brew": true, "apt": true}
+	knownNames := []string{"brew", "apt"}
+
+	first := validateProviderNames(requested, known, knownNames)
+	if first == nil {
+		t.Fatal("expected error for 3 unknown providers")
+	}
+	var firstUFE *hamserr.UserFacingError
+	if !errors.As(first, &firstUFE) {
+		t.Fatalf("expected *UserFacingError, got %T", first)
+	}
+
+	// 20 reps must produce byte-identical Message + Suggestions.
+	for range 20 {
+		again := validateProviderNames(requested, known, knownNames)
+		var ufe *hamserr.UserFacingError
+		if !errors.As(again, &ufe) {
+			t.Fatalf("expected *UserFacingError, got %T", again)
+		}
+		if ufe.Message != firstUFE.Message {
+			t.Errorf("Message differs across runs:\nfirst:  %q\nlater:  %q", firstUFE.Message, ufe.Message)
+			break
+		}
+	}
+
+	// Assert alphabetical positioning of the three names.
+	idxA := strings.Index(firstUFE.Message, "abar")
+	idxM := strings.Index(firstUFE.Message, "mbaz")
+	idxZ := strings.Index(firstUFE.Message, "zfoo")
+	if idxA < 0 || idxM < 0 || idxZ < 0 {
+		t.Fatalf("Message missing one of the unknown names; got %q", firstUFE.Message)
+	}
+	if idxA >= idxM || idxM >= idxZ {
+		t.Errorf("unknown names not alphabetical (abar < mbaz < zfoo); got %q", firstUFE.Message)
+	}
+}
+
 // TestPrintError_TextMode asserts text-mode output writes
 // "Error: <message>\n" + per-suggestion lines to stderr.
 func TestPrintError_TextMode(t *testing.T) {
