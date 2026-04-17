@@ -3,6 +3,7 @@ package bash
 import (
 	"context"
 	"os/exec"
+	"strings"
 	"testing"
 
 	"gopkg.in/yaml.v3"
@@ -305,5 +306,57 @@ func TestProbe(t *testing.T) {
 	}
 	if results[0].ID != "init-zsh" {
 		t.Errorf("Probe result ID = %q, want 'init-zsh'", results[0].ID)
+	}
+}
+
+// TestProbe_CheckCmdPassingCapturesStdout asserts the branch where
+// the stored CheckCmd exits 0: state stays StateOK AND the stdout
+// is captured into ProbeResult.Stdout so upstream diff machinery
+// can distinguish "idempotent check ran, output matched" from
+// "no check defined". Previously 0% coverage on this branch.
+func TestProbe_CheckCmdPassingCapturesStdout(t *testing.T) {
+	p := New()
+	sf := state.New("bash", "test")
+	// A check that always passes (exit 0) and prints a stable line.
+	sf.SetResource("check-passes", state.StateOK,
+		state.WithCheckCmd("printf 'ok-line\\n'"))
+
+	results, err := p.Probe(context.Background(), sf)
+	if err != nil {
+		t.Fatalf("Probe error: %v", err)
+	}
+	if len(results) != 1 {
+		t.Fatalf("Probe returned %d results, want 1", len(results))
+	}
+	if results[0].State != state.StateOK {
+		t.Errorf("state = %v, want StateOK", results[0].State)
+	}
+	if !strings.Contains(results[0].Stdout, "ok-line") {
+		t.Errorf("stdout = %q, want to contain 'ok-line'", results[0].Stdout)
+	}
+}
+
+// TestProbe_CheckCmdFailingFlagsPending asserts the branch where
+// the stored CheckCmd exits non-zero: Probe flips the resource
+// state to StatePending so the next apply's ComputePlan re-runs
+// the Install action. This is the core drift-detection contract
+// for bash provider — previously 0% coverage.
+func TestProbe_CheckCmdFailingFlagsPending(t *testing.T) {
+	p := New()
+	sf := state.New("bash", "test")
+	// Explicit non-zero exit simulates a check that's drifted (the
+	// feature it asserts is no longer configured on the host).
+	sf.SetResource("check-fails", state.StateOK,
+		state.WithCheckCmd("exit 1"))
+
+	results, err := p.Probe(context.Background(), sf)
+	if err != nil {
+		t.Fatalf("Probe error: %v", err)
+	}
+	if len(results) != 1 {
+		t.Fatalf("Probe returned %d results, want 1", len(results))
+	}
+	if results[0].State != state.StatePending {
+		t.Errorf("state = %v, want StatePending (check failed → drift detected)", results[0].State)
 	}
 }
