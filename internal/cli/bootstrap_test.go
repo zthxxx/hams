@@ -99,6 +99,97 @@ func TestResolveClonePath(t *testing.T) {
 	}
 }
 
+// TestExpandRepoShorthand — cycle 225 guard. The URL-expansion path
+// pre-cycle-225 hardcoded `https://github.com/<input>` for any input
+// without a scheme/git@ prefix, silently misrouting things like
+// `gitlab.com/team/repo` to `https://github.com/gitlab.com/team/repo`
+// (which then surfaced as "Repository not found" against the wrong
+// host). The fix mirrors resolveClonePath's host-detection heuristic
+// so the URL and the on-disk cache path agree on which forge the
+// repo lives at.
+func TestExpandRepoShorthand(t *testing.T) {
+	tests := []struct {
+		repo string
+		want string
+	}{
+		// GitHub shorthand: no dot in first segment → assume github.com.
+		{"zthxxx/hams-store", "https://github.com/zthxxx/hams-store"},
+		{"zthxxx/hams-store.git", "https://github.com/zthxxx/hams-store.git"},
+		// Host-prefixed shorthand: first segment has a dot → use as-is.
+		{"gitlab.com/team/project", "https://gitlab.com/team/project"},
+		{"bitbucket.org/team/repo", "https://bitbucket.org/team/repo"},
+		{"git.example.com/x/y", "https://git.example.com/x/y"},
+		{"codeberg.org/u/r", "https://codeberg.org/u/r"},
+		// Full URLs: returned verbatim, no expansion.
+		{"https://github.com/zthxxx/hams-store", "https://github.com/zthxxx/hams-store"},
+		{"https://gitlab.com/team/repo.git", "https://gitlab.com/team/repo.git"},
+		{"http://internal/x/y", "http://internal/x/y"},
+		{"ssh://git@host/x/y", "ssh://git@host/x/y"},
+		// SSH (`git@host:user/repo`): returned verbatim.
+		{"git@github.com:zthxxx/hams-store.git", "git@github.com:zthxxx/hams-store.git"},
+		{"git@gitlab.com:team/project.git", "git@gitlab.com:team/project.git"},
+		// Single segment: defensive fallback (no expansion). go-git will
+		// fail with a real URL-format error rather than silently
+		// prefixing github.com.
+		{"single-name", "single-name"},
+	}
+
+	for _, tt := range tests {
+		got := expandRepoShorthand(tt.repo)
+		if got != tt.want {
+			t.Errorf("expandRepoShorthand(%q) = %q, want %q", tt.repo, got, tt.want)
+		}
+	}
+}
+
+// TestExpandRepoShorthand_AgreesWithResolveClonePath asserts the
+// post-cycle-225 invariant that `expandRepoShorthand` and
+// `resolveClonePath` pick the same forge host for any input. If they
+// drift, a user's `--from-repo=gitlab.com/x/y` would land on disk
+// under `repo/gitlab.com/x/y` (correct path) but be cloned from
+// `https://github.com/gitlab.com/x/y` (wrong URL) — exactly the
+// pre-fix bug.
+func TestExpandRepoShorthand_AgreesWithResolveClonePath(t *testing.T) {
+	paths := config.Paths{DataHome: "/data/hams"}
+	repos := []string{
+		"zthxxx/hams-store",
+		"gitlab.com/team/project",
+		"bitbucket.org/team/repo",
+		"https://github.com/zthxxx/hams-store",
+		"https://gitlab.com/team/repo.git",
+		"git@github.com:zthxxx/hams-store.git",
+		"git@gitlab.com:team/project.git",
+	}
+
+	for _, repo := range repos {
+		urlForm := expandRepoShorthand(repo)
+		clonePath := resolveClonePath(repo, paths)
+		// Extract the host segment from the URL form. For SSH the host
+		// sits between "git@" and ":"; for HTTPS it sits between "://"
+		// and the next "/". Build a tiny extractor inline.
+		host := ""
+		switch {
+		case strings.HasPrefix(urlForm, "git@"):
+			rest := strings.TrimPrefix(urlForm, "git@")
+			if h, _, found := strings.Cut(rest, ":"); found {
+				host = h
+			}
+		case strings.Contains(urlForm, "://"):
+			_, rest, _ := strings.Cut(urlForm, "://")
+			if h, _, found := strings.Cut(rest, "/"); found {
+				host = h
+			}
+		}
+		if host == "" {
+			t.Errorf("could not extract host from urlForm %q (input: %q)", urlForm, repo)
+			continue
+		}
+		if !strings.Contains(clonePath, "/repo/"+host+"/") {
+			t.Errorf("URL host %q does not appear in clone path %q (input: %q)", host, clonePath, repo)
+		}
+	}
+}
+
 // TestResolveClonePath_NoCollisionAcrossForges asserts the cycle-168
 // invariant that github.com/X/Y and gitlab.com/X/Y resolve to
 // DIFFERENT clone paths. Without the host scoping, the second clone
