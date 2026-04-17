@@ -121,6 +121,52 @@ func TestLoad_MissingFilesOK(t *testing.T) {
 	}
 }
 
+// TestLoad_ExplicitConfigFilePath_MissingHardFails locks in cycle 249:
+// when the caller passes an explicit `--config=<path>` (producing a
+// non-empty Paths.ConfigFilePath) and the file does NOT exist, Load
+// MUST return a UserFacingError. Pre-cycle-249 the missing-file
+// branch was silenced by the same `!os.IsNotExist` guard that covers
+// the default-path case — so `hams --config=~/myy.yaml apply` with a
+// typo'd filename silently fell through to built-in defaults and ran
+// with surprising resolved values (empty profile_tag, empty
+// store_path, etc.). Now: the typo surfaces immediately with a
+// suggestion to fix it.
+func TestLoad_ExplicitConfigFilePath_MissingHardFails(t *testing.T) {
+	paths := Paths{
+		ConfigHome:     t.TempDir(),
+		DataHome:       t.TempDir(),
+		ConfigFilePath: filepath.Join(t.TempDir(), "does-not-exist.yaml"),
+	}
+	_, err := Load(paths, "", "")
+	if err == nil {
+		t.Fatalf("Load with non-existent --config path should error")
+	}
+	if !strings.Contains(err.Error(), "does not exist") {
+		t.Errorf("error should mention 'does not exist'; got: %v", err)
+	}
+}
+
+// TestLoad_DefaultConfigFileMissingStillOK verifies cycle 249 did
+// not regress the default-path branch: Load MUST still tolerate a
+// missing ~/.config/hams/hams.config.yaml (fresh install, no config
+// yet). Only the explicit `--config=<path>` override should fail
+// hard on missing files.
+func TestLoad_DefaultConfigFileMissingStillOK(t *testing.T) {
+	paths := Paths{
+		ConfigHome: t.TempDir(),
+		DataHome:   t.TempDir(),
+		// ConfigFilePath intentionally zero — use the default-derived
+		// path, which won't exist in the tempdir.
+	}
+	cfg, err := Load(paths, "", "")
+	if err != nil {
+		t.Fatalf("Load with missing default config path should NOT error: %v", err)
+	}
+	if cfg == nil {
+		t.Fatalf("cfg should be non-nil")
+	}
+}
+
 func TestProfileDir(t *testing.T) {
 	cfg := &Config{StorePath: "/store", ProfileTag: "macOS"}
 	if got := cfg.ProfileDir(); got != "/store/macOS" {

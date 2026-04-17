@@ -12,6 +12,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
+	hamserr "github.com/zthxxx/hams/internal/error"
 	"github.com/zthxxx/hams/internal/hamsfile"
 )
 
@@ -117,8 +118,30 @@ func Load(paths Paths, storePath, profileTag string) (*Config, error) {
 
 	// Level 2a: global config.
 	globalPath := paths.GlobalConfigPath()
-	if err := mergeFromFile(cfg, globalPath); err != nil && !os.IsNotExist(err) {
-		return nil, fmt.Errorf("loading global config %s: %w", globalPath, err)
+	mergeErr := mergeFromFile(cfg, globalPath)
+	switch {
+	case mergeErr == nil:
+		// merged successfully.
+	case !os.IsNotExist(mergeErr):
+		// real parse/permission error — surface it.
+		return nil, fmt.Errorf("loading global config %s: %w", globalPath, mergeErr)
+	case paths.ConfigFilePath != "":
+		// Cycle 249: the user passed `--config=<path>` and that path
+		// does not exist. Pre-cycle-249 the missing-file branch was
+		// silently swallowed by the `!os.IsNotExist` guard — same as
+		// the default-path case, which is correct for "no config yet"
+		// but wrong when the user explicitly named the file. A typo
+		// like `hams --config=~/myy.yaml apply` silently fell back to
+		// the built-in defaults, hiding the mistake until some
+		// resolved value surprised the user. Now: explicitly-named
+		// missing files hard-fail with an actionable UFE.
+		return nil, hamserr.NewUserError(
+			hamserr.ExitUsageError,
+			fmt.Sprintf("config file %s does not exist", globalPath),
+			"Check the path spelling",
+			"Create the file: touch "+globalPath,
+			"Or omit --config to use the default at ~/.config/hams/hams.config.yaml",
+		)
 	}
 
 	// Level 2b: global local overrides (for sensitive keys written outside a store context).
