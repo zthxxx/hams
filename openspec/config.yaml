@@ -6,7 +6,7 @@ context: |
   installations into YAML config files ("Hamsfiles"), enabling one-command environment
   restoration on new machines.
 
-  Tech stack: Go 1.24, urfave/cli v3 (CLI), Bun/pnpm (JS tooling), Nextra (docs).
+  Tech stack: Go 1.26, urfave/cli v3 (CLI), Bun/pnpm (JS tooling), Nextra (docs).
   Full design decisions are documented in CLAUDE.md (AGENTS.md).
 
   Key constraints:

@@ -1,6 +1,7 @@
 package hamsfile
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -775,5 +776,76 @@ func TestListApps_SkipsEmptyAndWhitespaceEntries(t *testing.T) {
 		if g == "" || strings.TrimSpace(g) == "" {
 			t.Errorf("ListApps returned empty/whitespace value %q", g)
 		}
+	}
+}
+
+// TestValidateNoDuplicateApps_NoDupsReturnsNil locks in cycle 255's
+// happy path: a hamsfile with unique apps across all tags passes
+// validation.
+func TestValidateNoDuplicateApps_NoDupsReturnsNil(t *testing.T) {
+	path := writeTempFile(t, sampleYAML)
+	f, err := Read(path)
+	if err != nil {
+		t.Fatalf("Read: %v", err)
+	}
+	if dupErr := f.ValidateNoDuplicateApps(); dupErr != nil {
+		t.Errorf("unique apps should pass; got %v", dupErr)
+	}
+}
+
+// TestValidateNoDuplicateApps_CrossTagDupRejected locks in cycle 255
+// per schema-design spec §"Duplicate app identity across groups is
+// rejected": the same app under two tags returns a DuplicateAppError
+// that names both tags.
+func TestValidateNoDuplicateApps_CrossTagDupRejected(t *testing.T) {
+	yamlBody := `# tags
+development-tool:
+  - app: git
+    intro: version control
+terminal-tool:
+  - app: git
+    intro: duplicated here by accident
+`
+	path := writeTempFile(t, yamlBody)
+	f, err := Read(path)
+	if err != nil {
+		t.Fatalf("Read: %v", err)
+	}
+	dupErr := f.ValidateNoDuplicateApps()
+	if dupErr == nil {
+		t.Fatal("expected DuplicateAppError for cross-tag duplicate; got nil")
+	}
+	var de *DuplicateAppError
+	if !errors.As(dupErr, &de) {
+		t.Fatalf("expected *DuplicateAppError; got %T: %v", dupErr, dupErr)
+	}
+	if de.App != "git" {
+		t.Errorf("App = %q, want %q", de.App, "git")
+	}
+	if len(de.Tags) != 2 || de.Tags[0] != "development-tool" || de.Tags[1] != "terminal-tool" {
+		t.Errorf("Tags = %v, want [development-tool terminal-tool] (document order)", de.Tags)
+	}
+	if !strings.Contains(dupErr.Error(), `duplicate app "git"`) {
+		t.Errorf("Error() should name the duplicate app; got %q", dupErr.Error())
+	}
+}
+
+// TestValidateNoDuplicateApps_SameTagRepeatAccepted locks in cycle
+// 255's documented boundary: same-tag repeats are NOT rejected here
+// (they fold into a single action via ComputePlan's dedup, and
+// rejecting mid-edit would break hand-fixing workflows). Only
+// cross-tag duplicates fail validation.
+func TestValidateNoDuplicateApps_SameTagRepeatAccepted(t *testing.T) {
+	yamlBody := `packages:
+  - app: git
+  - app: git
+`
+	path := writeTempFile(t, yamlBody)
+	f, err := Read(path)
+	if err != nil {
+		t.Fatalf("Read: %v", err)
+	}
+	if dupErr := f.ValidateNoDuplicateApps(); dupErr != nil {
+		t.Errorf("same-tag repeat should not trigger validation; got %v", dupErr)
 	}
 }

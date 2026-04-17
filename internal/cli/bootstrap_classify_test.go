@@ -144,6 +144,55 @@ func TestPromptProfileInit_RejectsInvalidInput(t *testing.T) {
 	}
 }
 
+// TestPromptProfileInit_PromptsGoToStderr locks in cycle 252: the
+// "Profile tag: " and "Profile Machine-ID: " prompts go to stderr,
+// NOT stdout. Pre-cycle-252 they wrote to stdout via fmt.Print, so
+// an interactive `hams --json apply` on a fresh machine (TTY stdin,
+// profile missing) interleaved prompt prose into the JSON output
+// surface. The spec channels stdout for machine-consumable output,
+// stderr for diagnostics/prompts/progress.
+func TestPromptProfileInit_PromptsGoToStderr(t *testing.T) {
+	// Feed valid input via os.Stdin so promptProfileInit returns
+	// cleanly without error. We only care about WHERE the prompts
+	// went, not the result.
+	origStdin := os.Stdin
+	defer func() { os.Stdin = origStdin }()
+
+	r, w, pipeErr := os.Pipe()
+	if pipeErr != nil {
+		t.Fatalf("pipe: %v", pipeErr)
+	}
+	if _, werr := w.WriteString("macOS\nMyMachine\n"); werr != nil {
+		t.Fatalf("write: %v", werr)
+	}
+	_ = w.Close() //nolint:errcheck // test fixture
+	os.Stdin = r
+	defer func() { _ = r.Close() }() //nolint:errcheck // test fixture
+
+	var stdoutBuf, stderrBuf string
+	stdoutBuf = captureStdout(t, func() {
+		stderrBuf = captureStderr(t, func() {
+			tag, mid, err := promptProfileInit()
+			if err != nil {
+				t.Fatalf("promptProfileInit: %v", err)
+			}
+			if tag != "macOS" || mid != "MyMachine" {
+				t.Fatalf("unexpected parse: tag=%q mid=%q", tag, mid)
+			}
+		})
+	})
+
+	// Stderr MUST carry both prompts; stdout MUST carry NEITHER.
+	for _, marker := range []string{"Profile tag:", "Profile Machine-ID:"} {
+		if !strings.Contains(stderrBuf, marker) {
+			t.Errorf("stderr missing %q; got: %q", marker, stderrBuf)
+		}
+		if strings.Contains(stdoutBuf, marker) {
+			t.Errorf("stdout contains %q — breaks --json output; got: %q", marker, stdoutBuf)
+		}
+	}
+}
+
 // TestCloneRemoteRepo_CanceledContextAborts locks in cycle 121:
 // a canceled context reaches go-git's PlainCloneContext and
 // aborts the clone promptly instead of waiting for network

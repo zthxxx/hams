@@ -364,6 +364,46 @@ func TestBootstrapFromRepo_LocalAttemptSurfacesError(t *testing.T) {
 	}
 }
 
+// TestResolveFromRepoStorePath_DryRunWouldCloneGoesToStderr locks in
+// cycle 250: the "[dry-run] Would clone X. Re-run without --dry-run"
+// diagnostic that resolveFromRepoStorePath emits when the repo isn't
+// already on disk MUST go to stderr, not stdout. Pre-cycle-250 the
+// message was printed via fmt.Printf — which makes `hams --json
+// --dry-run apply --from-repo=<X> | jq .` fail on invalid JSON
+// (the prose line appears before the final JSON summary).
+//
+// Standard UNIX convention: stdout for the command's primary
+// machine-consumable output, stderr for diagnostics / progress.
+// This test pins the convention so future changes don't regress.
+func TestResolveFromRepoStorePath_DryRunWouldCloneGoesToStderr(t *testing.T) {
+	// Use a repo string that definitely won't resolve to a local path
+	// or an existing cached clone — forces the "Would clone" branch.
+	dataHome := t.TempDir()
+	paths := config.Paths{DataHome: dataHome}
+	repo := "github-like/nonexistent-repo-" + t.Name()
+
+	var stdoutBuf, stderrBuf string
+	stdoutBuf = captureStdout(t, func() {
+		stderrBuf = captureStderr(t, func() {
+			_, done, err := resolveFromRepoStorePath(context.Background(), repo, paths, true)
+			if err != nil {
+				t.Fatalf("resolveFromRepoStorePath: %v", err)
+			}
+			if !done {
+				t.Fatal("dry-run with no existing clone should return done=true")
+			}
+		})
+	})
+
+	// Stderr MUST contain the diagnostic; stdout MUST NOT.
+	if !strings.Contains(stderrBuf, "[dry-run] Would clone") {
+		t.Errorf("stderr should contain the would-clone message; got: %q", stderrBuf)
+	}
+	if strings.Contains(stdoutBuf, "[dry-run]") || strings.Contains(stdoutBuf, "Would clone") {
+		t.Errorf("stdout should NOT contain the would-clone message (--json mode would break); got: %q", stdoutBuf)
+	}
+}
+
 // TestPreviewExistingStoreFromRepo_LocalPath: when the input names an
 // existing local git repo, preview returns it immediately (no network,
 // no clone-path lookup).

@@ -227,7 +227,7 @@ func TestLatestRelease_SuccessPopulatesAssets(t *testing.T) {
 	t.Parallel()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprint(w, `{"tag_name":"v2.0.0","assets":[{"name":"hams-linux-amd64","browser_download_url":"https://example.test/hams-linux-amd64"}]}`) //nolint:errcheck // test handler
+		fmt.Fprint(w, `{"tag_name":"v2.0.0","assets":[{"name":"hams-linux-amd64","browser_download_url":"https://example.test/hams-linux-amd64"}]}`)
 	}))
 	defer srv.Close()
 
@@ -257,7 +257,7 @@ func TestLatestVersion_Success(t *testing.T) {
 	t.Parallel()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprint(w, `{"tag_name":"v1.2.3","assets":[]}`) //nolint:errcheck // test handler
+		fmt.Fprint(w, `{"tag_name":"v1.2.3","assets":[]}`)
 	}))
 	defer srv.Close()
 
@@ -442,7 +442,7 @@ func TestReplaceBinary_Property_AtomicOnFailure(t *testing.T) {
 func TestDownloadAsset_Success(t *testing.T) {
 	t.Parallel()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		fmt.Fprint(w, "binary-data") //nolint:errcheck // test handler
+		fmt.Fprint(w, "binary-data")
 	}))
 	defer srv.Close()
 
@@ -492,7 +492,7 @@ func TestLookupChecksum_HappyPath(t *testing.T) {
 		// Body mimics `sha256sum hams-* > checksums.txt` output.
 		body := wantHash + "  hams-linux-amd64\n" +
 			otherHash + "  hams-darwin-arm64\n"
-		w.Write([]byte(body)) //nolint:errcheck // test handler
+		w.Write([]byte(body))
 	}))
 	defer srv.Close()
 
@@ -549,7 +549,7 @@ func TestLookupChecksum_ManifestPresentButBinaryMissingErrors(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		// Manifest lists ONLY hams-darwin-arm64; not the requested linux build.
 		body := "1234567890123456789012345678901234567890123456789012345678901234  hams-darwin-arm64\n"
-		w.Write([]byte(body)) //nolint:errcheck // test handler
+		w.Write([]byte(body))
 	}))
 	defer srv.Close()
 

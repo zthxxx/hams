@@ -32,6 +32,11 @@ type Provider struct {
 // Pass NewFakeCmdRunner from tests for DI-isolated unit testing.
 func New(cfg *config.Config, runner CmdRunner) *Provider { return &Provider{cfg: cfg, runner: runner} }
 
+const (
+	cliName     = "ansible"
+	displayName = "Ansible"
+)
+
 // ansibleInstallScript is the consent-gated install command. pipx is
 // chosen over pip because PEP 668 flags system-pip installs on modern
 // Python installations (Debian 12+, brew-python) with
@@ -48,14 +53,14 @@ var ansibleBinaryLookup = exec.LookPath
 // Manifest returns the Ansible provider metadata.
 func (p *Provider) Manifest() provider.Manifest {
 	return provider.Manifest{
-		Name:          "ansible",
-		DisplayName:   "Ansible",
+		Name:          cliName,
+		DisplayName:   displayName,
 		Platforms:     []provider.Platform{provider.PlatformAll},
 		ResourceClass: provider.ClassCheckBased,
 		DependsOn: []provider.DependOn{
 			{Provider: "bash", Script: ansibleInstallScript},
 		},
-		FilePrefix: "ansible",
+		FilePrefix: cliName,
 	}
 }
 
@@ -70,7 +75,7 @@ func (p *Provider) Bootstrap(_ context.Context) error {
 		return nil
 	}
 	return &provider.BootstrapRequiredError{
-		Provider: "ansible",
+		Provider: cliName,
 		Binary:   "ansible-playbook",
 		Script:   ansibleInstallScript,
 	}
@@ -235,7 +240,7 @@ func (p *Provider) effectiveConfig(flags *provider.GlobalFlags) *config.Config {
 }
 
 // Name returns the CLI name.
-func (p *Provider) Name() string { return "ansible" }
+func (p *Provider) Name() string { return cliName }
 
 // DisplayName returns the display name.
-func (p *Provider) DisplayName() string { return "Ansible" }
+func (p *Provider) DisplayName() string { return displayName }

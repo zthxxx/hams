@@ -15,10 +15,17 @@ import (
 func PrintError(err error, jsonMode bool) {
 	var ufe *hamserr.UserFacingError
 	if !errors.As(err, &ufe) {
-		ufe = &hamserr.UserFacingError{
-			Code:    hamserr.ExitGeneralError,
-			Message: err.Error(),
-		}
+		// Cycle 245: wrap plain errors via NewUserError so the
+		// ErrorCode field is populated from errorCodeFromExit.
+		// Pre-cycle-245 the fallback constructed a bare struct with
+		// zero-value ErrorCode, and json:"error_code,omitempty"
+		// stripped it from JSON output. CI/agent scripts that parse
+		// error_code (per cli-architecture spec §"Error in JSON
+		// mode") saw a missing field on plain-error paths, while
+		// UserFacingError paths carried "GENERAL_ERROR". Same
+		// fallback exit code (ExitGeneralError), but now the coarse
+		// category always surfaces.
+		ufe = hamserr.NewUserError(hamserr.ExitGeneralError, err.Error())
 	}
 
 	if jsonMode {

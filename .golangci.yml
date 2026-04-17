@@ -5,9 +5,6 @@ run:
   modules-download-mode: readonly
 
 output:
-  formats:
-    text:
-      path: stdout
   sort-order:
     - linter
     - severity
@@ -98,6 +95,24 @@ linters:
     errcheck:
       check-type-assertions: true
       check-blank: true
+      # fmt.Print* family is already implicitly excluded. Extend the
+      # exclusion to writer-bound variants and common UI helpers — these
+      # write user-facing text to io.Writer sinks (typically os.Stdout /
+      # os.Stderr / an in-memory buffer) where a write failure has no
+      # meaningful recovery path. Explicit exclusion beats sprinkling
+      # `//nolint:errcheck // stdout write is best-effort` on every call
+      # site, and matches the project's DI-friendly flags.Stdout() seam.
+      exclude-functions:
+        - fmt.Fprint
+        - fmt.Fprintf
+        - fmt.Fprintln
+        - (io.Writer).Write
+        - (net/http.ResponseWriter).Write
+        - (*bytes.Buffer).Write
+        - (*bytes.Buffer).WriteString
+        - (*strings.Builder).Write
+        - (*strings.Builder).WriteString
+        - (*strings.Builder).WriteByte
 
     nestif:
       min-complexity: 6

@@ -57,7 +57,7 @@ func TestIntegration_ConfigSet(t *testing.T) {
 	}
 
 	// Load config via the standard Load function and verify round-trip.
-	cfg, err := config.Load(paths, "")
+	cfg, err := config.Load(paths, "", "")
 	if err != nil {
 		t.Fatalf("config.Load: %v", err)
 	}

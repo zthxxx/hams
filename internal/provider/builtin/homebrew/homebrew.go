@@ -349,7 +349,7 @@ func (p *Provider) handleUntap(ctx context.Context, args []string, hamsFlags map
 
 	repo := args[0]
 	if flags.DryRun {
-		fmt.Printf("[dry-run] Would run: brew untap %s\n", repo)
+		fmt.Fprintf(flags.Stdout(), "[dry-run] Would run: brew untap %s\n", repo)
 		return nil
 	}
 
@@ -432,11 +432,11 @@ func (p *Provider) handleList(hamsFlags map[string]string, flags *provider.Globa
 		if jsonErr != nil {
 			return jsonErr
 		}
-		fmt.Println(out)
+		fmt.Fprintln(flags.Stdout(), out)
 		return nil
 	}
-	fmt.Println("Homebrew managed packages:")
-	fmt.Print(provider.FormatDiff(&diff))
+	fmt.Fprintln(flags.Stdout(), "Homebrew managed packages:")
+	fmt.Fprint(flags.Stdout(), provider.FormatDiff(&diff))
 	return nil
 }
 
@@ -463,7 +463,7 @@ func (p *Provider) handleTap(ctx context.Context, args []string, hamsFlags map[s
 
 	repo := args[0]
 	if flags.DryRun {
-		fmt.Printf("[dry-run] Would run: brew tap %s\n", repo)
+		fmt.Fprintf(flags.Stdout(), "[dry-run] Would run: brew tap %s\n", repo)
 		return nil
 	}
 
@@ -564,7 +564,7 @@ func (p *Provider) handleInstall(ctx context.Context, args []string, hamsFlags m
 	}
 
 	if flags.DryRun {
-		fmt.Printf("[dry-run] Would install: brew install %s\n", strings.Join(args, " "))
+		fmt.Fprintf(flags.Stdout(), "[dry-run] Would install: brew install %s\n", strings.Join(args, " "))
 		return nil
 	}
 
@@ -629,7 +629,7 @@ func (p *Provider) handleRemove(ctx context.Context, args []string, hamsFlags ma
 	}
 
 	if flags.DryRun {
-		fmt.Printf("[dry-run] Would remove: brew uninstall %s\n", strings.Join(args, " "))
+		fmt.Fprintf(flags.Stdout(), "[dry-run] Would remove: brew uninstall %s\n", strings.Join(args, " "))
 		return nil
 	}
 

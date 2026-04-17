@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -324,6 +325,107 @@ func TestConfigUnsetDryRun_SkipsUnset(t *testing.T) {
 	}
 	if !strings.Contains(string(body), "profile_tag: keep-me") {
 		t.Errorf("dry-run removed profile_tag from config; should have been untouched; file:\n%s", string(body))
+	}
+}
+
+// TestConfigSet_JSONMode_EmitsStructuredResult locks in cycle 246:
+// `hams --json config set <key> <value>` emits a JSON object with
+// key/value/target/dry_run instead of the text "Set <key> = <value>
+// (in <target>)". Pre-cycle-246 both --json and text mode produced
+// identical text output — a CI script running `hams --json config set
+// foo bar | jq '.key'` failed because stdout was non-JSON, breaking
+// the convention that other commands (apply/refresh/list/config
+// get/config list/version) establish.
+func TestConfigSet_JSONMode_EmitsStructuredResult(t *testing.T) {
+	configHome := t.TempDir()
+	dataHome := t.TempDir()
+	t.Setenv("HAMS_CONFIG_HOME", configHome)
+	t.Setenv("HAMS_DATA_HOME", dataHome)
+
+	out := captureStdout(t, func() {
+		app := NewApp(provider.NewRegistry(), sudo.NoopAcquirer{})
+		if err := app.Run(context.Background(),
+			[]string{"hams", "--json", "config", "set", "profile_tag", "linux"}); err != nil {
+			t.Fatalf("json config set: %v", err)
+		}
+	})
+
+	assertConfigCmdJSON(t, out, map[string]any{
+		"key":     "profile_tag",
+		"value":   "linux",
+		"target":  "global config",
+		"dry_run": false,
+	})
+}
+
+// TestConfigSet_JSONMode_DryRunFlagsDryRunTrue is the --dry-run
+// variant of the set shape test: same shape, dry_run=true.
+func TestConfigSet_JSONMode_DryRunFlagsDryRunTrue(t *testing.T) {
+	configHome := t.TempDir()
+	dataHome := t.TempDir()
+	t.Setenv("HAMS_CONFIG_HOME", configHome)
+	t.Setenv("HAMS_DATA_HOME", dataHome)
+
+	out := captureStdout(t, func() {
+		app := NewApp(provider.NewRegistry(), sudo.NoopAcquirer{})
+		if err := app.Run(context.Background(),
+			[]string{"hams", "--json", "--dry-run", "config", "set", "profile_tag", "linux"}); err != nil {
+			t.Fatalf("json dry-run config set: %v", err)
+		}
+	})
+
+	assertConfigCmdJSON(t, out, map[string]any{
+		"key":     "profile_tag",
+		"value":   "linux",
+		"target":  "global config",
+		"dry_run": true,
+	})
+	// Config file MUST NOT exist (dry-run) — guard that JSON path
+	// still respects --dry-run's no-mutation contract.
+	configPath := filepath.Join(configHome, "hams.config.yaml")
+	if _, err := os.Stat(configPath); err == nil {
+		t.Errorf("dry-run --json config set created config file at %q; should have been untouched", configPath)
+	}
+}
+
+// TestConfigUnset_JSONMode_EmitsStructuredResult is the mirror test
+// for cycle 246 on the unset path.
+func TestConfigUnset_JSONMode_EmitsStructuredResult(t *testing.T) {
+	configHome := t.TempDir()
+	dataHome := t.TempDir()
+	t.Setenv("HAMS_CONFIG_HOME", configHome)
+	t.Setenv("HAMS_DATA_HOME", dataHome)
+	configPath := filepath.Join(configHome, "hams.config.yaml")
+	writeApplyTestFile(t, configPath, "profile_tag: keep-me\nmachine_id: sandbox\n")
+
+	out := captureStdout(t, func() {
+		app := NewApp(provider.NewRegistry(), sudo.NoopAcquirer{})
+		if err := app.Run(context.Background(),
+			[]string{"hams", "--json", "config", "unset", "profile_tag"}); err != nil {
+			t.Fatalf("json config unset: %v", err)
+		}
+	})
+
+	assertConfigCmdJSON(t, out, map[string]any{
+		"key":     "profile_tag",
+		"target":  "global config",
+		"dry_run": false,
+	})
+}
+
+// assertConfigCmdJSON unmarshals the captured stdout and compares
+// each expected key/value pair. Helper factored for the three cycle-246
+// regression tests above.
+func assertConfigCmdJSON(t *testing.T, out string, want map[string]any) {
+	t.Helper()
+	var data map[string]any
+	if err := json.Unmarshal([]byte(out), &data); err != nil {
+		t.Fatalf("output is not valid JSON: %v\nraw: %q", err, out)
+	}
+	for k, v := range want {
+		if data[k] != v {
+			t.Errorf("%s = %v, want %v\nfull: %v", k, data[k], v, data)
+		}
 	}
 }
 

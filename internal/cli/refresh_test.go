@@ -406,6 +406,72 @@ func TestRunRefresh_JSONOutput_DryRunFlagSurfacesTrue(t *testing.T) {
 	}
 }
 
+// TestRunRefresh_NoProvidersMatch_JSONMode locks in cycle 248: when
+// the stage-1 artifact filter produces zero providers, `hams --json
+// refresh` must emit a parseable JSON object, not the prose "No
+// providers match: ..." message. Symmetric with cycle 247's fix on
+// runApply's matching exit path.
+//
+// The JSON shape mirrors the success branch (probed=planned=0,
+// success=true, empty failure slices, dry_run flag preserved,
+// elapsed_ms present). CI consumers iterate the same schema across
+// empty and non-empty refreshes.
+func TestRunRefresh_NoProvidersMatch_JSONMode(t *testing.T) {
+	_, _, _, flags := setupApplyTestEnv(t, []string{"alpha"})
+	flags.JSON = true
+	// No hamsfile written — alpha has no artifacts.
+
+	registry := provider.NewRegistry()
+	p := &applyTestProvider{
+		manifest: provider.Manifest{
+			Name: "alpha", DisplayName: "alpha", FilePrefix: "alpha",
+			Platforms: []provider.Platform{provider.PlatformAll},
+		},
+	}
+	if err := registry.Register(p); err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+
+	out := captureStdout(t, func() {
+		if err := runRefresh(context.Background(), flags, registry, "", ""); err != nil {
+			t.Fatalf("refresh: %v", err)
+		}
+	})
+
+	// Must parse as JSON.
+	var data map[string]any
+	if err := json.Unmarshal([]byte(strings.TrimSpace(out)), &data); err != nil {
+		t.Fatalf("JSON output not parseable: %v\nraw: %q", err, out)
+	}
+
+	// Must NOT contain prose.
+	proseMarkers := []string{
+		"No providers match:",
+		"no hamsfile or state file",
+	}
+	for _, marker := range proseMarkers {
+		if strings.Contains(out, marker) {
+			t.Errorf("JSON mode contains prose marker %q; got:\n%s", marker, out)
+		}
+	}
+
+	// Verify shape matches the success branch.
+	if data["success"] != true {
+		t.Errorf("success = %v, want true", data["success"])
+	}
+	if data["dry_run"] != false {
+		t.Errorf("dry_run = %v, want false", data["dry_run"])
+	}
+	for _, field := range []string{"probed", "planned", "probe_failures"} {
+		if v, ok := data[field].(float64); !ok || v != 0 {
+			t.Errorf("%s = %v (ok=%v), want 0", field, data[field], ok)
+		}
+	}
+	if _, ok := data["elapsed_ms"].(float64); !ok {
+		t.Errorf("elapsed_ms missing or wrong type: %v", data["elapsed_ms"])
+	}
+}
+
 // TestRunRefresh_SaveFailureListIsAlphabetical locks in cycle 151:
 // when multiple providers fail to save their probed state, the
 // printed warning ("N state save failure(s): X, Y, Z") MUST list
@@ -415,6 +481,13 @@ func TestRunRefresh_JSONOutput_DryRunFlagSurfacesTrue(t *testing.T) {
 // broke log-grep / diff tooling that compared two refresh runs.
 // Symmetric with cycles 148/149/150.
 func TestRunRefresh_SaveFailureListIsAlphabetical(t *testing.T) {
+	if os.Getuid() == 0 {
+		// chmod 0o500 does not block writes for root (e.g. CI containers),
+		// so Save cannot be induced to fail this way. The test's intent —
+		// alphabetical ordering of the save-failure warning — is covered
+		// on non-root developer machines where chmod is enforced.
+		t.Skip("chmod-based failure injection does not block root")
+	}
 	storeDir, profileDir, stateDir, flags := setupApplyTestEnv(t, []string{"zeta", "alpha", "mu"})
 
 	// Seed each provider's hamsfile so the artifact filter keeps them

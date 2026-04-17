@@ -217,6 +217,16 @@ func runRefresh(ctx context.Context, flags *provider.GlobalFlags, registry *prov
 		return filterErr
 	}
 	if len(providers) == 0 {
+		// Cycle 248: emit parseable JSON on the no-providers-match
+		// exit path so `hams --json refresh --only=apt` on a profile
+		// with no apt artifacts doesn't dump text through `jq .`.
+		// Symmetric with cycle 247's fix on runApply's matching path.
+		// The JSON shape mirrors the success path (probed=planned=0,
+		// success=true, dry_run flag preserved, empty save/probe
+		// failure slices).
+		if flags.JSON {
+			return emitEmptyRefreshJSON(flags.DryRun, refreshStart)
+		}
 		// Distinguish stage-1 empty (no artifacts anywhere) from stage-2
 		// empty (artifacts exist but --only/--except excluded them all).
 		switch {
@@ -448,6 +458,30 @@ func runRefresh(ctx context.Context, flags *provider.GlobalFlags, registry *prov
 	)
 }
 
+// emitEmptyRefreshJSON writes the refresh summary for the
+// no-providers-match exit path. Same shape as the completion branch
+// (probed = planned = 0, success = true, no save/probe failures),
+// preserving dry_run and elapsed_ms so CI scripts see a consistent
+// schema across real/empty/interrupted paths. Cycle 248.
+func emitEmptyRefreshJSON(dryRun bool, refreshStart time.Time) error {
+	data := map[string]any{
+		"probed":                 0,
+		"planned":                0,
+		"save_failures":          []string{},
+		"probe_failures":         0,
+		"probe_failed_providers": []string{},
+		"success":                true,
+		"dry_run":                dryRun,
+		"elapsed_ms":             time.Since(refreshStart).Milliseconds(),
+	}
+	out, mErr := json.MarshalIndent(data, "", "  ")
+	if mErr != nil {
+		return fmt.Errorf("marshaling empty-refresh JSON: %w", mErr)
+	}
+	fmt.Println(string(out))
+	return nil
+}
+
 func configCmd() *cli.Command {
 	return &cli.Command{
 		Name:  "config",
@@ -590,14 +624,12 @@ func configCmd() *cli.Command {
 					// "no changes" contract. Same fix pattern as
 					// cycles 143/144 (store push/pull/init).
 					if flags.DryRun {
-						fmt.Printf("[dry-run] Would set %s = %s (in %s)\n", key, value, target)
-						return nil
+						return emitConfigSetResult(flags.JSON, key, value, target, true)
 					}
 					if err := config.WriteConfigKey(paths, flags.Store, key, value); err != nil {
 						return fmt.Errorf("writing config: %w", err)
 					}
-					fmt.Printf("Set %s = %s (in %s)\n", key, value, target)
-					return nil
+					return emitConfigSetResult(flags.JSON, key, value, target, false)
 				},
 			},
 			{
@@ -635,14 +667,12 @@ func configCmd() *cli.Command {
 					// Mirror cycle 145's set dry-run guard: preview
 					// without mutating.
 					if flags.DryRun {
-						fmt.Printf("[dry-run] Would unset %s (from %s)\n", key, target)
-						return nil
+						return emitConfigUnsetResult(flags.JSON, key, target, true)
 					}
 					if err := config.UnsetConfigKey(paths, flags.Store, key); err != nil {
 						return fmt.Errorf("unsetting config: %w", err)
 					}
-					fmt.Printf("Unset %s (from %s)\n", key, target)
-					return nil
+					return emitConfigUnsetResult(flags.JSON, key, target, false)
 				},
 			},
 			{
@@ -850,6 +880,62 @@ func localConfigPath(paths config.Paths, storePath string) string {
 
 func printConfigKey(cfg *config.Config, paths config.Paths, storePath, key string) error {
 	return printConfigKeyMode(cfg, paths, storePath, key, false)
+}
+
+// emitConfigSetResult formats the success message for `hams config set`,
+// switching between human-readable text and a JSON object when
+// flags.JSON is set. Cycle 246: pre-cycle-246 both `--json` and text
+// mode produced the same `Set <key> = <value> (in <target>)` string,
+// leaving CI consumers no machine-parseable surface. The JSON shape
+// is `{"key", "value", "target", "dry_run"}` — symmetric with the
+// cycle-236 `config get --json` shape and the apply/refresh JSON
+// conventions.
+func emitConfigSetResult(jsonMode bool, key, value, target string, dryRun bool) error {
+	if jsonMode {
+		data := map[string]any{
+			"key":     key,
+			"value":   value,
+			"target":  target,
+			"dry_run": dryRun,
+		}
+		out, err := json.MarshalIndent(data, "", "  ")
+		if err != nil {
+			return fmt.Errorf("marshaling config set JSON: %w", err)
+		}
+		fmt.Println(string(out))
+		return nil
+	}
+	if dryRun {
+		fmt.Printf("[dry-run] Would set %s = %s (in %s)\n", key, value, target)
+		return nil
+	}
+	fmt.Printf("Set %s = %s (in %s)\n", key, value, target)
+	return nil
+}
+
+// emitConfigUnsetResult is the mirror of emitConfigSetResult for
+// `hams config unset`. Cycle 246. Omits `value` (no value in an
+// unset).
+func emitConfigUnsetResult(jsonMode bool, key, target string, dryRun bool) error {
+	if jsonMode {
+		data := map[string]any{
+			"key":     key,
+			"target":  target,
+			"dry_run": dryRun,
+		}
+		out, err := json.MarshalIndent(data, "", "  ")
+		if err != nil {
+			return fmt.Errorf("marshaling config unset JSON: %w", err)
+		}
+		fmt.Println(string(out))
+		return nil
+	}
+	if dryRun {
+		fmt.Printf("[dry-run] Would unset %s (from %s)\n", key, target)
+		return nil
+	}
+	fmt.Printf("Unset %s (from %s)\n", key, target)
+	return nil
 }
 
 // printConfigKeyMode is the JSON-aware variant of printConfigKey.

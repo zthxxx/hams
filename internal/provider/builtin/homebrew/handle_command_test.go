@@ -1,14 +1,13 @@
 package homebrew
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
-	"io"
 	"os"
 	"path/filepath"
 	"strings"
-	"sync"
 	"testing"
 
 	"github.com/zthxxx/hams/internal/config"
@@ -18,35 +17,20 @@ import (
 	"github.com/zthxxx/hams/internal/state"
 )
 
-// captureStdoutForHomebrew captures os.Stdout while fn runs.
-// Mu serializes across concurrent tests so the global swap doesn't
-// race (cycle 127 pattern).
-var captureStdoutForHomebrewMu sync.Mutex //nolint:gochecknoglobals // test-only serializer
-
-func captureStdoutForHomebrew(t *testing.T, fn func()) string {
+// captureStdoutForHomebrew captures output written to the harness's
+// GlobalFlags.Out (an injected buffer) while fn runs. Prior cycles
+// swapped os.Stdout globally for this — that races against any
+// parallel test that also writes to stdout (t.Parallel() + fmt.Printf
+// tripped -race). The Out seam on GlobalFlags makes the capture
+// test-local and thread-safe.
+func captureStdoutForHomebrew(t *testing.T, h *brewHarness, fn func()) string {
 	t.Helper()
-	captureStdoutForHomebrewMu.Lock()
-	defer captureStdoutForHomebrewMu.Unlock()
-
-	orig := os.Stdout
-	r, w, err := os.Pipe()
-	if err != nil {
-		t.Fatalf("Pipe: %v", err)
-	}
-	os.Stdout = w
+	buf := &bytes.Buffer{}
+	orig := h.flags.Out
+	h.flags.Out = buf
+	defer func() { h.flags.Out = orig }()
 	fn()
-	if cerr := w.Close(); cerr != nil {
-		t.Logf("close pipe: %v", cerr)
-	}
-	os.Stdout = orig
-	out, rerr := io.ReadAll(r)
-	if rerr != nil {
-		t.Fatalf("read: %v", rerr)
-	}
-	if cerr := r.Close(); cerr != nil {
-		t.Logf("close reader: %v", cerr)
-	}
-	return string(out)
+	return buf.String()
 }
 
 // brewHarness wires a homebrew.Provider against a FakeCmdRunner +
@@ -412,7 +396,7 @@ func TestHandleList_JSONHasNoProseHeader(t *testing.T) {
 	h := newBrewHarness(t)
 	h.flags.JSON = true
 
-	out := captureStdoutForHomebrew(t, func() {
+	out := captureStdoutForHomebrew(t, h, func() {
 		if err := h.provider.HandleCommand(context.Background(),
 			[]string{"list"}, nil, h.flags); err != nil {
 			t.Fatalf("list --json: %v", err)
@@ -437,7 +421,7 @@ func TestHandleList_TextHasProseHeader(t *testing.T) {
 	t.Parallel()
 	h := newBrewHarness(t)
 
-	out := captureStdoutForHomebrew(t, func() {
+	out := captureStdoutForHomebrew(t, h, func() {
 		if err := h.provider.HandleCommand(context.Background(),
 			[]string{"list"}, nil, h.flags); err != nil {
 			t.Fatalf("list: %v", err)

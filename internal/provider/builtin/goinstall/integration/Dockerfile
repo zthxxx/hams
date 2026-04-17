@@ -4,7 +4,7 @@
 ARG BASE=hams-itest-base:latest
 FROM ${BASE}
 
-ARG GO_VERSION=1.25.0
+ARG GO_VERSION=1.26.0
 
 RUN ARCH="$(dpkg --print-architecture)" \
  && curl -fsSL "https://go.dev/dl/go${GO_VERSION}.linux-${ARCH}.tar.gz" \

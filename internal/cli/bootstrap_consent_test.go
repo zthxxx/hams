@@ -15,6 +15,24 @@ import (
 	"github.com/zthxxx/hams/internal/sudo"
 )
 
+// TestBootstrapPromptOut_DefaultsToStderr locks in cycle 253: the
+// interactive bootstrap consent prompt (script preview + [y/N/s]
+// question) defaults to os.Stderr, not os.Stdout. Pre-cycle-253 the
+// default was os.Stdout — so an interactive `hams --json apply` that
+// hit a BootstrapRequiredError interleaved prompt prose into the
+// primary JSON output surface. Stdout is reserved for the
+// apply-summary JSON; stderr is the channel for prompts.
+//
+// Tests in this file override bootstrapPromptOut with a bytes.Buffer,
+// so they don't catch a regression of the default value. This test
+// asserts the initial default identity.
+func TestBootstrapPromptOut_DefaultsToStderr(t *testing.T) {
+	if bootstrapPromptOut != os.Stderr {
+		t.Errorf("bootstrapPromptOut default = %v, want os.Stderr (cycle 253 — prompts must not pollute stdout)",
+			bootstrapPromptOut)
+	}
+}
+
 func TestResolveBootstrapConsent_DenyFlagShortCircuits(t *testing.T) {
 	brerr := &provider.BootstrapRequiredError{Provider: "brew", Binary: "brew", Script: "install.sh"}
 	if got := resolveBootstrapConsent(bootstrapMode{Deny: true}, brerr); got != bootDecisionDeny {

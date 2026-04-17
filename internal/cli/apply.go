@@ -184,6 +184,17 @@ func runApply(ctx context.Context, flags *provider.GlobalFlags, registry *provid
 			return fmt.Errorf("bootstrap from repo: %w", resolveErr)
 		}
 		if done {
+			// Cycle 251: dry-run with --from-repo pointing at a repo
+			// that isn't already cloned. The preview message went to
+			// stderr (cycle 250), but pre-cycle-251 stdout was empty
+			// in JSON mode — `hams --json --dry-run apply
+			// --from-repo=<X> | jq .` errored on zero bytes. Emit the
+			// dry-run JSON summary shape with zero planned actions so
+			// CI consumers see a parseable object that says "nothing
+			// to do (would clone, no providers planned yet)".
+			if flags.JSON {
+				return emitDryRunJSON(nil, nil, nil, time.Since(applyStart).Milliseconds())
+			}
 			return nil
 		}
 		storePath = resolvedPath
@@ -292,6 +303,17 @@ func runApply(ctx context.Context, flags *provider.GlobalFlags, registry *provid
 		return filterErr
 	}
 	if len(providers) == 0 {
+		// Cycle 247: JSON consumers need a parseable stdout even when
+		// the stage-1 filter produces zero providers (e.g. `hams --json
+		// apply --only=apt` on a store with no apt artifacts). Pre-
+		// cycle-247 this path printed the prose "no providers match"
+		// message unconditionally — `hams --json apply ... | jq .` then
+		// errored on invalid JSON. Emit the empty-apply summary shape
+		// (same fields as a successful zero-work apply) so CI scripts
+		// don't need a special-case parser.
+		if flags.JSON {
+			return emitEmptyApplyJSON(applyStart)
+		}
 		reportNoProvidersMatch(cfg, profileDir, len(stageOneProviders),
 			only, allProviders, stageOneProviders)
 		return nil
@@ -319,6 +341,12 @@ func runApply(ctx context.Context, flags *provider.GlobalFlags, registry *provid
 		slog.Debug("provider skipped (state-only without --prune-orphans)", "provider", p.Manifest().Name)
 	}
 	if len(sorted) == 0 {
+		// Cycle 247: symmetric with the stage-1 empty branch above —
+		// JSON mode returns the empty-apply shape; text mode prints
+		// the human-readable reason.
+		if flags.JSON {
+			return emitEmptyApplyJSON(applyStart)
+		}
 		fmt.Println("No providers match: every selected provider is state-only and --prune-orphans was not given.")
 		return nil
 	}
@@ -458,8 +486,9 @@ func runApply(ctx context.Context, flags *provider.GlobalFlags, registry *provid
 	var allResults []provider.ExecuteResult
 	var skippedProviders []string
 	var stateSaveFailures []string
-	var failedProviders []string      // cycle 231: per-provider failure attribution
-	var probeFailedProviders []string // cycle 237: symmetric with refresh
+	var failedProviders []string            // cycle 231: per-provider failure attribution
+	var probeFailedProviders []string       // cycle 237: symmetric with refresh
+	var dryRunActions []dryRunProviderEntry // cycle 244: JSON dry-run planned actions
 
 	if !noRefresh {
 		slog.Info("refreshing state")
@@ -610,6 +639,23 @@ func runApply(ctx context.Context, flags *provider.GlobalFlags, registry *provid
 			continue
 		}
 
+		// Cycle 255: reject hamsfiles that declare the same app under
+		// two or more tags per schema-design spec §"Duplicate app
+		// identity across groups is rejected". Pre-cycle-255 the
+		// duplicate silently folded via ComputePlan's dedup, so the
+		// user never learned their edit was ambiguous and drift
+		// attribution between tags became meaningless. Skip-and-log
+		// so other providers still run, and surface the offending
+		// provider through skipped_providers. The log line names the
+		// duplicate app and the tag list so a `tail -f` debugger has
+		// the full context.
+		if dupErr := hf.ValidateNoDuplicateApps(); dupErr != nil {
+			slog.Error("hamsfile has duplicate app across tags",
+				"provider", name, "error", dupErr)
+			skippedProviders = append(skippedProviders, name)
+			continue
+		}
+
 		// state.Load returns a wrapped error for any read/parse failure.
 		// Missing file (os.ErrNotExist) is the common first-run case —
 		// fall back to an empty state. Any OTHER failure (YAML corruption,
@@ -665,7 +711,20 @@ func runApply(ctx context.Context, flags *provider.GlobalFlags, registry *provid
 		// — the final JSON summary at the end of the dry-run branch is
 		// the machine-readable surface for CI consumers.
 		if flags.DryRun {
-			if !flags.JSON {
+			if flags.JSON {
+				// Cycle 244: collect per-provider planned actions for
+				// the JSON summary. Spec §Dry-run apply shows planned
+				// actions requires listing each action's type + target.
+				// Pre-cycle-244 emitDryRunJSON emitted only aggregates
+				// (skipped_providers, success) — CI scripts that
+				// wanted to verify "would this apply install htop?"
+				// without running it had to parse the prose preview.
+				dryRunActions = append(dryRunActions, dryRunProviderEntry{
+					Name:        name,
+					DisplayName: manifest.DisplayName,
+					Actions:     actions,
+				})
+			} else {
 				printDryRunActions(name, manifest.DisplayName, actions)
 			}
 			continue
@@ -722,6 +781,19 @@ func runApply(ctx context.Context, flags *provider.GlobalFlags, registry *provid
 		}()
 	}
 
+	// Cycle 254: sort the failure-provider lists alphabetically so
+	// both the dry-run and real-run paths emit them in a canonical
+	// order. Pre-cycle-254 these slices appended providers in DAG /
+	// provider-priority iteration order — stable for a given config
+	// but not alphabetical, inconsistent with `probe_failed_providers`
+	// (cycle 232) and the text-mode `failedProviders` warning (cycle
+	// 235). Sort here so every downstream consumer (dry-run JSON,
+	// dry-run text, real-run JSON, real-run text) sees the same
+	// alphabetical order.
+	sort.Strings(failedProviders)
+	sort.Strings(skippedProviders)
+	sort.Strings(stateSaveFailures)
+
 	// Dry-run: all providers have been planned and printed; skip
 	// enrichment and the execute-phase summary. Report skipped providers
 	// and return ExitPartialFailure so CI scripts and `hams apply`
@@ -732,7 +804,7 @@ func runApply(ctx context.Context, flags *provider.GlobalFlags, registry *provid
 		// dry-run outcome instead of the prose warnings — CI scripts
 		// need to parse the result without grepping prose lines.
 		if flags.JSON {
-			return emitDryRunJSON(skippedProviders, stateSaveFailures, time.Since(applyStart).Milliseconds())
+			return emitDryRunJSON(skippedProviders, stateSaveFailures, dryRunActions, time.Since(applyStart).Milliseconds())
 		}
 
 		if len(skippedProviders) > 0 {
@@ -827,10 +899,11 @@ func runApply(ctx context.Context, flags *provider.GlobalFlags, registry *provid
 	// summary said `... %d failed` (count only) — interactive users
 	// had to grep slog to find WHICH providers failed.
 	if len(failedProviders) > 0 {
-		sortedFailed := append([]string(nil), failedProviders...)
-		sort.Strings(sortedFailed)
+		// Cycle 254: failedProviders is now sorted upstream (right
+		// after merged := provider.MergeResults). Drop the local
+		// copy+sort.
 		fmt.Printf("Warning: %d provider(s) had failed actions: %s\n",
-			len(sortedFailed), strings.Join(sortedFailed, ", "))
+			len(failedProviders), strings.Join(failedProviders, ", "))
 		fmt.Println("  Re-run with --debug for the underlying error from each provider's runner.")
 	}
 	if len(skippedProviders) > 0 {
@@ -912,6 +985,67 @@ func reportNoProvidersMatch(cfg *config.Config, profileDir string, stageOneProvi
 	sort.Strings(available)
 	fmt.Printf("  Available profiles in this store: %s\n", strings.Join(available, ", "))
 	fmt.Println("  Fix: hams config set profile_tag <profile>  OR  pass --profile=<profile>")
+}
+
+// dryRunProviderEntry groups a provider's dry-run planned actions
+// for the JSON summary. Cycle 244.
+type dryRunProviderEntry struct {
+	Name        string
+	DisplayName string
+	Actions     []provider.Action
+}
+
+// marshalDryRunActions converts the planned-actions slice into a
+// JSON-friendly shape with stable field names (provider, display_name,
+// actions). Each action becomes {type, id, requires_sudo?} so CI
+// scripts can drive decisions without parsing prose. Cycle 244.
+//
+// The `id` field uses Action.ID verbatim (matches text mode's
+// printDryRunActions output). `type` is the lowercase action verb
+// (install / update / remove / skip). Skipped actions are included
+// so consumers see the full plan.
+func marshalDryRunActions(entries []dryRunProviderEntry) []map[string]any {
+	out := make([]map[string]any, 0, len(entries))
+	for _, e := range entries {
+		acts := make([]map[string]string, 0, len(e.Actions))
+		for _, a := range e.Actions {
+			id := a.ID
+			if a.Resource != nil {
+				if token, ok := a.Resource.(string); ok && token != "" {
+					id = token
+				}
+			}
+			acts = append(acts, map[string]string{
+				"type": a.Type.String(),
+				"id":   id,
+			})
+		}
+		out = append(out, map[string]any{
+			"provider":     e.Name,
+			"display_name": e.DisplayName,
+			"actions":      acts,
+		})
+	}
+	return out
+}
+
+// emitEmptyApplyJSON writes the apply summary for the
+// "no-providers-match" exit paths (stage-1 empty, or state-only
+// dropped). Uses buildApplyJSONSummary with zero-valued inputs so the
+// schema is identical to a healthy zero-work apply — CI consumers
+// don't need special-case parsing for the empty case. Cycle 247.
+func emitEmptyApplyJSON(applyStart time.Time) error {
+	data := buildApplyJSONSummary(
+		provider.ExecuteResult{},
+		nil, nil, nil, nil,
+		time.Since(applyStart).Milliseconds(),
+	)
+	out, mErr := json.MarshalIndent(data, "", "  ")
+	if mErr != nil {
+		return fmt.Errorf("marshaling empty-apply JSON: %w", mErr)
+	}
+	fmt.Println(string(out))
+	return nil
 }
 
 // buildApplyJSONSummary constructs the map used by the `--json`
@@ -1015,7 +1149,7 @@ func onlyMissingArtifacts(only string, allProviders, stageOneProviders []provide
 // and returns the matching ExitPartialFailure when appropriate. The
 // JSON shape mirrors the full-apply JSON (cycle 183) with a
 // `dry_run: true` marker so CI scripts can distinguish both modes.
-func emitDryRunJSON(skippedProviders, stateSaveFailures []string, elapsedMs int64) error {
+func emitDryRunJSON(skippedProviders, stateSaveFailures []string, plannedActions []dryRunProviderEntry, elapsedMs int64) error {
 	skippedNorm := skippedProviders
 	if skippedNorm == nil {
 		skippedNorm = []string{}
@@ -1024,6 +1158,15 @@ func emitDryRunJSON(skippedProviders, stateSaveFailures []string, elapsedMs int6
 	if saveFailNorm == nil {
 		saveFailNorm = []string{}
 	}
+	// Cycle 244: planned_actions lists the would-do actions each
+	// provider planned (per the spec §"Dry-run apply shows planned
+	// actions"). Pre-cycle-244 JSON dry-run only emitted aggregates
+	// — CI scripts had to grep the prose preview to know WHAT hams
+	// would install. Now a direct array consumers can iterate.
+	plannedNorm := plannedActions
+	if plannedNorm == nil {
+		plannedNorm = []dryRunProviderEntry{}
+	}
 	// Cycle 240: include elapsed_ms so dry-run JSON shape matches the
 	// real-run shape (cycle 238). CI dashboards that diff dry-run
 	// previews against real applies need the same field set on both
@@ -1031,6 +1174,7 @@ func emitDryRunJSON(skippedProviders, stateSaveFailures []string, elapsedMs int6
 	// special-case the field as "may be missing on the dry-run path".
 	data := map[string]any{
 		"dry_run":           true,
+		"planned_actions":   marshalDryRunActions(plannedNorm),
 		"skipped_providers": skippedNorm,
 		"state_save_errors": saveFailNorm,
 		"success":           len(skippedProviders) == 0 && len(stateSaveFailures) == 0,
@@ -1284,7 +1428,10 @@ func printDryRunActions(name, displayName string, actions []provider.Action) {
 // touch only this helper.
 func ensureProfileConfigured(paths config.Paths, storePath string, cfg *config.Config) error {
 	if term.IsTerminal(int(os.Stdin.Fd())) { //nolint:gosec // Fd() returns uintptr that fits in int on all supported platforms
-		fmt.Println("Not Found Profile in config, init it at first")
+		// Cycle 252: diagnostic notice goes to stderr, symmetric with
+		// promptProfileInit's stderr prompts. Keeps stdout reserved
+		// for the primary output (apply summary / JSON).
+		fmt.Fprintln(os.Stderr, "Not Found Profile in config, init it at first")
 		tag, mid, promptErr := promptProfileInit()
 		if promptErr != nil {
 			return fmt.Errorf("profile init: %w", promptErr)

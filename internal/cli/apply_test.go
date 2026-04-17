@@ -1448,8 +1448,305 @@ func TestRunApply_DryRunJSONHasNoProse(t *testing.T) {
 	if elapsed, ok := data["elapsed_ms"].(float64); !ok || elapsed < 0 {
 		t.Errorf("elapsed_ms = %v (ok=%v), want non-negative", data["elapsed_ms"], ok)
 	}
+	// Cycle 244: planned_actions must be present and list the one
+	// install action the test's planFn returned. Per cli-architecture
+	// spec §"Dry-run apply shows planned actions" — dry-run output
+	// SHALL display each action with its type and resource identity.
+	planned, ok := data["planned_actions"].([]any)
+	if !ok {
+		t.Fatalf("planned_actions missing or wrong type: %v", data["planned_actions"])
+	}
+	if len(planned) != 1 {
+		t.Fatalf("planned_actions len = %d, want 1 (alpha): %v", len(planned), planned)
+	}
+	entry, ok := planned[0].(map[string]any)
+	if !ok {
+		t.Fatalf("planned_actions[0] not a map: %T", planned[0])
+	}
+	if entry["provider"] != "alpha" {
+		t.Errorf("provider = %v, want alpha", entry["provider"])
+	}
+	actions, ok := entry["actions"].([]any)
+	if !ok || len(actions) != 1 {
+		t.Fatalf("actions = %v, want 1 install", actions)
+	}
+	act, ok := actions[0].(map[string]any)
+	if !ok {
+		t.Fatalf("actions[0] not a map: %T", actions[0])
+	}
+	if act["type"] != "install" {
+		t.Errorf("action type = %v, want install", act["type"])
+	}
+	if act["id"] != "pkg-a" {
+		t.Errorf("action id = %v, want pkg-a", act["id"])
+	}
 
 	_ = storeDir
+}
+
+// TestRunApply_DuplicateAppAcrossTagsSkipsProvider locks in cycle
+// 255 per schema-design spec §"Duplicate app identity across groups
+// is rejected". When a provider's hamsfile declares the same app
+// under two tags (user accidentally moved an entry without deleting
+// the original), apply SHALL skip that provider and list it in
+// skipped_providers. Pre-cycle-255 the duplicate silently folded
+// via ComputePlan's dedup — the user never learned their edit was
+// ambiguous and drift attribution between tags became meaningless.
+func TestRunApply_DuplicateAppAcrossTagsSkipsProvider(t *testing.T) {
+	_, profileDir, _, flags := setupApplyTestEnv(t, []string{"alpha"})
+	flags.JSON = true
+
+	// Same app under two tags — the spec violation case.
+	writeApplyTestFile(t, filepath.Join(profileDir, "alpha.hams.yaml"),
+		"development-tool:\n  - app: git\nterminal-tool:\n  - app: git\n")
+
+	registry := provider.NewRegistry()
+	installCalls := 0
+	p := &applyTestProvider{
+		manifest: provider.Manifest{
+			Name: "alpha", DisplayName: "alpha", FilePrefix: "alpha",
+			Platforms: []provider.Platform{provider.PlatformAll},
+		},
+		planFn: func(_ context.Context, _ *hamsfile.File, _ *state.File) ([]provider.Action, error) {
+			installCalls++
+			return []provider.Action{{ID: "git", Type: provider.ActionInstall}}, nil
+		},
+	}
+	if err := registry.Register(p); err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+
+	var data map[string]any
+	out := captureStdout(t, func() {
+		err := runApply(context.Background(), flags, registry, sudo.NoopAcquirer{}, "", true, "", "", false, bootstrapMode{})
+		// Expect ExitPartialFailure (provider was skipped).
+		if err == nil {
+			t.Fatalf("runApply should ExitPartialFailure when a provider is skipped")
+		}
+	})
+	if err := json.Unmarshal([]byte(strings.TrimSpace(out)), &data); err != nil {
+		t.Fatalf("output not parseable as JSON: %v\nraw: %q", err, out)
+	}
+
+	// alpha must appear in skipped_providers.
+	skipped, ok := data["skipped_providers"].([]any)
+	if !ok || len(skipped) != 1 {
+		t.Fatalf("skipped_providers should have 1 entry; got %v", data["skipped_providers"])
+	}
+	if name, nameOK := skipped[0].(string); !nameOK || name != "alpha" {
+		t.Errorf("skipped_providers[0] = %v, want \"alpha\"", skipped[0])
+	}
+
+	// Plan MUST NOT have been called — validation short-circuits before
+	// the provider sees any action.
+	if installCalls != 0 {
+		t.Errorf("Plan called %d times, want 0 (validation should short-circuit)", installCalls)
+	}
+}
+
+// TestRunApply_JSONOutput_FailureListsAreSorted locks in cycle 254:
+// when multiple providers land in `failed_providers` /
+// `skipped_providers` / `state_save_errors`, the JSON output MUST
+// sort the names alphabetically. Pre-cycle-254 these slices held
+// DAG-iteration order — which can differ from alphabetical when
+// providers have `DependsOn` relationships that force a
+// non-alphabetical topological sort. Inconsistent with
+// `probe_failed_providers` (cycle 232 sorts that one) and the
+// text-mode `failedProviders` warning (cycle 235 sorts that one).
+// With cycle 254 every JSON failure list is alphabetical, matching
+// probe_failed_providers and text-mode text.
+//
+// Construct a dependency chain that forces a non-alphabetical DAG
+// order: zeta (root) → alpha (depends on zeta) → beta (depends on
+// alpha). DAG topo-sort: zeta, alpha, beta. If cycle 254's sort is
+// removed, failed_providers would land in that same order. With the
+// sort, it becomes alpha, beta, zeta.
+func TestRunApply_JSONOutput_FailureListsAreSorted(t *testing.T) {
+	// Priority slice doesn't affect DAG resolution once DependsOn
+	// edges are set; we just need them registered.
+	_, profileDir, _, flags := setupApplyTestEnv(t, []string{"zeta", "alpha", "beta"})
+	flags.JSON = true
+
+	for _, name := range []string{"zeta", "alpha", "beta"} {
+		writeApplyTestFile(t, filepath.Join(profileDir, name+".hams.yaml"),
+			"packages:\n  - app: always-fails\n")
+	}
+
+	// Dependency chain zeta → alpha → beta forces DAG order
+	// zeta, alpha, beta (non-alphabetical).
+	depsByName := map[string][]provider.DependOn{
+		"zeta":  nil,
+		"alpha": {{Provider: "zeta"}},
+		"beta":  {{Provider: "alpha"}},
+	}
+
+	registry := provider.NewRegistry()
+	for _, name := range []string{"zeta", "alpha", "beta"} {
+		n := name
+		p := &applyTestProvider{
+			manifest: provider.Manifest{
+				Name: n, DisplayName: n, FilePrefix: n,
+				Platforms: []provider.Platform{provider.PlatformAll},
+				DependsOn: depsByName[n],
+			},
+			planFn: func(_ context.Context, _ *hamsfile.File, _ *state.File) ([]provider.Action, error) {
+				return []provider.Action{{ID: "always-fails", Type: provider.ActionInstall}}, nil
+			},
+			applyFn: func(_ context.Context, _ provider.Action) error {
+				return fmt.Errorf("synthetic failure from %s", n)
+			},
+		}
+		if err := registry.Register(p); err != nil {
+			t.Fatalf("Register %s: %v", n, err)
+		}
+	}
+
+	var data map[string]any
+	out := captureStdout(t, func() {
+		err := runApply(context.Background(), flags, registry, sudo.NoopAcquirer{}, "", true, "", "", false, bootstrapMode{})
+		// Expect ExitPartialFailure UFE — apply had failing actions.
+		if err == nil {
+			t.Fatalf("runApply should error when every provider fails")
+		}
+	})
+	if err := json.Unmarshal([]byte(strings.TrimSpace(out)), &data); err != nil {
+		t.Fatalf("output not parseable as JSON: %v\nraw: %q", err, out)
+	}
+
+	failedProviders, ok := data["failed_providers"].([]any)
+	if !ok || len(failedProviders) != 3 {
+		t.Fatalf("failed_providers should have 3 entries; got %v", data["failed_providers"])
+	}
+	want := []string{"alpha", "beta", "zeta"}
+	for i, expected := range want {
+		got, ok := failedProviders[i].(string)
+		if !ok {
+			t.Fatalf("failed_providers[%d] not a string: %T", i, failedProviders[i])
+		}
+		if got != expected {
+			t.Errorf("failed_providers[%d] = %q, want %q (list should be alphabetical, not DAG order zeta/alpha/beta)",
+				i, got, expected)
+		}
+	}
+}
+
+// TestRunApply_DryRunFromRepoNotCached_JSONEmits locks in cycle 251:
+// when `hams --json --dry-run apply --from-repo=<X>` is invoked and
+// <X> is not a local path AND not already cached under
+// ${HAMS_DATA_HOME}/repo/, runApply takes the "Would clone" exit
+// path. Pre-cycle-251 this path was `return nil` with zero bytes on
+// stdout — CI scripts running `... | jq .` failed on empty input.
+// Now: JSON mode emits the empty dry-run summary shape so consumers
+// get a parseable object.
+func TestRunApply_DryRunFromRepoNotCached_JSONEmits(t *testing.T) {
+	// Isolate HOME paths so the clone-cache lookup definitely misses.
+	configHome := t.TempDir()
+	dataHome := t.TempDir()
+	t.Setenv("HAMS_CONFIG_HOME", configHome)
+	t.Setenv("HAMS_DATA_HOME", dataHome)
+
+	flags := &provider.GlobalFlags{
+		JSON:   true,
+		DryRun: true,
+	}
+
+	out := captureStdout(t, func() {
+		err := runApply(context.Background(), flags, provider.NewRegistry(), sudo.NoopAcquirer{},
+			"owner/nonexistent-dry-run-repo-"+t.Name(),
+			true, "", "", false, bootstrapMode{})
+		if err != nil {
+			t.Fatalf("runApply: %v", err)
+		}
+	})
+
+	// Stdout must parse as JSON (not be empty, not contain prose).
+	trimmed := strings.TrimSpace(out)
+	if trimmed == "" {
+		t.Fatalf("stdout is empty; expected a dry-run JSON summary")
+	}
+	var data map[string]any
+	if err := json.Unmarshal([]byte(trimmed), &data); err != nil {
+		t.Fatalf("output not parseable as JSON: %v\nraw: %q", err, out)
+	}
+	if data["dry_run"] != true {
+		t.Errorf("dry_run = %v, want true", data["dry_run"])
+	}
+	if data["success"] != true {
+		t.Errorf("success = %v, want true (no providers planned, trivially successful)", data["success"])
+	}
+}
+
+// TestRunApply_NoProvidersMatch_JSONMode locks in cycle 247: when
+// the stage-1 artifact filter produces zero providers (no hamsfile,
+// no state), `hams --json apply` must emit a parseable JSON object,
+// not the prose "no providers match" message.
+//
+// Pre-cycle-247, runApply called reportNoProvidersMatch
+// unconditionally, so `hams --json apply --only=alpha` (on a profile
+// with no alpha artifacts) dumped text to stdout. CI scripts piping
+// through `jq` got a parse error instead of an empty-apply summary.
+//
+// Now: flags.JSON routes through emitEmptyApplyJSON which emits the
+// same shape as a healthy zero-work real apply (installed=0,
+// failed=0, skipped=0, success=true, dry_run=false, elapsed_ms≥0,
+// plus the normalized empty slice fields). Consumers distinguish
+// "no providers selected" from "all succeeded with zero resources"
+// via the aggregate counts — but both yield valid JSON.
+func TestRunApply_NoProvidersMatch_JSONMode(t *testing.T) {
+	_, _, _, flags := setupApplyTestEnv(t, []string{"alpha"})
+	flags.JSON = true
+	// Note: NO hamsfile written — alpha has no artifacts at all.
+
+	registry := provider.NewRegistry()
+	p := &applyTestProvider{
+		manifest: provider.Manifest{
+			Name: "alpha", DisplayName: "alpha", FilePrefix: "alpha",
+			Platforms: []provider.Platform{provider.PlatformAll},
+		},
+	}
+	if err := registry.Register(p); err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+
+	out := captureStdout(t, func() {
+		if err := runApply(context.Background(), flags, registry, sudo.NoopAcquirer{}, "", true, "", "", false, bootstrapMode{}); err != nil {
+			t.Fatalf("runApply: %v", err)
+		}
+	})
+
+	// Output MUST parse as JSON.
+	var data map[string]any
+	if err := json.Unmarshal([]byte(strings.TrimSpace(out)), &data); err != nil {
+		t.Fatalf("JSON mode output not parseable: %v\nraw: %q", err, out)
+	}
+
+	// Must NOT contain the text-mode prose.
+	proseMarkers := []string{
+		"No providers match:",
+		"no hamsfile or state file",
+	}
+	for _, marker := range proseMarkers {
+		if strings.Contains(out, marker) {
+			t.Errorf("JSON mode contains prose marker %q; got:\n%s", marker, out)
+		}
+	}
+
+	// success=true (trivially — nothing to do), dry_run=false, and
+	// every aggregate is zero.
+	if data["success"] != true {
+		t.Errorf("success = %v, want true (empty apply succeeds trivially)", data["success"])
+	}
+	if data["dry_run"] != false {
+		t.Errorf("dry_run = %v, want false", data["dry_run"])
+	}
+	for _, field := range []string{"installed", "updated", "removed", "skipped", "failed"} {
+		if v, ok := data[field].(float64); !ok || v != 0 {
+			t.Errorf("%s = %v (ok=%v), want 0", field, data[field], ok)
+		}
+	}
+	if _, ok := data["elapsed_ms"].(float64); !ok {
+		t.Errorf("elapsed_ms missing or wrong type: %v", data["elapsed_ms"])
+	}
 }
 
 // TestRunApply_DryRunSkipsStateSaveEntirely locks in cycle 241.
