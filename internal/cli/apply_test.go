@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"sort"
 	"strings"
 	"testing"
 
@@ -827,6 +828,125 @@ func TestRunApply_NonTTYWithProfileFlagButNoMachineID(t *testing.T) {
 	if strings.Contains(ufe.Message, "profile_tag") {
 		t.Errorf("message should NOT name profile_tag (user already set it via --profile); got %q", ufe.Message)
 	}
+}
+
+// TestRunApply_PreApplyStateSaveFailureListIsAlphabetical locks in
+// cycle 153: when pre-apply refresh fails to save multiple
+// providers' probed state, the resulting `stateSaveFailures` slice
+// must be populated alphabetically. Previously runApply iterated
+// the probeResults map directly (Go map iteration is non-
+// deterministic), so each apply shuffled the order of the per-
+// provider slog.Error lines AND the eventual final summary's
+// "Warning: N provider(s) failed to persist state" list. Apply-side
+// parallel of cycle 151's runRefresh fix; symmetric with cycles
+// 148-152.
+func TestRunApply_PreApplyStateSaveFailureListIsAlphabetical(t *testing.T) {
+	storeDir, profileDir, stateDir, flags := setupApplyTestEnv(t, []string{"zeta", "alpha", "mu"})
+	flags.DryRun = true // skip post-apply save so only pre-apply path fires
+
+	for _, name := range []string{"zeta", "alpha", "mu"} {
+		writeApplyTestFile(t, filepath.Join(profileDir, name+".hams.yaml"),
+			"packages:\n  - app: pkg-a\n")
+	}
+
+	registry := provider.NewRegistry()
+	for _, name := range []string{"zeta", "alpha", "mu"} {
+		nameCopy := name
+		p := &applyTestProvider{
+			manifest: provider.Manifest{
+				Name: nameCopy, DisplayName: nameCopy, FilePrefix: nameCopy,
+				Platforms: []provider.Platform{provider.PlatformAll},
+			},
+			probeFn: func(_ context.Context, _ *state.File) ([]provider.ProbeResult, error) {
+				return []provider.ProbeResult{{ID: "pkg-a", State: state.StateOK}}, nil
+			},
+			planFn: func(_ context.Context, _ *hamsfile.File, _ *state.File) ([]provider.Action, error) {
+				return nil, nil
+			},
+		}
+		if err := registry.Register(p); err != nil {
+			t.Fatalf("Register %s: %v", nameCopy, err)
+		}
+	}
+
+	if err := os.MkdirAll(stateDir, 0o750); err != nil {
+		t.Fatalf("mkdir stateDir: %v", err)
+	}
+	if err := os.Chmod(stateDir, 0o500); err != nil {
+		t.Fatalf("chmod stateDir read-only: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := os.Chmod(stateDir, 0o700); err != nil {
+			t.Logf("restore stateDir perms: %v", err)
+		}
+	})
+
+	// Run apply. Pre-apply refresh saves all 3 providers in the
+	// (now-sorted) order alpha → mu → zeta. Each Save fails because
+	// the state dir is read-only.
+	captureStderr(t, func() {
+		// Capture stderr to consume slog output without polluting test
+		// output. The relevant assertion is on returned-error / stdout.
+		if err := runApply(context.Background(), flags, registry, sudo.NoopAcquirer{}, "", false, "", "", false, bootstrapMode{}); err != nil {
+			_ = err // err expected; pre-apply save failures don't surface as runApply error in dry-run
+		}
+	})
+
+	// The stateSaveFailures slice is populated inside runApply but not
+	// returned directly. The dry-run early exit prints "No changes made"
+	// without surfacing the stateSaveFailures (a separate bug, tracked
+	// in cycle 154). What we CAN assert here: run apply N times, capture
+	// stderr (which carries the per-provider slog.Error lines from the
+	// pre-apply refresh save loop), and confirm the order of provider
+	// names is stable + alphabetical across runs.
+	//
+	// collect returns the order in which the 3 provider names APPEAR in
+	// the stderr stream. Stable + alphabetical = [alpha, mu, zeta].
+	collect := func() []string {
+		out := captureStderr(t, func() {
+			if err := runApply(context.Background(), flags, registry, sudo.NoopAcquirer{}, "", false, "", "", false, bootstrapMode{}); err != nil {
+				_ = err // err expected; pre-apply save failures don't surface as runApply error in dry-run
+			}
+		})
+		// Find each provider's "failed to save" log line and record its
+		// byte offset; sort by offset to yield the order they appeared.
+		type hit struct {
+			name string
+			idx  int
+		}
+		var hits []hit
+		for _, name := range []string{"alpha", "mu", "zeta"} {
+			if idx := strings.Index(out, `provider=`+name); idx >= 0 {
+				hits = append(hits, hit{name, idx})
+			}
+		}
+		sort.Slice(hits, func(i, j int) bool { return hits[i].idx < hits[j].idx })
+		got := make([]string, 0, len(hits))
+		for _, h := range hits {
+			got = append(got, h.name)
+		}
+		return got
+	}
+
+	first := collect()
+	if len(first) < 3 {
+		t.Skipf("could not capture all 3 provider error markers from stderr; got %v", first)
+	}
+	for range 10 {
+		got := collect()
+		if !slices.Equal(got, first) {
+			t.Errorf("provider error order differs across runs:\nfirst: %v\nlater: %v", first, got)
+			break
+		}
+	}
+
+	// Assert alphabetical ordering of provider names in stderr.
+	want := []string{"alpha", "mu", "zeta"}
+	if !slices.Equal(first, want) {
+		t.Errorf("provider error order = %v, want %v (alphabetical)", first, want)
+	}
+
+	_ = storeDir
 }
 
 // TestRunApply_InterruptedContextReturnsPartialFailure locks in cycle 84:

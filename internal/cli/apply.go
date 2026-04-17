@@ -449,7 +449,18 @@ func runApply(ctx context.Context, flags *provider.GlobalFlags, registry *provid
 	if !noRefresh {
 		slog.Info("refreshing state")
 		probeResults := provider.ProbeAll(ctx, sorted, stateDir, cfg.MachineID)
-		for filePrefix, sf := range probeResults {
+		// Sort the result-map keys before iterating so save errors and
+		// the per-provider slog.Error lines emerge in stable order across
+		// runs. Without this, the eventual "failed to persist state"
+		// summary listed providers in shuffled order — apply-side
+		// parallel of cycle 151's runRefresh fix.
+		probeNames := make([]string, 0, len(probeResults))
+		for name := range probeResults {
+			probeNames = append(probeNames, name)
+		}
+		sort.Strings(probeNames)
+		for _, filePrefix := range probeNames {
+			sf := probeResults[filePrefix]
 			statePath := filepath.Join(stateDir, filePrefix+".state.yaml")
 			if saveErr := sf.Save(statePath); saveErr != nil {
 				slog.Error("failed to save probed state", "provider", sf.Provider, "path", statePath, "error", saveErr)
