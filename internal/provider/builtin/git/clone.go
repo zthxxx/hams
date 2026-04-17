@@ -290,6 +290,13 @@ func (p *CloneProvider) handleAdd(ctx context.Context, args []string, hamsFlags 
 		return nil
 	}
 
+	// Cycle 222: acquire single-writer state lock per cli-architecture spec.
+	release, lockErr := provider.AcquireMutationLockFromCfg(p.effectiveConfig(flags), flags, "git-clone add")
+	if lockErr != nil {
+		return lockErr
+	}
+	defer release()
+
 	// Mirror Apply's cycle-136 guard: detect non-git-but-existing dir
 	// and already-a-valid-repo cases before shelling out to git.
 	// Without this, users of `hams git-clone add` hit the same cryptic
@@ -371,6 +378,13 @@ func (p *CloneProvider) handleRemove(args []string, hamsFlags map[string]string,
 		fmt.Printf("[dry-run] Would remove entry: %s (directory NOT deleted)\n", resourceID)
 		return nil
 	}
+
+	// Cycle 222: acquire single-writer state lock per cli-architecture spec.
+	release, lockErr := provider.AcquireMutationLockFromCfg(p.effectiveConfig(flags), flags, "git-clone remove")
+	if lockErr != nil {
+		return lockErr
+	}
+	defer release()
 
 	hf, err := p.loadOrCreateHamsfile(hamsFlags, flags)
 	if err != nil {

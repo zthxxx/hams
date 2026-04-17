@@ -177,6 +177,13 @@ func (p *ConfigProvider) doSet(ctx context.Context, key, value string, hamsFlags
 		return nil
 	}
 
+	// Cycle 222: acquire single-writer state lock per cli-architecture spec.
+	release, lockErr := provider.AcquireMutationLockFromCfg(p.effectiveConfig(flags), flags, "git-config set")
+	if lockErr != nil {
+		return lockErr
+	}
+	defer release()
+
 	if err := p.runner.SetGlobal(ctx, key, value); err != nil {
 		return err
 	}
@@ -191,6 +198,13 @@ func (p *ConfigProvider) doRemove(ctx context.Context, key string, hamsFlags map
 		fmt.Printf("[dry-run] Would unset: git config --global --unset %s\n", key)
 		return nil
 	}
+
+	// Cycle 222: acquire single-writer state lock per cli-architecture spec.
+	release, lockErr := provider.AcquireMutationLockFromCfg(p.effectiveConfig(flags), flags, "git-config remove")
+	if lockErr != nil {
+		return lockErr
+	}
+	defer release()
 
 	if err := p.runner.UnsetGlobal(ctx, key); err != nil {
 		return err

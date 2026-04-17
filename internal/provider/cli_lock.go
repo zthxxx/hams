@@ -9,7 +9,6 @@ import (
 	"github.com/zthxxx/hams/internal/state"
 )
 
-
 // AcquireMutationLock acquires the single-writer state lock per
 // `cli-architecture/spec.md` §"Lock file for single-writer enforcement".
 // The spec explicitly mandates lock acquisition during ANY mutating

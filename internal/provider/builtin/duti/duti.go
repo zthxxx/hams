@@ -193,6 +193,13 @@ func (p *Provider) handleSet(ctx context.Context, arg string, hamsFlags map[stri
 		return nil
 	}
 
+	// Cycle 222: acquire single-writer state lock per cli-architecture spec.
+	release, lockErr := provider.AcquireMutationLockFromCfg(p.effectiveConfig(flags), flags, "duti set")
+	if lockErr != nil {
+		return lockErr
+	}
+	defer release()
+
 	if err := p.runner.SetDefault(ctx, ext, bundleID); err != nil {
 		return err
 	}

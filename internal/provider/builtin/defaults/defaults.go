@@ -177,6 +177,13 @@ func (p *Provider) handleWrite(ctx context.Context, args []string, hamsFlags map
 		return nil
 	}
 
+	// Cycle 222: acquire single-writer state lock per cli-architecture spec.
+	release, lockErr := provider.AcquireMutationLockFromCfg(p.effectiveConfig(flags), flags, "defaults write")
+	if lockErr != nil {
+		return lockErr
+	}
+	defer release()
+
 	if err := p.runner.Write(ctx, domain, key, typeStr, value); err != nil {
 		return err
 	}
@@ -209,6 +216,13 @@ func (p *Provider) handleDelete(ctx context.Context, args []string, hamsFlags ma
 		fmt.Printf("[dry-run] Would run: defaults %s\n", strings.Join(args, " "))
 		return nil
 	}
+
+	// Cycle 222: acquire single-writer state lock per cli-architecture spec.
+	release, lockErr := provider.AcquireMutationLockFromCfg(p.effectiveConfig(flags), flags, "defaults delete")
+	if lockErr != nil {
+		return lockErr
+	}
+	defer release()
 
 	if err := p.runner.Delete(ctx, domain, key); err != nil {
 		return err
