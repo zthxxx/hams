@@ -7,7 +7,7 @@
 // The shared dispatcher's `PackageInstaller` interface expects a
 // `Install(ctx, pkg string)` signature (one package per call), which
 // would reduce apt's all-or-nothing install to a sequential loop — a
-// behavioural regression. A future change (openspec follow-up 5.7)
+// behavioral regression. A future change (openspec follow-up 5.7)
 // will introduce a `BatchPackageInstaller` dispatcher variant so apt
 // can adopt the shared flow without losing atomicity.
 package apt
