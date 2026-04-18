@@ -449,7 +449,7 @@ func (p *Provider) handleList(hamsFlags map[string]string, flags *provider.Globa
 		fmt.Fprintln(flags.Stdout(), out)
 		return nil
 	}
-	fmt.Fprintln(flags.Stdout(), "Homebrew managed packages:")
+	fmt.Fprintln(flags.Stdout(), i18n.T(i18n.ProviderHomebrewListHeader))
 	fmt.Fprint(flags.Stdout(), provider.FormatDiff(&diff))
 	return nil
 }

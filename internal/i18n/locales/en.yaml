@@ -319,3 +319,6 @@
   other: "git-clone: no tracked resource with ID \"{{.URN}}\""
 - id: provider.git.clone.invalid-resource-id
   other: "{{.Err}}"
+
+- id: provider.homebrew.list.header
+  other: "Homebrew managed packages:"

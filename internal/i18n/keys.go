@@ -288,4 +288,10 @@ const (
 	ProviderGitCloneRemoveUsage        = "provider.git.clone.remove.usage"
 	ProviderGitCloneNoEntry            = "provider.git.clone.no-entry"
 	ProviderGitCloneInvalidResourceID  = "provider.git.clone.invalid-resource-id"
+
+	// ProviderHomebrewListHeader — header printed before the diff in
+	// `hams brew list`. Kept as a separate key (not shared with a
+	// generic "<Provider> managed packages:" template) because
+	// "Homebrew" is a brand name the user identifies by.
+	ProviderHomebrewListHeader = "provider.homebrew.list.header"
 )

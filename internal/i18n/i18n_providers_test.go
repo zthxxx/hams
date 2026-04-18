@@ -133,6 +133,8 @@ func providerKeyConstants(t *testing.T) map[string]string {
 		"ProviderGitCloneRemoveUsage":        i18n.ProviderGitCloneRemoveUsage,
 		"ProviderGitCloneNoEntry":            i18n.ProviderGitCloneNoEntry,
 		"ProviderGitCloneInvalidResourceID":  i18n.ProviderGitCloneInvalidResourceID,
+
+		"ProviderHomebrewListHeader": i18n.ProviderHomebrewListHeader,
 	}
 
 	// Defense against silent drift: every map key SHOULD reference a

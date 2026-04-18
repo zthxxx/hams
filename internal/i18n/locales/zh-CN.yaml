@@ -319,3 +319,6 @@
   other: "git-clone：没有登记的资源 ID 为 \"{{.URN}}\""
 - id: provider.git.clone.invalid-resource-id
   other: "{{.Err}}"
+
+- id: provider.homebrew.list.header
+  other: "Homebrew 管理的软件包："
