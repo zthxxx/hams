@@ -80,6 +80,14 @@ standard_cli_flow() {
   local check_fn="${POST_INSTALL_CHECK:-default_post_install_check}"
   local state_prefix="${STATE_FILE_PREFIX:-$provider}"
   local hamsfile_prefix="${HAMSFILE_PREFIX:-$state_prefix}"
+  # MANIFEST_NAME is the value passed to `hams apply --only=` and
+  # `hams refresh --only=`. Defaults to the CLI verb (`$provider`) for
+  # the providers where Manifest.Name == CLI verb. Overridable for the
+  # post-2026-04-17 unified entry points where the CLI verb diverges
+  # from the underlying Manifest.Name (e.g. `hams code` is the CLI but
+  # the apply/refresh provider is `code-ext`; `hams git` wraps both
+  # `git-config` and `git-clone`).
+  local manifest_name="${MANIFEST_NAME:-$provider}"
   local state_file="$HAMS_STORE/.state/$HAMS_MACHINE_ID/${state_prefix}.state.yaml"
   local hamsfile="$HAMS_STORE/test/${hamsfile_prefix}.hams.yaml"
   mkdir -p "$HAMS_STORE/test"
@@ -111,7 +119,7 @@ standard_cli_flow() {
   # converge their state file. For apt this call is a no-op against state
   # — the install handler already wrote it.
   _reconcile() {
-    hams --store="$HAMS_STORE" apply --only="$provider"
+    hams --store="$HAMS_STORE" apply --only="$manifest_name"
   }
 
   # -------------------------------------------------------------------
@@ -177,8 +185,8 @@ standard_cli_flow() {
   local before_refresh
   before_refresh=$(yq -r ".resources[\"$new_pkg\"].updated_at" "$state_file")
   sleep 1
-  assert_success "refresh: hams refresh --only=$provider" \
-    hams --store="$HAMS_STORE" refresh --only="$provider"
+  assert_success "refresh: hams refresh --only=$manifest_name" \
+    hams --store="$HAMS_STORE" refresh --only="$manifest_name"
   local after_refresh
   after_refresh=$(yq -r ".resources[\"$new_pkg\"].updated_at" "$state_file")
   if [ "$after_refresh" \> "$before_refresh" ]; then

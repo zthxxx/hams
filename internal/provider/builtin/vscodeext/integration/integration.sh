@@ -38,11 +38,15 @@ export POST_INSTALL_CHECK=ext_installed_check
 # `hams code-ext` per the 2026-04-17 provider-unification work). The
 # underlying provider keeps Manifest.Name="code-ext" and
 # FilePrefix="vscodeext" so existing state / hamsfile names are
-# unchanged — STATE_FILE_PREFIX still resolves to "vscodeext.state.yaml"
-# (provider exposes that, not "code.state.yaml").
+# unchanged. Therefore:
+#   - first arg `code` selects the CLI verb (`hams code install …`)
+#   - STATE_FILE_PREFIX=vscodeext locates `vscodeext.state.yaml`
+#   - MANIFEST_NAME=code-ext aims `hams apply --only=` /
+#     `hams refresh --only=` at the right Provider in the registry
 #
 # Two small well-maintained extensions: `vscode-icons-team.vscode-icons`
 # is ubiquitous; `tamasfe.even-better-toml` succeeded the deprecated
 # bungcip.better-toml.
 export STATE_FILE_PREFIX=vscodeext
+export MANIFEST_NAME=code-ext
 standard_cli_flow code install vscode-icons-team.vscode-icons tamasfe.even-better-toml
