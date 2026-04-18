@@ -1,4 +1,10 @@
-## ADDED Requirements
+# Observability Spec
+
+## Purpose
+
+Defines how hams emits OpenTelemetry-style traces and metrics — session initialization, span hierarchy under `hams.apply` / `hams.refresh`, the local-file exporter, sampling, shutdown guarantees, and the opt-in contract (no traces emitted when `HAMS_OTEL` is unset).
+
+## Requirements
 
 ### Requirement: OTel session initialization
 

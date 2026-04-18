@@ -1,12 +1,12 @@
 # Schema Design Spec
 
-This spec defines every YAML file schema consumed or produced by hams: global config, project-level config, Hamsfiles, Hamsfile local overrides, state files, lock files, and the URN structure. It also specifies the YAML comment-preservation and atomic-write requirements for the hamsfile SDK.
+## Purpose
+
+Defines every YAML file schema consumed or produced by hams: global config, project-level config, Hamsfiles, Hamsfile local overrides, state files, lock files, and the URN structure. Also specifies the YAML comment-preservation and atomic-write requirements for the hamsfile SDK.
+
+## Requirements
 
 All schemas target `go-yaml` v3 with `yaml.Node`-based round-trip fidelity.
-
----
-
-## ADDED Requirements
 
 ### Requirement: Global Config Schema
 

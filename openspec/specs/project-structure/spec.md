@@ -1,13 +1,15 @@
 # Project Structure Spec
 
+## Purpose
+
+Defines the hams repository layout — top-level directory structure, internal-package organization, builtin-provider directory convention, SDK surface, go-module identity, build / release artifacts, docs-site host, bundled go-git dependency for fresh-machine bootstrap, and test-file conventions.
+
+## Requirements
+
 <!-- openspec:change = hams-v1-design -->
 <!-- openspec:capability = project-structure -->
 
 This spec defines the Go module layout, directory conventions, build targets, Docker-based e2e testing infrastructure, and GitHub Actions CI pipeline for the hams project.
-
----
-
-## ADDED Requirements
 
 ### Requirement: Top-Level Directory Layout
 

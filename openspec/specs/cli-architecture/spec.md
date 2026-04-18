@@ -1,4 +1,10 @@
-## ADDED Requirements
+# CLI Architecture Spec
+
+## Purpose
+
+Defines how the `hams` CLI surface is composed: command routing, flag parsing, global-flag / hams-flag / passthrough disambiguation, help rendering, store resolution, bootstrap / auto-init flows, apply / refresh / list pipelines, i18n wiring, observability gates, TTY prompts, self-upgrade, and JSON output contracts.
+
+## Requirements
 
 ### Requirement: CLI framework bootstrap
 

@@ -1,12 +1,12 @@
 # Code Standards
 
-This specification defines the Go coding conventions, architectural patterns, and quality standards for the hams project. It serves as the authoritative reference for all contributors. Every requirement here is enforced either by tooling (golangci-lint, CI) or by code review convention.
+## Purpose
+
+Defines the Go coding conventions, architectural patterns, and quality standards for the hams project. Serves as the authoritative reference for all contributors. Every requirement here is enforced either by tooling (golangci-lint, CI) or by code review convention.
+
+## Requirements
 
 hams targets world-class open-source quality. The standards below are not aspirational guidelines; they are normative rules. Violations SHALL be caught by linters, tests, or review and SHALL NOT be merged.
-
----
-
-## ADDED Requirements
 
 ### Requirement: Dependency Inversion and Inversion of Control
 

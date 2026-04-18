@@ -1,4 +1,10 @@
-## ADDED Requirements
+# TUI + Logging Spec
+
+## Purpose
+
+Documents the BubbleTea TUI scaffolding (alternate screen, collapsible logs, interactive popup) at `internal/tui/` and how it will wire into `runApply` in v1.1. Also defines v1's plain `slog`-based log-line output on TTYs (the scaffolding exists but is unused in v1 per the `2026-04-17-defer-tui-and-notify` archived change).
+
+## Requirements
 
 ### Requirement: Alternate-Screen TUI Layout — Deferred to v1.1
 

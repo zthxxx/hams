@@ -4,6 +4,10 @@
 **Change**: hams-v1-design
 **Depends on**: Provider System, Schema Design, CLI Architecture
 
+## Purpose
+
+Defines every builtin provider's CLI surface, recorded-entry shape, install/remove semantics, passthrough rules, state-file schema, and auto-record contract. Covers the 14 providers shipped in v1: apt, bash, homebrew, cargo, git (unified config + clone), goinstall, mas, npm, pnpm, uv, vscodeext (exposed as `code`), duti, defaults, ansible.
+
 ## Context
 
 hams ships 15 builtin providers compiled into the Go binary. Each provider wraps an existing CLI tool or system facility to install, configure, probe, and remove resources. This spec defines the individual design for every builtin provider: its Hamsfile schema, probe strategy, apply/remove flow, CLI wrapping, auto-inject flags, depend-on declarations, LLM enrichment, and idempotency guarantees.
@@ -124,11 +128,7 @@ steps:
 
 **Remove**: Provider-specific. Bash scripts may define a `remove` command; Ansible uses its own idempotency.
 
----
-
-## ADDED Requirements
-
----
+## Requirements
 
 ### Requirement: Bash Provider
 

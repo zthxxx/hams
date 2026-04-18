@@ -1,12 +1,14 @@
 # Provider System Spec
 
+## Purpose
+
+Defines the Provider abstraction that every builtin and external provider implements: resource identity (app-keyed vs URN), Probe / Plan / Apply / Remove / List contracts, CLI-handler integration, state-file ownership, single-writer mutation lock, hamsfile / state write atomicity, shared dispatcher adoption rules, and the hashicorp/go-plugin contract for external providers.
+
+## Requirements
+
 **Change**: hams-v1-design
 **Capability**: provider-system
 **Status**: draft
-
----
-
-## ADDED Requirements
 
 ### Requirement: Provider Interface Lifecycle
 
