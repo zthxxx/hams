@@ -149,5 +149,23 @@ assert_success "hams apply removes the clone" \
 assert_yaml_field_eq "git-clone state=removed after hamsfile delete" \
   "$GCLONE_STATE" ".resources[\"${CLONE_KEY}\"].state" 'removed'
 
+# --- Log emission gate ---
+# CLAUDE.md Current Tasks: "Whether logging is emitted — for each
+# provider as well as for hams itself — must be verified in
+# integration tests." Assert both sub-providers (git-config and
+# git-clone) emit their own slog lines plus the framework session-start.
+assert_stderr_contains "git-config: hams itself emits session-start log" \
+  "hams session started" \
+  hams --store="$HAMS_STORE" apply --only=git-config
+assert_stderr_contains "git-config: provider emits slog line" \
+  "git-config" \
+  hams --store="$HAMS_STORE" apply --only=git-config
+assert_stderr_contains "git-clone: hams itself emits session-start log" \
+  "hams session started" \
+  hams --store="$HAMS_STORE" apply --only=git-clone
+assert_stderr_contains "git-clone: provider emits slog line" \
+  "git-clone" \
+  hams --store="$HAMS_STORE" apply --only=git-clone
+
 echo ""
 echo "=== git integration test passed ==="

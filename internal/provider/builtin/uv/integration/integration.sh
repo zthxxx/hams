@@ -30,3 +30,14 @@ assert_success "uv is on PATH" command -v uv
 # package names — `uv tool install` errors hard on missing names; verify
 # on PyPI before swapping.
 standard_cli_flow uv install ruff httpie
+
+# --- Log emission gate ---
+# CLAUDE.md Current Tasks: "Whether logging is emitted — for each
+# provider as well as for hams itself — must be verified in
+# integration tests."
+assert_stderr_contains "uv: hams itself emits session-start log" \
+  "hams session started" \
+  hams --store="$HAMS_STORE" apply --only=uv
+assert_stderr_contains "uv: provider emits slog line" \
+  "uv" \
+  hams --store="$HAMS_STORE" apply --only=uv

@@ -27,3 +27,14 @@ assert_output_contains "hams --version" "hams version" hams --version
 assert_success "pnpm is on PATH" command -v pnpm
 
 standard_cli_flow pnpm add serve nodemon
+
+# --- Log emission gate ---
+# CLAUDE.md Current Tasks: "Whether logging is emitted — for each
+# provider as well as for hams itself — must be verified in
+# integration tests."
+assert_stderr_contains "pnpm: hams itself emits session-start log" \
+  "hams session started" \
+  hams --store="$HAMS_STORE" apply --only=pnpm
+assert_stderr_contains "pnpm: provider emits slog line" \
+  "pnpm" \
+  hams --store="$HAMS_STORE" apply --only=pnpm

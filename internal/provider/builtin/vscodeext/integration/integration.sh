@@ -45,3 +45,14 @@ export POST_INSTALL_CHECK=ext_installed_check
 # is ubiquitous; `tamasfe.even-better-toml` succeeded the deprecated
 # bungcip.better-toml.
 standard_cli_flow code install vscode-icons-team.vscode-icons tamasfe.even-better-toml
+
+# --- Log emission gate ---
+# CLAUDE.md Current Tasks: "Whether logging is emitted — for each
+# provider as well as for hams itself — must be verified in
+# integration tests."
+assert_stderr_contains "code: hams itself emits session-start log" \
+  "hams session started" \
+  hams --store="$HAMS_STORE" apply --only=code
+assert_stderr_contains "code: provider emits slog line" \
+  "code" \
+  hams --store="$HAMS_STORE" apply --only=code

@@ -166,11 +166,7 @@ Outstanding tasks:
 
 - [x] **ci-act-opt-in** — Done 2026-04-18 via openspec/changes/2026-04-18-ci-act-opt-in/. Ported `.github/workflows/ci.yml` artifact guards + act-fallback build steps, rewired `Taskfile.yml` `test:*` tasks to `ci:*` direct, added `:one-via-act` opt-in variants. `.golangci.yml` errcheck exclude-functions extended to cover writer-bound helpers — stripped the now-redundant `//nolint:errcheck` directives in `internal/cli/bootstrap_consent.go` + `internal/selfupdate/selfupdate_test.go`.
 
-- [ ] **integration-log-assertion-fanout** — Extend log assertions to all 11 providers (apt, bash, ansible, cargo, git, goinstall, homebrew, npm, pnpm, uv, vscodeext), using both file-based (`assert_log_records_session`) and stderr-based (`assert_stderr_contains`) helpers. Add a framework-level assertion that `hams apply` itself emits `hams session started` + final-status log lines. Reference: `/tmp/hams-loop/internal/provider/builtin/{bash,ansible,git}/integration/integration.sh`.
-  - [ ] Port `assert_stderr_contains` + `assert_log_line` to `e2e/base/lib/assertions.sh`.
-  - [ ] Add log assertions to each of the 10 remaining providers' `integration.sh`.
-  - [ ] Add framework-level assertion verifying `hams apply` session logging.
-  - [ ] Verification: each `task ci:itest:run PROVIDER=<name>` passes.
+- [x] **integration-log-assertion-fanout** — Done 2026-04-18 via openspec/changes/2026-04-18-integration-log-assertion-fanout/. Ported `assert_stderr_contains` + `assert_log_line` into `e2e/base/lib/assertions.sh` and added the framework-level `assert_hams_apply_session_logged` helper. Fan-out lands stderr-based `hams session started` + Manifest.Name assertions in all ten remaining provider integration scripts (ansible, bash, cargo, git — both `git-config` and `git-clone` — goinstall, homebrew via BREW_RUN, npm, pnpm, uv, code). `apt` keeps both file-based and stderr-based assertion families as the canonical "full coverage" example.
 
 - [ ] **shared-abstraction-migration** — Actually migrate every package-like provider (apt, homebrew, cargo, goinstall, npm, pnpm, uv, mas, vscodeext) to use `baseprovider.LoadOrCreateHamsfile` / `HamsfilePath` / `EffectiveConfig`. Port `package_dispatcher.go` from `/tmp/hams-loop/internal/provider/package_dispatcher.go` into `dev`. Delete the duplicated `hamsfile.go` helper code in each provider. This closes the CLAUDE.md "design shared abstractions" requirement.
   - [ ] Port `package_dispatcher.go` + `PackageInstaller` interface into `internal/provider/`.

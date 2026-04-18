@@ -45,3 +45,14 @@ export POST_INSTALL_CHECK=goinstall_installed_check
 # embedded toolchain directive — slower than hey but still sub-minute
 # on a warm cache.
 standard_cli_flow goinstall install "github.com/rakyll/hey@latest" "github.com/mgechev/revive@latest"
+
+# --- Log emission gate ---
+# CLAUDE.md Current Tasks: "Whether logging is emitted — for each
+# provider as well as for hams itself — must be verified in
+# integration tests."
+assert_stderr_contains "goinstall: hams itself emits session-start log" \
+  "hams session started" \
+  hams --store="$HAMS_STORE" apply --only=goinstall
+assert_stderr_contains "goinstall: provider emits slog line" \
+  "goinstall" \
+  hams --store="$HAMS_STORE" apply --only=goinstall

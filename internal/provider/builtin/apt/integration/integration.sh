@@ -291,8 +291,22 @@ echo "--- logging assertions (CLAUDE.md task: integration tests verify log emiss
 # ${HAMS_DATA_HOME}/<YYYY-MM>/. Re-run a representative apply so the
 # helper has a recent log to grep.
 hams --store="$HAMS_STORE" refresh --only=apt >/dev/null 2>&1 || true
+# File-based assertions — verifies the slog → rolling-log file handoff
+# (stricter than stderr checks; catches regressions where the file
+# handler drops records even while stderr keeps working).
 assert_log_records_session "apt integration"
 assert_log_contains "apt provider records applied actions" "provider"
+
+# Stderr-based assertions — same intent, different sink. Keeps apt as
+# the canonical provider with BOTH log assertion families so future
+# providers can mirror the pattern by picking whichever sink matches
+# their infrastructure.
+assert_stderr_contains "apt: hams itself emits session-start log" \
+  "hams session started" \
+  hams --store="$HAMS_STORE" apply --only=apt
+assert_stderr_contains "apt: provider emits slog line" \
+  "apt" \
+  hams --store="$HAMS_STORE" apply --only=apt
 
 echo ""
 echo "=== apt integration test passed ==="

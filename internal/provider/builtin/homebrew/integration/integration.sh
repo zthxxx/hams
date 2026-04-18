@@ -109,5 +109,18 @@ assert_success "apply after hamsfile-delete transitions htop to removed" \
 assert_yaml_field_eq "htop.state=removed" \
   "$STATE_FILE" '.resources.htop.state' 'removed'
 
+# --- Log emission gate ---
+# CLAUDE.md Current Tasks: "Whether logging is emitted — for each
+# provider as well as for hams itself — must be verified in
+# integration tests." BREW_RUN already forwards HAMS_* env vars through
+# sudo so the slog sink writes to the same rolling log file and stderr
+# as the non-brew branches.
+assert_stderr_contains "brew: hams itself emits session-start log" \
+  "hams session started" \
+  BREW_RUN apply --only=brew
+assert_stderr_contains "brew: provider emits slog line" \
+  "brew" \
+  BREW_RUN apply --only=brew
+
 echo ""
 echo "=== homebrew integration test passed ==="

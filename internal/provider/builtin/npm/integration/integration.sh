@@ -28,3 +28,14 @@ assert_success "npm is on PATH" command -v npm
 # `serve` and `nodemon` are tiny global CLIs — fast to install and stable
 # across npm versions.
 standard_cli_flow npm install serve nodemon
+
+# --- Log emission gate ---
+# CLAUDE.md Current Tasks: "Whether logging is emitted — for each
+# provider as well as for hams itself — must be verified in
+# integration tests."
+assert_stderr_contains "npm: hams itself emits session-start log" \
+  "hams session started" \
+  hams --store="$HAMS_STORE" apply --only=npm
+assert_stderr_contains "npm: provider emits slog line" \
+  "npm" \
+  hams --store="$HAMS_STORE" apply --only=npm

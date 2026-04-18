@@ -32,3 +32,14 @@ assert_success "cargo is on PATH" command -v cargo
 # becomes flaky on CI; AVOID `xsv` (yanked from crates.io 2023) and any
 # tool whose latest crate version was deleted by the author.
 standard_cli_flow cargo install tokei just
+
+# --- Log emission gate ---
+# CLAUDE.md Current Tasks: "Whether logging is emitted — for each
+# provider as well as for hams itself — must be verified in
+# integration tests."
+assert_stderr_contains "cargo: hams itself emits session-start log" \
+  "hams session started" \
+  hams --store="$HAMS_STORE" apply --only=cargo
+assert_stderr_contains "cargo: provider emits slog line" \
+  "cargo" \
+  hams --store="$HAMS_STORE" apply --only=cargo

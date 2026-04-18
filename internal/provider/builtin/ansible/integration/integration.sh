@@ -81,5 +81,16 @@ else
   exit 1
 fi
 
+# --- Log emission gate ---
+# CLAUDE.md Current Tasks: "Whether logging is emitted — for each
+# provider as well as for hams itself — must be verified in
+# integration tests."
+assert_stderr_contains "ansible: hams itself emits session-start log" \
+  "hams session started" \
+  hams --store="$HAMS_STORE" apply --only=ansible
+assert_stderr_contains "ansible: provider emits slog line" \
+  "ansible" \
+  hams --store="$HAMS_STORE" apply --only=ansible
+
 echo ""
 echo "=== ansible integration test passed ==="
