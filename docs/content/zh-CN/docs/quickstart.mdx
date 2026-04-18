@@ -108,8 +108,13 @@ hams apply --bootstrap --from-repo=<your-username>/hams-store --tag=macOS
 ### 不需要交互式问问题
 
 如果 `~/.config/hams/hams.config.yaml` 还不存在，hams 第一次运行时会自动写一份：
-`tag: default` + 由主机名衍生的 `machine_id`。`--tag=<your-profile>` 可以临时覆盖默认 tag；
+`tag: default` + 由主机名衍生的 `machine_id`。同一份身份对还会被种入新建 store 的
+`hams.config.yaml` 占位里，所以第一次在刚 init 完的 store 上跑 apply 就能拿到具体的
+`profile_tag + machine_id`，而不是空字符串。`--tag=<your-profile>` 可以临时覆盖默认 tag；
 要持久化用 `hams config set tag <name>` 即可。
+
+在干净机器上把 `--dry-run` 和 `--from-repo=<url>` 组合起来跑，hams 会把本来要新建的每个
+文件都打一行 preview、不落盘退出 —— 上线前确认一下身份规划是安全的做法。
 
 旧版本里那个交互式 `Profile tag / Machine ID` 提示现在只在 `hams store init` 中保留 ——
 仅在你想把 store 放在 `${HAMS_DATA_HOME}/store/` 之外的目录、并手工准备时才用得上。

@@ -20,7 +20,7 @@ hams [全局 flag] <命令> [参数]
 | `--no-color` | bool | `false` | 关掉 ANSI 颜色码（输出到文件或不支持颜色的终端时用） |
 | `--config=<path>` | string | `~/.config/hams/hams.config.yaml` | 指定另一份配置文件 |
 | `--store=<path>` | string | 来自配置 | 覆盖 store 目录路径 |
-| `--tag=<name>` | string | 来自配置（缺省为 `default`） | 当次执行使用的 profile tag。`--profile` 是兼容别名。优先级：`--tag` > 配置 `tag:` > `"default"` |
+| `--tag=<name>` | string | 来自配置（缺省为 `default`） | 当次执行使用的 profile tag（canonical）。`--profile` 是兼容别名。优先级：`--tag` > 配置 `tag:` > `"default"`。同时传 `--tag` 和 `--profile` 且值不同时，以退出码 `2`（用法错误）失败 |
 | `--help` | bool | `false` | 打印帮助 |
 | `--version` | bool | `false` | 打印版本信息 |
 
@@ -42,6 +42,9 @@ hams --json list | jq '.[] | select(.state == "missing")'
 # 临时切换 profile，不改全局配置
 hams --tag=work-linux apply           # 推荐写法
 hams --profile=work-linux apply       # 兼容旧写法
+
+# 同时传 --tag 和 --profile 且值不同 → 用法错误
+hams --tag=macOS --profile=linux apply   # 退出码 2：冲突
 ```
 
 ## 首次运行自动初始化
@@ -49,12 +52,17 @@ hams --profile=work-linux apply       # 兼容旧写法
 第一次执行 `hams apply` 或任意 provider 命令（`hams brew install jq`、`hams git config user.name X` 等）时，
 hams 会自动：
 
-1. 在 `~/.config/hams/hams.config.yaml` 写入默认配置（`tag: default` + 主机名衍生的 `machine_id`）
-2. 在 `${HAMS_DATA_HOME}/store/`（默认 `~/.local/share/hams/store/`）创建 store —— `git init` 初始化、
-   写入内置的 `.gitignore`（含 `.state/`、`*.local.*`）和占位 `hams.config.yaml`
-3. 把 store 路径写回全局配置，供之后运行直接使用
+1. 在 `~/.config/hams/hams.config.yaml` 写入默认配置（`tag: default` + 主机名衍生的 `machine_id`）；
+   已经存在的配置文件保持不动。
+2. 在 `${HAMS_DATA_HOME}/store/`（默认 `~/.local/share/hams/store/`）创建 store —— 用外部 `git init`
+   初始化（30 秒超时，超时或系统没装 git 时自动回退到内置的 go-git）、写入内置的 `.gitignore`
+   （含 `.state/`、`*.local.*`）和占位 `hams.config.yaml`（其中的 `profile_tag` 和 `machine_id` 用上面那份身份对种入）。
+3. 把 store 路径写回全局配置，供之后运行直接使用。
 
-如需关闭自动初始化（例如 CI 脚本希望保留旧的 "no store directory configured" 报错），设置环境变量 `HAMS_NO_AUTO_INIT=1` 即可。
+**`--dry-run` 会被 auto-init 尊重**：在干净机器上执行 `hams --dry-run <命令>` 时，hams 会把本来要写的每个文件
+打成一行 preview 写到 stderr，然后不落盘退出。适合先确认一下会落在哪个位置再跑真的。
+
+如需完全关闭自动初始化（例如 CI 脚本希望保留旧的 "no store directory configured" 报错），设置环境变量 `HAMS_NO_AUTO_INIT=1` 即可。
 
 ## 为什么要区分"全局 flag"和"命令 flag"
 

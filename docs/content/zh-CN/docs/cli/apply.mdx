@@ -46,7 +46,7 @@ hams apply --tag=work-linux
 | Flag | 类型 | 说明 |
 |------|------|------|
 | `--from-repo` | string | 从远端 GitHub 仓库克隆 store 再 apply。适合新机器开荒 |
-| `--tag` | string | 当次执行使用的 profile tag（兼容别名 `--profile`）。优先级：`--tag` > 配置 `tag:` > `"default"` |
+| `--tag` | string | 当次执行使用的 profile tag（canonical）。`--profile` 是兼容别名。优先级：`--tag` > 配置 `tag:` > `"default"`。同时传 `--tag` 和 `--profile` 且值不同时，以退出码 `2`（用法错误）失败 |
 | `--only` | string | 只跑指定的 provider，逗号分隔 |
 | `--except` | string | 排除掉指定的 provider，其他都跑 |
 | `--no-refresh` | bool | 跳过 apply 前的 refresh 阶段。默认 apply 会先扫一遍机器状态捕获 drift；加了 `--no-refresh` 就直接信任 `.state/` 里的数据去算 diff。适合刚跑完 `hams refresh` 想再 apply 一次的场景 |

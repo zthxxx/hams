@@ -52,7 +52,7 @@ hams brew enrich htop
 | `--no-color` | bool | `false` | 关闭 ANSI 颜色 |
 | `--config=<path>` | string | `~/.config/hams/hams.config.yaml` | 指定另一份配置 |
 | `--store=<path>` | string | 来自配置 | 覆盖 store 目录 |
-| `--tag=<name>` | string | 来自配置（缺省 `default`） | 当次 profile tag。`--profile` 是兼容别名 |
+| `--tag=<name>` | string | 来自配置（缺省 `default`） | 当次 profile tag（canonical）。`--profile` 是兼容别名。优先级：`--tag` > 配置 `tag:` > `"default"` |
 | `--help` | bool | `false` | 打印帮助 |
 | `--version` | bool | `false` | 打印版本 |
 
