@@ -21,8 +21,8 @@
 - [x] 2.11 Wire `duti` — 3 sites.
 - [x] 2.12 Wire `defaults` — 4 sites.
 - [x] 2.13 Wire `ansible` — 4 sites.
-- [x] 2.14 Wire `git` — unified dispatcher (top-level `hams git`) + shared no-store error in `git/hamsfile.go` done. Remaining `git/clone.go` and `git/git.go` internal error paths (for `hams git config set / remove` and `hams git clone add / remove` internals) still emit literal English; tracked as follow-up note 2.14.a below because they live under already-wired entry-point i18n keys but carry provider-specific details that need 5-6 additional keys.
-- [ ] 2.14.a **Follow-up:** wire `git/clone.go` and `git/git.go` internal NewUserError sites (~12 messages). Low priority because the top-level `hams git` entry points are already i18n; these are internals reached via the top-level dispatcher.
+- [x] 2.14 Wire `git` — unified dispatcher + git/config + git/clone internals all routed through i18n. `rg 'NewUserError' internal/provider/builtin/git/ -g '!*_test.go'` shows every site followed by an `i18n.T` / `i18n.Tf` call; no literal English remains.
+- [x] 2.14.a `git/clone.go` + `git/git.go` internal NewUserError + dry-run sites wired in a follow-up commit. Catalog gained ~30 new keys under `provider.git.config.*` and `provider.git.clone.*` covering set/remove usage errors, the multi-line usage bundles, the "target not a git repo" explanation + both hints, the exact-one-remote guard, the "no tracked resource" error, and `--hams-path` validation.
 
 ## 3. Test coverage
 

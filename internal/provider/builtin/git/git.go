@@ -11,6 +11,7 @@ import (
 	"github.com/zthxxx/hams/internal/config"
 	hamserr "github.com/zthxxx/hams/internal/error"
 	"github.com/zthxxx/hams/internal/hamsfile"
+	"github.com/zthxxx/hams/internal/i18n"
 	"github.com/zthxxx/hams/internal/provider"
 	"github.com/zthxxx/hams/internal/state"
 )
@@ -133,18 +134,18 @@ func (p *ConfigProvider) HandleCommand(ctx context.Context, args []string, hamsF
 	case "set":
 		if len(args) != 3 {
 			return hamserr.NewUserError(hamserr.ExitUsageError,
-				"git-config set requires key and value",
-				"Usage: hams git-config set <key> <value>",
-				"Example: hams git-config set user.name zthxxx",
+				i18n.T(i18n.ProviderGitConfigSetRequiresKV),
+				i18n.T(i18n.ProviderGitConfigUsageSet),
+				i18n.T(i18n.ProviderGitConfigExampleSet),
 			)
 		}
 		return p.doSet(ctx, args[1], args[2], hamsFlags, flags)
 	case verbRemove:
 		if len(args) != 2 {
 			return hamserr.NewUserError(hamserr.ExitUsageError,
-				"git-config remove requires a key",
-				"Usage: hams git-config remove <key>",
-				"Example: hams git-config remove user.name",
+				i18n.T(i18n.ProviderGitConfigRemoveRequiresKey),
+				i18n.T(i18n.ProviderGitConfigUsageRemove),
+				i18n.T(i18n.ProviderGitConfigExampleRemove),
 			)
 		}
 		return p.doRemove(ctx, args[1], hamsFlags, flags)
@@ -161,11 +162,11 @@ func (p *ConfigProvider) HandleCommand(ctx context.Context, args []string, hamsF
 
 func (p *ConfigProvider) usageError() error {
 	return hamserr.NewUserError(hamserr.ExitUsageError,
-		"git-config requires a subcommand or key/value pair",
-		"Usage: hams git-config set <key> <value>",
-		"       hams git-config <key> <value>",
-		"       hams git-config remove <key>",
-		"       hams git-config list",
+		i18n.T(i18n.ProviderGitConfigRequiresSubcommandOrKV),
+		i18n.T(i18n.ProviderGitConfigUsageSet),
+		i18n.T(i18n.ProviderGitConfigUsageBare),
+		i18n.T(i18n.ProviderGitConfigUsageRemove),
+		i18n.T(i18n.ProviderGitConfigUsageList),
 	)
 }
 
@@ -173,7 +174,9 @@ func (p *ConfigProvider) usageError() error {
 // persists the entry into the hamsfile + state (via recordSet).
 func (p *ConfigProvider) doSet(ctx context.Context, key, value string, hamsFlags map[string]string, flags *provider.GlobalFlags) error {
 	if flags.DryRun {
-		fmt.Printf("[dry-run] Would set: git config --global %s %s\n", key, value)
+		fmt.Fprintln(flags.Stdout(), i18n.Tf(i18n.ProviderGitConfigDryRunSet, map[string]any{
+			"Key": key, "Value": value,
+		}))
 		return nil
 	}
 
@@ -195,7 +198,9 @@ func (p *ConfigProvider) doSet(ctx context.Context, key, value string, hamsFlags
 // matching state resource StateRemoved).
 func (p *ConfigProvider) doRemove(ctx context.Context, key string, hamsFlags map[string]string, flags *provider.GlobalFlags) error {
 	if flags.DryRun {
-		fmt.Printf("[dry-run] Would unset: git config --global --unset %s\n", key)
+		fmt.Fprintln(flags.Stdout(), i18n.Tf(i18n.ProviderGitConfigDryRunUnset, map[string]any{
+			"Key": key,
+		}))
 		return nil
 	}
 

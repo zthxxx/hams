@@ -253,4 +253,39 @@ const (
 	// and cfg.StorePath is empty. Hint is the remediation line below.
 	ProviderNoStoreConfigured     = "provider.no-store-configured"
 	ProviderNoStoreConfiguredHint = "provider.no-store-configured.hint"
+
+	// ---- Git config internals (follow-up 2.14.a) ----.
+
+	ProviderGitConfigSetRequiresKV          = "provider.git.config.set.requires-kv"
+	ProviderGitConfigUsageSet               = "provider.git.config.usage.set"
+	ProviderGitConfigUsageBare              = "provider.git.config.usage.bare"
+	ProviderGitConfigUsageRemove            = "provider.git.config.usage.remove"
+	ProviderGitConfigUsageList              = "provider.git.config.usage.list"
+	ProviderGitConfigExampleSet             = "provider.git.config.example.set"
+	ProviderGitConfigExampleRemove          = "provider.git.config.example.remove"
+	ProviderGitConfigRemoveRequiresKey      = "provider.git.config.remove.requires-key"
+	ProviderGitConfigRequiresSubcommandOrKV = "provider.git.config.requires-subcommand-or-kv"
+	ProviderGitConfigDryRunSet              = "provider.git.config.dry-run.set"
+	ProviderGitConfigDryRunUnset            = "provider.git.config.dry-run.unset"
+
+	// ---- Git clone internals (follow-up 2.14.a) ----.
+
+	ProviderGitCloneSubcommandRequired = "provider.git.clone.subcommand-required"
+	ProviderGitCloneUsageAddSub        = "provider.git.clone.usage.add-sub"
+	ProviderGitCloneUsageRemoveSub     = "provider.git.clone.usage.remove-sub"
+	ProviderGitCloneUsageListSub       = "provider.git.clone.usage.list-sub"
+	ProviderGitCloneAddRequiresRemote  = "provider.git.clone.add.requires-remote"
+	ProviderGitCloneAddUsage           = "provider.git.clone.add.usage"
+	ProviderGitCloneAddExactOne        = "provider.git.clone.add.exact-one"
+	ProviderGitCloneAddPosHint         = "provider.git.clone.add.positional-hint"
+	ProviderGitCloneAddRequiresPath    = "provider.git.clone.add.requires-path"
+	ProviderGitCloneTargetNotRepo      = "provider.git.clone.target-not-repo"
+	ProviderGitCloneTargetNotRepoHint1 = "provider.git.clone.target-not-repo.hint1"
+	ProviderGitCloneTargetNotRepoHint2 = "provider.git.clone.target-not-repo.hint2"
+	ProviderGitCloneDryRunAdd          = "provider.git.clone.dry-run.add"
+	ProviderGitCloneDryRunRemoveEntry  = "provider.git.clone.dry-run.remove-entry"
+	ProviderGitCloneRemoveRequiresURN  = "provider.git.clone.remove.requires-urn"
+	ProviderGitCloneRemoveUsage        = "provider.git.clone.remove.usage"
+	ProviderGitCloneNoEntry            = "provider.git.clone.no-entry"
+	ProviderGitCloneInvalidResourceID  = "provider.git.clone.invalid-resource-id"
 )

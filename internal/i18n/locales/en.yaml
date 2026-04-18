@@ -259,3 +259,63 @@
   other: "no store directory configured"
 - id: provider.no-store-configured.hint
   other: "Set store_path in hams config or pass --store"
+
+- id: provider.git.config.set.requires-kv
+  other: "git-config set requires key and value"
+- id: provider.git.config.usage.set
+  other: "Usage: hams git-config set <key> <value>"
+- id: provider.git.config.usage.bare
+  other: "       hams git-config <key> <value>"
+- id: provider.git.config.usage.remove
+  other: "       hams git-config remove <key>"
+- id: provider.git.config.usage.list
+  other: "       hams git-config list"
+- id: provider.git.config.example.set
+  other: "Example: hams git-config set user.name zthxxx"
+- id: provider.git.config.example.remove
+  other: "Example: hams git-config remove user.name"
+- id: provider.git.config.remove.requires-key
+  other: "git-config remove requires a key"
+- id: provider.git.config.requires-subcommand-or-kv
+  other: "git-config requires a subcommand or key/value pair"
+- id: provider.git.config.dry-run.set
+  other: "[dry-run] Would set: git config --global {{.Key}} {{.Value}}"
+- id: provider.git.config.dry-run.unset
+  other: "[dry-run] Would unset: git config --global --unset {{.Key}}"
+
+- id: provider.git.clone.subcommand-required
+  other: "git-clone requires a subcommand or remote URL and local path"
+- id: provider.git.clone.usage.add-sub
+  other: "Usage: hams git-clone add <remote> --hams-path=<path>"
+- id: provider.git.clone.usage.remove-sub
+  other: "       hams git-clone remove <urn-id>"
+- id: provider.git.clone.usage.list-sub
+  other: "       hams git-clone list"
+- id: provider.git.clone.add.requires-remote
+  other: "git-clone add requires a remote URL"
+- id: provider.git.clone.add.usage
+  other: "Usage: hams git-clone add <remote> --hams-path=<path>"
+- id: provider.git.clone.add.exact-one
+  other: "git-clone add takes exactly one remote URL (got {{.Count}} args: {{.Got}})"
+- id: provider.git.clone.add.positional-hint
+  other: "The local path is set via --hams-path, not as a positional arg"
+- id: provider.git.clone.add.requires-path
+  other: "git-clone add requires --hams-path"
+- id: provider.git.clone.target-not-repo
+  other: "git-clone target \"{{.Path}}\" already exists but is not a git repository"
+- id: provider.git.clone.target-not-repo.hint1
+  other: "Either delete the directory and re-run apply: rm -rf {{.Path}}"
+- id: provider.git.clone.target-not-repo.hint2
+  other: "Or initialize it in place: cd {{.Path}} && git init && git remote add origin {{.Remote}}"
+- id: provider.git.clone.dry-run.add
+  other: "[dry-run] Would clone: git clone {{.Remote}} {{.Path}}"
+- id: provider.git.clone.dry-run.remove-entry
+  other: "[dry-run] Would remove entry: {{.URN}} (directory NOT deleted)"
+- id: provider.git.clone.remove.requires-urn
+  other: "git-clone remove requires a URN id"
+- id: provider.git.clone.remove.usage
+  other: "Usage: hams git-clone remove <urn-id>"
+- id: provider.git.clone.no-entry
+  other: "git-clone: no tracked resource with ID \"{{.URN}}\""
+- id: provider.git.clone.invalid-resource-id
+  other: "{{.Err}}"

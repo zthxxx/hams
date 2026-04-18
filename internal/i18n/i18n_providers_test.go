@@ -102,6 +102,37 @@ func providerKeyConstants(t *testing.T) map[string]string {
 
 		"ProviderNoStoreConfigured":     i18n.ProviderNoStoreConfigured,
 		"ProviderNoStoreConfiguredHint": i18n.ProviderNoStoreConfiguredHint,
+
+		"ProviderGitConfigSetRequiresKV":          i18n.ProviderGitConfigSetRequiresKV,
+		"ProviderGitConfigUsageSet":               i18n.ProviderGitConfigUsageSet,
+		"ProviderGitConfigUsageBare":              i18n.ProviderGitConfigUsageBare,
+		"ProviderGitConfigUsageRemove":            i18n.ProviderGitConfigUsageRemove,
+		"ProviderGitConfigUsageList":              i18n.ProviderGitConfigUsageList,
+		"ProviderGitConfigExampleSet":             i18n.ProviderGitConfigExampleSet,
+		"ProviderGitConfigExampleRemove":          i18n.ProviderGitConfigExampleRemove,
+		"ProviderGitConfigRemoveRequiresKey":      i18n.ProviderGitConfigRemoveRequiresKey,
+		"ProviderGitConfigRequiresSubcommandOrKV": i18n.ProviderGitConfigRequiresSubcommandOrKV,
+		"ProviderGitConfigDryRunSet":              i18n.ProviderGitConfigDryRunSet,
+		"ProviderGitConfigDryRunUnset":            i18n.ProviderGitConfigDryRunUnset,
+
+		"ProviderGitCloneSubcommandRequired": i18n.ProviderGitCloneSubcommandRequired,
+		"ProviderGitCloneUsageAddSub":        i18n.ProviderGitCloneUsageAddSub,
+		"ProviderGitCloneUsageRemoveSub":     i18n.ProviderGitCloneUsageRemoveSub,
+		"ProviderGitCloneUsageListSub":       i18n.ProviderGitCloneUsageListSub,
+		"ProviderGitCloneAddRequiresRemote":  i18n.ProviderGitCloneAddRequiresRemote,
+		"ProviderGitCloneAddUsage":           i18n.ProviderGitCloneAddUsage,
+		"ProviderGitCloneAddExactOne":        i18n.ProviderGitCloneAddExactOne,
+		"ProviderGitCloneAddPosHint":         i18n.ProviderGitCloneAddPosHint,
+		"ProviderGitCloneAddRequiresPath":    i18n.ProviderGitCloneAddRequiresPath,
+		"ProviderGitCloneTargetNotRepo":      i18n.ProviderGitCloneTargetNotRepo,
+		"ProviderGitCloneTargetNotRepoHint1": i18n.ProviderGitCloneTargetNotRepoHint1,
+		"ProviderGitCloneTargetNotRepoHint2": i18n.ProviderGitCloneTargetNotRepoHint2,
+		"ProviderGitCloneDryRunAdd":          i18n.ProviderGitCloneDryRunAdd,
+		"ProviderGitCloneDryRunRemoveEntry":  i18n.ProviderGitCloneDryRunRemoveEntry,
+		"ProviderGitCloneRemoveRequiresURN":  i18n.ProviderGitCloneRemoveRequiresURN,
+		"ProviderGitCloneRemoveUsage":        i18n.ProviderGitCloneRemoveUsage,
+		"ProviderGitCloneNoEntry":            i18n.ProviderGitCloneNoEntry,
+		"ProviderGitCloneInvalidResourceID":  i18n.ProviderGitCloneInvalidResourceID,
 	}
 
 	// Defense against silent drift: every map key SHOULD reference a
@@ -147,6 +178,10 @@ func TestProviderKeysResolveInEnglish(t *testing.T) {
 			"Err":         "example error",
 			"Path":        "./site.yml",
 			"Noun":        "playbooks",
+			"Key":         "user.name",
+			"Value":       "zthxxx",
+			"Remote":      "https://github.com/zthxxx/hams.git",
+			"URN":         "urn:hams:git-clone:example",
 		})
 		if got == id {
 			t.Errorf("%s → %q is the raw key; missing en.yaml entry", name, id)
@@ -179,6 +214,10 @@ func TestProviderKeysResolveInChinese(t *testing.T) {
 			"Err":         "example error",
 			"Path":        "./site.yml",
 			"Noun":        "playbooks",
+			"Key":         "user.name",
+			"Value":       "zthxxx",
+			"Remote":      "https://github.com/zthxxx/hams.git",
+			"URN":         "urn:hams:git-clone:example",
 		})
 		if got == id {
 			t.Errorf("%s → %q is the raw key; missing zh-CN.yaml entry", name, id)
