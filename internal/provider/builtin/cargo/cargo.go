@@ -14,6 +14,7 @@ import (
 	hamserr "github.com/zthxxx/hams/internal/error"
 	"github.com/zthxxx/hams/internal/hamsfile"
 	"github.com/zthxxx/hams/internal/provider"
+	"github.com/zthxxx/hams/internal/provider/baseprovider"
 	"github.com/zthxxx/hams/internal/state"
 )
 
@@ -117,9 +118,14 @@ func (p *Provider) HandleCommand(ctx context.Context, args []string, hamsFlags m
 		// not a valid cargo subcommand (cargo errors with "no such
 		// command: list"). HandleListCmd prints the hams-tracked
 		// desired-vs-observed diff, matching `hams list --only=cargo`.
-		return provider.HandleListCmd(ctx, p, p.effectiveConfig(flags))
+		return provider.HandleListCmd(ctx, p, baseprovider.EffectiveConfig(p.cfg, flags))
 	default:
-		return provider.WrapExecPassthrough(ctx, cliName, args, nil)
+		// Every CLI-wrapping provider's default branch goes through
+		// provider.Passthrough so `hams cargo search ripgrep`,
+		// `hams cargo --version`, etc. behave identically to plain
+		// cargo (stdin/stdout/stderr + exit code preserved, DryRun
+		// honored as preview).
+		return provider.Passthrough(ctx, cliName, args, flags)
 	}
 }
 
@@ -153,7 +159,7 @@ func (p *Provider) handleInstall(ctx context.Context, args []string, hamsFlags m
 	// cli-architecture spec. Pre-cycle-222 only apply/refresh held
 	// the lock; a `hams cargo install ripgrep` could race with an
 	// in-flight `hams apply` and clobber cargo.state.yaml.
-	release, lockErr := provider.AcquireMutationLockFromCfg(p.effectiveConfig(flags), flags, "cargo install")
+	release, lockErr := provider.AcquireMutationLockFromCfg(baseprovider.EffectiveConfig(p.cfg, flags), flags, "cargo install")
 	if lockErr != nil {
 		return lockErr
 	}
@@ -169,7 +175,7 @@ func (p *Provider) handleInstall(ctx context.Context, args []string, hamsFlags m
 		}
 	}
 
-	hf, err := p.loadOrCreateHamsfile(hamsFlags, flags)
+	hf, err := baseprovider.LoadOrCreateHamsfile(p.cfg, p.Manifest().FilePrefix, hamsFlags, flags)
 	if err != nil {
 		return err
 	}
@@ -215,7 +221,7 @@ func (p *Provider) handleRemove(ctx context.Context, args []string, hamsFlags ma
 	}
 
 	// Cycle 222: same lock-acquisition contract as handleInstall.
-	release, lockErr := provider.AcquireMutationLockFromCfg(p.effectiveConfig(flags), flags, "cargo remove")
+	release, lockErr := provider.AcquireMutationLockFromCfg(baseprovider.EffectiveConfig(p.cfg, flags), flags, "cargo remove")
 	if lockErr != nil {
 		return lockErr
 	}
@@ -227,7 +233,7 @@ func (p *Provider) handleRemove(ctx context.Context, args []string, hamsFlags ma
 		}
 	}
 
-	hf, err := p.loadOrCreateHamsfile(hamsFlags, flags)
+	hf, err := baseprovider.LoadOrCreateHamsfile(p.cfg, p.Manifest().FilePrefix, hamsFlags, flags)
 	if err != nil {
 		return err
 	}
@@ -248,7 +254,7 @@ func (p *Provider) handleRemove(ctx context.Context, args []string, hamsFlags ma
 // statePath returns the absolute path to cargo.state.yaml for the
 // active machine. Mirrors homebrew.statePath / mas.statePath.
 func (p *Provider) statePath(flags *provider.GlobalFlags) string {
-	cfg := p.effectiveConfig(flags)
+	cfg := baseprovider.EffectiveConfig(p.cfg, flags)
 	return filepath.Join(cfg.StateDir(), p.Manifest().FilePrefix+".state.yaml")
 }
 
@@ -257,7 +263,7 @@ func (p *Provider) statePath(flags *provider.GlobalFlags) string {
 // propagate so the CLI handler surfaces a user-facing error instead
 // of silently overwriting unparseable state.
 func (p *Provider) loadOrCreateStateFile(flags *provider.GlobalFlags) (*state.File, error) {
-	cfg := p.effectiveConfig(flags)
+	cfg := baseprovider.EffectiveConfig(p.cfg, flags)
 	sf, err := state.Load(p.statePath(flags))
 	if err == nil {
 		return sf, nil
