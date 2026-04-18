@@ -19,6 +19,7 @@ import (
 	"github.com/zthxxx/hams/internal/config"
 	hamserr "github.com/zthxxx/hams/internal/error"
 	"github.com/zthxxx/hams/internal/hamsfile"
+	"github.com/zthxxx/hams/internal/i18n"
 	"github.com/zthxxx/hams/internal/provider"
 	"github.com/zthxxx/hams/internal/provider/baseprovider"
 	"github.com/zthxxx/hams/internal/state"
@@ -352,7 +353,7 @@ func (p *Provider) handleUntap(ctx context.Context, args []string, hamsFlags map
 
 	repo := args[0]
 	if flags.DryRun {
-		fmt.Printf("[dry-run] Would run: brew untap %s\n", repo)
+		fmt.Println(i18n.Tf(i18n.ProviderStatusDryRunRun, map[string]any{"Cmd": "brew untap " + repo}))
 		return nil
 	}
 
@@ -438,7 +439,7 @@ func (p *Provider) handleList(hamsFlags map[string]string, flags *provider.Globa
 		fmt.Println(out)
 		return nil
 	}
-	fmt.Println("Homebrew managed packages:")
+	fmt.Println(i18n.T(i18n.ProviderListHomebrewHeader))
 	fmt.Print(provider.FormatDiff(&diff))
 	return nil
 }
@@ -466,7 +467,7 @@ func (p *Provider) handleTap(ctx context.Context, args []string, hamsFlags map[s
 
 	repo := args[0]
 	if flags.DryRun {
-		fmt.Printf("[dry-run] Would run: brew tap %s\n", repo)
+		fmt.Println(i18n.Tf(i18n.ProviderStatusDryRunRun, map[string]any{"Cmd": "brew tap " + repo}))
 		return nil
 	}
 
@@ -512,9 +513,9 @@ func (p *Provider) handleTap(ctx context.Context, args []string, hamsFlags map[s
 func (p *Provider) handleInstall(ctx context.Context, args []string, hamsFlags map[string]string, flags *provider.GlobalFlags) error {
 	if len(args) == 0 {
 		return hamserr.NewUserError(hamserr.ExitUsageError,
-			"brew install requires a package name",
+			i18n.Tf(i18n.ProviderErrInstallNeedsPackage, map[string]any{"Provider": "brew"}),
 			"Usage: hams brew install <package> [--cask] [--hams-tag=<tag>]",
-			"To install all recorded packages, use: hams apply --only=brew",
+			i18n.Tf(i18n.ProviderErrInstallNeedsPackageBulk, map[string]any{"Provider": "brew"}),
 		)
 	}
 
@@ -561,13 +562,13 @@ func (p *Provider) handleInstall(ctx context.Context, args []string, hamsFlags m
 	}
 	if len(packages) == 0 {
 		return hamserr.NewUserError(hamserr.ExitUsageError,
-			"brew install requires at least one package name",
+			i18n.Tf(i18n.ProviderErrInstallNeedsPackageAtLeastOne, map[string]any{"Provider": "brew"}),
 			"Usage: hams brew install <package> [--cask] [--hams-tag=<tag>]",
 		)
 	}
 
 	if flags.DryRun {
-		fmt.Printf("[dry-run] Would install: brew install %s\n", strings.Join(args, " "))
+		fmt.Println(i18n.Tf(i18n.ProviderStatusDryRunInstall, map[string]any{"Cmd": "brew install " + strings.Join(args, " ")}))
 		return nil
 	}
 
@@ -618,21 +619,21 @@ func (p *Provider) handleInstall(ctx context.Context, args []string, hamsFlags m
 func (p *Provider) handleRemove(ctx context.Context, args []string, hamsFlags map[string]string, flags *provider.GlobalFlags) error {
 	if len(args) == 0 {
 		return hamserr.NewUserError(hamserr.ExitUsageError,
-			"brew remove requires a package name",
-			"Usage: hams brew remove <package>",
+			i18n.Tf(i18n.ProviderErrRemoveNeedsPackage, map[string]any{"Provider": "brew"}),
+			i18n.Tf(i18n.ProviderErrRemoveNeedsPackageUsage, map[string]any{"Provider": "brew"}),
 		)
 	}
 
 	packages := packageArgs(args)
 	if len(packages) == 0 {
 		return hamserr.NewUserError(hamserr.ExitUsageError,
-			"brew remove requires at least one package name",
-			"Usage: hams brew remove <package>",
+			i18n.Tf(i18n.ProviderErrRemoveNeedsPackageAtLeastOne, map[string]any{"Provider": "brew"}),
+			i18n.Tf(i18n.ProviderErrRemoveNeedsPackageUsage, map[string]any{"Provider": "brew"}),
 		)
 	}
 
 	if flags.DryRun {
-		fmt.Printf("[dry-run] Would remove: brew uninstall %s\n", strings.Join(args, " "))
+		fmt.Println(i18n.Tf(i18n.ProviderStatusDryRunRemove, map[string]any{"Cmd": "brew uninstall " + strings.Join(args, " ")}))
 		return nil
 	}
 

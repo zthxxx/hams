@@ -59,9 +59,9 @@ Use --no-refresh to skip probing and apply based on state alone.`,
 			// apt while the user thought pnpm was also included.
 			if cmd.Args().Len() > 0 {
 				return hamserr.NewUserError(hamserr.ExitUsageError,
-					fmt.Sprintf("hams apply does not take positional arguments (got %q)", cmd.Args().First()),
-					"To filter providers: hams apply --only=<provider1>,<provider2>",
-					"To apply everything: hams apply",
+					i18n.Tf(i18n.CLIErrNoPositionalArgs, map[string]any{"Cmd": "apply", "Arg": fmt.Sprintf("%q", cmd.Args().First())}),
+					i18n.Tf(i18n.CLIErrNoPositionalArgsSuggestFilter, map[string]any{"Cmd": "apply"}),
+					i18n.Tf(i18n.CLIErrNoPositionalArgsSuggestAll, map[string]any{"Verb": "apply", "Cmd": "apply"}),
 				)
 			}
 			flags := globalFlags(cmd)
@@ -94,8 +94,8 @@ func runApply(ctx context.Context, flags *provider.GlobalFlags, registry *provid
 
 	if boot.Allow && boot.Deny {
 		return hamserr.NewUserError(hamserr.ExitUsageError,
-			"--bootstrap and --no-bootstrap are mutually exclusive",
-			"Pick one: --bootstrap to auto-run, --no-bootstrap to fail fast",
+			i18n.T(i18n.CLIErrBootstrapModeConflict),
+			i18n.T(i18n.CLIErrBootstrapModeConflictSuggest),
 		)
 	}
 	// --from-repo clones to `${HAMS_DATA_HOME}/repo/<user>/<repo>/`
@@ -107,7 +107,7 @@ func runApply(ctx context.Context, flags *provider.GlobalFlags, registry *provid
 	// loudly so the user picks one or the other.
 	if fromRepo != "" && flags.Store != "" {
 		return hamserr.NewUserError(hamserr.ExitUsageError,
-			"--from-repo and --store are mutually exclusive",
+			i18n.T(i18n.CLIErrFromRepoStoreConflict),
 			"--from-repo clones into ${HAMS_DATA_HOME}/repo/<user>/<name>/ — hams cannot honor a custom --store at the same time",
 			"Pick one: --from-repo=<user/repo> to clone, OR --store=<path> to use an existing local directory",
 		)
@@ -118,8 +118,8 @@ func runApply(ctx context.Context, flags *provider.GlobalFlags, registry *provid
 	// filterProviders, but the exclusion check is pure args validation.
 	if only != "" && except != "" {
 		return hamserr.NewUserError(hamserr.ExitUsageError,
-			"--only and --except are mutually exclusive",
-			"Use --only to include specific providers, or --except to exclude them",
+			i18n.T(i18n.CLIErrOnlyExceptConflict),
+			i18n.T(i18n.CLIErrOnlyExceptConflictSuggest),
 		)
 	}
 	if flags.DryRun && !flags.JSON {
@@ -129,7 +129,7 @@ func runApply(ctx context.Context, flags *provider.GlobalFlags, registry *provid
 		// `jq` / `json.Unmarshal`. The same guard applies to the
 		// per-provider dry-run previews (printDryRunActions) and the
 		// "No changes made" / execution-order lines.
-		fmt.Println("[dry-run] Would apply configurations. No changes will be made.")
+		fmt.Println(i18n.T(i18n.ApplyDryRunHeader))
 	}
 
 	paths := resolvePaths(flags)
@@ -244,10 +244,10 @@ func runApply(ctx context.Context, flags *provider.GlobalFlags, registry *provid
 	// UserFacingError naming the bad path + remediation.
 	if info, statErr := os.Stat(storePath); statErr != nil || !info.IsDir() {
 		return hamserr.NewUserError(hamserr.ExitUsageError,
-			fmt.Sprintf("store_path %q does not exist or is not a directory", storePath),
-			"Fix store_path in ~/.config/hams/hams.config.yaml",
-			"Or clone a store: hams apply --from-repo=<user/repo>",
-			"Or initialize one: hams store init",
+			i18n.Tf(i18n.CLIErrStorePathInvalid, map[string]any{"Path": fmt.Sprintf("%q", storePath)}),
+			i18n.T(i18n.CLIErrStorePathInvalidSuggestFix),
+			i18n.T(i18n.UFENoStoreConfiguredSuggestClone),
+			i18n.T(i18n.UFENoStoreConfiguredSuggestInit),
 		)
 	}
 
@@ -267,9 +267,9 @@ func runApply(ctx context.Context, flags *provider.GlobalFlags, registry *provid
 		profileDir := cfg.ProfileDir()
 		if info, statErr := os.Stat(profileDir); statErr != nil || !info.IsDir() {
 			return hamserr.NewUserError(hamserr.ExitUsageError,
-				fmt.Sprintf("profile %q not found at %s", cliTagOverride, profileDir),
-				"Check available profiles: ls "+storePath,
-				"Or create this profile: mkdir -p "+profileDir,
+				i18n.Tf(i18n.CLIErrProfileNotFound, map[string]any{"Tag": fmt.Sprintf("%q", cliTagOverride), "Dir": profileDir}),
+				i18n.Tf(i18n.CLIErrProfileNotFoundSuggestList, map[string]any{"Store": storePath}),
+				i18n.Tf(i18n.CLIErrProfileNotFoundSuggestCreate, map[string]any{"Dir": profileDir}),
 			)
 		}
 	}
@@ -374,7 +374,7 @@ func runApply(ctx context.Context, flags *provider.GlobalFlags, registry *provid
 		if flags.JSON {
 			return emitEmptyApplyJSON(applyStart)
 		}
-		fmt.Println("No providers match: every selected provider is state-only and --prune-orphans was not given.")
+		fmt.Println(i18n.T(i18n.ApplyNoProvidersStateOnly))
 		return nil
 	}
 
@@ -410,8 +410,10 @@ func runApply(ctx context.Context, flags *provider.GlobalFlags, registry *provid
 				// parseable.
 				if flags.DryRun {
 					if !flags.JSON {
-						fmt.Printf("[dry-run] Would bootstrap %s via: %s\n",
-							manifest.Name, brerr.Script)
+						fmt.Println(i18n.Tf(i18n.ApplyBootstrapDryRun, map[string]any{
+							"Provider": manifest.Name,
+							"Script":   brerr.Script,
+						}))
 					}
 					continue
 				}
@@ -577,7 +579,7 @@ func runApply(ctx context.Context, flags *provider.GlobalFlags, registry *provid
 
 	if flags.DryRun && !flags.JSON {
 		// Cycle 187: suppress in JSON mode — see the DryRun guard above.
-		fmt.Println("[dry-run] Provider execution order:")
+		fmt.Println(i18n.T(i18n.ApplyExecutionOrderHeader))
 		for i, p := range sorted {
 			fmt.Printf("  %d. %s (%s)\n", i+1, p.Manifest().DisplayName, p.Manifest().Name)
 		}
@@ -609,10 +611,10 @@ func runApply(ctx context.Context, flags *provider.GlobalFlags, registry *provid
 			// resolved set requires sudo AND we failed to acquire, exit
 			// hard with ExitSudoError + the recovery hints.
 			return hamserr.NewUserError(hamserr.ExitSudoError,
-				fmt.Sprintf("sudo acquisition failed: %v", sudoErr),
-				"Re-run and enter the sudo password when prompted",
-				"Or arrange passwordless sudo for this user (NOPASSWD entry in sudoers)",
-				"Or filter out sudo-requiring providers: hams apply --except=apt",
+				i18n.Tf(i18n.CLIErrSudoAcquisitionFailed, map[string]any{"Err": sudoErr.Error()}),
+				i18n.T(i18n.CLIErrSudoAcquisitionFailedSuggestReenter),
+				i18n.T(i18n.CLIErrSudoAcquisitionFailedSuggestPasswordless),
+				i18n.T(i18n.CLIErrSudoAcquisitionFailedSuggestFilter),
 			)
 		}
 	}
@@ -835,12 +837,14 @@ func runApply(ctx context.Context, flags *provider.GlobalFlags, registry *provid
 		}
 
 		if len(skippedProviders) > 0 {
-			fmt.Printf("Warning: %d provider(s) skipped due to errors: %s\n",
-				len(skippedProviders), strings.Join(skippedProviders, ", "))
+			fmt.Println(i18n.Tf(i18n.ApplySummarySkippedWarning, map[string]any{
+				"Count": len(skippedProviders),
+				"Names": strings.Join(skippedProviders, ", "),
+			}))
 			return hamserr.NewUserError(hamserr.ExitPartialFailure,
-				fmt.Sprintf("[dry-run] %d providers skipped due to errors (see log for details)", len(skippedProviders)),
-				"Fix the hamsfile or remove broken provider entries before running apply",
-				"Use '--debug' for detailed error output",
+				i18n.Tf(i18n.ApplyDryRunSkippedErr, map[string]any{"Count": len(skippedProviders)}),
+				i18n.T(i18n.ApplyDryRunSkippedErrSuggestFix),
+				i18n.T(i18n.ApplySummaryPartialFailureSuggestDebug),
 			)
 		}
 		// Pre-apply refresh state-save failures: surface them in dry-run
@@ -851,18 +855,20 @@ func runApply(ctx context.Context, flags *provider.GlobalFlags, registry *provid
 		// in dry-run). Symmetric with the non-dry-run branch's
 		// stateSaveFailures handling at the end of runApply.
 		if len(stateSaveFailures) > 0 {
-			fmt.Printf("Warning: %d provider(s) failed to persist state during pre-apply refresh: %s\n",
-				len(stateSaveFailures), strings.Join(stateSaveFailures, ", "))
-			fmt.Println("  Drift tracking is broken for these providers. Fix permissions on the store, then re-run.")
+			fmt.Println(i18n.Tf(i18n.ApplySummaryStateFailWarning, map[string]any{
+				"Count": len(stateSaveFailures),
+				"Names": strings.Join(stateSaveFailures, ", "),
+			}))
+			fmt.Println(i18n.T(i18n.ApplyStateFailDriftLine))
 			return hamserr.NewUserError(hamserr.ExitPartialFailure,
-				fmt.Sprintf("[dry-run] %d state save failure(s) during refresh", len(stateSaveFailures)),
-				"Check filesystem permissions on the store's .state/ directory",
-				"Use '--no-refresh' to skip the pre-apply probe if state intentionally read-only",
+				i18n.Tf(i18n.ApplyDryRunStateFailErr, map[string]any{"Count": len(stateSaveFailures)}),
+				i18n.T(i18n.ApplyDryRunStateFailErrSuggestPerms),
+				i18n.T(i18n.ApplyDryRunStateFailErrSuggestNoRefresh),
 			)
 		}
 		// Cycle 239: append elapsed for symmetry with the real-run
 		// "hams apply complete: ... (took Xms)" summary.
-		fmt.Printf("[dry-run] No changes made (took %dms)\n", time.Since(applyStart).Milliseconds())
+		fmt.Println(i18n.Tf(i18n.ApplyDryRunNoChanges, map[string]any{"ElapsedMs": time.Since(applyStart).Milliseconds()}))
 		return nil
 	}
 
@@ -877,9 +883,9 @@ func runApply(ctx context.Context, flags *provider.GlobalFlags, registry *provid
 	// work completed cleanly.
 	if ctx.Err() != nil {
 		return hamserr.NewUserError(hamserr.ExitPartialFailure,
-			fmt.Sprintf("hams apply interrupted: %s", ctx.Err().Error()),
-			"Partially-applied state has been saved to disk; inspect with `hams refresh`",
-			"Re-run `hams apply` to continue installing remaining resources",
+			i18n.Tf(i18n.CLIErrInterrupted, map[string]any{"Err": ctx.Err().Error()}),
+			i18n.T(i18n.CLIErrInterruptedSuggestInspect),
+			i18n.T(i18n.CLIErrInterruptedSuggestRerun),
 		)
 	}
 
@@ -906,10 +912,13 @@ func runApply(ctx context.Context, flags *provider.GlobalFlags, registry *provid
 		fmt.Println(string(out))
 		if merged.Failed > 0 || len(skippedProviders) > 0 || len(stateSaveFailures) > 0 {
 			return hamserr.NewUserError(hamserr.ExitPartialFailure,
-				fmt.Sprintf("%d resources failed, %d providers skipped, %d state saves failed",
-					merged.Failed, len(skippedProviders), len(stateSaveFailures)),
-				"Run 'hams apply' again to retry failed resources",
-				"Use '--debug' for detailed error output",
+				i18n.Tf(i18n.ApplySummaryPartialFailureErr, map[string]any{
+					"Failed":     merged.Failed,
+					"Skipped":    len(skippedProviders),
+					"SaveFailed": len(stateSaveFailures),
+				}),
+				i18n.T(i18n.ApplySummaryPartialFailureSuggestRetry),
+				i18n.T(i18n.ApplySummaryPartialFailureSuggestDebug),
 			)
 		}
 		return nil
@@ -917,8 +926,14 @@ func runApply(ctx context.Context, flags *provider.GlobalFlags, registry *provid
 
 	// Cycle 238: append elapsed time to the summary so interactive
 	// users can spot slowdowns without scraping slog timestamps.
-	fmt.Printf("\nhams apply complete: %d installed, %d updated, %d removed, %d skipped, %d failed (took %dms)\n",
-		merged.Installed, merged.Updated, merged.Removed, merged.Skipped, merged.Failed, time.Since(applyStart).Milliseconds())
+	fmt.Println(i18n.Tf(i18n.ApplySummaryComplete, map[string]any{
+		"Installed": merged.Installed,
+		"Updated":   merged.Updated,
+		"Removed":   merged.Removed,
+		"Skipped":   merged.Skipped,
+		"Failed":    merged.Failed,
+		"ElapsedMs": time.Since(applyStart).Milliseconds(),
+	}))
 
 	// Cycle 235: name the providers whose Apply produced any failed
 	// action. Symmetric with cycle 231's JSON failed_providers list
@@ -929,29 +944,38 @@ func runApply(ctx context.Context, flags *provider.GlobalFlags, registry *provid
 		// Cycle 254: failedProviders is now sorted upstream (right
 		// after merged := provider.MergeResults). Drop the local
 		// copy+sort.
-		fmt.Printf("Warning: %d provider(s) had failed actions: %s\n",
-			len(failedProviders), strings.Join(failedProviders, ", "))
-		fmt.Println("  Re-run with --debug for the underlying error from each provider's runner.")
+		fmt.Println(i18n.Tf(i18n.ApplySummaryFailedWarning, map[string]any{
+			"Count": len(failedProviders),
+			"Names": strings.Join(failedProviders, ", "),
+		}))
+		fmt.Println(i18n.T(i18n.ApplySummaryFailedWarningSuggest))
 	}
 	if len(skippedProviders) > 0 {
-		fmt.Printf("Warning: %d provider(s) skipped due to errors: %s\n",
-			len(skippedProviders), strings.Join(skippedProviders, ", "))
+		fmt.Println(i18n.Tf(i18n.ApplySummarySkippedWarning, map[string]any{
+			"Count": len(skippedProviders),
+			"Names": strings.Join(skippedProviders, ", "),
+		}))
 	}
 	if len(stateSaveFailures) > 0 {
 		// Install succeeded but persisting the record failed. Surface so
 		// the user knows the next apply will re-plan these resources
 		// instead of treating them as already-tracked.
-		fmt.Printf("Warning: %d provider(s) failed to persist state after apply: %s\n",
-			len(stateSaveFailures), strings.Join(stateSaveFailures, ", "))
-		fmt.Println("  Next `hams apply` may re-execute these resources. Check permissions on the store.")
+		fmt.Println(i18n.Tf(i18n.ApplySummaryStateFailWarning, map[string]any{
+			"Count": len(stateSaveFailures),
+			"Names": strings.Join(stateSaveFailures, ", "),
+		}))
+		fmt.Println(i18n.T(i18n.ApplySummaryStateFailSuggest))
 	}
 
 	if merged.Failed > 0 || len(skippedProviders) > 0 || len(stateSaveFailures) > 0 {
 		return hamserr.NewUserError(hamserr.ExitPartialFailure,
-			fmt.Sprintf("%d resources failed, %d providers skipped, %d state saves failed",
-				merged.Failed, len(skippedProviders), len(stateSaveFailures)),
-			"Run 'hams apply' again to retry failed resources",
-			"Use '--debug' for detailed error output",
+			i18n.Tf(i18n.ApplySummaryPartialFailureErr, map[string]any{
+				"Failed":     merged.Failed,
+				"Skipped":    len(skippedProviders),
+				"SaveFailed": len(stateSaveFailures),
+			}),
+			i18n.T(i18n.ApplySummaryPartialFailureSuggestRetry),
+			i18n.T(i18n.ApplySummaryPartialFailureSuggestDebug),
 		)
 	}
 
@@ -980,22 +1004,28 @@ func reportNoProvidersMatch(cfg *config.Config, profileDir string, stageOneProvi
 	if stageOneProvidersLen > 0 {
 		if missing := onlyMissingArtifacts(only, allProviders, stageOneProviders); len(missing) > 0 {
 			verb := pluralize(len(missing), "has", "have")
-			fmt.Printf("No providers match: %s %s no hamsfile or state file for the current profile — nothing to apply.\n",
-				strings.Join(missing, ", "), verb)
-			fmt.Printf("  Profile: %s (%s)\n", cfg.ProfileTag, logging.TildePath(profileDir))
-			fmt.Printf("  Run 'hams %s install <pkg>' to start tracking, or omit --only to apply every provider with artifacts.\n",
-				missing[0])
+			fmt.Println(i18n.Tf(i18n.ApplyNoProvidersOnlyMissing, map[string]any{
+				"Names": strings.Join(missing, ", "),
+				"Verb":  verb,
+			}))
+			fmt.Println(i18n.Tf(i18n.ApplyNoProvidersProfileLine, map[string]any{
+				"Tag": cfg.ProfileTag,
+				"Dir": logging.TildePath(profileDir),
+			}))
+			fmt.Println(i18n.Tf(i18n.ApplyNoProvidersSuggestInstall, map[string]any{"Provider": missing[0]}))
 			return
 		}
-		fmt.Println("No providers match: --only/--except excluded every provider that has artifacts.")
+		fmt.Println(i18n.T(i18n.ApplyNoProvidersFiltered))
 		return
 	}
 	if info, statErr := os.Stat(profileDir); statErr == nil && info.IsDir() {
-		fmt.Println("No providers match: no hamsfile or state file present for any registered provider.")
+		fmt.Println(i18n.T(i18n.ApplyNoProvidersMatch))
 		return
 	}
-	fmt.Printf("No providers match: profile directory %q does not exist (profile_tag=%q).\n",
-		logging.TildePath(profileDir), cfg.ProfileTag)
+	fmt.Println(i18n.Tf(i18n.ApplyNoProvidersProfileDirMissing, map[string]any{
+		"Dir": fmt.Sprintf("%q", logging.TildePath(profileDir)),
+		"Tag": fmt.Sprintf("%q", cfg.ProfileTag),
+	}))
 	entries, readErr := os.ReadDir(cfg.StorePath)
 	if readErr != nil {
 		return
@@ -1010,8 +1040,8 @@ func reportNoProvidersMatch(cfg *config.Config, profileDir string, stageOneProvi
 		return
 	}
 	sort.Strings(available)
-	fmt.Printf("  Available profiles in this store: %s\n", strings.Join(available, ", "))
-	fmt.Println("  Fix: hams config set profile_tag <profile>  OR  pass --profile=<profile>")
+	fmt.Println(i18n.Tf(i18n.ApplyNoProvidersAvailableProfiles, map[string]any{"List": strings.Join(available, ", ")}))
+	fmt.Println(i18n.T(i18n.ApplyNoProvidersSuggestProfileFix))
 }
 
 // dryRunProviderEntry groups a provider's dry-run planned actions
@@ -1279,8 +1309,8 @@ func filterProviders(providers []provider.Provider, only, except string, knownNa
 
 	if only != "" && except != "" {
 		return nil, hamserr.NewUserError(hamserr.ExitUsageError,
-			"--only and --except are mutually exclusive",
-			"Use --only to include specific providers, or --except to exclude them",
+			i18n.T(i18n.CLIErrOnlyExceptConflict),
+			i18n.T(i18n.CLIErrOnlyExceptConflictSuggest),
 		)
 	}
 
@@ -1297,7 +1327,7 @@ func filterProviders(providers []provider.Provider, only, except string, knownNa
 		// the user saw on a fresh store, masking the user's typo.
 		if len(onlySet) == 0 {
 			return nil, hamserr.NewUserError(hamserr.ExitUsageError,
-				"--only value is empty after trimming whitespace",
+				i18n.T(i18n.CLIErrOnlyEmpty),
 				fmt.Sprintf("Pass a comma-separated list: --only=%s", strings.Join(knownNames, ",")),
 			)
 		}
@@ -1319,7 +1349,7 @@ func filterProviders(providers []provider.Provider, only, except string, knownNa
 	// and mask a typo where the user MEANT to exclude something.
 	if len(exceptSet) == 0 {
 		return nil, hamserr.NewUserError(hamserr.ExitUsageError,
-			"--except value is empty after trimming whitespace",
+			i18n.T(i18n.CLIErrExceptEmpty),
 			fmt.Sprintf("Pass a comma-separated list: --except=%s", strings.Join(knownNames, ",")),
 		)
 	}
@@ -1350,8 +1380,8 @@ func validateProviderNames(requested, known map[string]bool, knownNames []string
 		// every invocation. Symmetric with cycles 148-151.
 		sort.Strings(unknown)
 		return hamserr.NewUserError(hamserr.ExitUsageError,
-			fmt.Sprintf("unknown provider(s): %s", strings.Join(unknown, ", ")),
-			fmt.Sprintf("Available providers: %s", strings.Join(knownNames, ", ")),
+			i18n.Tf(i18n.CLIErrUnknownProvider, map[string]any{"Names": strings.Join(unknown, ", ")}),
+			i18n.Tf(i18n.CLIErrUnknownProviderSuggestList, map[string]any{"Names": strings.Join(knownNames, ", ")}),
 		)
 	}
 	return nil
@@ -1423,10 +1453,12 @@ func printDryRunActions(name, displayName string, actions []provider.Action) {
 			skips = append(skips, id)
 		}
 	}
-	fmt.Printf("[dry-run] %s (%s):\n", displayName, name)
+	fmt.Println(i18n.Tf(i18n.ApplyDryRunPerProviderHeader, map[string]any{"DisplayName": displayName, "Name": name}))
 	if len(installs) == 0 && len(updates) == 0 && len(removes) == 0 {
-		fmt.Printf("  no changes (%d %s already at desired state)\n",
-			len(skips), pluralize(len(skips), "resource", "resources"))
+		fmt.Println(i18n.Tf(i18n.ApplyDryRunNoChangesProvider, map[string]any{
+			"Count": len(skips),
+			"Noun":  pluralize(len(skips), "resource", "resources"),
+		}))
 		return
 	}
 	for _, id := range installs {
@@ -1439,8 +1471,10 @@ func printDryRunActions(name, displayName string, actions []provider.Action) {
 		fmt.Printf("  - remove  %s\n", id)
 	}
 	if len(skips) > 0 {
-		fmt.Printf("  (%d %s unchanged)\n",
-			len(skips), pluralize(len(skips), "resource", "resources"))
+		fmt.Println(i18n.Tf(i18n.ApplyDryRunUnchangedTail, map[string]any{
+			"Count": len(skips),
+			"Noun":  pluralize(len(skips), "resource", "resources"),
+		}))
 	}
 }
 
@@ -1458,7 +1492,7 @@ func ensureProfileConfigured(paths config.Paths, storePath string, cfg *config.C
 		// Cycle 252: diagnostic notice goes to stderr, symmetric with
 		// promptProfileInit's stderr prompts. Keeps stdout reserved
 		// for the primary output (apply summary / JSON).
-		fmt.Fprintln(os.Stderr, "Not Found Profile in config, init it at first")
+		fmt.Fprintln(os.Stderr, i18n.T(i18n.ApplyNotFoundProfile))
 		tag, mid, promptErr := promptProfileInit()
 		if promptErr != nil {
 			return fmt.Errorf("profile init: %w", promptErr)
@@ -1482,7 +1516,7 @@ func ensureProfileConfigured(paths config.Paths, storePath string, cfg *config.C
 		missing = append(missing, "machine_id")
 	}
 	return hamserr.NewUserError(hamserr.ExitUsageError,
-		fmt.Sprintf("%s not configured and stdin is not a terminal", strings.Join(missing, " and ")),
+		i18n.Tf(i18n.CLIErrProfileNotConfigured, map[string]any{"Missing": strings.Join(missing, " and ")}),
 		"Set them explicitly (example):",
 		"  hams config set profile_tag macOS",
 		"  hams config set machine_id $(hostname)",

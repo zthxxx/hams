@@ -26,6 +26,7 @@ import (
 	"github.com/zthxxx/hams/internal/config"
 	hamserr "github.com/zthxxx/hams/internal/error"
 	"github.com/zthxxx/hams/internal/hamsfile"
+	"github.com/zthxxx/hams/internal/i18n"
 	"github.com/zthxxx/hams/internal/provider"
 )
 
@@ -47,8 +48,8 @@ func HamsfilePath(cfg *config.Config, filePrefix string, hamsFlags map[string]st
 	eff := EffectiveConfig(cfg, flags)
 	if eff.StorePath == "" {
 		return "", hamserr.NewUserError(hamserr.ExitUsageError,
-			"no store directory configured",
-			"Set store_path in hams config or pass --store",
+			i18n.T(i18n.ProviderErrNoStore),
+			i18n.T(i18n.ProviderErrNoStoreSuggest),
 		)
 	}
 	suffix := ".hams.yaml"

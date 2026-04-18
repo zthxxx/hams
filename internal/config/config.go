@@ -14,6 +14,7 @@ import (
 
 	hamserr "github.com/zthxxx/hams/internal/error"
 	"github.com/zthxxx/hams/internal/hamsfile"
+	"github.com/zthxxx/hams/internal/i18n"
 )
 
 // Config holds the merged hams configuration from all levels.
@@ -192,10 +193,10 @@ func Load(paths Paths, storePath, profileTag string) (*Config, error) {
 		// missing files hard-fail with an actionable UFE.
 		return nil, hamserr.NewUserError(
 			hamserr.ExitUsageError,
-			fmt.Sprintf("config file %s does not exist", globalPath),
-			"Check the path spelling",
-			"Create the file: touch "+globalPath,
-			"Or omit --config to use the default at ~/.config/hams/hams.config.yaml",
+			i18n.Tf(i18n.CLIErrConfigFileMissing, map[string]any{"Path": globalPath}),
+			i18n.T(i18n.CLIErrConfigFileMissingSuggestCheck),
+			i18n.Tf(i18n.CLIErrConfigFileMissingSuggestCreate, map[string]any{"Path": globalPath}),
+			i18n.T(i18n.CLIErrConfigFileMissingSuggestDefault),
 		)
 	}
 

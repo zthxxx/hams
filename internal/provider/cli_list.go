@@ -11,6 +11,7 @@ import (
 	"github.com/zthxxx/hams/internal/config"
 	hamserr "github.com/zthxxx/hams/internal/error"
 	"github.com/zthxxx/hams/internal/hamsfile"
+	"github.com/zthxxx/hams/internal/i18n"
 	"github.com/zthxxx/hams/internal/state"
 )
 
@@ -39,8 +40,8 @@ import (
 func ValidateProfileDirExists(cfg *config.Config) (string, error) {
 	if cfg == nil || cfg.StorePath == "" {
 		return "", hamserr.NewUserError(hamserr.ExitUsageError,
-			"no store directory configured",
-			"Set store_path in hams config or pass --store",
+			i18n.T(i18n.ProviderErrNoStore),
+			i18n.T(i18n.ProviderErrNoStoreSuggest),
 		)
 	}
 	profileDir := cfg.ProfileDir()
@@ -49,9 +50,9 @@ func ValidateProfileDirExists(cfg *config.Config) (string, error) {
 		return profileDir, nil
 	}
 	return "", hamserr.NewUserError(hamserr.ExitUsageError,
-		fmt.Sprintf("profile %q not found at %s", cfg.ProfileTag, profileDir),
-		"Check available profiles: ls "+cfg.StorePath,
-		"Or create this profile: mkdir -p "+profileDir,
+		i18n.Tf(i18n.CLIErrProfileNotFound, map[string]any{"Tag": cfg.ProfileTag, "Dir": profileDir}),
+		i18n.Tf(i18n.CLIErrProfileNotFoundSuggestList, map[string]any{"Store": cfg.StorePath}),
+		i18n.Tf(i18n.CLIErrProfileNotFoundSuggestCreate, map[string]any{"Dir": profileDir}),
 	)
 }
 
@@ -78,8 +79,8 @@ func ValidateProfileDirExists(cfg *config.Config) (string, error) {
 func HandleListCmd(ctx context.Context, p Provider, cfg *config.Config) error {
 	if cfg == nil || cfg.StorePath == "" {
 		return hamserr.NewUserError(hamserr.ExitUsageError,
-			"no store directory configured",
-			"Set store_path in hams config or pass --store",
+			i18n.T(i18n.ProviderErrNoStore),
+			i18n.T(i18n.ProviderErrNoStoreSuggest),
 		)
 	}
 
