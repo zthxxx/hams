@@ -9,6 +9,7 @@ import (
 	"github.com/zthxxx/hams/internal/config"
 	"github.com/zthxxx/hams/internal/logging"
 	"github.com/zthxxx/hams/internal/provider"
+	"github.com/zthxxx/hams/internal/storeinit"
 )
 
 // ProviderHandler is the interface that provider packages implement
@@ -87,12 +88,12 @@ func routeToProvider(ctx context.Context, handler ProviderHandler, args []string
 	// Auto-scaffold a store on first-ever provider invocation. Turns
 	// `hams brew install htop` on a pristine machine from an error
 	// into "create the store + init git + record the install" in one
-	// command, which is the CLAUDE.md Current Tasks bullet about
-	// "auto-create one at the default location" for provider wraps.
-	// Skipped when --hams-no-scaffold is set so tests and power users
-	// can opt out; also skipped when the help path is taken above.
+	// command. The storeinit package owns the materialization (git
+	// init + go-git fallback + template writes + identity seeding);
+	// the CLI layer just delegates. Skipped when --hams-no-scaffold
+	// is set so tests and power users can opt out.
 	if _, skip := hamsFlags["no-scaffold"]; !skip {
-		scaffoldedPath, scaffErr := EnsureStoreScaffolded(ctx, resolvePaths(flags), flags)
+		scaffoldedPath, scaffErr := storeinit.Bootstrap(ctx, resolvePaths(flags), flags)
 		if scaffErr != nil {
 			return fmt.Errorf("auto-scaffold store: %w", scaffErr)
 		}
