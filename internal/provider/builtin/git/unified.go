@@ -2,13 +2,13 @@ package git
 
 import (
 	"context"
-	"fmt"
 	"os"
 	"os/exec"
 	"strings"
 
 	"github.com/zthxxx/hams/internal/config"
 	hamserr "github.com/zthxxx/hams/internal/error"
+	"github.com/zthxxx/hams/internal/i18n"
 	"github.com/zthxxx/hams/internal/provider"
 )
 
@@ -132,11 +132,11 @@ func (p *UnifiedProvider) handleConfig(ctx context.Context, args []string, hamsF
 func (p *UnifiedProvider) handleClone(ctx context.Context, args []string, hamsFlags map[string]string, flags *provider.GlobalFlags) error {
 	if len(args) == 0 {
 		return hamserr.NewUserError(hamserr.ExitUsageError,
-			"git clone requires a remote URL",
-			"Usage: hams git clone <remote> <local-path>",
-			"       hams git clone <remote> --hams-path=<local-path>",
-			"       hams git clone remove <urn>",
-			"       hams git clone list",
+			i18n.T(i18n.ProviderGitCloneRequiresRemote),
+			i18n.T(i18n.ProviderGitCloneUsage1),
+			i18n.T(i18n.ProviderGitCloneUsage2),
+			i18n.T(i18n.ProviderGitCloneUsage3),
+			i18n.T(i18n.ProviderGitCloneUsage4),
 		)
 	}
 
@@ -170,17 +170,19 @@ func (p *UnifiedProvider) handleClone(ctx context.Context, args []string, hamsFl
 			// ignore so the user knows to file a follow-up for the
 			// flag they wanted.
 			return hamserr.NewUserError(hamserr.ExitUsageError,
-				fmt.Sprintf("hams git clone does not yet forward git flag %q", a),
-				"File a follow-up request with the flag name",
-				"Or run plain `git clone` and add the record later via `hams git clone <remote> <path>`",
+				i18n.Tf(i18n.ProviderGitCloneFlagNotForwarded, map[string]any{"Flag": a}),
+				i18n.T(i18n.ProviderGitCloneFileFollowup),
+				i18n.T(i18n.ProviderGitClonePlainFallback),
 			)
 		}
 		positional = append(positional, a)
 	}
 	if len(positional) != 1 {
 		return hamserr.NewUserError(hamserr.ExitUsageError,
-			fmt.Sprintf("hams git clone expects exactly one local path (got %d: %v)", len(positional), positional),
-			"Usage: hams git clone <remote> <local-path>",
+			i18n.Tf(i18n.ProviderGitCloneSinglePathExpected, map[string]any{
+				"Count": len(positional), "Got": positional,
+			}),
+			i18n.T(i18n.ProviderGitCloneUsagePositional),
 		)
 	}
 
@@ -196,7 +198,7 @@ func (p *UnifiedProvider) handleClone(ctx context.Context, args []string, hamsFl
 // these verbs.
 func (p *UnifiedProvider) passthrough(ctx context.Context, args []string, flags *provider.GlobalFlags) error {
 	if flags.DryRun {
-		fmt.Fprintf(flags.Stdout(), "[dry-run] Would run: git %s\n", strings.Join(args, " "))
+		provider.DryRunRun(flags, "git "+strings.Join(args, " "))
 		return nil
 	}
 	cmd := exec.CommandContext(ctx, "git", args...) //nolint:gosec // args come from hams CLI; pass-through is intentional
@@ -208,14 +210,14 @@ func (p *UnifiedProvider) passthrough(ctx context.Context, args []string, flags 
 
 func (p *UnifiedProvider) usageError() error {
 	return hamserr.NewUserError(hamserr.ExitUsageError,
-		"hams git requires a subcommand",
-		"Recorded subcommands:",
+		i18n.T(i18n.ProviderGitRequiresSubcommand),
+		i18n.T(i18n.ProviderGitRecordedSubcommandsHeader),
 		"  hams git config <key> <value>    — set a global git config entry and record it",
 		"  hams git config remove <key>     — unset a recorded entry",
 		"  hams git config list             — show the managed config",
 		"  hams git clone <remote> <path>   — clone a repo and record it",
 		"  hams git clone remove <urn>      — drop a recorded clone",
 		"  hams git clone list              — show the managed clones",
-		"Any other subcommand (hams git pull, hams git push, …) is passed through to the real git.",
+		i18n.T(i18n.ProviderGitPassthroughNote),
 	)
 }

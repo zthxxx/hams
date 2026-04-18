@@ -13,7 +13,6 @@ import (
 	"strings"
 
 	"github.com/zthxxx/hams/internal/config"
-	hamserr "github.com/zthxxx/hams/internal/error"
 	"github.com/zthxxx/hams/internal/hamsfile"
 	"github.com/zthxxx/hams/internal/provider"
 	"github.com/zthxxx/hams/internal/state"
@@ -221,21 +220,14 @@ func (p *Provider) HandleCommand(ctx context.Context, args []string, hamsFlags m
 // nothing: any install failure aborts before the hamsfile is touched.
 func (p *Provider) handleInstall(ctx context.Context, args []string, hamsFlags map[string]string, flags *provider.GlobalFlags) error {
 	if len(args) == 0 {
-		return hamserr.NewUserError(hamserr.ExitUsageError,
-			"pnpm install requires a package name",
-			"Usage: hams pnpm add <package>",
-			"To install all recorded packages, use: hams apply --only=pnpm",
-		)
+		return provider.UsageRequiresResource(cliName, "install", "package name", "package")
 	}
 	pkgs := packageArgs(args)
 	if len(pkgs) == 0 {
-		return hamserr.NewUserError(hamserr.ExitUsageError,
-			"pnpm install requires at least one package name",
-			"Usage: hams pnpm add <package>",
-		)
+		return provider.UsageRequiresAtLeastOne(cliName, "install", "package name", "package")
 	}
 	if flags.DryRun {
-		fmt.Printf("[dry-run] Would install: pnpm add -g %s\n", strings.Join(args, " "))
+		provider.DryRunInstall(flags, "pnpm add -g "+strings.Join(args, " "))
 		return nil
 	}
 
@@ -277,20 +269,14 @@ func (p *Provider) handleInstall(ctx context.Context, args []string, hamsFlags m
 // on success, removes each package from the pnpm hamsfile.
 func (p *Provider) handleRemove(ctx context.Context, args []string, hamsFlags map[string]string, flags *provider.GlobalFlags) error {
 	if len(args) == 0 {
-		return hamserr.NewUserError(hamserr.ExitUsageError,
-			"pnpm remove requires a package name",
-			"Usage: hams pnpm remove <package>",
-		)
+		return provider.UsageRequiresResource(cliName, "remove", "package name", "package")
 	}
 	pkgs := packageArgs(args)
 	if len(pkgs) == 0 {
-		return hamserr.NewUserError(hamserr.ExitUsageError,
-			"pnpm remove requires at least one package name",
-			"Usage: hams pnpm remove <package>",
-		)
+		return provider.UsageRequiresAtLeastOne(cliName, "remove", "package name", "package")
 	}
 	if flags.DryRun {
-		fmt.Printf("[dry-run] Would remove: pnpm remove -g %s\n", strings.Join(args, " "))
+		provider.DryRunRemove(flags, "pnpm remove -g "+strings.Join(args, " "))
 		return nil
 	}
 

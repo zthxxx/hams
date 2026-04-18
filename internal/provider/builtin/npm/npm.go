@@ -12,7 +12,6 @@ import (
 	"strings"
 
 	"github.com/zthxxx/hams/internal/config"
-	hamserr "github.com/zthxxx/hams/internal/error"
 	"github.com/zthxxx/hams/internal/hamsfile"
 	"github.com/zthxxx/hams/internal/provider"
 	"github.com/zthxxx/hams/internal/state"
@@ -206,21 +205,14 @@ func (p *Provider) HandleCommand(ctx context.Context, args []string, hamsFlags m
 // failure aborts before the hamsfile is touched.
 func (p *Provider) handleInstall(ctx context.Context, args []string, hamsFlags map[string]string, flags *provider.GlobalFlags) error {
 	if len(args) == 0 {
-		return hamserr.NewUserError(hamserr.ExitUsageError,
-			"npm install requires a package name",
-			"Usage: hams npm install <package>",
-			"To install all recorded packages, use: hams apply --only=npm",
-		)
+		return provider.UsageRequiresResource(cliName, "install", "package name", "package")
 	}
 	pkgs := packageArgs(args)
 	if len(pkgs) == 0 {
-		return hamserr.NewUserError(hamserr.ExitUsageError,
-			"npm install requires at least one package name",
-			"Usage: hams npm install <package>",
-		)
+		return provider.UsageRequiresAtLeastOne(cliName, "install", "package name", "package")
 	}
 	if flags.DryRun {
-		fmt.Printf("[dry-run] Would install: npm install -g %s\n", strings.Join(args, " "))
+		provider.DryRunInstall(flags, "npm install -g "+strings.Join(args, " "))
 		return nil
 	}
 
@@ -264,20 +256,14 @@ func (p *Provider) handleInstall(ctx context.Context, args []string, hamsFlags m
 // and, on success, removes the package from the npm hamsfile.
 func (p *Provider) handleRemove(ctx context.Context, args []string, hamsFlags map[string]string, flags *provider.GlobalFlags) error {
 	if len(args) == 0 {
-		return hamserr.NewUserError(hamserr.ExitUsageError,
-			"npm remove requires a package name",
-			"Usage: hams npm remove <package>",
-		)
+		return provider.UsageRequiresResource(cliName, "remove", "package name", "package")
 	}
 	pkgs := packageArgs(args)
 	if len(pkgs) == 0 {
-		return hamserr.NewUserError(hamserr.ExitUsageError,
-			"npm remove requires at least one package name",
-			"Usage: hams npm remove <package>",
-		)
+		return provider.UsageRequiresAtLeastOne(cliName, "remove", "package name", "package")
 	}
 	if flags.DryRun {
-		fmt.Printf("[dry-run] Would remove: npm uninstall -g %s\n", strings.Join(args, " "))
+		provider.DryRunRemove(flags, "npm uninstall -g "+strings.Join(args, " "))
 		return nil
 	}
 

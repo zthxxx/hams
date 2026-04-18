@@ -816,3 +816,101 @@ Opt-in rather than default-on because the file exporter accumulates JSON on ever
 ### Remaining deferral: --hams-lucky
 
 The `--hams-lucky` LLM enrichment deferral from the original delta remains in place. `Enricher` interface has zero provider implementations; wiring the flag through requires implementing `Enrich(ctx, resourceID)` on at least one provider (a v1.1 feature-ticket, not a verification task).
+
+---
+
+### Requirement: Store-scaffold boundary lives in `internal/storeinit`
+
+The store-scaffold responsibility SHALL live in the `internal/storeinit/` package. The CLI package (`internal/cli/`) MUST delegate to `storeinit.Bootstrap(...)` when it discovers the store is missing; the CLI package MUST NOT own the embedded templates, the `git init` (or go-git fallback) call, or the `WriteConfigKey(store_path)` persistence step directly. "Store scaffold" here means: on a fresh machine, materialize a usable hams store at a known path before any command that needs one runs.
+
+Rationale:
+
+- Two orthogonal operations touch the same store responsibility: `hams apply --from-repo` (clone) and `hams <provider> …` first-run (scaffold). Both belong with other store-lifecycle code, not with the CLI dispatcher.
+- Per `CLAUDE.md` Development Process Principles, code architecture MUST use dependency injection to isolate uncontrollable external boundaries (filesystem, exec, git). `storeinit` exposes DI seams (`ExecGitInit`, `GoGitInit`) so unit tests can exercise both the happy path and the go-git fallback without touching the host.
+- The package boundary enables a future `storeinit.CloneFromRepo` that unifies the two operations without bloating `internal/cli/`.
+
+#### Scenario: CLI package does not embed scaffold templates
+
+- **WHEN** static analysis (`rg '//go:embed template/store' internal/cli/`) is run
+- **THEN** the query SHALL return zero matches — the only embed of scaffold templates SHALL be in `internal/storeinit/`
+
+#### Scenario: CLI handler delegates scaffold to storeinit
+
+- **WHEN** the user runs `hams apt install htop` on a machine with no configured store
+- **THEN** the call chain SHALL be: `internal/cli/provider_cmd.go:routeToProvider` → `internal/storeinit.Bootstrap(ctx, paths, flags)`
+- **AND** the `storeinit.Bootstrap` function SHALL be the single point that creates the directory, initialises git (via `ExecGitInit` or the `GoGitInit` fallback), writes the templates, and persists `store_path` to the global config
+
+#### Scenario: Unit tests for scaffold can run without touching the host
+
+- **GIVEN** `t.TempDir()`-backed test fixtures
+- **WHEN** `storeinit_test.go` rebinds the `ExecGitInit` and `GoGitInit` package-level seams to in-memory fakes
+- **THEN** the tests SHALL run without spawning a child `git` process
+- **AND** the tests SHALL run without requiring `git` to exist on the test host's `PATH`
+
+### Requirement: First-run auto-scaffold preserves silent onboarding
+
+The scaffold path SHALL seed `profile_tag` and `machine_id` into the global config when either field is empty at scaffold time, so that the very first provider invocation on a fresh machine does not emit the "using default profile" / "using 'unknown' machine" warnings. Source of values:
+
+- `profile_tag`: fall back to `config.DefaultProfileTag` ("default").
+- `machine_id`: fall back to `config.DeriveMachineID()` — `$HAMS_MACHINE_ID` → `os.Hostname()` → "default", with path-segment sanitization.
+
+This requirement mirrors the existing "non-interactive first-run" guarantee and extends it to the provider-wrapped entry point (not just `hams apply --from-repo`).
+
+#### Scenario: First `hams <provider>` on a fresh machine is fully silent
+
+- **GIVEN** no `${HAMS_CONFIG_HOME}/hams.config.yaml` exists
+- **AND** no store directory exists under `${HAMS_DATA_HOME}/`
+- **WHEN** the user runs `hams apt install htop`
+- **THEN** the auto-scaffold SHALL materialize the store
+- **AND** the scaffold SHALL write `profile_tag: default` + `machine_id: <hostname>` into the global config
+- **AND** stderr SHALL NOT contain the strings "using default profile" or "using 'unknown' machine"
+
+#### Scenario: seedIfMissing does not clobber user-set values
+
+- **GIVEN** the user has run `hams config set profile_tag macOS` before their first provider invocation
+- **AND** no store directory exists yet
+- **WHEN** the user runs `hams apt install htop`
+- **THEN** the auto-scaffold SHALL NOT overwrite `profile_tag` — the stored value `macOS` SHALL persist
+- **AND** `machine_id` SHALL still be seeded if empty
+
+---
+
+### Requirement: Builtin providers route user-facing strings through i18n
+
+Every builtin provider in `internal/provider/builtin/` SHALL route its user-facing strings — `hamserr.NewUserError` error messages, dry-run preview lines, and other prose shown to end-users — through the i18n catalog via `i18n.T` or `i18n.Tf`. Hardcoded English literals in these sites SHALL NOT remain after the `i18n-builtin-provider-catalog` change ships.
+
+Log statements (`slog.*`) are EXCLUDED from this requirement because slog records are consumed by log scrapers, not end-users; they remain English-only.
+
+Help text rendered by `cli/provider_cmd.go:showProviderHelp` is EXCLUDED from the scope of this delta; its localization is tracked separately.
+
+Rationale: `cli-architecture/spec.md`'s "all user-facing strings (errors, help text, prompts) go through" the catalog is enforceable for builtin providers (not just the CLI dispatcher). Previously a grep for `i18n\.` across `internal/provider/builtin/` returned zero results.
+
+#### Scenario: Provider errors render in the active locale
+
+- **GIVEN** the user's environment has `LANG=zh_CN.UTF-8`
+- **AND** the `zh-CN.yaml` catalog has translations for every `provider.*` key
+- **WHEN** the user runs `hams apt install` with no package argument
+- **THEN** the error message SHALL be rendered in Chinese
+- **AND** no English literal from the Go source SHALL appear in the output
+
+#### Scenario: English remains the fallback
+
+- **GIVEN** the user's environment has no `LANG` or an unsupported locale
+- **WHEN** the user runs `hams apt install` with no package argument
+- **THEN** the error message SHALL be rendered in English via the canonical `en.yaml` catalog
+- **AND** the rendered English SHALL match what the pre-i18n hardcoded string produced (no user-visible regression for English speakers)
+
+#### Scenario: Catalog is enumerable via keys.go
+
+- **WHEN** a translator lists the strings this project exposes
+- **THEN** they SHALL find every provider key declared in `internal/i18n/keys.go`
+- **AND** every such key SHALL have corresponding entries in `en.yaml` and `zh-CN.yaml`
+- **AND** the test `TestProviderKeysResolveInEnglish` / `TestProviderKeysResolveInChinese` SHALL assert the resolution end-to-end
+
+#### Scenario: Missing yaml entry fails the build
+
+- **GIVEN** a developer adds a new `Provider*` constant to `internal/i18n/keys.go`
+- **AND** forgets to add the entry to `en.yaml` or `zh-CN.yaml`
+- **WHEN** `task check` runs
+- **THEN** the provider-keys resolution test SHALL fail with a clear "missing translation for key X" message
+- **AND** the failing test SHALL identify which key is missing from which locale

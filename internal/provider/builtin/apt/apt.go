@@ -14,7 +14,6 @@ import (
 	"strings"
 
 	"github.com/zthxxx/hams/internal/config"
-	hamserr "github.com/zthxxx/hams/internal/error"
 	"github.com/zthxxx/hams/internal/hamsfile"
 	"github.com/zthxxx/hams/internal/provider"
 	"github.com/zthxxx/hams/internal/state"
@@ -230,22 +229,16 @@ func (p *Provider) DisplayName() string { return cliName }
 
 func (p *Provider) handleInstall(ctx context.Context, args []string, hamsFlags map[string]string, flags *provider.GlobalFlags) error {
 	if len(args) == 0 {
-		return hamserr.NewUserError(hamserr.ExitUsageError,
-			"apt install requires a package name",
-			"Usage: hams apt install <package>",
-		)
+		return provider.UsageRequiresResource(cliName, "install", "package name", "package")
 	}
 
 	packages := packageArgs(args)
 	if len(packages) == 0 {
-		return hamserr.NewUserError(hamserr.ExitUsageError,
-			"apt install requires at least one package name",
-			"Usage: hams apt install <package>",
-		)
+		return provider.UsageRequiresAtLeastOne(cliName, "install", "package name", "package")
 	}
 
 	if flags.DryRun {
-		fmt.Printf("[dry-run] Would install: sudo apt-get install -y %s\n", strings.Join(args, " "))
+		provider.DryRunInstall(flags, "sudo apt-get install -y "+strings.Join(args, " "))
 		return nil
 	}
 
@@ -342,22 +335,16 @@ func (p *Provider) handleInstall(ctx context.Context, args []string, hamsFlags m
 
 func (p *Provider) handleRemove(ctx context.Context, args []string, hamsFlags map[string]string, flags *provider.GlobalFlags) error {
 	if len(args) == 0 {
-		return hamserr.NewUserError(hamserr.ExitUsageError,
-			"apt remove requires a package name",
-			"Usage: hams apt remove <package>",
-		)
+		return provider.UsageRequiresResource(cliName, "remove", "package name", "package")
 	}
 
 	packages := packageArgs(args)
 	if len(packages) == 0 {
-		return hamserr.NewUserError(hamserr.ExitUsageError,
-			"apt remove requires at least one package name",
-			"Usage: hams apt remove <package>",
-		)
+		return provider.UsageRequiresAtLeastOne(cliName, "remove", "package name", "package")
 	}
 
 	if flags.DryRun {
-		fmt.Printf("[dry-run] Would remove: sudo apt-get remove -y %s\n", strings.Join(args, " "))
+		provider.DryRunRemove(flags, "sudo apt-get remove -y "+strings.Join(args, " "))
 		return nil
 	}
 

@@ -150,27 +150,11 @@ item `[x]` only when the change is archived AND `task check` passes.
 Atomicity rule: every listed task has a "verification" sub-item as its
 last step. No parent task may be closed until that sub-item is green.
 
-- [ ] **1. Restore `go-git` fallback in auto-scaffold** (spec: `project-structure/spec.md:686-699`)
-  Port `dev`'s `internal/storeinit/` package — including the
-  `exec.LookPath("git")` + `gogit.PlainInit(…)` fallback — and replace
-  the current `internal/cli/scaffold.go`'s `git init` shell-out.
-  - [ ] 1.1 Propose OpenSpec change `restore-go-git-fallback` (or equivalent id).
-  - [ ] 1.2 Create `internal/storeinit/` package with `doc.go`, `storeinit.go`, `storeinit_test.go`, `template/` (move existing templates from `internal/cli/template/store/`).
-  - [ ] 1.3 The bootstrap function MUST preserve loop's `seedIfMissing` semantics for `profile_tag` + `machine_id` so first-run stays non-interactive (`cli-architecture/spec.md:654`).
-  - [ ] 1.4 Update `internal/cli/scaffold.go` (or delete it) to delegate into `internal/storeinit/`.
-  - [ ] 1.5 Rewire callers (`internal/cli/apply.go`, `internal/cli/provider_cmd.go`, `internal/cli/commands.go`) to the new package path.
-  - [ ] 1.6 Integration test: container with no `git` on `PATH` — `hams apt install htop` succeeds, state written, go-git log line emitted.
-  - [ ] 1.7 `task check` passes + archive the change.
+- [x] **1. Restore `go-git` fallback in auto-scaffold** (spec: `project-structure/spec.md:686-699`)
+  Archived as `openspec/changes/archive/2026-04-18-storeinit-package-with-gogit-fallback/`. New `internal/storeinit/` package exposes `Bootstrap`, `Bootstrapped`, `DefaultLocation` + DI seams `ExecGitInit` / `GoGitInit`. Integration test E0 in `internal/provider/builtin/apt/integration/integration.sh` hides system git and asserts the "bundled go-git" log line fires.
 
-- [ ] **2. Route all builtin-provider user-facing strings through i18n** (spec: `cli-architecture/spec.md:103-116` — "all user-facing strings (errors, help text, prompts) go through" the i18n catalogue)
-  Today `rg 'i18n\.' internal/provider/builtin/ -g '!*_test.go'` returns **zero** results. Every `hamserr.NewUserError(…)`, every dry-run prose line, every `fmt.Fprintf(flags.Stdout(), …)` user message must round-trip through `i18n.T` / `i18n.Tf` with a typed key in `internal/i18n/keys.go`.
-  - [ ] 2.1 Propose OpenSpec change `i18n-provider-catalog` (deliver as delta against `cli-architecture/spec.md` and `builtin-providers/spec.md`).
-  - [ ] 2.2 Extend `internal/i18n/keys.go` with typed constants under `provider.<provider>.*` for every provider-emitted string. Naming: `provider.<name>.<verb>.<slot>` (e.g., `provider.apt.install.usage`).
-  - [ ] 2.3 Fill `internal/i18n/locales/en.yaml` (canonical source) and `zh-CN.yaml` (complete translations).
-  - [ ] 2.4 Wire each builtin provider's user-facing strings to `i18n.T`. Providers to cover: `apt`, `bash`, `brew`/`homebrew`, `cargo`, `git`, `goinstall`, `mas`, `npm`, `pnpm`, `uv`, `vscodeext`, `duti`, `defaults`, `ansible`.
-  - [ ] 2.5 Log statements (slog) are exempt — English only for log records, user-visible prose is not.
-  - [ ] 2.6 Integration test: each provider's CLI output changes under `LANG=zh_CN.UTF-8`. Add a shared assertion helper in `e2e/base/lib/i18n_assert.sh`.
-  - [ ] 2.7 `task check` passes + archive the change.
+- [x] **2. Route all builtin-provider user-facing strings through i18n** (spec: `cli-architecture/spec.md:103-116`)
+  Archived as `openspec/changes/archive/2026-04-18-i18n-builtin-provider-catalog/`. All 14 builtin providers now route `NewUserError` + dry-run previews through `i18n.T` / `i18n.Tf`; shared `provider.*` catalog keys (60+ entries) in `en.yaml` + `zh-CN.yaml`; `TestProviderKeysResolve{English,Chinese}` regression tests catch missing yaml entries at build time. Shared helpers `provider.{UsageRequiresResource, UsageRequiresAtLeastOne, DryRunInstall, DryRunRemove, DryRunRun}` consolidate the dominant pattern into one-liner call sites. Follow-up 2.14.a (git/clone.go + git/git.go internals, ~12 sites) noted in the archived change.
 
 - [ ] **3. Adopt the shared package-dispatcher abstraction in real providers** (`CLAUDE.md` → *Current Tasks* — "design shared abstractions … extending with a new provider is a matter of filling in a well-defined template, not reimplementing the pattern from scratch")
   Today `internal/provider/package_dispatcher.go` (190 LoC) and `internal/provider/baseprovider/` (from any dev-style port) are dead code — zero adopters in `internal/provider/builtin/`. A template with zero adopters is a guess, not an abstraction.

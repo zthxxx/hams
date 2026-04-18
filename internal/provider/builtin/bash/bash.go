@@ -14,6 +14,7 @@ import (
 	"github.com/zthxxx/hams/internal/config"
 	hamserr "github.com/zthxxx/hams/internal/error"
 	"github.com/zthxxx/hams/internal/hamsfile"
+	"github.com/zthxxx/hams/internal/i18n"
 	"github.com/zthxxx/hams/internal/provider"
 	"github.com/zthxxx/hams/internal/state"
 	"github.com/zthxxx/hams/internal/urn"
@@ -368,9 +369,9 @@ func (p *Provider) HandleCommand(ctx context.Context, args []string, _ map[strin
 		return provider.HandleListCmd(ctx, p, cfg)
 	case "run", "remove":
 		return hamserr.NewUserError(hamserr.ExitUsageError,
-			fmt.Sprintf("bash %s is planned for v1.1 (URN-editing on the CLI is not yet wired)", args[0]),
-			"Use 'hams apply --only=bash' to run all tracked bash scripts",
-			"Or hand-edit the bash hamsfile: <profile-dir>/bash.hams.yaml",
+			i18n.Tf(i18n.ProviderBashPlannedV11, map[string]any{"Verb": args[0]}),
+			i18n.T(i18n.ProviderBashPlannedHint1),
+			i18n.T(i18n.ProviderBashPlannedHint2),
 		)
 	}
 	return p.bashUsageError()
@@ -378,10 +379,10 @@ func (p *Provider) HandleCommand(ctx context.Context, args []string, _ map[strin
 
 func (p *Provider) bashUsageError() error {
 	return hamserr.NewUserError(hamserr.ExitUsageError,
-		"bash requires a subcommand",
-		"Usage: hams bash list",
-		"       hams bash run <urn-id>              (planned v1.1)",
-		"       hams bash remove <urn-id>           (planned v1.1)",
+		i18n.T(i18n.ProviderBashRequiresSubcommand),
+		i18n.T(i18n.ProviderBashUsageList),
+		i18n.T(i18n.ProviderBashUsageRun),
+		i18n.T(i18n.ProviderBashUsageRemove),
 	)
 }
 

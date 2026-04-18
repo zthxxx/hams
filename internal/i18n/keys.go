@@ -82,4 +82,175 @@ const (
 	StoreStatusLabelHamsfiles = "store.status.label.hamsfiles"
 	// StoreStatusLabelGit — "Git status:".
 	StoreStatusLabelGit = "store.status.label.git"
+
+	// ---- Builtin-provider shared templates ----.
+	//
+	// Most providers share the same "<verb> requires a <resource>"
+	// error shape. Consolidating those into parameterised keys keeps
+	// the catalog flat and translator-friendly.
+
+	// ProviderErrRequiresResource — "{{.Provider}} {{.Verb}} requires a {{.Resource}}".
+	ProviderErrRequiresResource = "provider.err.requires-resource"
+
+	// ProviderErrRequiresAtLeastOne — "{{.Provider}} {{.Verb}} requires at least one {{.Resource}}".
+	ProviderErrRequiresAtLeastOne = "provider.err.requires-at-least-one"
+
+	// ProviderUsageBasic — "Usage: hams {{.Provider}} {{.Verb}} <{{.Placeholder}}>".
+	ProviderUsageBasic = "provider.usage.basic"
+
+	// ProviderDryRunWouldRun — "[dry-run] Would run: {{.Cmd}}".
+	ProviderDryRunWouldRun = "provider.dry-run.would-run"
+
+	// ProviderDryRunWouldInstall — "[dry-run] Would install: {{.Cmd}}".
+	ProviderDryRunWouldInstall = "provider.dry-run.would-install"
+
+	// ProviderDryRunWouldRemove — "[dry-run] Would remove: {{.Cmd}}".
+	ProviderDryRunWouldRemove = "provider.dry-run.would-remove"
+
+	// ---- Provider-specific outliers ----.
+
+	// ProviderAptInstallSimulateWarning — apt-get simulate flag detected,
+	// skipping auto-record. Not a hamserr.UserFacingError; surfaced via
+	// slog.Warn which is in English, but the human-readable portion
+	// is routed through i18n.Tf for the integration-test stderr grep.
+	ProviderAptInstallSimulateWarning = "provider.apt.install.simulate-warning"
+
+	// ProviderGitCloneRequiresRemote — dedicated key: "git clone
+	// requires a remote URL" + the multi-line usage hint block.
+	ProviderGitCloneRequiresRemote = "provider.git.clone.requires-remote"
+	// ProviderGitCloneUsage — the multi-shape usage block that follows.
+	ProviderGitCloneUsage1 = "provider.git.clone.usage1"
+	ProviderGitCloneUsage2 = "provider.git.clone.usage2"
+	ProviderGitCloneUsage3 = "provider.git.clone.usage3"
+	ProviderGitCloneUsage4 = "provider.git.clone.usage4"
+
+	// ProviderGitCloneFlagNotForwarded — rejects a real git flag
+	// that isn't forwarded through auto-record yet. Template data:
+	// {{.Flag}}.
+	ProviderGitCloneFlagNotForwarded = "provider.git.clone.flag-not-forwarded"
+	// ProviderGitCloneFileFollowup — "File a follow-up …" hint.
+	ProviderGitCloneFileFollowup = "provider.git.clone.file-followup"
+	// ProviderGitClonePlainFallback — "Or run plain git clone …" hint.
+	ProviderGitClonePlainFallback = "provider.git.clone.plain-fallback"
+	// ProviderGitCloneSinglePathExpected — exactly one local path
+	// expected; template data: {{.Count}}, {{.Got}}.
+	ProviderGitCloneSinglePathExpected = "provider.git.clone.single-path-expected"
+	// ProviderGitCloneUsagePositional — "Usage: hams git clone <remote> <local-path>".
+	ProviderGitCloneUsagePositional = "provider.git.clone.usage-positional"
+
+	// ProviderGitRequiresSubcommand — "hams git requires a subcommand".
+	ProviderGitRequiresSubcommand = "provider.git.requires-subcommand"
+	// ProviderGitRecordedSubcommandsHeader — "Recorded subcommands:".
+	ProviderGitRecordedSubcommandsHeader = "provider.git.recorded-subcommands-header"
+	// ProviderGitPassthroughNote — "Any other subcommand … is passed through".
+	ProviderGitPassthroughNote = "provider.git.passthrough-note"
+
+	// ProviderGitConfigRequiresPath — git-config path-based usage error.
+	ProviderGitConfigRequiresArgs = "provider.git.config.requires-args"
+
+	// ---- Homebrew-specialised keys ----.
+
+	// ProviderBrewExactOne — "brew {{.Verb}} takes exactly one repository (got {{.Count}} args: {{.Got}})".
+	ProviderBrewExactOne = "provider.brew.exact-one"
+	// ProviderBrewHintMulti — "To {{.Verb}} multiple repos, run the command once per repo".
+	ProviderBrewHintMulti = "provider.brew.hint-multi"
+
+	// ProviderBrewInstallCaskTagConflict — incompatible --cask + --hams-tag.
+	// Template data: {{.Tag}}, {{.CaskTag}}.
+	ProviderBrewInstallCaskTagConflict = "provider.brew.install.cask-tag-conflict"
+	// ProviderBrewInstallCaskTagHint — remediation hint. Template: {{.CaskTag}}.
+	ProviderBrewInstallCaskTagHint = "provider.brew.install.cask-tag-hint"
+
+	// ProviderBrewInstallNoTapFormat — "brew install does not support tap-format args ({{.Arg}} looks like user/repo)".
+	ProviderBrewInstallNoTapFormat = "provider.brew.install.no-tap-format"
+	// ProviderBrewInstallNoTapHint1 — remediation hint. Template: {{.Arg}}.
+	ProviderBrewInstallNoTapHint1 = "provider.brew.install.no-tap-hint1"
+	// ProviderBrewInstallNoTapHint2 — second remediation hint.
+	ProviderBrewInstallNoTapHint2 = "provider.brew.install.no-tap-hint2"
+
+	// ProviderBrewInstallUsage — "Usage: hams brew install <package> [--cask] [--hams-tag=<tag>]".
+	ProviderBrewInstallUsage = "provider.brew.install.usage"
+
+	// ---- Bash-specialised keys ----.
+
+	// ProviderBashPlannedV11 — "bash {{.Verb}} is planned for v1.1 …".
+	ProviderBashPlannedV11   = "provider.bash.planned-v1-1"
+	ProviderBashPlannedHint1 = "provider.bash.planned-hint1"
+	ProviderBashPlannedHint2 = "provider.bash.planned-hint2"
+
+	// ProviderBashRequiresSubcommand — "bash requires a subcommand".
+	ProviderBashRequiresSubcommand = "provider.bash.requires-subcommand"
+	ProviderBashUsageList          = "provider.bash.usage.list"
+	ProviderBashUsageRun           = "provider.bash.usage.run"
+	ProviderBashUsageRemove        = "provider.bash.usage.remove"
+
+	// ---- Generic outliers ----.
+
+	// ProviderErrExactOne — "{{.Provider}} {{.Verb}} takes exactly one {{.Resource}} (got {{.Count}} args: {{.Got}})".
+	ProviderErrExactOne = "provider.err.exact-one"
+
+	// ---- Duti ----.
+
+	// ProviderDutiRequiresArgs — "duti requires arguments".
+	ProviderDutiRequiresArgs = "provider.duti.requires-args"
+	// ProviderDutiUsageSet — "Usage: hams duti <ext>=<bundle-id>".
+	ProviderDutiUsageSet = "provider.duti.usage.set"
+	// ProviderDutiUsageList — "       hams duti list".
+	ProviderDutiUsageList = "provider.duti.usage.list"
+	// ProviderDutiExample — "Example: hams duti pdf=com.adobe.acrobat.pdf".
+	ProviderDutiExample = "provider.duti.example"
+	// ProviderDutiInvalidResource — parseResourceID error wrapper.
+	// Template: {{.Err}}.
+	ProviderDutiInvalidResource = "provider.duti.invalid-resource"
+
+	// ---- Defaults ----.
+
+	// ProviderDefaultsRequiresArgs — "defaults {{.Verb}} requires ..."
+	// Template: {{.Verb}}, {{.Resource}}.
+	ProviderDefaultsRequiresArgs = "provider.defaults.requires-args"
+	ProviderDefaultsUsageWrite   = "provider.defaults.usage.write"
+	ProviderDefaultsUsageDelete  = "provider.defaults.usage.delete"
+	ProviderDefaultsUsageList    = "provider.defaults.usage.list"
+
+	// ---- Ansible ----.
+
+	// ProviderAnsibleUsage — "Usage: hams ansible <playbook-path>".
+	ProviderAnsibleRequiresPlaybook = "provider.ansible.requires-playbook"
+	ProviderAnsibleUsagePlaybook    = "provider.ansible.usage.playbook"
+	ProviderAnsibleExample          = "provider.ansible.example"
+	ProviderAnsibleNotFound         = "provider.ansible.not-found"
+
+	// ProviderDefaultsWriteArgsMismatch — specific "write requires exactly 4 args" err.
+	// Template: {{.Count}}.
+	ProviderDefaultsWriteArgsMismatch  = "provider.defaults.write.args-mismatch"
+	ProviderDefaultsWriteHintQuote     = "provider.defaults.write.hint-quote"
+	ProviderDefaultsDeleteArgsMismatch = "provider.defaults.delete.args-mismatch"
+	ProviderDefaultsDeleteHintRepeat   = "provider.defaults.delete.hint-repeat"
+	ProviderDefaultsRootRequiresArgs   = "provider.defaults.root-requires-args"
+	ProviderDefaultsUsageWriteExample  = "provider.defaults.usage.write-example"
+	ProviderDefaultsUsageDeleteExample = "provider.defaults.usage.delete-example"
+
+	// ProviderAnsibleRequiresPath — "ansible requires a playbook path".
+	ProviderAnsibleNoBinary      = "provider.ansible.no-binary"
+	ProviderAnsibleNoBinaryHint1 = "provider.ansible.no-binary-hint1"
+	ProviderAnsibleNoBinaryHint2 = "provider.ansible.no-binary-hint2"
+
+	// Generic "planned for v1.1" block used by providers with URN-based
+	// resources whose CLI editing is deferred (bash, ansible).
+	ProviderVerbPlannedV11   = "provider.verb.planned-v1-1"
+	ProviderVerbPlannedHint1 = "provider.verb.planned-hint1"
+	ProviderVerbPlannedHint2 = "provider.verb.planned-hint2"
+
+	// Ansible root usage.
+	ProviderAnsibleRequiresPlaybookOrSubcommand = "provider.ansible.requires-playbook-or-subcommand"
+	ProviderAnsibleUsageList                    = "provider.ansible.usage.list"
+	ProviderAnsibleUsageAdhoc                   = "provider.ansible.usage.adhoc"
+	ProviderAnsibleUsageRun                     = "provider.ansible.usage.run"
+	ProviderAnsibleUsageRemove                  = "provider.ansible.usage.remove"
+
+	// ProviderNoStoreConfigured — shared "no store directory configured" error.
+	// Fired by every provider's hamsfilePath helper when --store isn't set
+	// and cfg.StorePath is empty. Hint is the remediation line below.
+	ProviderNoStoreConfigured     = "provider.no-store-configured"
+	ProviderNoStoreConfiguredHint = "provider.no-store-configured.hint"
 )

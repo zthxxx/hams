@@ -46,6 +46,69 @@ assert_output_contains "hams --version" "hams version" hams --version
 apt-get update -qq
 
 # -----------------------------------------------------------------------
+# E0: go-git fallback when system git is absent
+# (`openspec/specs/project-structure/spec.md:686-699` — the go-git
+#  dependency SHALL be used as a fallback when system git is not
+#  available; this scenario exercises the auto-scaffold code path, not
+#  the hams apply --from-repo clone path.)
+#
+# We run the fallback scenario BEFORE apt-get install updates, and
+# scope it to a throwaway HAMS_CONFIG_HOME + HAMS_DATA_HOME so the
+# main apt tests below are unaffected. Git is temporarily moved out
+# of /usr/bin so exec.LookPath returns ErrNotFound, driving the
+# storeinit package's go-git fallback branch.
+# -----------------------------------------------------------------------
+echo ""
+echo "--- E0: storeinit go-git fallback on a git-less machine ---"
+
+E0_CONFIG_HOME=/tmp/e0-config
+E0_DATA_HOME=/tmp/e0-data
+E0_EXPECTED_STORE="$E0_DATA_HOME/store"
+mkdir -p "$E0_CONFIG_HOME" "$E0_DATA_HOME"
+
+# Hide the system git. trap restores it even on failure so the main
+# apt tests below are unaffected.
+if [ -x /usr/bin/git ]; then
+  mv /usr/bin/git /tmp/_hidden_git_for_e0
+  trap 'if [ -f /tmp/_hidden_git_for_e0 ]; then mv /tmp/_hidden_git_for_e0 /usr/bin/git; fi' EXIT
+fi
+if command -v git >/dev/null 2>&1; then
+  echo "FAIL: E0 precondition — expected no git on PATH after mv"
+  exit 1
+fi
+echo "  precondition: git is absent from PATH"
+
+# --debug so storeinit's INFO log line lands on stderr where we can assert it.
+assert_stderr_contains "E0: go-git fallback log line fires" "bundled go-git" \
+  env -u HAMS_STORE \
+    HAMS_CONFIG_HOME="$E0_CONFIG_HOME" \
+    HAMS_DATA_HOME="$E0_DATA_HOME" \
+    hams --debug apt install htop
+
+# Scaffolded .git dir must exist, produced by go-git.
+assert_success "E0: scaffolded .git directory exists" test -d "$E0_EXPECTED_STORE/.git"
+# Templates must be written from the embed.
+assert_success "E0: scaffolded .gitignore exists" test -f "$E0_EXPECTED_STORE/.gitignore"
+assert_success "E0: scaffolded hams.config.yaml exists" test -f "$E0_EXPECTED_STORE/hams.config.yaml"
+# htop should be on PATH now (apt install succeeded).
+assert_success "E0: htop on PATH after go-git fallback scaffold" command -v htop
+
+# Cleanup so subsequent tests don't inherit E0 state.
+apt-get remove -y htop >/dev/null || true
+rm -rf "$E0_CONFIG_HOME" "$E0_DATA_HOME"
+
+# Restore git for the main scenarios.
+if [ -f /tmp/_hidden_git_for_e0 ]; then
+  mv /tmp/_hidden_git_for_e0 /usr/bin/git
+fi
+trap - EXIT
+if ! command -v git >/dev/null 2>&1; then
+  echo "FAIL: E0 cleanup — git did not return to PATH"
+  exit 1
+fi
+echo "  ok: git restored to PATH for the rest of the test"
+
+# -----------------------------------------------------------------------
 # Canonical provider flow (seed jq, install/refresh/remove btop).
 # -----------------------------------------------------------------------
 standard_cli_flow apt install jq btop

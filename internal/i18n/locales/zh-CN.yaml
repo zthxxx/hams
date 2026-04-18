@@ -66,3 +66,196 @@
 
 - id: store.status.label.git
   other: "Git 状态："
+
+# ---------------------------------------------------------------------------
+# 内置 provider 共享模板（见 internal/i18n/keys.go）
+# ---------------------------------------------------------------------------
+
+- id: provider.err.requires-resource
+  other: "{{.Provider}} {{.Verb}} 需要指定一个{{.Resource}}"
+
+- id: provider.err.requires-at-least-one
+  other: "{{.Provider}} {{.Verb}} 至少需要指定一个{{.Resource}}"
+
+- id: provider.usage.basic
+  other: "用法：hams {{.Provider}} {{.Verb}} <{{.Placeholder}}>"
+
+- id: provider.dry-run.would-run
+  other: "[dry-run] 将执行：{{.Cmd}}"
+
+- id: provider.dry-run.would-install
+  other: "[dry-run] 将安装：{{.Cmd}}"
+
+- id: provider.dry-run.would-remove
+  other: "[dry-run] 将移除：{{.Cmd}}"
+
+# ---------------------------------------------------------------------------
+# provider 定制条目
+# ---------------------------------------------------------------------------
+
+- id: provider.apt.install.simulate-warning
+  other: "hams apt install 已完成但未自动记录（检测到 apt-get 的 simulate 选项）。请编辑 apt 的 hamsfile 后运行 `hams apply` 以声明这些资源。"
+
+- id: provider.git.clone.requires-remote
+  other: "git clone 需要指定远端 URL"
+
+- id: provider.git.clone.usage1
+  other: "用法：hams git clone <remote> <local-path>"
+
+- id: provider.git.clone.usage2
+  other: "      hams git clone <remote> --hams-path=<local-path>"
+
+- id: provider.git.clone.usage3
+  other: "      hams git clone remove <urn>"
+
+- id: provider.git.clone.usage4
+  other: "      hams git clone list"
+
+- id: provider.git.clone.flag-not-forwarded
+  other: "hams git clone 尚未转发 git 的 {{.Flag}} 选项"
+
+- id: provider.git.clone.file-followup
+  other: "请提交带上这个选项名的 follow-up 需求"
+
+- id: provider.git.clone.plain-fallback
+  other: "或先用原生 `git clone`，之后通过 `hams git clone <remote> <path>` 登记"
+
+- id: provider.git.clone.single-path-expected
+  other: "hams git clone 要求恰好一个本地路径（当前收到 {{.Count}} 个：{{.Got}}）"
+
+- id: provider.git.clone.usage-positional
+  other: "用法：hams git clone <remote> <local-path>"
+
+- id: provider.git.requires-subcommand
+  other: "hams git 需要指定子命令"
+
+- id: provider.git.recorded-subcommands-header
+  other: "已登记的子命令："
+
+- id: provider.git.passthrough-note
+  other: "其他子命令（hams git pull、hams git push 等）将透传给原生 git。"
+
+- id: provider.git.config.requires-args
+  other: "{{.Msg}}"
+
+- id: provider.brew.exact-one
+  other: "brew {{.Verb}} 只接受一个仓库参数（当前 {{.Count}} 个：{{.Got}}）"
+
+- id: provider.brew.hint-multi
+  other: "如需 {{.Verb}} 多个仓库，请逐个执行"
+
+- id: provider.brew.install.cask-tag-conflict
+  other: "--cask 与 --hams-tag=\"{{.Tag}}\" 冲突（cask 条目必须登记在 \"{{.CaskTag}}\" tag 下，以便 apply 时重放 brew --cask）"
+
+- id: provider.brew.install.cask-tag-hint
+  other: "请显式使用 --hams-tag={{.CaskTag}}，或不传 --hams-tag（有 --cask 时自动归为 cask）"
+
+- id: provider.brew.install.no-tap-format
+  other: "brew install 不接受 tap 格式（\"{{.Arg}}\" 看起来像 user/repo）"
+
+- id: provider.brew.install.no-tap-hint1
+  other: "请改用 `hams brew tap {{.Arg}}` —— 会同时 tap 仓库并自动登记"
+
+- id: provider.brew.install.no-tap-hint2
+  other: "若要从 tap 安装 formula，先 tap 再安装：hams brew tap user/repo && hams brew install <formula>"
+
+- id: provider.brew.install.usage
+  other: "用法：hams brew install <package> [--cask] [--hams-tag=<tag>]"
+
+- id: provider.bash.planned-v1-1
+  other: "bash {{.Verb}} 计划在 v1.1 提供（CLI 端的 URN 编辑尚未接入）"
+
+- id: provider.bash.planned-hint1
+  other: "可通过 'hams apply --only=bash' 运行所有登记过的 bash 脚本"
+
+- id: provider.bash.planned-hint2
+  other: "或手动编辑 bash hamsfile：<profile-dir>/bash.hams.yaml"
+
+- id: provider.bash.requires-subcommand
+  other: "bash 需要指定子命令"
+
+- id: provider.bash.usage.list
+  other: "用法：hams bash list"
+
+- id: provider.bash.usage.run
+  other: "      hams bash run <urn-id>              （计划 v1.1）"
+
+- id: provider.bash.usage.remove
+  other: "      hams bash remove <urn-id>           （计划 v1.1）"
+
+- id: provider.err.exact-one
+  other: "{{.Provider}} {{.Verb}} 只接受一个{{.Resource}}（当前 {{.Count}} 个：{{.Got}}）"
+
+- id: provider.duti.requires-args
+  other: "duti 需要参数"
+- id: provider.duti.usage.set
+  other: "用法：hams duti <ext>=<bundle-id>"
+- id: provider.duti.usage.list
+  other: "      hams duti list"
+- id: provider.duti.example
+  other: "示例：hams duti pdf=com.adobe.acrobat.pdf"
+- id: provider.duti.invalid-resource
+  other: "{{.Err}}"
+
+- id: provider.defaults.requires-args
+  other: "defaults {{.Verb}} 需要{{.Resource}}"
+- id: provider.defaults.usage.write
+  other: "用法：hams defaults write <domain> <key> <type> <value>"
+- id: provider.defaults.usage.delete
+  other: "用法：hams defaults delete <domain> <key>"
+- id: provider.defaults.usage.list
+  other: "用法：hams defaults list"
+
+- id: provider.ansible.requires-playbook
+  other: "ansible 需要 playbook 路径"
+- id: provider.ansible.usage.playbook
+  other: "用法：hams ansible <playbook-path>"
+- id: provider.ansible.example
+  other: "示例：hams ansible ./site.yml"
+- id: provider.ansible.not-found
+  other: "找不到 playbook：{{.Path}}"
+
+- id: provider.defaults.write.args-mismatch
+  other: "defaults write 需要 `write` 之后恰好 4 个参数（当前 {{.Count}} 个）：write <domain> <key> -<type> <value>"
+- id: provider.defaults.write.hint-quote
+  other: "多词 value 请加引号：hams defaults write <domain> <key> -string \"<value with spaces>\""
+- id: provider.defaults.delete.args-mismatch
+  other: "defaults delete 需要 `delete` 之后恰好 2 个参数（当前 {{.Count}} 个）：delete <domain> <key>"
+- id: provider.defaults.delete.hint-repeat
+  other: "如需删除多个 key，请逐个执行"
+- id: provider.defaults.root-requires-args
+  other: "defaults 需要：write <domain> <key> -<type> <value>"
+- id: provider.defaults.usage.write-example
+  other: "用法：hams defaults write com.apple.dock autohide -bool true"
+- id: provider.defaults.usage.delete-example
+  other: "用法：hams defaults delete com.apple.dock autohide"
+
+- id: provider.ansible.no-binary
+  other: "找不到 ansible-playbook 可执行文件"
+- id: provider.ansible.no-binary-hint1
+  other: "可通过 hams uv install ansible 安装"
+- id: provider.ansible.no-binary-hint2
+  other: "或：pipx install --include-deps ansible"
+
+- id: provider.verb.planned-v1-1
+  other: "{{.Provider}} {{.Verb}} 计划在 v1.1 提供（CLI 端的 URN 编辑尚未接入）"
+- id: provider.verb.planned-hint1
+  other: "可通过 'hams apply --only={{.Provider}}' 运行所有登记过的{{.Noun}}"
+- id: provider.verb.planned-hint2
+  other: "或手动编辑 {{.Provider}} hamsfile：<profile-dir>/{{.Provider}}.hams.yaml"
+
+- id: provider.ansible.requires-playbook-or-subcommand
+  other: "ansible 需要指定 playbook 路径或子命令"
+- id: provider.ansible.usage.list
+  other: "用法：hams ansible list"
+- id: provider.ansible.usage.adhoc
+  other: "      hams ansible <playbook.yml>            （ad-hoc 透传）"
+- id: provider.ansible.usage.run
+  other: "      hams ansible run <urn-id>              （计划 v1.1）"
+- id: provider.ansible.usage.remove
+  other: "      hams ansible remove <urn-id>           （计划 v1.1）"
+
+- id: provider.no-store-configured
+  other: "未配置 store 目录"
+- id: provider.no-store-configured.hint
+  other: "请在 hams 配置里设置 store_path，或通过 --store 指定"
