@@ -54,7 +54,7 @@ in the [Providers](../providers) chapter.
 | `--no-color` | bool | `false` | Kill ANSI colors (for file redirects, plain terminals) |
 | `--config=<path>` | string | `~/.config/hams/hams.config.yaml` | Use a different config file |
 | `--store=<path>` | string | from config | Override the store directory |
-| `--profile=<tag>` | string | from config | Switch profile for this run |
+| `--tag=<name>` | string | from config (or `default`) | Switch profile tag for this run. `--profile` is a legacy alias. Precedence: `--tag` > config `tag:` > `"default"` |
 | `--help` | bool | `false` | Print help |
 | `--version` | bool | `false` | Print version info |
 

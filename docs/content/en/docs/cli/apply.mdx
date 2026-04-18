@@ -50,7 +50,7 @@ hams apply --tag=work-linux
 | Flag | Type | What it does |
 |------|------|--------------|
 | `--from-repo` | string | Clone the store from a remote GitHub repo and apply. Perfect for a new machine |
-| `--tag` | string | Active profile tag (alias `--profile`). Precedence: `--tag` > config `tag:` > `"default"` |
+| `--tag` | string | Active profile tag. `--profile` is a legacy alias for the same slot. Precedence: `--tag` > config `tag:` > `"default"`. Passing both flags with *different* values exits with usage error `2` |
 | `--only` | string | Comma-separated providers to run. Everything else is skipped |
 | `--except` | string | Comma-separated providers to skip. Everything else runs |
 | `--no-refresh` | bool | Skip the refresh phase. hams normally probes the environment first to catch drift; `--no-refresh` trusts whatever's in `.state/` and skips straight to the diff. Useful when you just ran `hams refresh` and want to re-apply without re-probing |

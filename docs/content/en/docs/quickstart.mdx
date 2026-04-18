@@ -111,9 +111,16 @@ explicitly (or `--no-bootstrap` to fail fast).
 ### No interactive prompts needed
 
 If `~/.config/hams/hams.config.yaml` doesn't exist yet, hams writes a default one
-on first run with `tag: default` and a hostname-derived `machine_id`. Pass
-`--tag=<your-profile>` to override the default for the current run; the value also
-gets persisted via `hams config set tag <name>` for future runs.
+on first run with `tag: default` and a hostname-derived `machine_id`. The same
+identity pair is seeded into the store's `hams.config.yaml` placeholder, so the
+first apply against a freshly-initialized store has a concrete `profile_tag +
+machine_id` instead of empty strings. Pass `--tag=<your-profile>` to override the
+default for the current run; the value also gets persisted via `hams config set
+tag <name>` for future runs.
+
+Pairing `--dry-run` with `--from-repo=<url>` on a clean machine prints every file
+the auto-init *would* create without touching the disk — a safe way to confirm
+the planned identity before the real run.
 
 The legacy interactive `Profile tag / Machine ID` prompt is reserved for `hams
 store init`, which you only need when you're hand-crafting a store outside the

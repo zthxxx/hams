@@ -187,3 +187,32 @@ URLs (pair with `gh auth login` or a PAT), or get SSH keys in place before runni
   once, `curl | bash` inside a `bash` provider step is simpler. `hams git clone` earns its weight
   when you want hams to **keep ensuring** the repo exists at the right location.
 </Callout>
+
+## Passthrough for unmanaged subcommands
+
+Only `config` and `clone` are managed by hams (they read/write Hamsfiles and state).
+**Every other `hams git <verb>` passes straight through to the real `git` binary** —
+stdin, stdout, stderr, and exit code are preserved verbatim, and hams writes nothing
+to any Hamsfile or state file for these calls.
+
+```bash
+# Works exactly like `git log --oneline`, stdout untouched
+hams git log --oneline
+
+# `git status` on the current repo
+hams git status
+
+# `git push` — hams stays out of the way
+hams git push origin main
+```
+
+The passthrough honors `--dry-run`: under `hams --dry-run git <verb>`, hams prints the
+full command that *would* run and exits without spawning `git`. Use this to double-
+check remote-mutating calls (`hams --dry-run git push`) before firing them for real.
+
+<Callout type="info">
+  Passthrough applies only to subcommands hams does not own. `hams git config` and
+  `hams git clone` always route through the managed providers — even if you invoke
+  them with unusual flags. If you need raw `git config` or `git clone` behavior with
+  no recording, call `git` directly.
+</Callout>
