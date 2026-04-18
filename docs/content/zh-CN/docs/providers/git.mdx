@@ -1,0 +1,175 @@
+import { Callout } from 'nextra/components'
+
+# git Provider
+
+包装真正的 `git` CLI：`hams git …` 对所有子命令的行为跟原生 `git` 一模一样，只有两个例外会被
+hams 记到 Hamsfile —— **`hams git config` 里设置的 key** 和 **`hams git clone` 克隆的仓库**。
+其他子命令（`status`、`pull`、`push`、`log` 等）直接透传。
+
+**支持平台：** macOS、Linux
+
+## 怎么用
+
+### `hams git config` —— 全局 git 配置
+
+```bash
+# 设一个值（顺便记到 Hamsfile）
+hams git config --global user.name "Your Name"
+hams git config --global user.email "you@example.com"
+
+# 列出 hams 管的 git 配置项
+hams git config list
+
+# 取消（从 Hamsfile 里删掉，同时清除机器上的值）
+hams git config remove rerere.autoUpdate
+```
+
+### `hams git clone` —— 固定路径的仓库克隆
+
+```bash
+# 添加：把远端仓库克隆到本地指定路径（跟原生 `git clone` 同样的写法）
+hams git clone https://github.com/zthxxx/dotfiles ~/Projects/dotfiles
+
+# 列出被管的仓库
+hams git clone list
+
+# 移除（只停止管理，不会删本地文件）
+hams git clone remove urn:hams:git-clone:dotfiles
+```
+
+### 其他子命令 —— 原生 git，只是多了个前缀
+
+```bash
+hams git status          # → git status
+hams git pull            # → git pull
+hams git log --oneline   # → git log --oneline
+```
+
+透传时会完整保留 stdin / stdout / stderr / exit code，所以 `alias git=hams git` 是安全的。
+
+## Hamsfile 长什么样
+
+git-config 和 git-clone 仍然维护**各自独立的** Hamsfile 和状态文件，你可以单独管身份配置和被克隆的仓库：
+
+```yaml
+# macOS/git-config.hams.yaml
+schema_version: 1
+provider: git-config
+
+groups:
+  - tag: identity
+    items:
+      - urn: "urn:hams:git-config:user-name"
+        step: Set git user name
+        key: user.name
+        value: "Your Name"
+      - urn: "urn:hams:git-config:user-email"
+        step: Set git user email
+        key: user.email
+        value: "you@example.com"
+
+  - tag: workflow
+    items:
+      - urn: "urn:hams:git-config:rerere"
+        step: Enable git rerere (remember conflict resolutions)
+        key: rerere.autoUpdate
+        value: "true"
+```
+
+```yaml
+# macOS/git-clone.hams.yaml
+schema_version: 1
+provider: git-clone
+
+groups:
+  - tag: personal
+    items:
+      - urn: "urn:hams:git-clone:dotfiles"
+        step: Clone dotfiles repository
+        remote: https://github.com/zthxxx/dotfiles.git
+        local_path: ~/Projects/dotfiles
+        default_branch: main
+```
+
+`git-config` 字段：
+
+- `key` / `value` —— 就是 `git config` 的 key 和 value
+- `step` —— 一句话描述（apply 日志里会显示）
+- `urn` —— hams 内部标识，起个顺口的就行
+
+`git-clone` 字段：
+
+- `remote` —— 仓库 URL，HTTPS 或 SSH 都行
+- `local_path` —— 本地路径，支持 `~/` 展开
+- `default_branch` —— 可选，克隆后 checkout 到哪个分支；不填就用远端默认
+
+## 状态探测
+
+**git-config：** 对每个 key 跑 `git config --global --get <key>`，读回来跟 Hamsfile 里的 `value`
+比较。一致 `ok`，不一致 `outdated`，读不到 `missing`。
+
+**git-clone：**
+
+1. 看 `local_path` 目录存不存在
+2. 存在就跑 `git -C <local_path> remote get-url origin`，对比 URL 是否匹配 Hamsfile 里的 `remote`
+3. 都对得上 —— `ok`
+
+**hams 不会**帮你 pull 最新代码 —— 每次 apply 都替你 pull 会拖慢速度也可能冲突。这件事交给你自己掌握节奏。
+
+## 内置 go-git，无需系统 `git`
+
+hams 二进制内置了 [go-git](https://github.com/go-git/go-git)，意味着**新机器就算没装 git 命令**，
+clone 类资源也能正常工作。对 bootstrap 场景很关键 —— 你不用先 `brew install git` 再开始用 hams。
+
+## 配置作用域（git config）
+
+hams 默认写 `--global`（当前用户的 `~/.gitconfig`）。如果你有更特殊的需求：
+
+- **仓库级别**（`--local`）—— 不适合 hams 管，属于项目的事，放 `.gitconfig` 跟项目走
+- **系统级别**（`--system`）—— 用 `bash` provider 写 `sudo git config --system ...`
+
+## SSH 认证（git clone）
+
+如果 `remote` 是 SSH 形式（`git@github.com:...`），hams 会按顺序尝试：
+
+1. `~/.ssh/id_ed25519`、`~/.ssh/id_rsa` 等常见路径
+2. 跑起来的 ssh-agent 里的 key
+3. 最后回退到提示你交互输入
+
+新机器上常见的卡点是 SSH key 还没配好。解决办法：要么用 HTTPS URL（配合 `gh auth login` 或 PAT），
+要么在 apply 之前先把 SSH key 搞定。
+
+## 几个常用场景
+
+**多账号分流（工作 / 个人）：** 用 git 的 `includeIf` 机制，在 `~/.gitconfig` 里按目录判断。
+hams 可以帮你设置 `includeIf` 和对应的配置文件路径：
+
+```yaml
+- urn: "urn:hams:git-config:work-includeif"
+  step: Include work config when under ~/work/
+  key: 'includeIf."gitdir:~/work/".path'
+  value: ~/.gitconfig-work
+```
+
+**GPG 签名：** 签名 key 属于 identity，放 git-config 很合适：
+
+```yaml
+- urn: "urn:hams:git-config:signing-key"
+  step: Set GPG signing key
+  key: user.signingkey
+  value: "AAAAAAAAAA"
+- urn: "urn:hams:git-config:commit-gpgsign"
+  step: Sign all commits
+  key: commit.gpgsign
+  value: "true"
+```
+
+<Callout type="tip">
+  记得**别**把带敏感信息的配置放进 git 的 Hamsfile 里。token、GPG 密钥 ID 这种属于敏感信息，
+  写进 `git-config.hams.local.yaml`（不跟 git），或者扔进系统 keychain。
+</Callout>
+
+<Callout type="info">
+  `hams git clone` 适合"我需要这个仓库在这里"的场景。如果你只是想跑一个安装脚本，用 `bash` provider 的
+  `curl | bash` 更直接。git-clone 的意义在于**持续管理**这个仓库的存在和位置。
+</Callout>

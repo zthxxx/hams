@@ -27,8 +27,9 @@ hams <provider> <verb> [args] [--hams-flags] [-- <passthrough>]
 | `list` | List packages managed by this provider | `hams brew list` |
 | `enrich` | Add metadata (tags, intro) to an already-recorded package | `hams brew enrich htop` |
 
-Not every provider supports every verb. `git-clone` uses `add` instead of `install`; `bash` uses
-`run`. Check the individual provider doc for specifics.
+Not every provider supports every verb. `hams git clone <remote> <path>` matches plain
+`git clone`'s shape (no leading `add` or `install`); `bash` uses `run`. Check the individual
+provider doc for specifics.
 
 ## Examples
 

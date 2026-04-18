@@ -98,8 +98,8 @@ bash is powerful, but it lacks the structured metadata the specialised providers
 something more specific when you can:
 
 - Installing a Homebrew formula? Use the Homebrew provider, don't write `brew install` in a bash step
-- Setting a git config key? Use git-config — it reads better than `git config --global`
-- Cloning a repo? That's git-clone
+- Setting a git config key? Use `hams git config` — it reads better than raw `git config --global`
+- Cloning a repo? That's `hams git clone`
 
 Save bash for the things that truly have no better home: installing Homebrew itself, running a
 third-party installer, triggering one-off system initialisation.
