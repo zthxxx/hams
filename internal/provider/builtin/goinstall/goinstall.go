@@ -14,6 +14,7 @@ import (
 	hamserr "github.com/zthxxx/hams/internal/error"
 	"github.com/zthxxx/hams/internal/hamsfile"
 	"github.com/zthxxx/hams/internal/provider"
+	"github.com/zthxxx/hams/internal/provider/baseprovider"
 	"github.com/zthxxx/hams/internal/state"
 )
 
@@ -119,9 +120,12 @@ func (p *Provider) HandleCommand(ctx context.Context, args []string, hamsFlags m
 		// but it prints Go package info, not installed binaries —
 		// wrong affordance for the user who just ran
 		// `hams goinstall install github.com/…`.
-		return provider.HandleListCmd(ctx, p, p.effectiveConfig(flags))
+		return provider.HandleListCmd(ctx, p, baseprovider.EffectiveConfig(p.cfg, flags))
 	default:
-		return provider.WrapExecPassthrough(ctx, "go", args, nil)
+		// Unintercepted subcommand — passthrough to real `go` with
+		// stdio preserved so `hams goinstall help`, `hams goinstall
+		// version`, etc. behave identically to the unwrapped tool.
+		return provider.Passthrough(ctx, "go", args, flags)
 	}
 }
 
@@ -159,7 +163,7 @@ func (p *Provider) handleInstall(ctx context.Context, args []string, hamsFlags m
 	}
 
 	// Cycle 222: acquire single-writer state lock per cli-architecture spec.
-	release, lockErr := provider.AcquireMutationLockFromCfg(p.effectiveConfig(flags), flags, "goinstall install")
+	release, lockErr := provider.AcquireMutationLockFromCfg(baseprovider.EffectiveConfig(p.cfg, flags), flags, "goinstall install")
 	if lockErr != nil {
 		return lockErr
 	}
@@ -171,7 +175,7 @@ func (p *Provider) handleInstall(ctx context.Context, args []string, hamsFlags m
 		}
 	}
 
-	hf, err := p.loadOrCreateHamsfile(hamsFlags, flags)
+	hf, err := baseprovider.LoadOrCreateHamsfile(p.cfg, p.Manifest().FilePrefix, hamsFlags, flags)
 	if err != nil {
 		return err
 	}
@@ -197,14 +201,14 @@ func (p *Provider) handleInstall(ctx context.Context, args []string, hamsFlags m
 // statePath returns the absolute path to goinstall.state.yaml for the
 // active machine. Mirrors homebrew/mas/cargo/npm/pnpm/uv.statePath.
 func (p *Provider) statePath(flags *provider.GlobalFlags) string {
-	cfg := p.effectiveConfig(flags)
+	cfg := baseprovider.EffectiveConfig(p.cfg, flags)
 	return filepath.Join(cfg.StateDir(), p.Manifest().FilePrefix+".state.yaml")
 }
 
 // loadOrCreateStateFile reads goinstall.state.yaml or returns a fresh
 // one when the file is absent. Non-ErrNotExist load failures propagate.
 func (p *Provider) loadOrCreateStateFile(flags *provider.GlobalFlags) (*state.File, error) {
-	cfg := p.effectiveConfig(flags)
+	cfg := baseprovider.EffectiveConfig(p.cfg, flags)
 	sf, err := state.Load(p.statePath(flags))
 	if err == nil {
 		return sf, nil
