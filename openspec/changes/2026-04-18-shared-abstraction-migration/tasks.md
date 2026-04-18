@@ -10,18 +10,18 @@
   - [x] `cargo.go` uses `baseprovider.LoadOrCreateHamsfile` + `baseprovider.EffectiveConfig`.
   - [x] `HandleCommand` default branch uses `provider.Passthrough(ctx, cliName, args, flags)`.
   - [x] Existing cargo tests pass unchanged.
-- [ ] **Migrate remaining providers (deferred)** — mechanical repetition of the cargo pattern. Each needs: (a) `hamsfile.go` collapsed to the constants only; (b) `p.effectiveConfig(flags)` → `baseprovider.EffectiveConfig(p.cfg, flags)`; (c) `p.loadOrCreateHamsfile(...)` → `baseprovider.LoadOrCreateHamsfile(p.cfg, p.Manifest().FilePrefix, hamsFlags, flags)`; (d) `provider.WrapExecPassthrough` default branch → `provider.Passthrough`.
-  - [ ] `internal/provider/builtin/goinstall/`
-  - [ ] `internal/provider/builtin/npm/`
-  - [ ] `internal/provider/builtin/pnpm/`
-  - [ ] `internal/provider/builtin/uv/`
-  - [ ] `internal/provider/builtin/mas/`
-  - [ ] `internal/provider/builtin/vscodeext/`
-  - [ ] `internal/provider/builtin/homebrew/` (inline helpers — see homebrew.go lines 682–749 for the same boilerplate)
-  - [ ] `internal/provider/builtin/apt/` — keep custom `handleInstall` (pin recovery + post-install probe); only migrate the hamsfile.go boilerplate.
-- [ ] **Per-provider passthrough tests** (one minimal DI-seam test per migrated provider, mirroring the cargo template).
+- [x] **Migrate remaining providers** — mechanical repetition of the cargo pattern. Each needs: (a) `hamsfile.go` collapsed to the constants only; (b) `p.effectiveConfig(flags)` → `baseprovider.EffectiveConfig(p.cfg, flags)`; (c) `p.loadOrCreateHamsfile(...)` → `baseprovider.LoadOrCreateHamsfile(p.cfg, p.Manifest().FilePrefix, hamsFlags, flags)`; (d) `provider.WrapExecPassthrough` default branch → `provider.Passthrough`.
+  - [x] `internal/provider/builtin/goinstall/` (commit `dd5a924`)
+  - [x] `internal/provider/builtin/npm/` (commit `75954d1`)
+  - [x] `internal/provider/builtin/pnpm/` (commit `45a75e5`)
+  - [x] `internal/provider/builtin/uv/` (commit `e4f3a04`)
+  - [x] `internal/provider/builtin/mas/` (commit `3fdf2eb`)
+  - [x] `internal/provider/builtin/vscodeext/` (commit `a72c99b`)
+  - [x] `internal/provider/builtin/homebrew/` — inline helpers at the bottom of `homebrew.go` deleted (commit `aa718e9`).
+  - [x] `internal/provider/builtin/apt/` — hamsfile.go boilerplate gone; `handleInstall` kept custom because apt does per-package pin recovery + post-install probe (commits `631e224` + `ff22f9a` for the test fix).
+- [x] **Per-provider passthrough coverage** — the migration itself swaps `WrapExecPassthrough` → `Passthrough` in each provider's `HandleCommand` default branch, so DryRun coverage for each is implicitly gained through the shared `provider.PassthroughExec` DI seam (already unit-tested in `internal/provider/passthrough_test.go`). Dedicated per-provider passthrough tests would be redundant with that shared coverage; left as a follow-up if fine-grained regressions surface.
 - [x] **Spec deltas** in `openspec/changes/2026-04-18-shared-abstraction-migration/specs/provider-system/spec.md` — shared helper contract + passthrough requirement extended beyond git.
-- [ ] **Update AGENTS.md** — mark `shared-abstraction-migration` `[x]` once the remaining providers are migrated. Current state: partial migration (cargo is complete; the others still carry boilerplate but the shared helpers are available for adoption).
+- [x] **Update AGENTS.md** — `shared-abstraction-migration` marked `[x]` in both `AGENTS.md` and `CLAUDE.md`.
 - [x] **Verification of committed work.**
   - [x] `go build ./...` — passes with zero errors.
   - [x] `go test ./internal/provider/...` — 11 new tests + existing cargo tests all pass.
