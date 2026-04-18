@@ -11,6 +11,7 @@ import (
 	"github.com/zthxxx/hams/internal/config"
 	hamserr "github.com/zthxxx/hams/internal/error"
 	"github.com/zthxxx/hams/internal/hamsfile"
+	"github.com/zthxxx/hams/internal/i18n"
 	"github.com/zthxxx/hams/internal/provider"
 	"github.com/zthxxx/hams/internal/state"
 )
@@ -125,9 +126,9 @@ func (p *Provider) HandleCommand(ctx context.Context, args []string, hamsFlags m
 	}
 	if len(args) < 3 {
 		return hamserr.NewUserError(hamserr.ExitUsageError,
-			"defaults requires: write <domain> <key> -<type> <value>",
-			"Usage: hams defaults write com.apple.dock autohide -bool true",
-			"       hams defaults list",
+			i18n.T(i18n.ProviderDefaultsRootRequiresArgs),
+			i18n.T(i18n.ProviderDefaultsUsageWriteExample),
+			i18n.T(i18n.ProviderDefaultsUsageList),
 		)
 	}
 
@@ -140,7 +141,7 @@ func (p *Provider) HandleCommand(ctx context.Context, args []string, hamsFlags m
 	}
 
 	if flags.DryRun {
-		fmt.Printf("[dry-run] Would run: defaults %s\n", strings.Join(args, " "))
+		provider.DryRunRun(flags, "defaults "+strings.Join(args, " "))
 		return nil
 	}
 	cmd := exec.CommandContext(ctx, cliName, args...) //nolint:gosec // defaults args from CLI input
@@ -161,9 +162,9 @@ func (p *Provider) handleWrite(ctx context.Context, args []string, hamsFlags map
 	// surface the mismatch with a quoting hint.
 	if len(args) != 5 {
 		return hamserr.NewUserError(hamserr.ExitUsageError,
-			fmt.Sprintf("defaults write requires exactly 4 args after `write` (got %d): write <domain> <key> -<type> <value>", len(args)-1),
-			"Usage: hams defaults write com.apple.dock autohide -bool true",
-			"Quote multi-word values: hams defaults write <domain> <key> -string \"<value with spaces>\"",
+			i18n.Tf(i18n.ProviderDefaultsWriteArgsMismatch, map[string]any{"Count": len(args) - 1}),
+			i18n.T(i18n.ProviderDefaultsUsageWriteExample),
+			i18n.T(i18n.ProviderDefaultsWriteHintQuote),
 		)
 	}
 
@@ -173,7 +174,7 @@ func (p *Provider) handleWrite(ctx context.Context, args []string, hamsFlags map
 	value := args[4]
 
 	if flags.DryRun {
-		fmt.Printf("[dry-run] Would run: defaults %s\n", strings.Join(args, " "))
+		provider.DryRunRun(flags, "defaults "+strings.Join(args, " "))
 		return nil
 	}
 
@@ -203,9 +204,9 @@ func (p *Provider) handleDelete(ctx context.Context, args []string, hamsFlags ma
 	// pair and dropped "other-key". Surface the mismatch.
 	if len(args) != 3 {
 		return hamserr.NewUserError(hamserr.ExitUsageError,
-			fmt.Sprintf("defaults delete requires exactly 2 args after `delete` (got %d): delete <domain> <key>", len(args)-1),
-			"Usage: hams defaults delete com.apple.dock autohide",
-			"To delete multiple keys, run the command once per key",
+			i18n.Tf(i18n.ProviderDefaultsDeleteArgsMismatch, map[string]any{"Count": len(args) - 1}),
+			i18n.T(i18n.ProviderDefaultsUsageDeleteExample),
+			i18n.T(i18n.ProviderDefaultsDeleteHintRepeat),
 		)
 	}
 
@@ -213,7 +214,7 @@ func (p *Provider) handleDelete(ctx context.Context, args []string, hamsFlags ma
 	key := args[2]
 
 	if flags.DryRun {
-		fmt.Printf("[dry-run] Would run: defaults %s\n", strings.Join(args, " "))
+		provider.DryRunRun(flags, "defaults "+strings.Join(args, " "))
 		return nil
 	}
 

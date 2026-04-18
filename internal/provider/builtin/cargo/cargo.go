@@ -11,7 +11,6 @@ import (
 	"strings"
 
 	"github.com/zthxxx/hams/internal/config"
-	hamserr "github.com/zthxxx/hams/internal/error"
 	"github.com/zthxxx/hams/internal/hamsfile"
 	"github.com/zthxxx/hams/internal/provider"
 	"github.com/zthxxx/hams/internal/state"
@@ -131,21 +130,14 @@ func (p *Provider) HandleCommand(ctx context.Context, args []string, hamsFlags m
 // hamsfile untouched" scenario in the auto-record spec delta.
 func (p *Provider) handleInstall(ctx context.Context, args []string, hamsFlags map[string]string, flags *provider.GlobalFlags) error {
 	if len(args) == 0 {
-		return hamserr.NewUserError(hamserr.ExitUsageError,
-			"cargo install requires a crate name",
-			"Usage: hams cargo install <crate>",
-			"To install all recorded crates, use: hams apply --only=cargo",
-		)
+		return provider.UsageRequiresResource(cliName, "install", "crate name", "crate")
 	}
 	crates := crateArgs(args)
 	if len(crates) == 0 {
-		return hamserr.NewUserError(hamserr.ExitUsageError,
-			"cargo install requires at least one crate name",
-			"Usage: hams cargo install <crate>",
-		)
+		return provider.UsageRequiresAtLeastOne(cliName, "install", "crate name", "crate")
 	}
 	if flags.DryRun {
-		fmt.Printf("[dry-run] Would install: cargo install %s\n", strings.Join(args, " "))
+		provider.DryRunInstall(flags, "cargo install "+strings.Join(args, " "))
 		return nil
 	}
 
@@ -197,20 +189,14 @@ func (p *Provider) handleInstall(ctx context.Context, args []string, hamsFlags m
 // not falsely de-record the crate (mirrors apt's U5 behavior).
 func (p *Provider) handleRemove(ctx context.Context, args []string, hamsFlags map[string]string, flags *provider.GlobalFlags) error {
 	if len(args) == 0 {
-		return hamserr.NewUserError(hamserr.ExitUsageError,
-			"cargo remove requires a crate name",
-			"Usage: hams cargo remove <crate>",
-		)
+		return provider.UsageRequiresResource(cliName, "remove", "crate name", "crate")
 	}
 	crates := crateArgs(args)
 	if len(crates) == 0 {
-		return hamserr.NewUserError(hamserr.ExitUsageError,
-			"cargo remove requires at least one crate name",
-			"Usage: hams cargo remove <crate>",
-		)
+		return provider.UsageRequiresAtLeastOne(cliName, "remove", "crate name", "crate")
 	}
 	if flags.DryRun {
-		fmt.Printf("[dry-run] Would remove: cargo uninstall %s\n", strings.Join(args, " "))
+		provider.DryRunRemove(flags, "cargo uninstall "+strings.Join(args, " "))
 		return nil
 	}
 

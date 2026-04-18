@@ -66,3 +66,196 @@
 
 - id: store.status.label.git
   other: "Git status:"
+
+# ---------------------------------------------------------------------------
+# Builtin-provider shared templates (see internal/i18n/keys.go).
+# ---------------------------------------------------------------------------
+
+- id: provider.err.requires-resource
+  other: "{{.Provider}} {{.Verb}} requires a {{.Resource}}"
+
+- id: provider.err.requires-at-least-one
+  other: "{{.Provider}} {{.Verb}} requires at least one {{.Resource}}"
+
+- id: provider.usage.basic
+  other: "Usage: hams {{.Provider}} {{.Verb}} <{{.Placeholder}}>"
+
+- id: provider.dry-run.would-run
+  other: "[dry-run] Would run: {{.Cmd}}"
+
+- id: provider.dry-run.would-install
+  other: "[dry-run] Would install: {{.Cmd}}"
+
+- id: provider.dry-run.would-remove
+  other: "[dry-run] Would remove: {{.Cmd}}"
+
+# ---------------------------------------------------------------------------
+# Provider-specific outliers.
+# ---------------------------------------------------------------------------
+
+- id: provider.apt.install.simulate-warning
+  other: "hams apt install completed but did not auto-record (apt-get simulate flag detected). To declare these resources, edit the apt hamsfile and run `hams apply`."
+
+- id: provider.git.clone.requires-remote
+  other: "git clone requires a remote URL"
+
+- id: provider.git.clone.usage1
+  other: "Usage: hams git clone <remote> <local-path>"
+
+- id: provider.git.clone.usage2
+  other: "       hams git clone <remote> --hams-path=<local-path>"
+
+- id: provider.git.clone.usage3
+  other: "       hams git clone remove <urn>"
+
+- id: provider.git.clone.usage4
+  other: "       hams git clone list"
+
+- id: provider.git.clone.flag-not-forwarded
+  other: "hams git clone does not yet forward git flag {{.Flag}}"
+
+- id: provider.git.clone.file-followup
+  other: "File a follow-up request with the flag name"
+
+- id: provider.git.clone.plain-fallback
+  other: "Or run plain `git clone` and add the record later via `hams git clone <remote> <path>`"
+
+- id: provider.git.clone.single-path-expected
+  other: "hams git clone expects exactly one local path (got {{.Count}}: {{.Got}})"
+
+- id: provider.git.clone.usage-positional
+  other: "Usage: hams git clone <remote> <local-path>"
+
+- id: provider.git.requires-subcommand
+  other: "hams git requires a subcommand"
+
+- id: provider.git.recorded-subcommands-header
+  other: "Recorded subcommands:"
+
+- id: provider.git.passthrough-note
+  other: "Any other subcommand (hams git pull, hams git push, …) is passed through to the real git."
+
+- id: provider.git.config.requires-args
+  other: "{{.Msg}}"
+
+- id: provider.brew.exact-one
+  other: "brew {{.Verb}} takes exactly one repository (got {{.Count}} args: {{.Got}})"
+
+- id: provider.brew.hint-multi
+  other: "To {{.Verb}} multiple repos, run the command once per repo"
+
+- id: provider.brew.install.cask-tag-conflict
+  other: "--cask is incompatible with --hams-tag=\"{{.Tag}}\" (cask entries must live under the \"{{.CaskTag}}\" tag so apply replay invokes brew --cask)"
+
+- id: provider.brew.install.cask-tag-hint
+  other: "Use --hams-tag={{.CaskTag}} explicitly, or omit --hams-tag entirely (defaults to cask when --cask is set)"
+
+- id: provider.brew.install.no-tap-format
+  other: "brew install does not support tap-format args (\"{{.Arg}}\" looks like user/repo)"
+
+- id: provider.brew.install.no-tap-hint1
+  other: "Use `hams brew tap {{.Arg}}` instead — it taps the repo AND auto-records it"
+
+- id: provider.brew.install.no-tap-hint2
+  other: "To install a formula from a tap, first tap it then install: hams brew tap user/repo && hams brew install <formula>"
+
+- id: provider.brew.install.usage
+  other: "Usage: hams brew install <package> [--cask] [--hams-tag=<tag>]"
+
+- id: provider.bash.planned-v1-1
+  other: "bash {{.Verb}} is planned for v1.1 (URN-editing on the CLI is not yet wired)"
+
+- id: provider.bash.planned-hint1
+  other: "Use 'hams apply --only=bash' to run all tracked bash scripts"
+
+- id: provider.bash.planned-hint2
+  other: "Or hand-edit the bash hamsfile: <profile-dir>/bash.hams.yaml"
+
+- id: provider.bash.requires-subcommand
+  other: "bash requires a subcommand"
+
+- id: provider.bash.usage.list
+  other: "Usage: hams bash list"
+
+- id: provider.bash.usage.run
+  other: "       hams bash run <urn-id>              (planned v1.1)"
+
+- id: provider.bash.usage.remove
+  other: "       hams bash remove <urn-id>           (planned v1.1)"
+
+- id: provider.err.exact-one
+  other: "{{.Provider}} {{.Verb}} takes exactly one {{.Resource}} (got {{.Count}} args: {{.Got}})"
+
+- id: provider.duti.requires-args
+  other: "duti requires arguments"
+- id: provider.duti.usage.set
+  other: "Usage: hams duti <ext>=<bundle-id>"
+- id: provider.duti.usage.list
+  other: "       hams duti list"
+- id: provider.duti.example
+  other: "Example: hams duti pdf=com.adobe.acrobat.pdf"
+- id: provider.duti.invalid-resource
+  other: "{{.Err}}"
+
+- id: provider.defaults.requires-args
+  other: "defaults {{.Verb}} requires {{.Resource}}"
+- id: provider.defaults.usage.write
+  other: "Usage: hams defaults write <domain> <key> <type> <value>"
+- id: provider.defaults.usage.delete
+  other: "Usage: hams defaults delete <domain> <key>"
+- id: provider.defaults.usage.list
+  other: "Usage: hams defaults list"
+
+- id: provider.ansible.requires-playbook
+  other: "ansible requires a playbook path"
+- id: provider.ansible.usage.playbook
+  other: "Usage: hams ansible <playbook-path>"
+- id: provider.ansible.example
+  other: "Example: hams ansible ./site.yml"
+- id: provider.ansible.not-found
+  other: "playbook not found: {{.Path}}"
+
+- id: provider.defaults.write.args-mismatch
+  other: "defaults write requires exactly 4 args after `write` (got {{.Count}}): write <domain> <key> -<type> <value>"
+- id: provider.defaults.write.hint-quote
+  other: "Quote multi-word values: hams defaults write <domain> <key> -string \"<value with spaces>\""
+- id: provider.defaults.delete.args-mismatch
+  other: "defaults delete requires exactly 2 args after `delete` (got {{.Count}}): delete <domain> <key>"
+- id: provider.defaults.delete.hint-repeat
+  other: "To delete multiple keys, run the command once per key"
+- id: provider.defaults.root-requires-args
+  other: "defaults requires: write <domain> <key> -<type> <value>"
+- id: provider.defaults.usage.write-example
+  other: "Usage: hams defaults write com.apple.dock autohide -bool true"
+- id: provider.defaults.usage.delete-example
+  other: "Usage: hams defaults delete com.apple.dock autohide"
+
+- id: provider.ansible.no-binary
+  other: "ansible-playbook binary not found"
+- id: provider.ansible.no-binary-hint1
+  other: "Install via: hams uv install ansible"
+- id: provider.ansible.no-binary-hint2
+  other: "Or: pipx install --include-deps ansible"
+
+- id: provider.verb.planned-v1-1
+  other: "{{.Provider}} {{.Verb}} is planned for v1.1 (URN-editing on the CLI is not yet wired)"
+- id: provider.verb.planned-hint1
+  other: "Use 'hams apply --only={{.Provider}}' to run all tracked {{.Noun}}"
+- id: provider.verb.planned-hint2
+  other: "Or hand-edit the {{.Provider}} hamsfile: <profile-dir>/{{.Provider}}.hams.yaml"
+
+- id: provider.ansible.requires-playbook-or-subcommand
+  other: "ansible requires a playbook path or subcommand"
+- id: provider.ansible.usage.list
+  other: "Usage: hams ansible list"
+- id: provider.ansible.usage.adhoc
+  other: "       hams ansible <playbook.yml>            (ad-hoc passthrough)"
+- id: provider.ansible.usage.run
+  other: "       hams ansible run <urn-id>              (planned v1.1)"
+- id: provider.ansible.usage.remove
+  other: "       hams ansible remove <urn-id>           (planned v1.1)"
+
+- id: provider.no-store-configured
+  other: "no store directory configured"
+- id: provider.no-store-configured.hint
+  other: "Set store_path in hams config or pass --store"

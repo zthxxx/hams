@@ -19,6 +19,7 @@ import (
 	"github.com/zthxxx/hams/internal/config"
 	hamserr "github.com/zthxxx/hams/internal/error"
 	"github.com/zthxxx/hams/internal/hamsfile"
+	"github.com/zthxxx/hams/internal/i18n"
 	"github.com/zthxxx/hams/internal/provider"
 	"github.com/zthxxx/hams/internal/state"
 )
@@ -334,22 +335,23 @@ func (p *Provider) HandleCommand(ctx context.Context, args []string, hamsFlags m
 // loop on the CLI-first auto-record contract for taps.
 func (p *Provider) handleUntap(ctx context.Context, args []string, hamsFlags map[string]string, flags *provider.GlobalFlags) error {
 	if len(args) == 0 {
-		return hamserr.NewUserError(hamserr.ExitUsageError,
-			"brew untap requires a repository name",
-			"Usage: hams brew untap <user/repo>",
-		)
+		return provider.UsageRequiresResource(cliName, "untap", "repository name", "user/repo")
 	}
 	if len(args) != 1 {
 		return hamserr.NewUserError(hamserr.ExitUsageError,
-			fmt.Sprintf("brew untap takes exactly one repository (got %d args: %v)", len(args), args),
-			"Usage: hams brew untap <user/repo>",
-			"To untap multiple repos, run the command once per repo",
+			i18n.Tf(i18n.ProviderBrewExactOne, map[string]any{
+				"Verb": "untap", "Count": len(args), "Got": args,
+			}),
+			i18n.Tf(i18n.ProviderUsageBasic, map[string]any{
+				"Provider": cliName, "Verb": "untap", "Placeholder": "user/repo",
+			}),
+			i18n.Tf(i18n.ProviderBrewHintMulti, map[string]any{"Verb": "untap"}),
 		)
 	}
 
 	repo := args[0]
 	if flags.DryRun {
-		fmt.Fprintf(flags.Stdout(), "[dry-run] Would run: brew untap %s\n", repo)
+		provider.DryRunRun(flags, "brew untap "+repo)
 		return nil
 	}
 
@@ -442,10 +444,7 @@ func (p *Provider) handleList(hamsFlags map[string]string, flags *provider.Globa
 
 func (p *Provider) handleTap(ctx context.Context, args []string, hamsFlags map[string]string, flags *provider.GlobalFlags) error {
 	if len(args) == 0 {
-		return hamserr.NewUserError(hamserr.ExitUsageError,
-			"brew tap requires a repository name",
-			"Usage: hams brew tap <user/repo>",
-		)
+		return provider.UsageRequiresResource(cliName, "tap", "repository name", "user/repo")
 	}
 	// Strict arg count — same UX class as cycle 156 (config strict
 	// args). The pre-cycle-163 code only used args[0] and silently
@@ -455,15 +454,19 @@ func (p *Provider) handleTap(ctx context.Context, args []string, hamsFlags map[s
 	// Surface the mismatch with a hint about repeating the command.
 	if len(args) != 1 {
 		return hamserr.NewUserError(hamserr.ExitUsageError,
-			fmt.Sprintf("brew tap takes exactly one repository (got %d args: %v)", len(args), args),
-			"Usage: hams brew tap <user/repo>",
-			"To tap multiple repos, run the command once per repo",
+			i18n.Tf(i18n.ProviderBrewExactOne, map[string]any{
+				"Verb": "tap", "Count": len(args), "Got": args,
+			}),
+			i18n.Tf(i18n.ProviderUsageBasic, map[string]any{
+				"Provider": cliName, "Verb": "tap", "Placeholder": "user/repo",
+			}),
+			i18n.Tf(i18n.ProviderBrewHintMulti, map[string]any{"Verb": "tap"}),
 		)
 	}
 
 	repo := args[0]
 	if flags.DryRun {
-		fmt.Fprintf(flags.Stdout(), "[dry-run] Would run: brew tap %s\n", repo)
+		provider.DryRunRun(flags, "brew tap "+repo)
 		return nil
 	}
 
@@ -509,9 +512,10 @@ func (p *Provider) handleTap(ctx context.Context, args []string, hamsFlags map[s
 func (p *Provider) handleInstall(ctx context.Context, args []string, hamsFlags map[string]string, flags *provider.GlobalFlags) error {
 	if len(args) == 0 {
 		return hamserr.NewUserError(hamserr.ExitUsageError,
-			"brew install requires a package name",
-			"Usage: hams brew install <package> [--cask] [--hams-tag=<tag>]",
-			"To install all recorded packages, use: hams apply --only=brew",
+			i18n.Tf(i18n.ProviderErrRequiresResource, map[string]any{
+				"Provider": cliName, "Verb": "install", "Resource": "package name",
+			}),
+			i18n.T(i18n.ProviderBrewInstallUsage),
 		)
 	}
 
@@ -528,8 +532,10 @@ func (p *Provider) handleInstall(ctx context.Context, args []string, hamsFlags m
 	// breaking the apply replay.
 	if caskFlag && tag != tagCLI && tag != tagCask {
 		return hamserr.NewUserError(hamserr.ExitUsageError,
-			fmt.Sprintf("--cask is incompatible with --hams-tag=%q (cask entries must live under the %q tag so apply replay invokes brew --cask)", tag, tagCask),
-			"Use --hams-tag=cask explicitly, or omit --hams-tag entirely (defaults to cask when --cask is set)",
+			i18n.Tf(i18n.ProviderBrewInstallCaskTagConflict, map[string]any{
+				"Tag": tag, "CaskTag": tagCask,
+			}),
+			i18n.Tf(i18n.ProviderBrewInstallCaskTagHint, map[string]any{"CaskTag": tagCask}),
 		)
 	}
 	// If --cask is present in args and no explicit tag was set, use "cask" as the tag.
@@ -550,21 +556,23 @@ func (p *Provider) handleInstall(ctx context.Context, args []string, hamsFlags m
 	for _, pkg := range packages {
 		if isTapFormat(pkg) {
 			return hamserr.NewUserError(hamserr.ExitUsageError,
-				fmt.Sprintf("brew install does not support tap-format args (%q looks like user/repo)", pkg),
-				"Use `hams brew tap "+pkg+"` instead — it taps the repo AND auto-records it",
-				"To install a formula from a tap, first tap it then install: hams brew tap user/repo && hams brew install <formula>",
+				i18n.Tf(i18n.ProviderBrewInstallNoTapFormat, map[string]any{"Arg": pkg}),
+				i18n.Tf(i18n.ProviderBrewInstallNoTapHint1, map[string]any{"Arg": pkg}),
+				i18n.T(i18n.ProviderBrewInstallNoTapHint2),
 			)
 		}
 	}
 	if len(packages) == 0 {
 		return hamserr.NewUserError(hamserr.ExitUsageError,
-			"brew install requires at least one package name",
-			"Usage: hams brew install <package> [--cask] [--hams-tag=<tag>]",
+			i18n.Tf(i18n.ProviderErrRequiresAtLeastOne, map[string]any{
+				"Provider": cliName, "Verb": "install", "Resource": "package name",
+			}),
+			i18n.T(i18n.ProviderBrewInstallUsage),
 		)
 	}
 
 	if flags.DryRun {
-		fmt.Fprintf(flags.Stdout(), "[dry-run] Would install: brew install %s\n", strings.Join(args, " "))
+		provider.DryRunInstall(flags, "brew install "+strings.Join(args, " "))
 		return nil
 	}
 
@@ -614,22 +622,16 @@ func (p *Provider) handleInstall(ctx context.Context, args []string, hamsFlags m
 
 func (p *Provider) handleRemove(ctx context.Context, args []string, hamsFlags map[string]string, flags *provider.GlobalFlags) error {
 	if len(args) == 0 {
-		return hamserr.NewUserError(hamserr.ExitUsageError,
-			"brew remove requires a package name",
-			"Usage: hams brew remove <package>",
-		)
+		return provider.UsageRequiresResource(cliName, "remove", "package name", "package")
 	}
 
 	packages := packageArgs(args)
 	if len(packages) == 0 {
-		return hamserr.NewUserError(hamserr.ExitUsageError,
-			"brew remove requires at least one package name",
-			"Usage: hams brew remove <package>",
-		)
+		return provider.UsageRequiresAtLeastOne(cliName, "remove", "package name", "package")
 	}
 
 	if flags.DryRun {
-		fmt.Fprintf(flags.Stdout(), "[dry-run] Would remove: brew uninstall %s\n", strings.Join(args, " "))
+		provider.DryRunRemove(flags, "brew uninstall "+strings.Join(args, " "))
 		return nil
 	}
 

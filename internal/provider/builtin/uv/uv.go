@@ -11,7 +11,6 @@ import (
 	"strings"
 
 	"github.com/zthxxx/hams/internal/config"
-	hamserr "github.com/zthxxx/hams/internal/error"
 	"github.com/zthxxx/hams/internal/hamsfile"
 	"github.com/zthxxx/hams/internal/provider"
 	"github.com/zthxxx/hams/internal/state"
@@ -171,21 +170,14 @@ func (p *Provider) HandleCommand(ctx context.Context, args []string, hamsFlags m
 // nothing: any install failure aborts before the hamsfile is touched.
 func (p *Provider) handleInstall(ctx context.Context, args []string, hamsFlags map[string]string, flags *provider.GlobalFlags) error {
 	if len(args) == 0 {
-		return hamserr.NewUserError(hamserr.ExitUsageError,
-			"uv install requires a tool name",
-			"Usage: hams uv install <tool>",
-			"To install all recorded tools, use: hams apply --only=uv",
-		)
+		return provider.UsageRequiresResource("uv", "install", "tool name", "tool")
 	}
 	tools := toolArgs(args)
 	if len(tools) == 0 {
-		return hamserr.NewUserError(hamserr.ExitUsageError,
-			"uv install requires at least one tool name",
-			"Usage: hams uv install <tool>",
-		)
+		return provider.UsageRequiresAtLeastOne("uv", "install", "tool name", "tool")
 	}
 	if flags.DryRun {
-		fmt.Printf("[dry-run] Would install: uv tool install %s\n", strings.Join(args, " "))
+		provider.DryRunInstall(flags, "uv tool install "+strings.Join(args, " "))
 		return nil
 	}
 
@@ -225,20 +217,14 @@ func (p *Provider) handleInstall(ctx context.Context, args []string, hamsFlags m
 // and, on success, removes each tool from the uv hamsfile.
 func (p *Provider) handleRemove(ctx context.Context, args []string, hamsFlags map[string]string, flags *provider.GlobalFlags) error {
 	if len(args) == 0 {
-		return hamserr.NewUserError(hamserr.ExitUsageError,
-			"uv remove requires a tool name",
-			"Usage: hams uv remove <tool>",
-		)
+		return provider.UsageRequiresResource("uv", "remove", "tool name", "tool")
 	}
 	tools := toolArgs(args)
 	if len(tools) == 0 {
-		return hamserr.NewUserError(hamserr.ExitUsageError,
-			"uv remove requires at least one tool name",
-			"Usage: hams uv remove <tool>",
-		)
+		return provider.UsageRequiresAtLeastOne("uv", "remove", "tool name", "tool")
 	}
 	if flags.DryRun {
-		fmt.Printf("[dry-run] Would remove: uv tool uninstall %s\n", strings.Join(args, " "))
+		provider.DryRunRemove(flags, "uv tool uninstall "+strings.Join(args, " "))
 		return nil
 	}
 

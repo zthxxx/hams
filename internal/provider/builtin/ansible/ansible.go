@@ -15,6 +15,7 @@ import (
 	"github.com/zthxxx/hams/internal/config"
 	hamserr "github.com/zthxxx/hams/internal/error"
 	"github.com/zthxxx/hams/internal/hamsfile"
+	"github.com/zthxxx/hams/internal/i18n"
 	"github.com/zthxxx/hams/internal/provider"
 	"github.com/zthxxx/hams/internal/state"
 )
@@ -151,11 +152,11 @@ func (p *Provider) List(_ context.Context, desired *hamsfile.File, sf *state.Fil
 func (p *Provider) HandleCommand(ctx context.Context, args []string, _ map[string]string, flags *provider.GlobalFlags) error {
 	if len(args) == 0 {
 		return hamserr.NewUserError(hamserr.ExitUsageError,
-			"ansible requires a playbook path or subcommand",
-			"Usage: hams ansible list",
-			"       hams ansible <playbook.yml>            (ad-hoc passthrough)",
-			"       hams ansible run <urn-id>              (planned v1.1)",
-			"       hams ansible remove <urn-id>           (planned v1.1)",
+			i18n.T(i18n.ProviderAnsibleRequiresPlaybookOrSubcommand),
+			i18n.T(i18n.ProviderAnsibleUsageList),
+			i18n.T(i18n.ProviderAnsibleUsageAdhoc),
+			i18n.T(i18n.ProviderAnsibleUsageRun),
+			i18n.T(i18n.ProviderAnsibleUsageRemove),
 		)
 	}
 
@@ -164,14 +165,20 @@ func (p *Provider) HandleCommand(ctx context.Context, args []string, _ map[strin
 		return p.handleList(flags)
 	case "run", "remove":
 		return hamserr.NewUserError(hamserr.ExitUsageError,
-			fmt.Sprintf("ansible %s is planned for v1.1 (URN-editing on the CLI is not yet wired)", args[0]),
-			"Use 'hams apply --only=ansible' to run all tracked playbooks",
-			"Or hand-edit the ansible hamsfile: <profile-dir>/ansible.hams.yaml",
+			i18n.Tf(i18n.ProviderVerbPlannedV11, map[string]any{
+				"Provider": "ansible", "Verb": args[0],
+			}),
+			i18n.Tf(i18n.ProviderVerbPlannedHint1, map[string]any{
+				"Provider": "ansible", "Noun": "playbooks",
+			}),
+			i18n.Tf(i18n.ProviderVerbPlannedHint2, map[string]any{
+				"Provider": "ansible",
+			}),
 		)
 	}
 
 	if flags.DryRun {
-		fmt.Printf("[dry-run] Would run: ansible-playbook %s\n", strings.Join(args, " "))
+		provider.DryRunRun(flags, "ansible-playbook "+strings.Join(args, " "))
 		return nil
 	}
 

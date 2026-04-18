@@ -11,7 +11,6 @@ import (
 	"strings"
 
 	"github.com/zthxxx/hams/internal/config"
-	hamserr "github.com/zthxxx/hams/internal/error"
 	"github.com/zthxxx/hams/internal/hamsfile"
 	"github.com/zthxxx/hams/internal/provider"
 	"github.com/zthxxx/hams/internal/state"
@@ -136,25 +135,18 @@ func (p *Provider) HandleCommand(ctx context.Context, args []string, hamsFlags m
 // so only the install branch auto-records.
 func (p *Provider) handleInstall(ctx context.Context, args []string, hamsFlags map[string]string, flags *provider.GlobalFlags) error {
 	if len(args) == 0 {
-		return hamserr.NewUserError(hamserr.ExitUsageError,
-			"goinstall requires a package path",
-			"Usage: hams goinstall install <pkg[@version]>",
-			"To install all recorded packages, use: hams apply --only=goinstall",
-		)
+		return provider.UsageRequiresResource("goinstall", "install", "package path", "pkg[@version]")
 	}
 	paths := packageArgs(args)
 	if len(paths) == 0 {
-		return hamserr.NewUserError(hamserr.ExitUsageError,
-			"goinstall requires at least one package path",
-			"Usage: hams goinstall install <pkg[@version]>",
-		)
+		return provider.UsageRequiresAtLeastOne("goinstall", "install", "package path", "pkg[@version]")
 	}
 	pkgs := make([]string, 0, len(paths))
 	for _, r := range paths {
 		pkgs = append(pkgs, injectLatest(r))
 	}
 	if flags.DryRun {
-		fmt.Printf("[dry-run] Would install: go install %s\n", strings.Join(pkgs, " "))
+		provider.DryRunInstall(flags, "go install "+strings.Join(pkgs, " "))
 		return nil
 	}
 

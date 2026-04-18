@@ -12,7 +12,6 @@ import (
 	"strings"
 
 	"github.com/zthxxx/hams/internal/config"
-	hamserr "github.com/zthxxx/hams/internal/error"
 	"github.com/zthxxx/hams/internal/hamsfile"
 	"github.com/zthxxx/hams/internal/provider"
 	"github.com/zthxxx/hams/internal/state"
@@ -150,21 +149,14 @@ func (p *Provider) HandleCommand(ctx context.Context, args []string, hamsFlags m
 // on success, appends each numeric app ID to the mas hamsfile.
 func (p *Provider) handleInstall(ctx context.Context, args []string, hamsFlags map[string]string, flags *provider.GlobalFlags) error {
 	if len(args) == 0 {
-		return hamserr.NewUserError(hamserr.ExitUsageError,
-			"mas install requires a numeric app ID",
-			"Usage: hams mas install <app-id>",
-			"To install all recorded apps, use: hams apply --only=mas",
-		)
+		return provider.UsageRequiresResource("mas", "install", "numeric app ID", "app-id")
 	}
 	ids := appIDArgs(args)
 	if len(ids) == 0 {
-		return hamserr.NewUserError(hamserr.ExitUsageError,
-			"mas install requires at least one numeric app ID",
-			"Usage: hams mas install <app-id>",
-		)
+		return provider.UsageRequiresAtLeastOne("mas", "install", "numeric app ID", "app-id")
 	}
 	if flags.DryRun {
-		fmt.Printf("[dry-run] Would install: mas install %s\n", strings.Join(args, " "))
+		provider.DryRunInstall(flags, "mas install "+strings.Join(args, " "))
 		return nil
 	}
 
@@ -207,20 +199,14 @@ func (p *Provider) handleInstall(ctx context.Context, args []string, hamsFlags m
 // on success, removes each ID from the mas hamsfile.
 func (p *Provider) handleRemove(ctx context.Context, args []string, hamsFlags map[string]string, flags *provider.GlobalFlags) error {
 	if len(args) == 0 {
-		return hamserr.NewUserError(hamserr.ExitUsageError,
-			"mas remove requires a numeric app ID",
-			"Usage: hams mas remove <app-id>",
-		)
+		return provider.UsageRequiresResource("mas", "remove", "numeric app ID", "app-id")
 	}
 	ids := appIDArgs(args)
 	if len(ids) == 0 {
-		return hamserr.NewUserError(hamserr.ExitUsageError,
-			"mas remove requires at least one numeric app ID",
-			"Usage: hams mas remove <app-id>",
-		)
+		return provider.UsageRequiresAtLeastOne("mas", "remove", "numeric app ID", "app-id")
 	}
 	if flags.DryRun {
-		fmt.Printf("[dry-run] Would remove: mas uninstall %s\n", strings.Join(args, " "))
+		provider.DryRunRemove(flags, "mas uninstall "+strings.Join(args, " "))
 		return nil
 	}
 
