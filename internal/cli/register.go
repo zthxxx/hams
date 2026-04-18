@@ -35,7 +35,16 @@ type cliProvider interface {
 func registerBuiltins(registry *provider.Registry, sudoCmd sudo.CmdBuilder) {
 	builtinCfg := loadBuiltinProviderConfig()
 
+	gitConfigProvider := git.NewConfigProvider(builtinCfg)
+	gitCloneProvider := git.NewCloneProvider(builtinCfg)
+	vscodeextProvider := vscodeext.New(builtinCfg, vscodeext.NewRealCmdRunner())
+
 	// Providers that implement both Provider and ProviderHandler.
+	// gitConfigProvider, gitCloneProvider, vscodeextProvider are NOT
+	// in this slice because their CLI surface lives behind the
+	// unified `hams git` and `hams code` entry points (registered
+	// separately in cliOnlyHandlers below); they ARE in the
+	// applyOnlyProviders slice so apply / refresh still see them.
 	cliProviders := []cliProvider{
 		homebrew.New(builtinCfg, homebrew.NewRealCmdRunner()),
 		apt.New(builtinCfg, apt.NewRealCmdRunner(sudoCmd)),
@@ -44,20 +53,36 @@ func registerBuiltins(registry *provider.Registry, sudoCmd sudo.CmdBuilder) {
 		uv.New(builtinCfg, uv.NewRealCmdRunner()),
 		goinstall.New(builtinCfg, goinstall.NewRealCmdRunner()),
 		cargo.New(builtinCfg, cargo.NewRealCmdRunner()),
-		git.NewConfigProvider(builtinCfg),
-		git.NewCloneProvider(builtinCfg),
 		defaults.New(builtinCfg, defaults.NewRealCmdRunner()),
 		duti.New(builtinCfg, duti.NewRealCmdRunner()),
 		mas.New(builtinCfg, mas.NewRealCmdRunner()),
-		vscodeext.New(builtinCfg, vscodeext.NewRealCmdRunner()),
 		ansible.New(builtinCfg, ansible.NewRealCmdRunner()),
 		bash.New(builtinCfg),
 	}
 
-	// All builtin providers now implement ProviderHandler, so the
-	// providerOnly slice is empty. Kept for future external plugins
-	// that may want to register as apply-only (no CLI surface).
-	providerOnly := []provider.Provider{}
+	// Apply-only providers: full Provider implementations, but their
+	// CLI surface is hidden in favor of an aggregated entry point.
+	// Apply / refresh still see them as separate Providers with their
+	// own state + hamsfiles.
+	applyOnlyProviders := []provider.Provider{
+		gitConfigProvider,
+		gitCloneProvider,
+		vscodeextProvider,
+	}
+
+	// CLI-handler-only registrations: aggregator handlers that do NOT
+	// have their own apply/refresh state but expose a unified entry
+	// point on top of one or more sub-providers. Per CLAUDE.md task
+	// list:
+	//   - `hams git` routes `git config <args>` and `git clone <args>`
+	//     to the underlying ConfigProvider / CloneProvider.
+	//   - `hams code` projects the vscodeext provider behind the
+	//     editor-natural name (Cursor, when supported, ships as a
+	//     separate `cursor` provider — not a cli_command override).
+	cliOnlyHandlers := []ProviderHandler{
+		git.NewUnifiedHandler(gitConfigProvider, gitCloneProvider),
+		vscodeext.NewCodeHandler(vscodeextProvider),
+	}
 
 	// Register all into the provider registry. Platform mismatch
 	// (e.g. macOS-only `duti` on Linux) is silently skipped by
@@ -75,10 +100,17 @@ func registerBuiltins(registry *provider.Registry, sudoCmd sudo.CmdBuilder) {
 		}
 	}
 
-	for _, p := range providerOnly {
+	for _, p := range applyOnlyProviders {
 		if err := registry.Register(p); err != nil {
 			slog.Warn("failed to register provider", "provider", p.Manifest().Name, "error", err)
 		}
+	}
+
+	// CLI-only handlers — no provider-registry hook, so apply / refresh
+	// continue to see the underlying sub-providers as separate Providers
+	// with their own state files.
+	for _, h := range cliOnlyHandlers {
+		RegisterProvider(h)
 	}
 }
 

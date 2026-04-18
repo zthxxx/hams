@@ -34,9 +34,15 @@ ext_installed_check() {
 export -f ext_installed_check
 export POST_INSTALL_CHECK=ext_installed_check
 
-# vscodeext provider has Name=code-ext but FilePrefix=vscodeext, so override
-# the state-file name explicitly. Two small well-maintained extensions:
-# `vscode-icons-team.vscode-icons` is ubiquitous; `tamasfe.even-better-toml`
-# succeeded the deprecated bungcip.better-toml.
+# The user-facing CLI verb is `hams code` (renamed from the legacy
+# `hams code-ext` per the 2026-04-17 provider-unification work). The
+# underlying provider keeps Manifest.Name="code-ext" and
+# FilePrefix="vscodeext" so existing state / hamsfile names are
+# unchanged — STATE_FILE_PREFIX still resolves to "vscodeext.state.yaml"
+# (provider exposes that, not "code.state.yaml").
+#
+# Two small well-maintained extensions: `vscode-icons-team.vscode-icons`
+# is ubiquitous; `tamasfe.even-better-toml` succeeded the deprecated
+# bungcip.better-toml.
 export STATE_FILE_PREFIX=vscodeext
-standard_cli_flow code-ext install vscode-icons-team.vscode-icons tamasfe.even-better-toml
+standard_cli_flow code install vscode-icons-team.vscode-icons tamasfe.even-better-toml

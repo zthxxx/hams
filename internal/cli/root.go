@@ -194,6 +194,8 @@ Use 'hams apply' to replay all installations from config.`,
 // the package-class default so the help text is never empty.
 func providerUsageDescription(name, displayName string) string {
 	switch name {
+	case "git":
+		return "Manage git config + clones (subcommands: config, clone)"
 	case "git-config":
 		return "Manage git config entries"
 	case "git-clone":
@@ -202,10 +204,12 @@ func providerUsageDescription(name, displayName string) string {
 		return "Manage macOS defaults preferences"
 	case "duti":
 		return "Manage macOS default-app associations"
-	case "bash": //nolint:goconst // provider identifier, same string pattern as the other case labels — extracting a constant for one name would be inconsistent with the rest of the switch
+	case "bash": //nolint:goconst // single-use provider name; extracting a const for just this case would clutter the switch.
 		return "Run bash provisioning scripts"
 	case "ansible":
 		return "Run Ansible playbooks"
+	case "code":
+		return "Manage VS Code extensions (Cursor lives behind a separate `cursor` provider)"
 	case "code-ext":
 		return "Manage VS Code extensions"
 	}
