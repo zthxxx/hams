@@ -2,7 +2,7 @@
 
 ## MODIFIED Requirements
 
-### Requirement: Bundled go-git fallback for fresh machines
+### Requirement: Go-Git Bundling for Bootstrap
 
 The hams binary SHALL bundle [go-git](https://github.com/go-git/go-git) as a
 compiled-in dependency for Git operations. The go-git dependency SHALL be used
