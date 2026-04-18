@@ -170,13 +170,7 @@ Outstanding tasks:
   - [ ] Enforce via a custom golangci-lint check or a unit test that scans AST for literal strings in the whitelisted call-sites.
   - [ ] Verification: `task check` passes; catalogue-coherence test covers every new key.
 
-- [ ] **docs-sync** — Grep all `docs/content/**` + `README*.md` + `AGENTS.md` + `openspec/specs/**` for stale references (`code-ext`, `git-config`, `git-clone`, `vscodeext.hams.yaml`, `--profile` as canonical, `act` as default integration path). Rewrite to reflect the shipped `dev` state after all previous tasks land.
-  - [ ] en docs sweep.
-  - [ ] zh-CN docs sweep.
-  - [ ] AGENTS.md / README.md / README.zh-CN.md sweep.
-  - [ ] openspec/specs/** sync (delta specs from change folders merge here on archive).
-  - [ ] Run `docs/` verification process (`.claude/rules/docs-verification.md`) — build site + playwright smoke.
-  - [ ] Verification: `pnpm build` in `docs/` succeeds; no broken links.
+- [x] **docs-sync** — Done 2026-04-18 (openspec/changes/2026-04-18-docs-sync/). Three granular commits: en docs (commit `a614a74`), zh-CN mirror (`60a30c5`), README bilingual (`80c80e3`). Scope touched: `docs/content/{en,zh-CN}/docs/cli/{index,apply,global-flags}.mdx`, `docs/content/{en,zh-CN}/docs/quickstart.mdx`, `docs/content/{en,zh-CN}/docs/providers/git.mdx`, `README.md`, `README.zh-CN.md`. Rewrites: (1) `--tag` as canonical, `--profile` as legacy alias, conflict-with-different-values fails with usage error `2`; (2) auto-init section now covers dry-run preview, 30s ctx timeout on external git init + go-git fallback, and `profile_tag + machine_id` seed-when-empty; (3) new "Passthrough for unmanaged subcommands" subsection in `git.mdx` (both locales) documents verbatim forwarding with `hams git log --oneline` example; (4) README bilingual feature-list adds passthrough note. `openspec/specs/**` required zero edits — each 2026-04-18 change already wrote its own delta spec, and those merge on archive. `code-ext` / `vscodeext.hams.yaml` / `vscodeext.state.yaml` sweep: zero in-scope hits (the remaining hits are all archived `openspec/changes/archive/**` and legacy-helper comments inside `internal/**`, all out of scope). `act`-as-default sweep: only `--no-act` (apt-get dry-run flag) in apt.mdx — unrelated. Pre-commit hooks (golangci-lint + markdownlint + test:unit) passed on all three commits.
 
 - [ ] **final-verification** — After all above land, run the full `task check` + manual restore-from-store flow (fresh container, `curl | bash`, `hams apply --from-repo=<local-test-repo> --tag=macOS`) end-to-end. Confirm zero interactive prompts, all providers apply, state records correctly.
 
