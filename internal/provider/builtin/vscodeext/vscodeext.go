@@ -14,6 +14,7 @@ import (
 	hamserr "github.com/zthxxx/hams/internal/error"
 	"github.com/zthxxx/hams/internal/hamsfile"
 	"github.com/zthxxx/hams/internal/provider"
+	"github.com/zthxxx/hams/internal/provider/baseprovider"
 	"github.com/zthxxx/hams/internal/state"
 )
 
@@ -182,9 +183,12 @@ func (p *Provider) HandleCommand(ctx context.Context, args []string, hamsFlags m
 		// diff. `code list` is not a valid VS Code CLI subcommand
 		// (ext listing is `code --list-extensions`), so passthrough
 		// produced a cryptic VS Code error.
-		return provider.HandleListCmd(ctx, p, p.effectiveConfig(flags))
+		return provider.HandleListCmd(ctx, p, baseprovider.EffectiveConfig(p.cfg, flags))
 	default:
-		return provider.WrapExecPassthrough(ctx, "code", args, nil)
+		// Unintercepted subcommand — passthrough to real `code` with
+		// stdio preserved so `hams code --version`, `hams code --help`,
+		// etc. behave identically to the unwrapped CLI.
+		return provider.Passthrough(ctx, "code", args, flags)
 	}
 }
 
@@ -212,7 +216,7 @@ func (p *Provider) handleInstall(ctx context.Context, args []string, hamsFlags m
 	}
 
 	// Cycle 222: acquire single-writer state lock per cli-architecture spec.
-	release, lockErr := provider.AcquireMutationLockFromCfg(p.effectiveConfig(flags), flags, "code install")
+	release, lockErr := provider.AcquireMutationLockFromCfg(baseprovider.EffectiveConfig(p.cfg, flags), flags, "code install")
 	if lockErr != nil {
 		return lockErr
 	}
@@ -224,7 +228,7 @@ func (p *Provider) handleInstall(ctx context.Context, args []string, hamsFlags m
 		}
 	}
 
-	hf, err := p.loadOrCreateHamsfile(hamsFlags, flags)
+	hf, err := baseprovider.LoadOrCreateHamsfile(p.cfg, p.Manifest().FilePrefix, hamsFlags, flags)
 	if err != nil {
 		return err
 	}
@@ -267,7 +271,7 @@ func (p *Provider) handleRemove(ctx context.Context, args []string, hamsFlags ma
 	}
 
 	// Cycle 222: acquire single-writer state lock per cli-architecture spec.
-	release, lockErr := provider.AcquireMutationLockFromCfg(p.effectiveConfig(flags), flags, "code remove")
+	release, lockErr := provider.AcquireMutationLockFromCfg(baseprovider.EffectiveConfig(p.cfg, flags), flags, "code remove")
 	if lockErr != nil {
 		return lockErr
 	}
@@ -279,7 +283,7 @@ func (p *Provider) handleRemove(ctx context.Context, args []string, hamsFlags ma
 		}
 	}
 
-	hf, err := p.loadOrCreateHamsfile(hamsFlags, flags)
+	hf, err := baseprovider.LoadOrCreateHamsfile(p.cfg, p.Manifest().FilePrefix, hamsFlags, flags)
 	if err != nil {
 		return err
 	}
@@ -303,14 +307,14 @@ func (p *Provider) handleRemove(ctx context.Context, args []string, hamsFlags ma
 // legacy `vscodeext.hams.yaml` / `code-ext` divergence forward.
 // Mirrors homebrew/mas/cargo/npm/pnpm/uv/goinstall.statePath.
 func (p *Provider) statePath(flags *provider.GlobalFlags) string {
-	cfg := p.effectiveConfig(flags)
+	cfg := baseprovider.EffectiveConfig(p.cfg, flags)
 	return filepath.Join(cfg.StateDir(), p.Manifest().FilePrefix+".state.yaml")
 }
 
 // loadOrCreateStateFile reads vscodeext.state.yaml or returns a fresh
 // one when the file is absent. Non-ErrNotExist load failures propagate.
 func (p *Provider) loadOrCreateStateFile(flags *provider.GlobalFlags) (*state.File, error) {
-	cfg := p.effectiveConfig(flags)
+	cfg := baseprovider.EffectiveConfig(p.cfg, flags)
 	sf, err := state.Load(p.statePath(flags))
 	if err == nil {
 		return sf, nil
