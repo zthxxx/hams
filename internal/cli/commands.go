@@ -21,6 +21,7 @@ import (
 
 	"github.com/zthxxx/hams/internal/config"
 	hamserr "github.com/zthxxx/hams/internal/error"
+	"github.com/zthxxx/hams/internal/i18n"
 	"github.com/zthxxx/hams/internal/logging"
 	"github.com/zthxxx/hams/internal/provider"
 	"github.com/zthxxx/hams/internal/selfupdate"
@@ -123,6 +124,12 @@ func runRefresh(ctx context.Context, flags *provider.GlobalFlags, registry *prov
 	if err != nil {
 		return fmt.Errorf("loading config: %w", err)
 	}
+	// Surface empty profile_tag / machine_id once per invocation so
+	// refresh (which writes to <store>/default/ or .state/unknown/
+	// when either is missing) doesn't silently drift. Metadata
+	// commands (--help, --version) never reach this point, so they
+	// stay silent.
+	config.WarnIfDefaultsUsed(cfg)
 	if flags.Profile != "" {
 		// Cycle 219 puts the --profile overlay inside config.Load, so
 		// cfg.ProfileTag already reflects the override. Refresh still
@@ -1111,18 +1118,20 @@ func storeCmd() *cli.Command {
 			return nil
 		}
 
-		fmt.Printf("Store path:    %s\n", logging.TildePath(storePath))
-		fmt.Printf("Profile tag:   %s\n", cfg.ProfileTag)
-		fmt.Printf("Machine ID:    %s\n", cfg.MachineID)
-		fmt.Printf("Profile dir:   %s\n", logging.TildePath(cfg.ProfileDir()))
-		fmt.Printf("State dir:     %s\n", logging.TildePath(cfg.StateDir()))
+		// i18n labels — values (paths, tags, counts) stay machine-
+		// readable, translations apply only to the label prose.
+		fmt.Printf("%-14s %s\n", i18n.T(i18n.StoreStatusLabelPath), logging.TildePath(storePath))
+		fmt.Printf("%-14s %s\n", i18n.T(i18n.StoreStatusLabelProfile), cfg.ProfileTag)
+		fmt.Printf("%-14s %s\n", i18n.T(i18n.StoreStatusLabelMachine), cfg.MachineID)
+		fmt.Printf("%-14s %s\n", i18n.T(i18n.StoreStatusLabelProfileDir), logging.TildePath(cfg.ProfileDir()))
+		fmt.Printf("%-14s %s\n", i18n.T(i18n.StoreStatusLabelStateDir), logging.TildePath(cfg.StateDir()))
 		if hamsfiles >= 0 {
-			fmt.Printf("Hamsfiles:     %d\n", hamsfiles)
+			fmt.Printf("%-14s %d\n", i18n.T(i18n.StoreStatusLabelHamsfiles), hamsfiles)
 		} else {
-			fmt.Printf("Hamsfiles:     (profile dir not found)\n")
+			fmt.Printf("%-14s (profile dir not found)\n", i18n.T(i18n.StoreStatusLabelHamsfiles))
 		}
 		if gitStatus != "" {
-			fmt.Printf("Git status:    %s\n", gitStatus)
+			fmt.Printf("%-14s %s\n", i18n.T(i18n.StoreStatusLabelGit), gitStatus)
 		}
 
 		return nil
@@ -1425,6 +1434,11 @@ func listCmd(registry *provider.Registry) *cli.Command {
 			if err != nil {
 				return fmt.Errorf("loading config: %w", err)
 			}
+			// Surface empty profile_tag / machine_id once per
+			// invocation so `hams list` (which reads state from
+			// .state/<machine-id>/) doesn't silently default to
+			// /unknown/ with no feedback.
+			config.WarnIfDefaultsUsed(cfg)
 
 			// Cycle 217 fixed the silent --profile drop in list; cycle
 			// 219 promoted the overlay into config.Load itself, so

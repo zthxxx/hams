@@ -139,7 +139,7 @@ func (p *ConfigProvider) HandleCommand(ctx context.Context, args []string, hamsF
 			)
 		}
 		return p.doSet(ctx, args[1], args[2], hamsFlags, flags)
-	case "remove":
+	case verbRemove:
 		if len(args) != 2 {
 			return hamserr.NewUserError(hamserr.ExitUsageError,
 				"git-config remove requires a key",
@@ -148,7 +148,7 @@ func (p *ConfigProvider) HandleCommand(ctx context.Context, args []string, hamsF
 			)
 		}
 		return p.doRemove(ctx, args[1], hamsFlags, flags)
-	case "list":
+	case verbList:
 		return p.doList(ctx, flags)
 	}
 

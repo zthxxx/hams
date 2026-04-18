@@ -35,6 +35,13 @@ type cliProvider interface {
 func registerBuiltins(registry *provider.Registry, sudoCmd sudo.CmdBuilder) {
 	builtinCfg := loadBuiltinProviderConfig()
 
+	// Build the unified `git` CLI provider once so the same pair of
+	// sub-providers (config + clone) is registered with the apply
+	// registry AND the CLI dispatcher. Ensures there is ONE instance
+	// of each sub-provider across both layers — no double-init, no
+	// drift between "what apply sees" and "what the CLI dispatches".
+	unifiedGit := git.NewUnifiedProvider(builtinCfg)
+
 	// Providers that implement both Provider and ProviderHandler.
 	cliProviders := []cliProvider{
 		homebrew.New(builtinCfg, homebrew.NewRealCmdRunner()),
@@ -44,8 +51,6 @@ func registerBuiltins(registry *provider.Registry, sudoCmd sudo.CmdBuilder) {
 		uv.New(builtinCfg, uv.NewRealCmdRunner()),
 		goinstall.New(builtinCfg, goinstall.NewRealCmdRunner()),
 		cargo.New(builtinCfg, cargo.NewRealCmdRunner()),
-		git.NewConfigProvider(builtinCfg),
-		git.NewCloneProvider(builtinCfg),
 		defaults.New(builtinCfg, defaults.NewRealCmdRunner()),
 		duti.New(builtinCfg, duti.NewRealCmdRunner()),
 		mas.New(builtinCfg, mas.NewRealCmdRunner()),
@@ -54,10 +59,13 @@ func registerBuiltins(registry *provider.Registry, sudoCmd sudo.CmdBuilder) {
 		bash.New(builtinCfg),
 	}
 
-	// All builtin providers now implement ProviderHandler, so the
-	// providerOnly slice is empty. Kept for future external plugins
-	// that may want to register as apply-only (no CLI surface).
-	providerOnly := []provider.Provider{}
+	// providerOnly registers with the apply registry but NOT the CLI
+	// dispatcher — these are the two git sub-providers, reached at
+	// the CLI layer only through unifiedGit below.
+	providerOnly := []provider.Provider{
+		unifiedGit.Config(),
+		unifiedGit.Clone(),
+	}
 
 	// Register all into the provider registry. Platform mismatch
 	// (e.g. macOS-only `duti` on Linux) is silently skipped by
@@ -80,6 +88,13 @@ func registerBuiltins(registry *provider.Registry, sudoCmd sudo.CmdBuilder) {
 			slog.Warn("failed to register provider", "provider", p.Manifest().Name, "error", err)
 		}
 	}
+
+	// Register the unified `hams git` CLI entry point separately. It
+	// has no apply-side Plan / Apply — the two sub-providers (git-
+	// config and git-clone, already registered via providerOnly
+	// above) handle that — so it doesn't belong in cliProviders
+	// which asserts both interfaces.
+	RegisterProvider(unifiedGit)
 }
 
 func loadBuiltinProviderConfig() *config.Config {

@@ -32,6 +32,7 @@ func globalFlags(cmd *cli.Command) *provider.GlobalFlags {
 		Config:  cmd.String("config"),
 		Store:   cmd.String("store"),
 		Profile: cmd.String("profile"),
+		Tag:     cmd.String("tag"),
 	}
 }
 
@@ -194,16 +195,18 @@ func providerUsageDescription(name, displayName string) string {
 		return "Manage git config entries"
 	case "git-clone":
 		return "Manage cloned git repositories"
+	case "git":
+		return "Manage git config + clones (wraps the real git CLI for every other subcommand)"
 	case "defaults":
 		return "Manage macOS defaults preferences"
 	case "duti":
 		return "Manage macOS default-app associations"
-	case "bash": //nolint:goconst // provider identifier, same string pattern as the other case labels — extracting a constant for one name would be inconsistent with the rest of the switch
+	case "bash": //nolint:goconst // provider identifier, same pattern as peers — extracting one name to a const while the others stay literals would be inconsistent
 		return "Run bash provisioning scripts"
 	case "ansible":
 		return "Run Ansible playbooks"
-	case "code-ext":
-		return "Manage VS Code extensions"
+	case "code":
+		return "Manage VS Code extensions (wraps `code --install-extension` / `--uninstall-extension`)"
 	}
 	// Package-class default (brew, apt, pnpm, npm, uv, goinstall,
 	// cargo, mas) — accurate for installed packages.
@@ -248,6 +251,7 @@ func globalFlagDefs() []cli.Flag {
 		&cli.BoolFlag{Name: "no-color", Usage: "Disable colored output"},
 		&cli.StringFlag{Name: "config", Usage: "Override config file path"},
 		&cli.StringFlag{Name: "store", Usage: "Override store directory path"},
-		&cli.StringFlag{Name: "profile", Usage: "Override active profile tag"},
+		&cli.StringFlag{Name: "tag", Usage: "Active profile tag (picks <store>/<tag>/ on disk; overrides profile_tag in config)"},
+		&cli.StringFlag{Name: "profile", Usage: "Alias of --tag (kept for backward compatibility)", Hidden: true},
 	}
 }

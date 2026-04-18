@@ -75,9 +75,9 @@ hams apply --except=ansible
 | `mas` | `brew install mas` | macOS；链式经过 brew |
 | `ansible` | `pipx install --include-deps ansible` | 前置需要 pipx（apt install pipx / brew install pipx） |
 
-其他 provider（`npm`、`cargo`、`goinstall`、`uv`、`code-ext`、`apt`、`defaults`、`git`）故意**不**接入
+其他 provider（`npm`、`cargo`、`goinstall`、`uv`、`code`、`apt`、`defaults`、`git`）故意**不**接入
 `--bootstrap` —— 语言 runtime 的安装属于你自己的决定（nvm / fnm / rustup / 发行版），
-`code-ext` 需要 GUI 应用，`apt`/`defaults` 平台门控，`git` 是 hams 安装器运行所需的前置。
+`code` 需要 GUI 应用，`apt`/`defaults` 平台门控，`git` 是 hams 安装器运行所需的前置。
 这些 provider 前置缺失时 hams 直接给一条 "not found in PATH" 的简单错误 + 安装提示。
 
 当 hams 跑到一个缺前置工具的 provider 时，它会停下来，然后根据当前情境做三件事之一：

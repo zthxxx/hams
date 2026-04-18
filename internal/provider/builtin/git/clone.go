@@ -26,17 +26,20 @@ type CloneProvider struct {
 	cfg *config.Config
 }
 
+// cloneProviderName is the manifest name and CLI verb for this provider.
+const cloneProviderName = "git-clone"
+
 // NewCloneProvider creates a new git clone provider.
 func NewCloneProvider(cfg *config.Config) *CloneProvider { return &CloneProvider{cfg: cfg} }
 
 // Manifest returns the git clone provider metadata.
 func (p *CloneProvider) Manifest() provider.Manifest {
 	return provider.Manifest{
-		Name:          "git-clone",
+		Name:          cloneProviderName,
 		DisplayName:   "git clone",
 		Platforms:     []provider.Platform{provider.PlatformAll},
 		ResourceClass: provider.ClassFilesystem,
-		FilePrefix:    "git-clone",
+		FilePrefix:    cloneProviderName,
 	}
 }
 
@@ -242,9 +245,9 @@ func (p *CloneProvider) HandleCommand(ctx context.Context, args []string, hamsFl
 	switch verb {
 	case "add":
 		return p.handleAdd(ctx, remaining, hamsFlags, flags)
-	case "remove":
+	case verbRemove:
 		return p.handleRemove(remaining, hamsFlags, flags)
-	case "list":
+	case verbList:
 		return p.handleList(ctx, hamsFlags, flags)
 	default:
 		// Passthrough: treat as raw git clone.
@@ -548,7 +551,7 @@ func (p *CloneProvider) clonePassthrough(ctx context.Context, args []string, fla
 }
 
 // Name returns the CLI name.
-func (p *CloneProvider) Name() string { return "git-clone" }
+func (p *CloneProvider) Name() string { return cloneProviderName }
 
 // DisplayName returns the display name.
 func (p *CloneProvider) DisplayName() string { return "git clone" }

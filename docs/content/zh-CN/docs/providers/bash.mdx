@@ -94,8 +94,8 @@ hams 跑 `run` 命令时：
 bash 很强大，但它缺少其他 provider 的结构化信息。优先考虑专门的 provider：
 
 - 装 Homebrew formula？用 Homebrew provider，别自己写 `brew install` 脚本
-- 配 git 全局设置？用 git-config provider，比 bash 写 `git config --global` 可读得多
-- 克隆仓库？用 git-clone provider
+- 配 git 全局设置？用 `hams git config`，比 bash 里写 `git config --global` 可读得多
+- 克隆仓库？用 `hams git clone`
 
 bash 最适合那些**无处可放**的一次性操作：安装 Homebrew 自己、跑第三方 installer、触发系统级初始化。
 

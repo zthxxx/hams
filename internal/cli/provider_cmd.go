@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"strings"
 
+	"github.com/zthxxx/hams/internal/config"
 	"github.com/zthxxx/hams/internal/logging"
 	"github.com/zthxxx/hams/internal/provider"
 )
@@ -65,6 +66,39 @@ func routeToProvider(ctx context.Context, handler ProviderHandler, args []string
 	if _, ok := hamsFlags["lucky"]; ok {
 		slog.Warn("--hams-lucky is parsed but silently ignored in v1 (LLM enrichment deferred to v1.1)",
 			"provider", handler.Name())
+	}
+
+	// Collapse --tag / --profile into flags.Profile so every provider's
+	// existing effectiveConfig overlay (which only reads flags.Profile)
+	// honors `--tag=<t>` too. Fails fast on the conflict case so the
+	// user sees the error here rather than in a downstream provider
+	// call stack. Aliasing happens AFTER parseProviderArgs so
+	// `hams --tag=macOS brew …` (root-level flag) and
+	// `hams brew --tag=macOS …` (passthrough-slot flag) both land.
+	if flags.Tag != "" || flags.Profile != "" {
+		resolved, resolveErr := config.ResolveCLITagOverride(flags.Tag, flags.Profile)
+		if resolveErr != nil {
+			return resolveErr
+		}
+		flags.Profile = resolved
+		flags.Tag = resolved
+	}
+
+	// Auto-scaffold a store on first-ever provider invocation. Turns
+	// `hams brew install htop` on a pristine machine from an error
+	// into "create the store + init git + record the install" in one
+	// command, which is the CLAUDE.md Current Tasks bullet about
+	// "auto-create one at the default location" for provider wraps.
+	// Skipped when --hams-no-scaffold is set so tests and power users
+	// can opt out; also skipped when the help path is taken above.
+	if _, skip := hamsFlags["no-scaffold"]; !skip {
+		scaffoldedPath, scaffErr := EnsureStoreScaffolded(ctx, resolvePaths(flags), flags)
+		if scaffErr != nil {
+			return fmt.Errorf("auto-scaffold store: %w", scaffErr)
+		}
+		if flags.Store == "" {
+			flags.Store = scaffoldedPath
+		}
 	}
 	return handler.HandleCommand(ctx, passthrough, hamsFlags, flags)
 }
@@ -137,6 +171,11 @@ func parseProviderArgs(args []string, flags *provider.GlobalFlags) (hamsFlags ma
 		case arg == "--profile" && i+1 < len(args):
 			flags.Profile = args[i+1]
 			skip = true
+		case strings.HasPrefix(arg, "--tag="):
+			flags.Tag = strings.TrimPrefix(arg, "--tag=")
+		case arg == "--tag" && i+1 < len(args):
+			flags.Tag = args[i+1]
+			skip = true
 		default:
 			passthrough = append(passthrough, arg)
 		}
@@ -205,6 +244,11 @@ func stripGlobalFlags(args []string, flags *provider.GlobalFlags) []string {
 			flags.Profile = strings.TrimPrefix(arg, "--profile=")
 		case arg == "--profile" && i+1 < len(args):
 			flags.Profile = args[i+1]
+			skip = true
+		case strings.HasPrefix(arg, "--tag="):
+			flags.Tag = strings.TrimPrefix(arg, "--tag=")
+		case arg == "--tag" && i+1 < len(args):
+			flags.Tag = args[i+1]
 			skip = true
 		default:
 			cleaned = append(cleaned, arg)

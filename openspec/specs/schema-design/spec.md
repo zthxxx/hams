@@ -46,7 +46,7 @@ provider_priority:
   - uv
   - goinstall
   - cargo
-  - code-ext
+  - code
   - mas
   - git
   - defaults
@@ -204,7 +204,7 @@ A single resource MAY appear in multiple groups (multiple tags). The canonical i
 
 #### Package-Type Item Schema
 
-For package-type providers (Homebrew, pnpm, npm, uv, goinstall, cargo, mas, apt, code-ext):
+For package-type providers (Homebrew, pnpm, npm, uv, goinstall, cargo, mas, apt, code):
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
@@ -233,7 +233,7 @@ groups:
           - editor
         hooks:
           post_install:
-            - run: hams code-ext apply
+            - run: hams code apply
               defer: true
 
   - tag: media
@@ -350,7 +350,7 @@ Each hook entry SHALL contain:
     pre_install:
       - run: echo "Installing VS Code..."
     post_install:
-      - run: hams code-ext apply
+      - run: hams code apply
         defer: true
       - run: defaults write com.microsoft.VSCode ApplePressAndHoldEnabled -bool false
 ```

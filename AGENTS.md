@@ -65,11 +65,11 @@ Single test: `go test -race -run TestFuncName ./path/to/package/...`
 
 - **Provider plugin system**: builtins compiled in Go, externals via `hashicorp/go-plugin` (local gRPC).
 - **Terraform-style state**: `.state/<machine-id>/<Provider>.state.yaml`, single-writer lock, refresh-then-diff.
-- **TUI**: BubbleTea models scaffolded at `internal/tui/` (alternate screen, collapsible logs, popup) but **unwired in v1**; CLI uses plain `slog` log lines. v1.1 will plug `tui.RunApplyTUI` into `runApply`. See `openspec/changes/2026-04-16-defer-tui-and-notify/`.
+- **TUI**: BubbleTea models scaffolded at `internal/tui/` (alternate screen, collapsible logs, popup) but **unwired in v1**; CLI uses plain `slog` log lines. v1.1 will plug `tui.RunApplyTUI` into `runApply`. See `openspec/changes/archive/2026-04-17-defer-tui-and-notify/`.
 - **OTel**: trace + metrics, local file exporter at `${HAMS_DATA_HOME}/otel/`.
 - **Docs**: Nextra on GitHub Pages at `hams.zthxxx.me`.
 
-15 builtin providers: Bash, Homebrew, apt, pnpm, npm, uv, goinstall, cargo, VS Code Extensions (`code-ext`), git (config/clone), defaults, duti, mas, Ansible.
+14 builtin providers: Bash, Homebrew, apt, pnpm, npm, uv, goinstall, cargo, VS Code Extensions (`code`), git (unified config + clone), defaults, duti, mas, Ansible.
 
 ## Directory Conventions
 
@@ -135,28 +135,78 @@ This project uses [OpenSpec](https://openspec.dev) for spec-driven development.
 
 ## Current Tasks
 
+These tasks are derived from `docs/notes/dev-vs-loop-gap-analysis.md` —
+spec-citable gaps between the current branch (`local/loop`) and the
+reference remote branch (`origin/dev`). Every task below closes a
+concrete SHALL in `openspec/specs/**` or a hard rule in CLAUDE.md. The
+remote `dev` branch is read-only reference material — all work lands on
+the current branch.
 
-Outstanding tasks not yet completed:
+Each numbered bullet is **one** OpenSpec change. Follow the OpenSpec
+workflow end-to-end: propose (`/opsx:new` or `/opsx:propose`) → design
+(if non-trivial) → implement → verify → archive. Mark the checklist
+item `[x]` only when the change is archived AND `task check` passes.
 
-- [ ] Archive all implemented OpenSpec changes — move them into the archive for completed history.
+Atomicity rule: every listed task has a "verification" sub-item as its
+last step. No parent task may be closed until that sub-item is green.
 
-Everything aims at keeping onboarding simple and easy for new users, so the following are also required:
+- [ ] **1. Restore `go-git` fallback in auto-scaffold** (spec: `project-structure/spec.md:686-699`)
+  Port `dev`'s `internal/storeinit/` package — including the
+  `exec.LookPath("git")` + `gogit.PlainInit(…)` fallback — and replace
+  the current `internal/cli/scaffold.go`'s `git init` shell-out.
+  - [ ] 1.1 Propose OpenSpec change `restore-go-git-fallback` (or equivalent id).
+  - [ ] 1.2 Create `internal/storeinit/` package with `doc.go`, `storeinit.go`, `storeinit_test.go`, `template/` (move existing templates from `internal/cli/template/store/`).
+  - [ ] 1.3 The bootstrap function MUST preserve loop's `seedIfMissing` semantics for `profile_tag` + `machine_id` so first-run stays non-interactive (`cli-architecture/spec.md:654`).
+  - [ ] 1.4 Update `internal/cli/scaffold.go` (or delete it) to delegate into `internal/storeinit/`.
+  - [ ] 1.5 Rewire callers (`internal/cli/apply.go`, `internal/cli/provider_cmd.go`, `internal/cli/commands.go`) to the new package path.
+  - [ ] 1.6 Integration test: container with no `git` on `PATH` — `hams apt install htop` succeeds, state written, go-git log line emitted.
+  - [ ] 1.7 `task check` passes + archive the change.
 
-- [ ] `hams apply` MUST directly accept a `--tag` argument, with precedence: `--tag` > profile tag in config > default `tag: default`. This enables single-command restoration from a repo. If no hams config file exists when `hams apply` runs, auto-create one at the default location.
-- [ ] When running `hams <provider> ...`, if no hams config file repo exists yet, auto-create one at the default location, pre-initialized with `git init` (via command invocation) and a `.gitignore` (from a template file, e.g., containing `.state`), then write the hams config file (create if missing).
-  - Technically, pick a directory to serve as the template and bundle its structure + file contents into the binary for ease of development and maintenance.
-- [ ] Provider wrapped commands MUST behave exactly like the original command, at least at the first-level command entry point. Therefore:
-  - [ ] The `git-clone` and `git-config` providers should be merged into a unified `git` provider, exposing only the `hams git` entry point.
-  - [ ] The `code-ext` provider likewise should expose only the `hams code` entry point.
-    - [ ] `code` refers specifically to VSCode. If Cursor support is needed, implement a separate `cursor` provider rather than configuring `cli_command: cursor`.
-  - [ ] All providers follow the same pattern: parse the original command structure, extract what needs to be recorded, then pass the remainder through to the underlying command for execution. Since providers are structurally similar at the code level, design shared abstractions — either a single generic base or a few categorical base types — so that extending with a new provider is a matter of filling in a well-defined template, not reimplementing the pattern from scratch.
+- [ ] **2. Route all builtin-provider user-facing strings through i18n** (spec: `cli-architecture/spec.md:103-116` — "all user-facing strings (errors, help text, prompts) go through" the i18n catalogue)
+  Today `rg 'i18n\.' internal/provider/builtin/ -g '!*_test.go'` returns **zero** results. Every `hamserr.NewUserError(…)`, every dry-run prose line, every `fmt.Fprintf(flags.Stdout(), …)` user message must round-trip through `i18n.T` / `i18n.Tf` with a typed key in `internal/i18n/keys.go`.
+  - [ ] 2.1 Propose OpenSpec change `i18n-provider-catalog` (deliver as delta against `cli-architecture/spec.md` and `builtin-providers/spec.md`).
+  - [ ] 2.2 Extend `internal/i18n/keys.go` with typed constants under `provider.<provider>.*` for every provider-emitted string. Naming: `provider.<name>.<verb>.<slot>` (e.g., `provider.apt.install.usage`).
+  - [ ] 2.3 Fill `internal/i18n/locales/en.yaml` (canonical source) and `zh-CN.yaml` (complete translations).
+  - [ ] 2.4 Wire each builtin provider's user-facing strings to `i18n.T`. Providers to cover: `apt`, `bash`, `brew`/`homebrew`, `cargo`, `git`, `goinstall`, `mas`, `npm`, `pnpm`, `uv`, `vscodeext`, `duti`, `defaults`, `ansible`.
+  - [ ] 2.5 Log statements (slog) are exempt — English only for log records, user-visible prose is not.
+  - [ ] 2.6 Integration test: each provider's CLI output changes under `LANG=zh_CN.UTF-8`. Add a shared assertion helper in `e2e/base/lib/i18n_assert.sh`.
+  - [ ] 2.7 `task check` passes + archive the change.
 
-- [ ] Whether logging is emitted — for each provider as well as for hams itself — must be verified in integration tests.
-- [ ] CLI user-facing messages and error messages do not yet implement i18n (internationalization), but our standards mandate i18n support. All missing pieces must be implemented. Log records do not require i18n.
-- [ ] If all other tasks have been completed, then re-run the overall verification to pass.
+- [ ] **3. Adopt the shared package-dispatcher abstraction in real providers** (`CLAUDE.md` → *Current Tasks* — "design shared abstractions … extending with a new provider is a matter of filling in a well-defined template, not reimplementing the pattern from scratch")
+  Today `internal/provider/package_dispatcher.go` (190 LoC) and `internal/provider/baseprovider/` (from any dev-style port) are dead code — zero adopters in `internal/provider/builtin/`. A template with zero adopters is a guess, not an abstraction.
+  - [ ] 3.1 Propose OpenSpec change `provider-shared-abstraction-adoption` with a `provider-system/spec.md` delta that adds a new SHALL: "New Package-class providers SHALL route install/remove/list through `provider.AutoRecordInstall` / `AutoRecordRemove` unless they document why in their spec delta."
+  - [ ] 3.2 Pick `apt` as the proof-of-abstraction adopter. Port its `handleInstall` / `handleRemove` onto `provider.AutoRecordInstall` / `AutoRecordRemove` without regressing the apt-specific complex-invocation detection (`builtin-providers/spec.md:1034`).
+  - [ ] 3.3 Batch-migrate `brew`, `pnpm`, `npm` — each must keep its provider-specific argument extractor but hand off the lock/install/record flow to the dispatcher.
+  - [ ] 3.4 Batch-migrate `cargo`, `goinstall`, `uv`, `mas`, `vscodeext` — same pattern.
+  - [ ] 3.5 Delete or consolidate any second shared helper (e.g., a `baseprovider`-shaped remnant) so there is exactly one "shared base" helper per category.
+  - [ ] 3.6 Update `CLAUDE.md` → *Directory Conventions* with a one-line pointer to the shared dispatcher.
+  - [ ] 3.7 Integration tests: each migrated provider's lifecycle (install → re-install → install-new → refresh → remove) continues to pass under `standard_cli_flow`.
+  - [ ] 3.8 `task check` passes + archive the change.
 
+- [ ] **4. Consolidate the store scaffold into a dedicated package** (`CLAUDE.md` → *package hygiene*)
+  Partially overlaps with task 1; call out here to ensure the boundary stays clean even if task 1 lands incrementally. After completion, `internal/cli/` MUST NOT contain `//go:embed template/store` — embeds live in `internal/storeinit/`.
+  - [ ] 4.1 Audit `internal/cli/` for any scaffold-shaped code and move it to `internal/storeinit/`.
+  - [ ] 4.2 Keep CLI-surface helpers (flag parsing, EnterCommand wiring) in `internal/cli/`.
+  - [ ] 4.3 `task check` passes.
+  - [ ] 4.4 If task 1's change hasn't archived yet, fold this work into the same change so there is one coherent delta; otherwise archive a follow-up change.
 
-All of these tasks are driven and completed using the OpenSpec workflow, when you archive you work completed, you mark the checklist done.
+- [ ] **5. Integration test: verify `hams git` passthrough is preserved for the real git verbs** (`builtin-providers/spec.md:69`)
+  Current implementation at `internal/provider/builtin/git/unified.go` is correct; the test is a regression gate.
+  - [ ] 5.1 Propose small OpenSpec change `git-passthrough-regression-test` (deltas optional — can attach to an existing archived change's tasks if that reads better).
+  - [ ] 5.2 Extend `internal/provider/builtin/git/integration/integration.sh` to run `hams git status`, `hams git log -1`, `hams git rev-parse HEAD`, `hams git branch` and assert exit 0 + sensible output.
+  - [ ] 5.3 `task check` passes + archive (or roll into task 3's archive if co-shipping).
+
+- [ ] **6. Final verification pass** (`CLAUDE.md` → *Mandatory Verification Before Delivery*)
+  - [ ] 6.1 `task check` (lint + all unit + integration tests) passes.
+  - [ ] 6.2 `task test:e2e:one TARGET=debian-amd64` reproduces the full workflow under `act` locally and matches GitHub Actions.
+  - [ ] 6.3 User-scenario smoke: fresh container without `git` on PATH, `hams apply --from-repo=https://github.com/zthxxx/test-store.hams.git` recovers the expected state; `hams brew install htop` on a fresh container with `brew` installed produces a committable single-commit `hams.config.yaml`+`default/Homebrew.hams.yaml` with no interactive prompts.
+  - [ ] 6.4 Verify `rg 'i18n\.' internal/provider/builtin/ -g '!*_test.go'` is non-empty AND every string listed in `internal/i18n/keys.go` exists in both `en.yaml` and `zh-CN.yaml`.
+  - [ ] 6.5 Verify `rg 'AutoRecordInstall|AutoRecordRemove' internal/provider/builtin/` has at least one adopter per package-like provider.
+
+All tasks use the OpenSpec workflow. Use `/opsx:new` or `/opsx:propose`
+to start a change, `/opsx:apply` to drive implementation, `/opsx:verify`
+before archival, and `/opsx:archive` to close it out. Mark the
+corresponding top-level `[x]` only when the change is fully archived.
 
 ## Rules
 

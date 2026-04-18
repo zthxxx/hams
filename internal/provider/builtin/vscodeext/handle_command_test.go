@@ -39,7 +39,7 @@ func newVscodeextHarness(t *testing.T) *vscodeextHarness {
 		t:            t,
 		storeDir:     storeDir,
 		profileDir:   profileDir,
-		hamsfilePath: filepath.Join(profileDir, "vscodeext.hams.yaml"),
+		hamsfilePath: filepath.Join(profileDir, "code.hams.yaml"),
 		flags:        &provider.GlobalFlags{Store: storeDir, Profile: profileTag},
 		runner:       runner,
 		provider:     p,

@@ -216,6 +216,32 @@ standard_cli_flow() {
   assert_yaml_field_present "$new_pkg.removed_at set after remove" \
     "$state_file" ".resources[\"$new_pkg\"].removed_at"
 
+  # -------------------------------------------------------------------
+  # Log-emission gate: verify both hams itself AND the provider emit
+  # slog output on the apply path. Covers CLAUDE.md Current Tasks:
+  # "Whether logging is emitted — for each provider as well as for
+  # hams itself — must be verified in integration tests." The apply
+  # path is used (not the direct CLI verb path) because apply fires
+  # the Provider's Apply() method, which every provider exercises via
+  # a `slog.Info("<provider-verb>", …)` call. The direct CLI install
+  # path varies per provider — some emit nothing, others log via the
+  # runner. Keeping the gate on the apply path means the check is
+  # uniform across every in-scope provider.
+  #
+  # "hams session started" comes from SetupLogging (internal/cli/apply.go)
+  # and is deterministic across every provider, so it doubles as the
+  # "hams itself emits logs" assertion.
+  _write_hamsfile_pkgs "$existing_pkg"
+  assert_stderr_contains "$provider: hams itself emits session-start log" \
+    "hams session started" _reconcile
+  # Provider-side log line: the apply executes p.Apply() which logs a
+  # provider-labeled event. We assert only the provider name as the
+  # substring so the assertion stays stable across slog attribute
+  # ordering and across verb variations (e.g. "pnpm add" vs the more
+  # common "<provider> install").
+  assert_stderr_contains "$provider: provider emits slog line" \
+    "$provider" _reconcile
+
   echo ""
   echo "--- standard_cli_flow ($provider) passed ---"
 }

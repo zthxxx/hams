@@ -5,22 +5,19 @@ import { Callout } from 'nextra/components'
 包装 `code` 命令行工具来管 VS Code 的扩展。每次换新机器重新一个个点装扩展是最烦的事情之一，
 这个 provider 就是为了让那个过程消失。
 
-同样支持 Cursor、VSCodium 这类 VS Code fork —— 只要它们也提供了兼容的 CLI 就行，
-通过 `hams.config.yaml` 里改 `code_ext.cli_command` 可以切。
-
 **支持平台：** macOS、Linux
 
 ## 怎么用
 
 ```bash
 # 装一个扩展（用 publisher.name 形式）
-hams code-ext install esbenp.prettier-vscode
+hams code install esbenp.prettier-vscode
 
 # 卸掉
-hams code-ext uninstall esbenp.prettier-vscode
+hams code uninstall esbenp.prettier-vscode
 
 # 列出被管的扩展
-hams code-ext list
+hams code list
 ```
 
 扩展 ID 去哪找？打开 VS Code 扩展面板，右键任意扩展 → Copy Extension ID，就是 `publisher.name` 这个格式。
@@ -30,7 +27,7 @@ hams code-ext list
 ```yaml
 # macOS/vscodeext.hams.yaml
 schema_version: 1
-provider: code-ext
+provider: vscodeext
 
 groups:
   - tag: language-support
@@ -66,19 +63,20 @@ groups:
   check: command -v code
 ```
 
-## 用 Cursor / VSCodium 怎么办
+## Cursor、VSCodium 等 VS Code fork
 
-在 `hams.config.yaml` 里加一段：
+`code` provider 只针对 VS Code，**不会**通过 `cli_command` 切换到 `cursor` 或 `codium`。
+如果你希望 hams 管 Cursor 的扩展，未来会单独加一个 `cursor` provider（v1.1+）。在那之前用
+`bash` 步骤过渡：
 
 ```yaml
-providers:
-  code-ext:
-    cli_command: cursor   # 或者 codium
+- urn: "urn:hams:bash:cursor-ext-prettier"
+  step: Install Prettier extension in Cursor
+  run: cursor --install-extension esbenp.prettier-vscode
+  check: cursor --list-extensions | grep -q esbenp.prettier-vscode
 ```
-
-hams 就会用 `cursor --install-extension` 代替 `code --install-extension`。
 
 <Callout type="info">
   VS Code 的用户设置 `settings.json`、键位绑定 `keybindings.json` 不归这个 provider 管 ——
-  它们是普通 dotfile，请用 `file` provider 或者 git-clone 一个 dotfiles 仓库处理。
+  它们是普通 dotfile，请用 `file` provider 或者 `hams git clone` 一个 dotfiles 仓库处理。
 </Callout>

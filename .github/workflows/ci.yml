@@ -69,6 +69,10 @@ jobs:
       - run: task ci:unit
 
       - name: Upload coverage
+        # act's artifact server doesn't emulate upload-artifact@v4 reliably
+        # (CreateArtifact returns ECONNRESET). Skip under ACT so local
+        # simulation doesn't fail on a production-only artifact handoff.
+        if: ${{ !env.ACT }}
         uses: actions/upload-artifact@v4
         with:
           name: coverage
@@ -107,6 +111,10 @@ jobs:
         run: task ci:build
 
       - name: Upload binary
+        # Skip under ACT (act's artifact-server emits ECONNRESET on the v4
+        # upload protocol). Real CI uses this artifact for the e2e+itest
+        # downstream jobs; locally via act those jobs rebuild in-place.
+        if: ${{ !env.ACT }}
         uses: actions/upload-artifact@v4
         with:
           name: hams-${{ matrix.goos }}-${{ matrix.goarch }}
@@ -149,16 +157,30 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - uses: actions/setup-go@v5
+        # Real CI: downloads the already-built binary from the build job.
+        # Under ACT: the upload step was skipped (see build job), so we
+        # rebuild the binary in-place here. Go toolchain only needed in
+        # the ACT case.
+        if: ${{ env.ACT }}
+        with:
+          go-version: "1.26"
+
       - uses: go-task/setup-task@v2
         with:
           version: 3.x
           repo-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Download linux/amd64 binary
+        if: ${{ !env.ACT }}
         uses: actions/download-artifact@v4
         with:
           name: hams-linux-amd64
           path: bin/
+
+      - name: Build linux/amd64 binary (act fallback)
+        if: ${{ env.ACT }}
+        run: task build:linux
 
       - name: Make binary executable
         run: chmod +x bin/hams-linux-amd64
@@ -192,16 +214,26 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - uses: actions/setup-go@v5
+        if: ${{ env.ACT }}
+        with:
+          go-version: "1.26"
+
       - uses: go-task/setup-task@v2
         with:
           version: 3.x
           repo-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Download linux/amd64 binary
+        if: ${{ !env.ACT }}
         uses: actions/download-artifact@v4
         with:
           name: hams-linux-amd64
           path: bin/
+
+      - name: Build linux/amd64 binary (act fallback)
+        if: ${{ env.ACT }}
+        run: task build:linux
 
       - name: Make binary executable
         run: chmod +x bin/hams-linux-amd64

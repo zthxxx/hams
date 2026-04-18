@@ -1,0 +1,11 @@
+# hams store project-level config.
+#
+# This file is committed to git and shared across machines. It should
+# only carry store-scoped settings (store_repo, provider_priority,
+# llm_cli, etc.).
+#
+# Machine-scoped fields (profile_tag, machine_id) MUST NOT appear in
+# this file — they live in ~/.config/hams/hams.config.yaml. See
+# openspec/specs/schema-design/spec.md §Project-Level Config Schema.
+#
+# Add project-wide settings below as you grow the store.

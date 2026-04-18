@@ -36,7 +36,7 @@ type Config struct {
 // Names must match provider Manifest().Name (lowercased by registry).
 var DefaultProviderPriority = []string{
 	"brew", "apt", "pnpm", "npm", "uv", "goinstall", "cargo",
-	"code-ext", "mas", "git-config", "git-clone", "defaults", "duti", "bash", "ansible",
+	"code", "mas", "git-config", "git-clone", "defaults", "duti", "bash", "ansible",
 }
 
 // Paths holds the resolved directory paths for hams.
@@ -285,33 +285,50 @@ func sanitizePathSegment(s, fallback string) string {
 	return s
 }
 
+// Validate checks that required configuration fields are set.
+// Returns nil if the configuration is valid for operations that need a store.
+//
+// Validate is pure: it reports errors via the return value and never
+// emits side-effect logs. The "profile_tag/machine_id defaulted"
+// warnings that used to live here now fire from WarnIfDefaultsUsed,
+// which action sites call after the structured logger is configured
+// (otherwise the warnings landed on Go's default slog text handler
+// and polluted `hams --help` / `hams --version` output).
+func (c *Config) Validate() error {
+	return nil
+}
+
 // warnOnceProfileTag and warnOnceMachineID dedup the "using default"
-// warnings so they fire at most once per process, even when config.Load
-// runs multiple times per command (e.g., once during provider registration
-// and again when the command action executes).
+// warnings so they fire at most once per process, even when multiple
+// action entry points in a single invocation call WarnIfDefaultsUsed
+// (e.g., apply → runApply which re-loads config mid-flow).
 var (
 	warnOnceProfileTag sync.Once
 	warnOnceMachineID  sync.Once
 )
 
-// Validate checks that required configuration fields are set.
-// Returns nil if the configuration is valid for operations that need a store.
-func (c *Config) Validate() error {
-	// StorePath is allowed to be empty (not all commands need it).
-	// ProfileTag and MachineID have defaults, so just warn if empty.
-	if c.StorePath != "" {
-		if c.ProfileTag == "" {
-			warnOnceProfileTag.Do(func() {
-				slog.Warn("profile_tag is empty, using 'default'")
-			})
-		}
-		if c.MachineID == "" {
-			warnOnceMachineID.Do(func() {
-				slog.Warn("machine_id is empty, using 'unknown'")
-			})
-		}
+// WarnIfDefaultsUsed emits a one-time slog.Warn per process for each
+// of profile_tag / machine_id when they are empty but a StorePath is
+// configured (i.e., the user is running an action that will use the
+// fallback). Action entry points — apply, refresh, list, store
+// status, provider-wrapped commands — call this AFTER configuring the
+// structured logger so the diagnostic lands on the real slog handler.
+// Metadata commands (--help, --version, config get) deliberately skip
+// this call so they stay silent.
+func WarnIfDefaultsUsed(c *Config) {
+	if c == nil || c.StorePath == "" {
+		return
 	}
-	return nil
+	if c.ProfileTag == "" {
+		warnOnceProfileTag.Do(func() {
+			slog.Warn("profile_tag is empty, using 'default'")
+		})
+	}
+	if c.MachineID == "" {
+		warnOnceMachineID.Do(func() {
+			slog.Warn("machine_id is empty, using 'unknown'")
+		})
+	}
 }
 
 // ResetValidationWarnOnce resets the once-guards so tests can exercise the

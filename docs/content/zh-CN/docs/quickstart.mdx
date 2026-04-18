@@ -61,14 +61,21 @@ hams brew install htop
 hams pnpm add serve
 
 # 配 git 身份，顺手记
-hams git-config user.name "Your Name"
-hams git-config user.email "you@example.com"
+hams git config --global user.name "Your Name"
+hams git config --global user.email "you@example.com"
 ```
 
 每条命令背后，hams 默默做两件事：
 
 1. 真调底下的工具（`brew install htop`、`pnpm add -g serve`）
 2. 把这次安装写进对应的 Hamsfile（`macOS/Homebrew.hams.yaml`、`macOS/pnpm.hams.yaml`）
+
+<Callout type="info">
+  第一次跑 `hams <provider> …` 时，hams 会帮你把 store 目录搭起来 ——
+  建好 `~/.local/share/hams/store/`、跑 `git init`、写一份模板 `.gitignore` 和
+  `hams.config.yaml`，同时给全局配置填上 `profile_tag: default` 和
+  `machine_id: <hostname>`。你不用先跑 `hams store init`，第一条装东西的命令会顺手搞定。
+</Callout>
 
 ## 在新机器上把一切恢复
 
@@ -86,32 +93,26 @@ hams 二进制里内置了 go-git，所以哪怕这机器连 git 命令都还没
 ### 从 store 仓库 apply
 
 ```bash
-# 机器上还没装 Homebrew / pnpm / ansible 之类的前置工具？加上 --bootstrap，
-# hams 会在你确认后自动装好。完整的 bootstrap 支持列表见 `apply` 命令页。
-hams apply --bootstrap --from-repo=<your-username>/hams-store
+# 一条命令：clone、挑 profile、apply。--tag 指明用 store 里哪一个目录
+# （macOS/、openwrt/、work-linux/ 等）。--bootstrap 允许 hams 在你确认后
+# 自动装前置工具。
+hams apply --bootstrap --from-repo=<your-username>/hams-store --tag=macOS
 ```
 
-把 `<your-username>/hams-store` 换成你自己的 GitHub 用户和 store 仓库名。
-交互终端下 `--bootstrap` 不是必传 —— hams 跑到前置工具缺失的 provider 时会主动
-弹 `[y/N/s]` 让你确认。CI / 脚本里记得显式传 `--bootstrap`（或 `--no-bootstrap`
-让它前置缺失时直接报错退出）。
+把 `<your-username>/hams-store` 换成你自己的 GitHub 用户和 store 仓库名，
+`--tag=macOS` 换成你给这类机器起的 profile 名。hams 会背着你把仓库克隆下来、
+在 `~/.config/hams/hams.config.yaml` 里写好 `profile_tag: macOS` +
+`machine_id: <hostname>`，然后开始 apply。
 
-### 回答两个小问题
+<Callout type="info">
+  没带 `--tag`？交互终端下 hams 会弹出两问交互（profile tag + machine ID）让你补。
+  CI / 脚本里务必显式传 `--tag=<tag>`，保证非交互。
+</Callout>
 
-第一次在新机器上跑 apply，hams 会问你两件事：
-
-```
-No profile found for this machine.
-
-Profile tag (e.g. macOS, openwrt, work-linux): macOS
-Machine ID (unique name for this machine, e.g. MacbookProM5X): MacbookProM3
-
-Creating profile directory: macOS/
-Writing ~/.config/hams/hams.config.yaml...
-```
-
-- **Profile tag** 决定用 store 里哪个目录下的 Hamsfile（比如 `macOS/` 或 `openwrt/`）
-- **Machine ID** 是这台机器的唯一名字，状态文件会放到 `.state/MacbookProM3/`
+**关于 bootstrap 确认。** 交互终端下 `--bootstrap` 不是必传 —— hams 跑到前置工具缺失的
+provider 时会主动弹 `[y/N/s]` 让你确认。CI / 脚本里记得显式传 `--bootstrap`（或
+`--no-bootstrap` 让它前置缺失时直接报错退出）。完整的 bootstrap 支持列表见
+[`apply` 命令页](./cli/apply)。
 
 ### 输 sudo 密码（如果需要）
 
@@ -171,7 +172,7 @@ hams store push
 ## 接下来看什么
 
 - [CLI 参考](./cli) —— 所有命令和 flag 的详解
-- [Providers](./providers) —— 15 个内置 provider 各自能干什么
+- [Providers](./providers) —— 14 个内置 provider 各自能干什么
 - [Schema 参考](./schema) —— Hamsfile 和配置 YAML 的字段说明
 
 <Callout type="tip">

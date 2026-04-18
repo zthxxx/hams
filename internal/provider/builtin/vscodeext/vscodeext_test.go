@@ -20,7 +20,7 @@ func TestProbe_MatchesPinnedVersionIDs(t *testing.T) {
 	fake := NewFakeCmdRunner()
 	fake.Seed("foo.bar", "1.2.3")
 
-	sf := state.New("code-ext", "test-machine")
+	sf := state.New("code", "test-machine")
 	sf.SetResource("foo.bar@1.2.3", state.StateOK)
 	sf.SetResource("other.ext", state.StateOK)
 
@@ -55,7 +55,7 @@ func TestManifest(t *testing.T) {
 	t.Parallel()
 	p := New(nil, NewFakeCmdRunner())
 	m := p.Manifest()
-	if m.Name != "code-ext" {
+	if m.Name != "code" {
 		t.Errorf("Name = %q", m.Name)
 	}
 	if m.DisplayName != "VS Code Extensions" {
@@ -122,7 +122,7 @@ esbenp.prettier-vscode@10.1.0`,
 func TestNameDisplayName(t *testing.T) {
 	t.Parallel()
 	p := New(nil, NewFakeCmdRunner())
-	if p.Name() != "code-ext" {
+	if p.Name() != "code" {
 		t.Errorf("Name() = %q", p.Name())
 	}
 	if p.DisplayName() != "VS Code Extensions" {
