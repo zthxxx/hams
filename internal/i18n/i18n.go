@@ -174,10 +174,15 @@ func (l Locale) IsSupported() bool {
 // T returns the translated string for the given message ID.
 // Falls back to English if the active locale has no translation for this key.
 // Falls back to the key itself if English also has no translation.
+//
+// Auto-initializes the localizer on first call when no caller has run
+// Init() yet — this lets library code (provider packages, helpers) call
+// T() without forcing every test entry-point to remember to bootstrap
+// i18n. cmd/hams/main.go still calls Init() explicitly so the user's
+// real LANG / LC_* env wins; the lazy init here is an
+// in-test / library safety net.
 func T(msgID string) string {
-	if localizer == nil {
-		return msgID
-	}
+	ensureLocalizer()
 	msg, err := localizer.Localize(&i18n.LocalizeConfig{MessageID: msgID})
 	if err != nil || msg == "" {
 		return msgID
@@ -188,9 +193,7 @@ func T(msgID string) string {
 // Tf returns the translated string with template data interpolation.
 // Falls back the same way as T.
 func Tf(msgID string, data map[string]any) string {
-	if localizer == nil {
-		return msgID
-	}
+	ensureLocalizer()
 	msg, err := localizer.Localize(&i18n.LocalizeConfig{
 		MessageID:    msgID,
 		TemplateData: data,
@@ -199,4 +202,16 @@ func Tf(msgID string, data map[string]any) string {
 		return msgID
 	}
 	return msg
+}
+
+// ensureLocalizer triggers Init() once when callers reach T() before
+// the explicit cmd/hams/main.go init path has fired. Safe under
+// concurrent T() calls because Init() rebuilds the package-level
+// localizer pointer atomically (write-once-then-read pattern; no
+// goroutines mutate it after the first build).
+func ensureLocalizer() {
+	if localizer != nil {
+		return
+	}
+	Init()
 }

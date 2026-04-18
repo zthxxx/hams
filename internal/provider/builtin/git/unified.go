@@ -2,9 +2,9 @@ package git
 
 import (
 	"context"
-	"fmt"
 
 	hamserr "github.com/zthxxx/hams/internal/error"
+	"github.com/zthxxx/hams/internal/i18n"
 	"github.com/zthxxx/hams/internal/provider"
 )
 
@@ -55,11 +55,11 @@ func (u *UnifiedHandler) DisplayName() string { return unifiedCLIName }
 func (u *UnifiedHandler) HandleCommand(ctx context.Context, args []string, hamsFlags map[string]string, flags *provider.GlobalFlags) error {
 	if len(args) == 0 {
 		return hamserr.NewUserError(hamserr.ExitUsageError,
-			"hams git requires a subcommand",
-			"Usage: hams git <subcommand> [args]",
-			"Subcommands: config, clone",
-			"Example: hams git config user.name zthxxx",
-			"Example: hams git clone https://github.com/zthxxx/dotfiles ~/repos/dotfiles",
+			i18n.T("git.usage.header"),
+			i18n.T("git.usage.suggest_main"),
+			i18n.T("git.usage.suggest_subcommands"),
+			i18n.T("git.usage.example_config"),
+			i18n.T("git.usage.example_clone"),
 		)
 	}
 	subcommand, rest := args[0], args[1:]
@@ -73,8 +73,8 @@ func (u *UnifiedHandler) HandleCommand(ctx context.Context, args []string, hamsF
 		return u.cloneProvider.HandleCommand(ctx, append([]string{"add"}, rest...), hamsFlags, flags)
 	default:
 		return hamserr.NewUserError(hamserr.ExitUsageError,
-			fmt.Sprintf("unknown git subcommand %q", subcommand),
-			"Subcommands: config, clone",
+			i18n.Tf("git.unknown_subcommand", map[string]any{"Sub": subcommand}),
+			i18n.T("git.usage.suggest_subcommands"),
 			"Run 'hams git --help' for usage.",
 		)
 	}

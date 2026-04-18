@@ -23,6 +23,7 @@ import (
 	"github.com/zthxxx/hams/internal/config"
 	hamserr "github.com/zthxxx/hams/internal/error"
 	"github.com/zthxxx/hams/internal/hamsfile"
+	"github.com/zthxxx/hams/internal/i18n"
 	"github.com/zthxxx/hams/internal/logging"
 	"github.com/zthxxx/hams/internal/provider"
 	"github.com/zthxxx/hams/internal/provider/builtin/bash"
@@ -208,10 +209,10 @@ func runApply(ctx context.Context, flags *provider.GlobalFlags, registry *provid
 		// via HAMS_NO_AUTO_INIT=1.
 		if IsAutoInitDisabled() {
 			return hamserr.NewUserError(hamserr.ExitUsageError,
-				"no store directory configured (auto-init disabled via HAMS_NO_AUTO_INIT)",
-				"Run 'hams apply --from-repo=<user/repo>' to clone a store",
-				"Or set store_path in ~/.config/hams/hams.config.yaml",
-				"Or unset HAMS_NO_AUTO_INIT to enable auto-init",
+				i18n.T("ufe.no_store_configured.opt_out"),
+				i18n.T("ufe.no_store_configured.suggest_clone"),
+				i18n.T("ufe.no_store_configured.suggest_set"),
+				i18n.T("ufe.no_store_configured.opt_out_suggest"),
 			)
 		}
 		if ensureErr := EnsureGlobalConfig(paths); ensureErr != nil {

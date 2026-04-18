@@ -1,2 +1,65 @@
 - id: app.title
   other: "hams — 声明式工作站环境管理工具"
+
+# ---------------------------------------------------------------------------
+# 首次自动初始化流程（在干净机器上执行 `hams brew install jq` / `hams apply`）
+# ---------------------------------------------------------------------------
+- id: autoinit.global_config_created
+  other: "已自动创建 hams 全局配置 {{.Path}}（tag={{.Tag}}, machine_id={{.MachineID}}）"
+
+- id: autoinit.store_created
+  other: "已自动初始化 hams 存储库 {{.Path}} — 如需迁移路径请编辑 ~/.config/hams/hams.config.yaml"
+
+# ---------------------------------------------------------------------------
+# 通用错误（UFE）信息
+# ---------------------------------------------------------------------------
+- id: ufe.no_store_configured
+  other: "未配置存储目录（store directory）"
+
+- id: ufe.no_store_configured.suggest_clone
+  other: "可执行 'hams apply --from-repo=<user/repo>' 从远程仓库克隆"
+
+- id: ufe.no_store_configured.suggest_set
+  other: "或在 ~/.config/hams/hams.config.yaml 中设置 store_path"
+
+- id: ufe.no_store_configured.suggest_init
+  other: "或在本地初始化新的存储：hams store init"
+
+- id: ufe.no_store_configured.opt_out
+  other: "未配置存储目录（已通过 HAMS_NO_AUTO_INIT 关闭自动初始化）"
+
+- id: ufe.no_store_configured.opt_out_suggest
+  other: "如需启用自动初始化，请取消 HAMS_NO_AUTO_INIT 环境变量"
+
+# ---------------------------------------------------------------------------
+# Apply / refresh 状态行
+# ---------------------------------------------------------------------------
+- id: apply.dry_run_header
+  other: "[dry-run] 将应用所有配置。本次执行不会产生任何变更。"
+
+- id: apply.no_providers_match
+  other: "没有任何 Provider 匹配：当前 profile 下未发现 hamsfile 或 state 文件。"
+
+- id: refresh.no_providers_match
+  other: "没有任何 Provider 匹配当前过滤条件。"
+
+# ---------------------------------------------------------------------------
+# `hams git` 统一入口
+# ---------------------------------------------------------------------------
+- id: git.usage.header
+  other: "hams git 需要子命令"
+
+- id: git.usage.suggest_main
+  other: "用法：hams git <子命令> [参数]"
+
+- id: git.usage.suggest_subcommands
+  other: "支持的子命令：config, clone"
+
+- id: git.usage.example_config
+  other: "示例：hams git config user.name zthxxx"
+
+- id: git.usage.example_clone
+  other: "示例：hams git clone https://github.com/zthxxx/dotfiles ~/repos/dotfiles"
+
+- id: git.unknown_subcommand
+  other: "未识别的 git 子命令 {{.Sub}}"

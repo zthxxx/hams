@@ -1,2 +1,67 @@
 - id: app.title
   other: "hams — declarative workstation environment management"
+
+# ---------------------------------------------------------------------------
+# Auto-init flow (`hams brew install jq` / `hams apply` on a clean machine)
+# ---------------------------------------------------------------------------
+- id: autoinit.global_config_created
+  other: "Auto-created hams global config at {{.Path}} (tag={{.Tag}}, machine_id={{.MachineID}})"
+
+- id: autoinit.store_created
+  other: "Auto-initialized hams store at {{.Path}} — edit ~/.config/hams/hams.config.yaml to relocate"
+
+# ---------------------------------------------------------------------------
+# Common UFE messages (user-facing error strings — always English-readable
+# for default users; non-English locales fall through to the en text when
+# the translation is missing).
+# ---------------------------------------------------------------------------
+- id: ufe.no_store_configured
+  other: "no store directory configured"
+
+- id: ufe.no_store_configured.suggest_clone
+  other: "Run 'hams apply --from-repo=<user/repo>' to clone a store"
+
+- id: ufe.no_store_configured.suggest_set
+  other: "Or set store_path in ~/.config/hams/hams.config.yaml"
+
+- id: ufe.no_store_configured.suggest_init
+  other: "Or initialize one: hams store init"
+
+- id: ufe.no_store_configured.opt_out
+  other: "no store directory configured (auto-init disabled via HAMS_NO_AUTO_INIT)"
+
+- id: ufe.no_store_configured.opt_out_suggest
+  other: "Or unset HAMS_NO_AUTO_INIT to enable auto-init"
+
+# ---------------------------------------------------------------------------
+# Apply / refresh status lines
+# ---------------------------------------------------------------------------
+- id: apply.dry_run_header
+  other: "[dry-run] Would apply configurations. No changes will be made."
+
+- id: apply.no_providers_match
+  other: "No providers match: no hamsfile or state file present for any registered provider."
+
+- id: refresh.no_providers_match
+  other: "No providers match the current filter."
+
+# ---------------------------------------------------------------------------
+# `hams git` unified handler
+# ---------------------------------------------------------------------------
+- id: git.usage.header
+  other: "hams git requires a subcommand"
+
+- id: git.usage.suggest_main
+  other: "Usage: hams git <subcommand> [args]"
+
+- id: git.usage.suggest_subcommands
+  other: "Subcommands: config, clone"
+
+- id: git.usage.example_config
+  other: "Example: hams git config user.name zthxxx"
+
+- id: git.usage.example_clone
+  other: "Example: hams git clone https://github.com/zthxxx/dotfiles ~/repos/dotfiles"
+
+- id: git.unknown_subcommand
+  other: "unknown git subcommand {{.Sub}}"

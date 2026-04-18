@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/zthxxx/hams/internal/config"
+	"github.com/zthxxx/hams/internal/i18n"
 	"github.com/zthxxx/hams/internal/logging"
 	"github.com/zthxxx/hams/internal/storeinit"
 )
@@ -63,6 +64,13 @@ func EnsureGlobalConfig(paths config.Paths) error {
 	if writeErr := os.WriteFile(target, []byte(body.String()), 0o600); writeErr != nil {
 		return fmt.Errorf("writing default global config %s: %w", target, writeErr)
 	}
+	// i18n user-facing line: surfaces to TTY users so the auto-init is
+	// visible. slog still records structured fields for log scraping.
+	fmt.Fprintln(os.Stderr, i18n.Tf("autoinit.global_config_created", map[string]any{
+		"Path":      logging.TildePath(target),
+		"Tag":       DefaultTag,
+		"MachineID": machineID,
+	}))
 	slog.Info("auto-created hams global config", "path", logging.TildePath(target),
 		"tag", DefaultTag, "machine_id", machineID)
 	return nil
@@ -119,6 +127,11 @@ func EnsureStoreReady(paths config.Paths, cfg *config.Config, cliOverride string
 		cfg.StorePath = target
 	}
 
+	// i18n user-facing line so first-run users see WHERE the store
+	// landed without scraping slog records.
+	fmt.Fprintln(os.Stderr, i18n.Tf("autoinit.store_created", map[string]any{
+		"Path": logging.TildePath(target),
+	}))
 	slog.Info("auto-initialized hams store",
 		"path", logging.TildePath(target),
 		"hint", "edit ~/.config/hams/hams.config.yaml to relocate")
