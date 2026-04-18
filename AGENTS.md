@@ -135,27 +135,88 @@ This project uses [OpenSpec](https://openspec.dev) for spec-driven development.
 
 ## Current Tasks
 
+These tasks close the gap between `dev` and `local/loop` (reference-only), plus fix issues both branches share. Full analysis: `docs/notes/branch-comparison-recommendation.md`. Do **not** modify `local/loop`; treat it as read-only reference at `/tmp/hams-loop/` if re-checkout is needed.
 
-Outstanding tasks not yet completed:
+**Core principle:** every task ends with a verification step. A task is NOT complete until `task check` (lint + unit + integration + e2e) passes AND the user-facing workflow still works end-to-end. Use OpenSpec workflow: each task in its own `openspec/changes/2026-04-18-*/` folder with proposal + spec deltas + tasks.md.
 
-- [x] Archive all implemented OpenSpec changes — move them into the archive for completed history. Done 2026-04-17 (commit `d5e7c09`). The five 2026-04-16 changes (defer-hooks-and-otel, defer-tui-and-notify, package-provider-auto-record-gap, spec-impl-reconciliation, verification-findings) are now under `openspec/changes/archive/`.
+Outstanding tasks:
 
-Everything aims at keeping onboarding simple and easy for new users, so the following are also required:
+- [ ] **auto-init-ux-hardening** — Add dry-run short-circuit to the auto-init path (no side effects when `flags.DryRun`), wrap `git init` in `context.WithTimeout(ctx, 30*time.Second)`, and seed `profile_tag` + `machine_id` in the global config when empty during first-run scaffold. Keep `internal/storeinit` package + go-git fallback. Reference: `/tmp/hams-loop/internal/cli/scaffold.go:91`, `:149`, `:186`.
+  - [ ] Implement dry-run short-circuit in `internal/storeinit/Bootstrap` + `internal/cli/autoinit.go`.
+  - [ ] Wrap `initGitRepo` exec path in 30s context timeout (preserve go-git fallback).
+  - [ ] Seed `profile_tag` / `machine_id` via `seedIfMissing`-style helper; respect pre-set user values.
+  - [ ] Unit tests for all three behaviors (property tests where applicable).
+  - [ ] Verification: `task check` passes; manual test `hams --dry-run brew install htop` on a fresh `HAMS_CONFIG_HOME` creates zero files.
 
-- [x] `hams apply` MUST directly accept a `--tag` argument, with precedence: `--tag` > profile tag in config > default `tag: default`. This enables single-command restoration from a repo. If no hams config file exists when `hams apply` runs, auto-create one at the default location. Done 2026-04-17 (commit `df093ee`); spec deltas in `openspec/changes/2026-04-17-onboarding-auto-init/`.
-- [x] When running `hams <provider> ...`, if no hams config file repo exists yet, auto-create one at the default location, pre-initialized with `git init` (via command invocation) and a `.gitignore` (from a template file, e.g., containing `.state`), then write the hams config file (create if missing). Done 2026-04-17 (commit `df093ee`); embedded template lives at `internal/storeinit/template/` and is materialized via `internal/storeinit/Bootstrap`.
-- [x] Provider wrapped commands MUST behave exactly like the original command, at least at the first-level command entry point. Therefore:
-  - [x] The `git-clone` and `git-config` providers should be merged into a unified `git` provider, exposing only the `hams git` entry point. Done 2026-04-17 (commit `05237b3`); `hams git config <key> <value>` and `hams git clone <url> <path>` route through `git.UnifiedHandler`. Underlying providers stay as separate apply/refresh resources for back-compat.
-  - [x] The `code-ext` provider likewise should expose only the `hams code` entry point. Done 2026-04-17 (commit `05237b3`); `vscodeext.CodeHandler` projects the editor name onto the existing provider.
-    - [x] `code` refers specifically to VSCode. If Cursor support is needed, implement a separate `cursor` provider rather than configuring `cli_command: cursor`. Documented in `vscodeext/code_handler.go` doc-comment + the provider help line.
-  - [x] All providers follow the same pattern: parse the original command structure, extract what needs to be recorded, then pass the remainder through to the underlying command for execution. Since providers are structurally similar at the code level, design shared abstractions — either a single generic base or a few categorical base types — so that extending with a new provider is a matter of filling in a well-defined template, not reimplementing the pattern from scratch. Shared base shipped 2026-04-17 (commit `05237b3`) at `internal/provider/baseprovider/` exposing `LoadOrCreateHamsfile` / `HamsfilePath` / `EffectiveConfig`. Existing per-provider hamsfile.go files keep working today; future providers call the shared helpers. Full per-provider migration is tracked as a follow-up cycle.
+- [ ] **git-passthrough-and-spec** — Rewrite `internal/provider/builtin/git/unified.go` so that `hams git <unknown-subcommand>` transparently passes through to the real `git` binary, preserving stdin/stdout/stderr and exit code. `hams git clone <remote> <path>` without `--hams-path=` must auto-translate into the CloneProvider's internal `add <remote> --hams-path=<path>` DSL. Reject unforwarded git flags (`--depth`, `--branch`) with an actionable UFE. All new user-facing strings go through `i18n.T` / `i18n.Tf`. Reference: `/tmp/hams-loop/internal/provider/builtin/git/unified.go:94,132,197`.
+  - [ ] Passthrough branch for unhandled subcommands (`hams git pull/log/status/...`).
+  - [ ] Natural `git clone <url> <path>` auto-translates to internal DSL.
+  - [ ] Dry-run on passthrough prints `[dry-run] Would run: git <args>`.
+  - [ ] Unknown git flag rejection with UFE + follow-up hint.
+  - [ ] All new messages added to `internal/i18n/locales/{en,zh-CN}.yaml` and routed via typed keys (see `typed-i18n-keys`).
+  - [ ] Unit tests (mock git exec) + integration test coverage.
+  - [ ] Update `openspec/specs/provider-system/spec.md` with a new "Passthrough for Unhandled Subcommands" requirement.
+  - [ ] Verification: `task check` passes; integration test exercises `hams git log`, `hams git status`.
 
-- [x] Whether logging is emitted — for each provider as well as for hams itself — must be verified in integration tests. Helper landed 2026-04-17 (commit `83b39aa`) at `e2e/base/lib/assertions.sh::assert_log_contains` + `assert_log_records_session`. Wired into `internal/provider/builtin/apt/integration/integration.sh` as the canonical example. Fan-out to remaining provider integration scripts tracked as a follow-up cycle (see `openspec/changes/2026-04-17-onboarding-auto-init/tasks.md` §9.3).
-- [x] CLI user-facing messages and error messages do not yet implement i18n (internationalization), but our standards mandate i18n support. All missing pieces must be implemented. Log records do not require i18n. Infrastructure landed 2026-04-17 (commit `2b6d19e`): `internal/i18n` lazy-initializes the localizer so library packages can call `T()` / `Tf()` without a separate bootstrap; `internal/i18n/locales/en.yaml` + `zh-CN.yaml` carry the new auto-init + git-unified message IDs. Fan-out to the remaining ~50 `hamserr.NewUserError` sites + ~111 `fmt.Print` user-facing call-sites is tracked in `openspec/changes/2026-04-17-onboarding-auto-init/tasks.md` §9.4.
-- [x] If all other tasks have been completed, then re-run the overall verification to pass. Verified 2026-04-17: `task lint` (0 issues) + `task test:unit` (33/33 packages PASS, including the new `internal/storeinit`, `internal/cli/autoinit`, `internal/provider/baseprovider`, `internal/provider/builtin/git/unified`). `task check` chains `test:e2e` (which requires a working `act` + Docker stack); the local-only fast gate is `task fmt && task lint && task test:unit`.
+- [ ] **tag-profile-conflict-detection** — Add `Tag string` field to `provider.GlobalFlags`, add `config.ResolveCLITagOverride(cliTag, cliProfile) (string, error)` + `config.DeriveMachineID()` helpers, wire into apply + provider_cmd. When both `--tag` and `--profile` are provided with different values, emit UFE + i18n key. Reference: `/tmp/hams-loop/internal/config/resolve.go`.
+  - [ ] Add `Tag` field on `GlobalFlags`; parse `--tag` into it (separate from `Profile`).
+  - [ ] Create `internal/config/resolve.go` with `ResolveCLITagOverride` + `DeriveMachineID` + `HostnameLookup` DI seam.
+  - [ ] Wire resolver into `internal/cli/apply.go` + `internal/cli/provider_cmd.go`.
+  - [ ] New i18n key `cli.err.tag-profile-conflict` with en/zh-CN translations.
+  - [ ] Unit tests (rapid-based property tests for the resolver).
+  - [ ] Verification: `task check` passes.
 
+- [ ] **typed-i18n-keys** — Add `internal/i18n/keys.go` with typed constants for every message ID currently referenced. Refactor every `i18n.T("literal")` / `i18n.Tf("literal", …)` call-site to use `i18n.T(i18n.KeyName)`. Reference: `/tmp/hams-loop/internal/i18n/keys.go`.
+  - [ ] Create `internal/i18n/keys.go` listing every ID currently in `locales/*.yaml` with doc comments.
+  - [ ] Refactor every call-site in `internal/**` to use the typed constants.
+  - [ ] Add a unit test that validates every constant in `keys.go` resolves in both `en.yaml` and `zh-CN.yaml` (catalogue-coherence test).
+  - [ ] Verification: `task check` passes.
 
-All of these tasks are driven and completed using the OpenSpec workflow, when you archive you work completed, you mark the checklist done.
+- [ ] **code-provider-full-rename** — Complete the `code-ext` → `code` rename. Change `Manifest.Name` from `code-ext` to `code`; `FilePrefix` from `vscodeext` to `code` (so hamsfile on disk becomes `code.hams.yaml`). Delete the `MANIFEST_NAME=code-ext` override in `internal/provider/builtin/vscodeext/integration/integration.sh`. Grep-replace across docs + specs + fixtures. hams has not formally released, so no migration compat layer is required.
+  - [ ] Update `internal/provider/builtin/vscodeext/vscodeext.go` Manifest to `Name: "code", FilePrefix: "code"`.
+  - [ ] Delete `MANIFEST_NAME=code-ext` line from integration.sh.
+  - [ ] Grep `vscodeext.hams.yaml` / `code-ext` across `docs/content/**`, `openspec/**`, `e2e/**`, `README*.md`, `AGENTS.md`; replace with canonical forms.
+  - [ ] Update `openspec/specs/builtin-providers/spec.md` + `openspec/specs/schema-design/spec.md`.
+  - [ ] Verification: `task check` passes; `rg code-ext` returns only archived-spec references.
+
+- [ ] **ci-act-opt-in** — Guard every `actions/upload-artifact@v4` step with `if: ${{ !env.ACT }}`; add "act fallback" steps that rebuild the linux binary via `task build:linux` when running under act. Rewire `Taskfile.yml` tasks `test:e2e` / `test:e2e:one` / `test:integration` / `test:sudo` / `test:itest` so they call `ci:*` directly via docker (no act). Add `:one-via-act` variants as the opt-in simulation entry points. Document the ECONNRESET root cause in comments. Reference: `/tmp/hams-loop/.github/workflows/ci.yml` + `/tmp/hams-loop/Taskfile.yml`.
+  - [ ] Update `.github/workflows/ci.yml` artifact upload guards + act fallback build steps.
+  - [ ] Rewire `Taskfile.yml` + introduce `:one-via-act` variants.
+  - [ ] `.golangci.yml` adjustments if any (port from loop).
+  - [ ] Verification: `task test:itest:one PROVIDER=apt` works locally without act; `task test:itest:one-via-act PROVIDER=apt` still reachable.
+
+- [ ] **integration-log-assertion-fanout** — Extend log assertions to all 11 providers (apt, bash, ansible, cargo, git, goinstall, homebrew, npm, pnpm, uv, vscodeext), using both file-based (`assert_log_records_session`) and stderr-based (`assert_stderr_contains`) helpers. Add a framework-level assertion that `hams apply` itself emits `hams session started` + final-status log lines. Reference: `/tmp/hams-loop/internal/provider/builtin/{bash,ansible,git}/integration/integration.sh`.
+  - [ ] Port `assert_stderr_contains` + `assert_log_line` to `e2e/base/lib/assertions.sh`.
+  - [ ] Add log assertions to each of the 10 remaining providers' `integration.sh`.
+  - [ ] Add framework-level assertion verifying `hams apply` session logging.
+  - [ ] Verification: each `task ci:itest:run PROVIDER=<name>` passes.
+
+- [ ] **shared-abstraction-migration** — Actually migrate every package-like provider (apt, homebrew, cargo, goinstall, npm, pnpm, uv, mas, vscodeext) to use `baseprovider.LoadOrCreateHamsfile` / `HamsfilePath` / `EffectiveConfig`. Port `package_dispatcher.go` from `/tmp/hams-loop/internal/provider/package_dispatcher.go` into `dev`. Delete the duplicated `hamsfile.go` helper code in each provider. This closes the CLAUDE.md "design shared abstractions" requirement.
+  - [ ] Port `package_dispatcher.go` + `PackageInstaller` interface into `internal/provider/`.
+  - [ ] For each package provider, replace hand-written hamsfile helpers with `baseprovider` calls.
+  - [ ] For each package provider, replace install/remove handlers with `AutoRecordInstall` / `AutoRecordRemove`.
+  - [ ] Delete dead code; keep each provider's CmdRunner + extractor as the per-provider customization point.
+  - [ ] Add a `provider.Passthrough(ctx, tool, args, flags)` helper that preserves stdio + exit code and honors `flags.DryRun`. Adopt in every CLI-wrapping provider so `hams <provider> <unhandled-verb>` defers to the real tool (closes the spec "wrapped commands MUST behave exactly like the original" gap at the first-level entry point).
+  - [ ] Unit tests.
+  - [ ] Verification: `task check` passes; integration tests exercise the passthrough path (e.g., `hams brew upgrade` behaves like `brew upgrade`).
+
+- [ ] **i18n-fanout-all-userfacing** — Wrap every remaining `hamserr.NewUserError(...)` primary message and every user-visible `fmt.Print*` call with `i18n.T` / `i18n.Tf`. Audit scope: ~50 NewUserError + ~100+ fmt.Print call-sites. Add missing keys to `internal/i18n/locales/en.yaml` + `zh-CN.yaml`. Log records do NOT need i18n.
+  - [ ] Grep audit: list every `hamserr.NewUserError(` and every user-facing `fmt.Print*` call-site.
+  - [ ] Replace literals with typed i18n keys + add translations.
+  - [ ] Enforce via a custom golangci-lint check or a unit test that scans AST for literal strings in the whitelisted call-sites.
+  - [ ] Verification: `task check` passes; catalogue-coherence test covers every new key.
+
+- [ ] **docs-sync** — Grep all `docs/content/**` + `README*.md` + `AGENTS.md` + `openspec/specs/**` for stale references (`code-ext`, `git-config`, `git-clone`, `vscodeext.hams.yaml`, `--profile` as canonical, `act` as default integration path). Rewrite to reflect the shipped `dev` state after all previous tasks land.
+  - [ ] en docs sweep.
+  - [ ] zh-CN docs sweep.
+  - [ ] AGENTS.md / README.md / README.zh-CN.md sweep.
+  - [ ] openspec/specs/** sync (delta specs from change folders merge here on archive).
+  - [ ] Run `docs/` verification process (`.claude/rules/docs-verification.md`) — build site + playwright smoke.
+  - [ ] Verification: `pnpm build` in `docs/` succeeds; no broken links.
+
+- [ ] **final-verification** — After all above land, run the full `task check` + manual restore-from-store flow (fresh container, `curl | bash`, `hams apply --from-repo=<local-test-repo> --tag=macOS`) end-to-end. Confirm zero interactive prompts, all providers apply, state records correctly.
+
+Each task lands as its own OpenSpec change (`openspec/changes/2026-04-18-<task-id>/`) with proposal.md + specs deltas + tasks.md. When verification passes, invoke the `openspec-archive-change` skill to archive it, then check off the item here. Commit granularly — one logical commit per sub-task where feasible. Push after each major task (top-level checklist item) lands + verifies green.
 
 ## Rules
 
