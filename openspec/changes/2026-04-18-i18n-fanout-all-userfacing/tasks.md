@@ -42,7 +42,7 @@
 - [x] `task lint` — pass.
 - [x] `task test:unit` — pass (including `TestCatalogCoherence_EveryTypedKeyResolves`).
 - [x] Manual smoke — `LANG=zh_CN.UTF-8 ./bin/hams apply --dry-run` shows Chinese prose where keys exist; English where deferred.
-- [x] Count check — total i18n-covered call-sites ≥ 60 (up from 13), total typed keys ≥ 60 (up from 19).
+- [x] Count check — total i18n-covered call-sites 295 (up from ~15), total typed keys 172 (up from 19).
 
 ## 4. Follow-up / deferred
 
