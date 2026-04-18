@@ -69,7 +69,7 @@ Single test: `go test -race -run TestFuncName ./path/to/package/...`
 - **OTel**: trace + metrics, local file exporter at `${HAMS_DATA_HOME}/otel/`.
 - **Docs**: Nextra on GitHub Pages at `hams.zthxxx.me`.
 
-15 builtin providers, 13 CLI entry points: Bash, Homebrew, apt, pnpm, npm, uv, goinstall, cargo, VS Code (`hams code`, internal name `code-ext`), git (`hams git config` + `hams git clone`, internal names `git-config` + `git-clone`), defaults, duti, mas, Ansible.
+15 builtin providers, 13 CLI entry points: Bash, Homebrew, apt, pnpm, npm, uv, goinstall, cargo, VS Code (`hams code`), git (`hams git config` + `hams git clone`, internal names `git-config` + `git-clone`), defaults, duti, mas, Ansible.
 
 ## Directory Conventions
 
@@ -172,12 +172,7 @@ Outstanding tasks:
   - [ ] Add a unit test that validates every constant in `keys.go` resolves in both `en.yaml` and `zh-CN.yaml` (catalogue-coherence test).
   - [ ] Verification: `task check` passes.
 
-- [ ] **code-provider-full-rename** — Complete the `code-ext` → `code` rename. Change `Manifest.Name` from `code-ext` to `code`; `FilePrefix` from `vscodeext` to `code` (so hamsfile on disk becomes `code.hams.yaml`). Delete the `MANIFEST_NAME=code-ext` override in `internal/provider/builtin/vscodeext/integration/integration.sh`. Grep-replace across docs + specs + fixtures. hams has not formally released, so no migration compat layer is required.
-  - [ ] Update `internal/provider/builtin/vscodeext/vscodeext.go` Manifest to `Name: "code", FilePrefix: "code"`.
-  - [ ] Delete `MANIFEST_NAME=code-ext` line from integration.sh.
-  - [ ] Grep `vscodeext.hams.yaml` / `code-ext` across `docs/content/**`, `openspec/**`, `e2e/**`, `README*.md`, `AGENTS.md`; replace with canonical forms.
-  - [ ] Update `openspec/specs/builtin-providers/spec.md` + `openspec/specs/schema-design/spec.md`.
-  - [ ] Verification: `task check` passes; `rg code-ext` returns only archived-spec references.
+- [x] **code-provider-full-rename** — Done 2026-04-18 (openspec/changes/2026-04-18-code-provider-full-rename/). `Manifest.Name` + `FilePrefix` both `code`; hamsfile on disk is `code.hams.yaml`; `state.New("code", ...)`. `MANIFEST_NAME=code-ext` override removed from vscodeext integration.sh. The `CodeHandler` wrapper is deleted — the Provider now exposes `code` directly from Name()/DisplayName(). Docs + specs + README + AGENTS.md swept clean. `rg code-ext` returns only historical references in archived specs + analysis notes.
 
 - [x] **ci-act-opt-in** — Done 2026-04-18 via openspec/changes/2026-04-18-ci-act-opt-in/. Ported `.github/workflows/ci.yml` artifact guards + act-fallback build steps, rewired `Taskfile.yml` `test:*` tasks to `ci:*` direct, added `:one-via-act` opt-in variants. `.golangci.yml` errcheck exclude-functions extended to cover writer-bound helpers — stripped the now-redundant `//nolint:errcheck` directives in `internal/cli/bootstrap_consent.go` + `internal/selfupdate/selfupdate_test.go`.
 

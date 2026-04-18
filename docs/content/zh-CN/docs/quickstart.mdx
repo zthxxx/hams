@@ -71,7 +71,7 @@ hams code install ms-python.python
 每条命令背后，hams 默默做三件事：
 
 1. 真调底下的工具（`brew install htop`、`pnpm add -g serve`、`git config --global user.name ...`、`code --install-extension ...`）
-2. 把这次安装写进对应的 Hamsfile（`default/Homebrew.hams.yaml`、`default/pnpm.hams.yaml`、`default/git-config.hams.yaml`、`default/vscodeext.hams.yaml`）
+2. 把这次安装写进对应的 Hamsfile（`default/Homebrew.hams.yaml`、`default/pnpm.hams.yaml`、`default/git-config.hams.yaml`、`default/code.hams.yaml`）
 3. **首次运行时自动初始化 store** —— 在 `~/.local/share/hams/store/` 帮你 `git init`、写好 `.gitignore` 与 `hams.config.yaml`。无需先跑 `hams store init`。
 
 CI 脚本如希望恢复旧的 "no store directory configured" 报错（不要自动初始化），设置 `HAMS_NO_AUTO_INIT=1` 即可。

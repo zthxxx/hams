@@ -73,7 +73,7 @@ hams code install ms-python.python
 Behind each command, hams quietly does three things:
 
 1. Runs the actual tool (`brew install htop`, `pnpm add -g serve`, `git config --global user.name ...`, `code --install-extension ...`)
-2. Writes the installation into the matching Hamsfile (`default/Homebrew.hams.yaml`, `default/pnpm.hams.yaml`, `default/git-config.hams.yaml`, `default/vscodeext.hams.yaml`)
+2. Writes the installation into the matching Hamsfile (`default/Homebrew.hams.yaml`, `default/pnpm.hams.yaml`, `default/git-config.hams.yaml`, `default/code.hams.yaml`)
 3. **Auto-creates the store** at `~/.local/share/hams/store/` on first run if you don't have one yet — `git init`'d, with a bundled `.gitignore` and `hams.config.yaml`. No `hams store init` first.
 
 Set `HAMS_NO_AUTO_INIT=1` if you want the legacy "no store directory configured" hard-fail (e.g., in CI scripts that pre-provision the store).

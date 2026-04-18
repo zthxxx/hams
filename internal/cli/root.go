@@ -210,8 +210,6 @@ func providerUsageDescription(name, displayName string) string {
 		return "Run Ansible playbooks"
 	case "code":
 		return "Manage VS Code extensions (Cursor lives behind a separate `cursor` provider)"
-	case "code-ext":
-		return "Manage VS Code extensions"
 	}
 	// Package-class default (brew, apt, pnpm, npm, uv, goinstall,
 	// cargo, mas) — accurate for installed packages.

@@ -160,7 +160,7 @@ func TestProviderUsageDescription_NonPackageProvidersHaveSpecificNouns(t *testin
 		{"duti", "duti", "default-app associations"},
 		{"bash", "bash", "bash provisioning"},
 		{"ansible", "ansible", "Ansible playbooks"},
-		{"code-ext", "code-ext", "VS Code extensions"},
+		{"code", "VS Code", "VS Code extensions"},
 	}
 	for _, tc := range cases {
 		got := providerUsageDescription(tc.name, tc.displayName)

@@ -6,9 +6,9 @@ Wraps VS Code's `code` CLI to manage extensions. Clicking through the extension 
 time on every new machine is one of life's lesser joys — this provider exists to make that moment
 disappear.
 
-The CLI verb is `hams code` (renamed from the legacy `hams code-ext` in 2026-04-17 — the
-underlying provider keeps `code-ext` as its internal manifest name for back-compat with existing
-state files). The on-disk hamsfile is `<profile>/vscodeext.hams.yaml` for the same back-compat
+The CLI verb is `hams code` (renamed from the legacy `hams code` in 2026-04-17 — the
+underlying provider keeps `code` as its internal manifest name for back-compat with existing
+state files). The on-disk hamsfile is `<profile>/code.hams.yaml` for the same back-compat
 reason.
 
 For Cursor or VSCodium, hams will ship a separate `cursor` provider rather than overloading
@@ -36,9 +36,9 @@ Extension ID. That `publisher.name` string is what you want.
 ## Hamsfile example
 
 ```yaml
-# default/vscodeext.hams.yaml
+# default/code.hams.yaml
 schema_version: 1
-provider: code-ext
+provider: code
 
 groups:
   - tag: language-support

@@ -113,7 +113,7 @@ func TestU6_Probe_OKAndFailedClassification_CaseInsensitive(t *testing.T) {
 		Seed("dbaeumer.vscode-eslint", "3.0.5")
 	p := New(nil, fake)
 
-	sf := state.New("code-ext", "test-machine")
+	sf := state.New("code", "test-machine")
 	// Mixed-case in the hamsfile entry — should still match because
 	// the parser lowercases names AND probe does ToLower(id) lookup.
 	sf.SetResource("MS-Python.Python", state.StateOK)
@@ -147,7 +147,7 @@ func TestU6_Probe_OKAndFailedClassification_CaseInsensitive(t *testing.T) {
 func TestU7_Probe_SkipsRemovedResources(t *testing.T) {
 	t.Parallel()
 	p := New(nil, NewFakeCmdRunner())
-	sf := state.New("code-ext", "test-machine")
+	sf := state.New("code", "test-machine")
 	sf.SetResource("removed.ext", state.StateRemoved)
 
 	results, err := p.Probe(context.Background(), sf)
@@ -166,7 +166,7 @@ func TestU8_Probe_PropagatesRunnerError(t *testing.T) {
 	fake := &erroringFake{listErr: wantErr}
 	p := New(nil, fake)
 
-	sf := state.New("code-ext", "test-machine")
+	sf := state.New("code", "test-machine")
 	sf.SetResource("anything", state.StateOK)
 	if _, err := p.Probe(context.Background(), sf); !errors.Is(err, wantErr) {
 		t.Errorf("Probe error = %v, want %v", err, wantErr)

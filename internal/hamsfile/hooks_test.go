@@ -53,7 +53,7 @@ func TestAppHookNode_ReturnsMatchingNode(t *testing.T) {
         - run: echo "before"
       post_install:
         - run: defaults write com.example value -bool true
-        - run: hams code-ext install ms-python.python
+        - run: hams code install ms-python.python
           defer: true
 `)
 	if err := AtomicWrite(path, body); err != nil {

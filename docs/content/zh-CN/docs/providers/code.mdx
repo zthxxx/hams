@@ -5,9 +5,9 @@ import { Callout } from 'nextra/components'
 包装 VS Code 的 `code` CLI 来管扩展。每次换新机器重新一个个点装扩展是最烦的事情之一，
 这个 provider 就是为了让那个过程消失。
 
-CLI 入口是 `hams code`（2026-04-17 起从原来的 `hams code-ext` 重命名 ——
-底层 provider 仍以 `code-ext` 作为内部 manifest 名以保持已有 state 文件兼容）。
-对应的 hamsfile 是 `<profile>/vscodeext.hams.yaml`，名字也保持不变以兼容旧 store。
+CLI 入口是 `hams code`（2026-04-17 起从原来的 `hams code` 重命名 ——
+底层 provider 仍以 `code` 作为内部 manifest 名以保持已有 state 文件兼容）。
+对应的 hamsfile 是 `<profile>/code.hams.yaml`，名字也保持不变以兼容旧 store。
 
 未来如需支持 Cursor / VSCodium，会**单独**提供 `cursor` provider，而非通过 `cli_command:`
 覆盖 `hams code` —— 这些编辑器在扩展市场、Settings Sync、telemetry endpoint 等处的差异够大，
@@ -34,9 +34,9 @@ hams code list
 ## Hamsfile 示例
 
 ```yaml
-# default/vscodeext.hams.yaml
+# default/code.hams.yaml
 schema_version: 1
-provider: code-ext
+provider: code
 
 groups:
   - tag: language-support

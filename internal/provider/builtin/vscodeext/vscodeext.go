@@ -18,8 +18,14 @@ import (
 )
 
 const (
-	// cliName is the vscodeext provider's manifest + CLI name.
-	cliName = "code-ext"
+	// cliName is the vscodeext provider's manifest + CLI name. The
+	// package directory stays `vscodeext` because the Go type is
+	// `code.Provider` would collide with a "code" stdlib-adjacent
+	// noun; the user-facing name is "code" (the VS Code CLI binary)
+	// and that is what Manifest.Name / FilePrefix / registry key all
+	// expose. hams has not formally released, so no migration compat
+	// layer is required for the legacy `code-ext` manifest name.
+	cliName = "code"
 	// displayName is the human-readable display name.
 	displayName = "VS Code Extensions"
 )
@@ -51,7 +57,7 @@ func (p *Provider) Manifest() provider.Manifest {
 				Package:  "visual-studio-code",
 			},
 		},
-		FilePrefix: "vscodeext",
+		FilePrefix: "code",
 	}
 }
 
@@ -79,7 +85,7 @@ func (p *Provider) Probe(ctx context.Context, sf *state.File) ([]provider.ProbeR
 		// drops the version from the key). Pre-cycle-188 a state
 		// entry like "foo.bar@1.2.3" NEVER matched — Probe always
 		// reported StateFailed, drift detection was broken for any
-		// user who pinned a version via `hams code-ext install
+		// user who pinned a version via `hams code install
 		// publisher.ext@1.2.3`. Extension IDs are case-insensitive.
 		lowerID := stripExtensionVersionPin(strings.ToLower(id))
 		if ver, ok := installed[lowerID]; ok {
@@ -121,7 +127,7 @@ func suppressRedundantVersionRemoves(actions []provider.Action, observed *state.
 	out := make([]provider.Action, 0, len(actions))
 	for _, a := range actions {
 		if a.Type == provider.ActionRemove && keepBareNames[stripExtensionVersionPin(strings.ToLower(a.ID))] {
-			slog.Info("code-ext: suppressing redundant version-pin remove (bare name overlaps install)",
+			slog.Info("code: suppressing redundant version-pin remove (bare name overlaps install)",
 				"removing", a.ID)
 			if observed != nil {
 				observed.SetResource(a.ID, state.StateRemoved)
@@ -162,7 +168,7 @@ func (p *Provider) List(_ context.Context, desired *hamsfile.File, sf *state.Fil
 	return provider.FormatDiff(&diff), nil
 }
 
-// HandleCommand processes CLI subcommands for code-ext.
+// HandleCommand processes CLI subcommands for code.
 func (p *Provider) HandleCommand(ctx context.Context, args []string, hamsFlags map[string]string, flags *provider.GlobalFlags) error {
 	verb, remaining := provider.ParseVerb(args)
 
@@ -172,7 +178,7 @@ func (p *Provider) HandleCommand(ctx context.Context, args []string, hamsFlags m
 	case "remove", "uninstall", "rm":
 		return p.handleRemove(ctx, remaining, hamsFlags, flags)
 	case "list":
-		// Cycle 214: route `hams code-ext list` to the hams-tracked
+		// Cycle 214: route `hams code list` to the hams-tracked
 		// diff. `code list` is not a valid VS Code CLI subcommand
 		// (ext listing is `code --list-extensions`), so passthrough
 		// produced a cryptic VS Code error.
@@ -183,21 +189,21 @@ func (p *Provider) HandleCommand(ctx context.Context, args []string, hamsFlags m
 }
 
 // handleInstall runs `code --install-extension <ext>` via the CmdRunner
-// seam and, on success, appends each extension ID to the code-ext
+// seam and, on success, appends each extension ID to the code
 // hamsfile.
 func (p *Provider) handleInstall(ctx context.Context, args []string, hamsFlags map[string]string, flags *provider.GlobalFlags) error {
 	if len(args) == 0 {
 		return hamserr.NewUserError(hamserr.ExitUsageError,
-			"code-ext install requires an extension ID",
-			"Usage: hams code-ext install <publisher.extension>",
-			"To install all recorded extensions, use: hams apply --only=code-ext",
+			"code install requires an extension ID",
+			"Usage: hams code install <publisher.extension>",
+			"To install all recorded extensions, use: hams apply --only=code",
 		)
 	}
 	exts := extensionArgs(args)
 	if len(exts) == 0 {
 		return hamserr.NewUserError(hamserr.ExitUsageError,
-			"code-ext install requires at least one extension ID",
-			"Usage: hams code-ext install <publisher.extension>",
+			"code install requires at least one extension ID",
+			"Usage: hams code install <publisher.extension>",
 		)
 	}
 	if flags.DryRun {
@@ -206,7 +212,7 @@ func (p *Provider) handleInstall(ctx context.Context, args []string, hamsFlags m
 	}
 
 	// Cycle 222: acquire single-writer state lock per cli-architecture spec.
-	release, lockErr := provider.AcquireMutationLockFromCfg(p.effectiveConfig(flags), flags, "code-ext install")
+	release, lockErr := provider.AcquireMutationLockFromCfg(p.effectiveConfig(flags), flags, "code install")
 	if lockErr != nil {
 		return lockErr
 	}
@@ -240,19 +246,19 @@ func (p *Provider) handleInstall(ctx context.Context, args []string, hamsFlags m
 
 // handleRemove runs `code --uninstall-extension <ext>` via the
 // CmdRunner seam and, on success, removes each extension from the
-// code-ext hamsfile.
+// code hamsfile.
 func (p *Provider) handleRemove(ctx context.Context, args []string, hamsFlags map[string]string, flags *provider.GlobalFlags) error {
 	if len(args) == 0 {
 		return hamserr.NewUserError(hamserr.ExitUsageError,
-			"code-ext remove requires an extension ID",
-			"Usage: hams code-ext remove <publisher.extension>",
+			"code remove requires an extension ID",
+			"Usage: hams code remove <publisher.extension>",
 		)
 	}
 	exts := extensionArgs(args)
 	if len(exts) == 0 {
 		return hamserr.NewUserError(hamserr.ExitUsageError,
-			"code-ext remove requires at least one extension ID",
-			"Usage: hams code-ext remove <publisher.extension>",
+			"code remove requires at least one extension ID",
+			"Usage: hams code remove <publisher.extension>",
 		)
 	}
 	if flags.DryRun {
@@ -261,7 +267,7 @@ func (p *Provider) handleRemove(ctx context.Context, args []string, hamsFlags ma
 	}
 
 	// Cycle 222: acquire single-writer state lock per cli-architecture spec.
-	release, lockErr := provider.AcquireMutationLockFromCfg(p.effectiveConfig(flags), flags, "code-ext remove")
+	release, lockErr := provider.AcquireMutationLockFromCfg(p.effectiveConfig(flags), flags, "code remove")
 	if lockErr != nil {
 		return lockErr
 	}
@@ -291,13 +297,11 @@ func (p *Provider) handleRemove(ctx context.Context, args []string, hamsFlags ma
 	return sf.Save(p.statePath(flags))
 }
 
-// statePath returns the absolute path to vscodeext.state.yaml for the
-// active machine. The FilePrefix is "vscodeext" (NOT "code-ext") for
-// historical reasons: early v1 shipped `vscodeext.hams.yaml` as the
-// canonical filename before the CLI name was finalized as `code-ext`.
-// Renaming the prefix now would invalidate every existing user's
-// hamsfile and state paths, so CLI and file-layer names diverge by
-// design. Mirrors homebrew/mas/cargo/npm/pnpm/uv/goinstall.statePath.
+// statePath returns the absolute path to code.state.yaml for the
+// active machine. Manifest.Name / FilePrefix / the CLI verb all agree
+// on `code` — hams has not formally released, so we do not carry the
+// legacy `vscodeext.hams.yaml` / `code-ext` divergence forward.
+// Mirrors homebrew/mas/cargo/npm/pnpm/uv/goinstall.statePath.
 func (p *Provider) statePath(flags *provider.GlobalFlags) string {
 	cfg := p.effectiveConfig(flags)
 	return filepath.Join(cfg.StateDir(), p.Manifest().FilePrefix+".state.yaml")
@@ -314,7 +318,7 @@ func (p *Provider) loadOrCreateStateFile(flags *provider.GlobalFlags) (*state.Fi
 	if errors.Is(err, fs.ErrNotExist) {
 		return state.New(p.Name(), cfg.MachineID), nil
 	}
-	return nil, fmt.Errorf("loading code-ext state %s: %w", p.statePath(flags), err)
+	return nil, fmt.Errorf("loading code state %s: %w", p.statePath(flags), err)
 }
 
 // extensionArgs filters positional tokens: flags (leading `-`) are

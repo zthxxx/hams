@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# Integration test for the code-ext (VS Code Extensions) provider.
+# Integration test for the code (VS Code Extensions) provider.
 
 set -euo pipefail
 source /e2e/base/lib/assertions.sh
 source /e2e/base/lib/yaml_assert.sh
 source /e2e/base/lib/provider_flow.sh
 
-echo "=== hams integration test: code-ext (VS Code Extensions) ==="
+echo "=== hams integration test: code (VS Code Extensions) ==="
 echo ""
 
 export HAMS_STORE=/tmp/test-codeext-store
@@ -34,19 +34,14 @@ ext_installed_check() {
 export -f ext_installed_check
 export POST_INSTALL_CHECK=ext_installed_check
 
-# The user-facing CLI verb is `hams code` (renamed from the legacy
-# `hams code-ext` per the 2026-04-17 provider-unification work). The
-# underlying provider keeps Manifest.Name="code-ext" and
-# FilePrefix="vscodeext" so existing state / hamsfile names are
-# unchanged. Therefore:
-#   - first arg `code` selects the CLI verb (`hams code install …`)
-#   - STATE_FILE_PREFIX=vscodeext locates `vscodeext.state.yaml`
-#   - MANIFEST_NAME=code-ext aims `hams apply --only=` /
-#     `hams refresh --only=` at the right Provider in the registry
+# The user-facing CLI verb is `hams code` and the internal
+# Manifest.Name / FilePrefix / registry key all agree on `code` after
+# the 2026-04-18 full rename (openspec/changes/2026-04-18-code-provider-full-rename).
+# No MANIFEST_NAME / STATE_FILE_PREFIX overrides needed — the defaults
+# in provider_flow.sh (which use the same string for CLI verb, manifest
+# name, and state filename) apply verbatim.
 #
 # Two small well-maintained extensions: `vscode-icons-team.vscode-icons`
 # is ubiquitous; `tamasfe.even-better-toml` succeeded the deprecated
 # bungcip.better-toml.
-export STATE_FILE_PREFIX=vscodeext
-export MANIFEST_NAME=code-ext
 standard_cli_flow code install vscode-icons-team.vscode-icons tamasfe.even-better-toml

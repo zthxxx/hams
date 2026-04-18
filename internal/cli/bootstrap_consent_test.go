@@ -440,12 +440,12 @@ func TestRunApply_BootstrapRetryStillMissingSurfacesScript(t *testing.T) {
 }
 
 // TTY skip ('s' answer) must cascade to DAG-dependent providers so
-// hams doesn't silently run vscodeext / mas against a brew that was
+// hams doesn't silently run code / mas against a brew that was
 // just opted out of. Per the cascading-skip guardrail in apply.go.
 func TestRunApply_SkipBootstrapCascadesToDependents(t *testing.T) {
-	_, profileDir, _, flags := setupApplyTestEnv(t, []string{"brew", "code-ext"})
+	_, profileDir, _, flags := setupApplyTestEnv(t, []string{"brew", "code"})
 	writeApplyTestFile(t, filepath.Join(profileDir, "Homebrew.hams.yaml"), "packages: []\n")
-	writeApplyTestFile(t, filepath.Join(profileDir, "vscodeext.hams.yaml"), "packages: []\n")
+	writeApplyTestFile(t, filepath.Join(profileDir, "code.hams.yaml"), "packages: []\n")
 
 	// Interactive TTY prompt with 's' (skip-this-provider) answer.
 	origTTY := bootstrapPromptIsTTY
@@ -473,16 +473,16 @@ func TestRunApply_SkipBootstrapCascadesToDependents(t *testing.T) {
 	}
 	codeExt := &applyTestProvider{
 		manifest: provider.Manifest{
-			Name: "code-ext", DisplayName: "VS Code Extensions", FilePrefix: "vscodeext",
+			Name: "code", DisplayName: "VS Code Extensions", FilePrefix: "code",
 			Platforms: []provider.Platform{provider.PlatformAll},
 			DependsOn: []provider.DependOn{{Provider: "brew"}},
 		},
 		bootstrapFn: func(context.Context) error {
-			bootstrapCalls = append(bootstrapCalls, "code-ext")
+			bootstrapCalls = append(bootstrapCalls, "code")
 			return nil
 		},
 		probeFn: func(context.Context, *state.File) ([]provider.ProbeResult, error) {
-			probeCalls = append(probeCalls, "code-ext")
+			probeCalls = append(probeCalls, "code")
 			return nil, nil
 		},
 	}
@@ -492,20 +492,20 @@ func TestRunApply_SkipBootstrapCascadesToDependents(t *testing.T) {
 		t.Fatalf("register brew: %v", err)
 	}
 	if err := registry.Register(codeExt); err != nil {
-		t.Fatalf("register code-ext: %v", err)
+		t.Fatalf("register code: %v", err)
 	}
 
 	if err := runApply(context.Background(), flags, registry, sudo.NoopAcquirer{}, "", true, "", "", false, bootstrapMode{}); err != nil {
 		t.Fatalf("runApply: %v", err)
 	}
-	// code-ext's Bootstrap is reached before the cascade runs (the
+	// code's Bootstrap is reached before the cascade runs (the
 	// loop calls every provider's Bootstrap once). The cascade ensures
-	// code-ext is skipped from the REMAINDER of the pipeline.
+	// code is skipped from the REMAINDER of the pipeline.
 	// ProbeAll only runs against providers that survived the skip
-	// filter — so probeCalls must NOT include code-ext.
+	// filter — so probeCalls must NOT include code.
 	for _, c := range probeCalls {
-		if c == "code-ext" {
-			t.Errorf("code-ext should have been cascade-skipped; probeCalls = %v", probeCalls)
+		if c == "code" {
+			t.Errorf("code should have been cascade-skipped; probeCalls = %v", probeCalls)
 		}
 	}
 }

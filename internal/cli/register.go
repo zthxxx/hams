@@ -37,14 +37,16 @@ func registerBuiltins(registry *provider.Registry, sudoCmd sudo.CmdBuilder) {
 
 	gitConfigProvider := git.NewConfigProvider(builtinCfg)
 	gitCloneProvider := git.NewCloneProvider(builtinCfg)
-	vscodeextProvider := vscodeext.New(builtinCfg, vscodeext.NewRealCmdRunner())
 
 	// Providers that implement both Provider and ProviderHandler.
-	// gitConfigProvider, gitCloneProvider, vscodeextProvider are NOT
-	// in this slice because their CLI surface lives behind the
-	// unified `hams git` and `hams code` entry points (registered
-	// separately in cliOnlyHandlers below); they ARE in the
+	// gitConfigProvider / gitCloneProvider are NOT in this slice because
+	// their CLI surface lives behind the unified `hams git` entry point
+	// (registered separately in cliOnlyHandlers below); they ARE in the
 	// applyOnlyProviders slice so apply / refresh still see them.
+	//
+	// vscodeext.Provider registers directly here as `hams code` — its
+	// Manifest.Name + Provider.Name() both return "code" after the
+	// code-ext → code rename, so no handler wrapper is needed.
 	cliProviders := []cliProvider{
 		homebrew.New(builtinCfg, homebrew.NewRealCmdRunner()),
 		apt.New(builtinCfg, apt.NewRealCmdRunner(sudoCmd)),
@@ -58,6 +60,7 @@ func registerBuiltins(registry *provider.Registry, sudoCmd sudo.CmdBuilder) {
 		mas.New(builtinCfg, mas.NewRealCmdRunner()),
 		ansible.New(builtinCfg, ansible.NewRealCmdRunner()),
 		bash.New(builtinCfg),
+		vscodeext.New(builtinCfg, vscodeext.NewRealCmdRunner()),
 	}
 
 	// Apply-only providers: full Provider implementations, but their
@@ -67,7 +70,6 @@ func registerBuiltins(registry *provider.Registry, sudoCmd sudo.CmdBuilder) {
 	applyOnlyProviders := []provider.Provider{
 		gitConfigProvider,
 		gitCloneProvider,
-		vscodeextProvider,
 	}
 
 	// CLI-handler-only registrations: aggregator handlers that do NOT
@@ -76,12 +78,11 @@ func registerBuiltins(registry *provider.Registry, sudoCmd sudo.CmdBuilder) {
 	// list:
 	//   - `hams git` routes `git config <args>` and `git clone <args>`
 	//     to the underlying ConfigProvider / CloneProvider.
-	//   - `hams code` projects the vscodeext provider behind the
-	//     editor-natural name (Cursor, when supported, ships as a
-	//     separate `cursor` provider — not a cli_command override).
+	//
+	// (Cursor support, when added, ships as a separate `cursor` provider
+	// — not a cli_command override of `code`.)
 	cliOnlyHandlers := []ProviderHandler{
 		git.NewUnifiedHandler(gitConfigProvider, gitCloneProvider),
-		vscodeext.NewCodeHandler(vscodeextProvider),
 	}
 
 	// Register all into the provider registry. Platform mismatch

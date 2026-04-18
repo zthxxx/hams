@@ -18,8 +18,8 @@ func TestPlan_WrapsComputePlanWithHooks(t *testing.T) {
 	t.Parallel()
 	yamlDoc := `
 extensions:
-  - urn: urn:hams:code-ext:golang.go
-  - urn: urn:hams:code-ext:rust-lang.rust-analyzer
+  - urn: urn:hams:code:golang.go
+  - urn: urn:hams:code:rust-lang.rust-analyzer
 `
 	var root yaml.Node
 	if err := yaml.Unmarshal([]byte(yamlDoc), &root); err != nil {
@@ -28,7 +28,7 @@ extensions:
 	hf := &hamsfile.File{Path: "test.yaml", Root: &root}
 
 	p := New(nil, NewFakeCmdRunner())
-	observed := state.New("code-ext", "test")
+	observed := state.New("code", "test")
 	actions, err := p.Plan(context.Background(), hf, observed)
 	if err != nil {
 		t.Fatalf("Plan: %v", err)

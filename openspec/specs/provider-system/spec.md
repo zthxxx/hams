@@ -80,7 +80,7 @@ The Probe phase SHALL implement four distinct probe strategies based on the reso
 
 #### Class 1: Package Providers
 
-Providers: Homebrew, pnpm, npm, uv, goinstall, cargo, mas, apt, code-ext.
+Providers: Homebrew, pnpm, npm, uv, goinstall, cargo, mas, apt, code.
 
 The provider SHALL invoke the wrapped package manager's native list command (e.g., `brew list`, `pnpm list -g --json`, `code --list-extensions`) and parse its output to determine installed packages and versions.
 
@@ -151,9 +151,9 @@ The provider system SHALL build a directed acyclic graph (DAG) from all provider
 
 #### Scenario: VS Code Extensions provider depends on Homebrew
 
-WHEN the code-ext provider declares `depend-on: [{provider: homebrew, resource: visual-studio-code}]`
+WHEN the code provider declares `depend-on: [{provider: homebrew, resource: visual-studio-code}]`
 AND the system is on macOS
-THEN the Bootstrap phase SHALL ensure Homebrew is bootstrapped and `visual-studio-code` is installed before the code-ext provider begins its Probe or Apply phases.
+THEN the Bootstrap phase SHALL ensure Homebrew is bootstrapped and `visual-studio-code` is installed before the code provider begins its Probe or Apply phases.
 
 #### Scenario: Platform-conditional dependency
 
@@ -168,8 +168,8 @@ THEN the DAG resolution SHALL detect the cycle immediately and terminate with a 
 
 #### Scenario: Topological execution order
 
-WHEN the DAG contains: bash (no deps), homebrew (depends on bash), code-ext (depends on homebrew)
-THEN Bootstrap SHALL execute in order: bash -> homebrew -> code-ext.
+WHEN the DAG contains: bash (no deps), homebrew (depends on bash), code (depends on homebrew)
+THEN Bootstrap SHALL execute in order: bash -> homebrew -> code.
 
 #### Scenario: Multiple providers at same DAG level
 
@@ -283,9 +283,9 @@ THEN the hook SHALL NOT execute.
 
 #### Scenario: Nested provider call in hook
 
-WHEN a brew package `visual-studio-code` has a post-hook containing `hams code-ext install ms-python.python`
-THEN the hook execution engine SHALL dispatch the code-ext install to the code-ext provider
-AND the code-ext provider MUST already be bootstrapped (else the hook fails).
+WHEN a brew package `visual-studio-code` has a post-hook containing `hams code install ms-python.python`
+THEN the hook execution engine SHALL dispatch the code install to the code provider
+AND the code provider MUST already be bootstrapped (else the hook fails).
 
 ---
 
@@ -383,7 +383,7 @@ The system SHALL classify all known providers into builtin (compiled into the ha
 | uv | Builtin | 1 (Package) | all | bash (install script) or homebrew |
 | goinstall | Builtin | 1 (Package) | all | homebrew (go) |
 | cargo | Builtin | 1 (Package) | all | bash (rustup) or homebrew (rust) |
-| code-ext | Builtin | 1 (Package) | darwin, linux | homebrew (visual-studio-code) |
+| code | Builtin | 1 (Package) | darwin, linux | homebrew (visual-studio-code) |
 | mas | Builtin | 1 (Package) | darwin | homebrew (mas) |
 | git-config | Builtin | 2 (KV Config) | all | none (uses bundled go-git or system git) |
 | git-clone | Builtin | 4 (Filesystem) | all | none (uses bundled go-git or system git) |
@@ -412,7 +412,7 @@ When multiple providers are ready to execute (i.e., all their DAG dependencies a
 The default priority list SHALL be:
 
 ```
-brew, apt, pnpm, npm, uv, goinstall, cargo, code-ext, mas, git-config, git-clone, defaults, duti, bash, ansible
+brew, apt, pnpm, npm, uv, goinstall, cargo, code, mas, git-config, git-clone, defaults, duti, bash, ansible
 ```
 
 This list is overridable via the `provider-priority` field in `hams.config.yaml`.

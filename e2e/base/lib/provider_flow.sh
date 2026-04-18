@@ -45,14 +45,13 @@ default_post_install_check() {
 # Optional env vars:
 #   STATE_FILE_PREFIX  — overrides the state-file basename. Required when
 #                        the provider's `Manifest().FilePrefix` differs
-#                        from `Manifest().Name` (e.g., vscodeext: Name
-#                        `code-ext`, FilePrefix `vscodeext`; homebrew:
-#                        Name `brew`, FilePrefix `Homebrew`). Defaults
-#                        to the provider name passed as $1.
+#                        from `Manifest().Name` (e.g., homebrew: Name
+#                        `brew`, FilePrefix `Homebrew`). Defaults to the
+#                        provider name passed as $1.
 #   POST_INSTALL_CHECK — bash function name used in place of `command -v`.
 #                        Set + `export -f <fn>` it for providers that
 #                        don't install a PATH binary (bash, git-config,
-#                        git-clone, code-ext).
+#                        git-clone, code).
 #
 # State-write semantics: today only the apt provider writes state directly
 # from its CLI install/remove handlers (per the spec delta in
@@ -84,9 +83,10 @@ standard_cli_flow() {
   # `hams refresh --only=`. Defaults to the CLI verb (`$provider`) for
   # the providers where Manifest.Name == CLI verb. Overridable for the
   # post-2026-04-17 unified entry points where the CLI verb diverges
-  # from the underlying Manifest.Name (e.g. `hams code` is the CLI but
-  # the apply/refresh provider is `code-ext`; `hams git` wraps both
-  # `git-config` and `git-clone`).
+  # from the underlying Manifest.Name (e.g. `hams git` wraps both
+  # `git-config` and `git-clone` under one verb, so the tests pass
+  # `MANIFEST_NAME=git-config` or `MANIFEST_NAME=git-clone` depending on
+  # which sub-provider they are exercising).
   local manifest_name="${MANIFEST_NAME:-$provider}"
   local state_file="$HAMS_STORE/.state/$HAMS_MACHINE_ID/${state_prefix}.state.yaml"
   local hamsfile="$HAMS_STORE/test/${hamsfile_prefix}.hams.yaml"

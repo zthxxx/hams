@@ -22,7 +22,7 @@ All providers implement the Provider interface defined in the Provider System sp
 | 6 | uv | uv | Package | natural name | both |
 | 7 | goinstall | go install | Package | natural name (module path) | both |
 | 8 | cargo | Cargo | Package | natural name | both |
-| 9 | code-ext | VS Code Extensions | Package | extension ID | both |
+| 9 | code | VS Code Extensions | Package | extension ID | both |
 | 10 | git-config | git config | KV Config | URN | both |
 | 11 | git-clone | git clone | Filesystem | URN | both |
 | 12 | defaults | defaults | KV Config | URN | macOS |
@@ -38,7 +38,7 @@ The following patterns apply across multiple providers. Individual provider sect
 
 ### CP-1: Package Provider Common Pattern
 
-All Package-class providers (homebrew, apt, pnpm, npm, uv, goinstall, cargo, code-ext, mas) share these behaviors:
+All Package-class providers (homebrew, apt, pnpm, npm, uv, goinstall, cargo, code, mas) share these behaviors:
 
 **Hamsfile entry structure:**
 
@@ -1579,15 +1579,15 @@ THEN it SHALL execute `cargo install --list`, parse each `<name> v<version>:` he
 
 ### Requirement: VS Code Extensions Provider
 
-The VS Code Extensions provider (`code-ext`) SHALL wrap `code --install-extension` and `code --uninstall-extension`. It depends on Homebrew for VSCode installation (the `visual-studio-code` cask).
+The VS Code Extensions provider (`code`) SHALL wrap `code --install-extension` and `code --uninstall-extension`. It depends on Homebrew for VSCode installation (the `visual-studio-code` cask).
 
 **Provider metadata:**
 
 | Field | Value |
 |-------|-------|
-| Name | `code-ext` |
+| Name | `code` |
 | Display name | `VS Code Extensions` |
-| File | `vscodeext.hams.yaml` (FilePrefix is `vscodeext`, distinct from Manifest.Name `code-ext`) |
+| File | `code.hams.yaml` (FilePrefix is `vscodeext`, distinct from Manifest.Name `code`) |
 | Resource class | Package |
 | Platform | both |
 | depend-on | `homebrew` (for `visual-studio-code` cask on macOS) |
@@ -1626,10 +1626,10 @@ The `app` field SHALL contain the extension ID in `<publisher>.<extension>` form
 
 | Subcommand | Behavior |
 |------------|----------|
-| `hams code-ext install <id>` | Install + record. |
-| `hams code-ext remove <id>` | Uninstall + delete from Hamsfile. |
-| `hams code-ext list` | Diff view. |
-| Any other | Not passthrough (code-ext is not a full CLI). |
+| `hams code install <id>` | Install + record. |
+| `hams code remove <id>` | Uninstall + delete from Hamsfile. |
+| `hams code list` | Diff view. |
+| Any other | Not passthrough (code is not a full CLI). |
 
 **LLM enrichment:**
 
@@ -1637,7 +1637,7 @@ The `app` field SHALL contain the extension ID in `<publisher>.<extension>` form
 
 #### Scenario: Install a VSCode extension
 
-WHEN the user runs `hams code-ext install ms-python.python`
+WHEN the user runs `hams code install ms-python.python`
 THEN the provider SHALL execute `code --install-extension ms-python.python`, record it in the Hamsfile, and update state.
 
 #### Scenario: VSCode not installed
@@ -2461,7 +2461,7 @@ Each provider SHALL declare its `depend-on` chain in its manifest. The dependenc
 | uv | (none) | -- |
 | goinstall | (none) | Requires Go (user responsibility) |
 | cargo | (none) | Requires Rust/Cargo (user responsibility) |
-| code-ext | homebrew (macOS) | Requires `visual-studio-code` cask |
+| code | homebrew (macOS) | Requires `visual-studio-code` cask |
 | git-config | (none) | -- |
 | git-clone | (none) | -- |
 | defaults | (none) | -- |
@@ -2472,7 +2472,7 @@ Each provider SHALL declare its `depend-on` chain in its manifest. The dependenc
 #### Scenario: Bootstrap chain resolution
 
 WHEN `hams apply` encounters the VS Code Extensions provider on macOS and `code` is not on `$PATH`
-THEN hams SHALL resolve: code-ext depends on homebrew, homebrew depends on bash. It SHALL execute: (1) Bash provider bootstrap (no-op if bash is available), (2) Homebrew provider bootstrap (install Homebrew if missing), (3) check if `visual-studio-code` cask is installed, and THEN proceed with VS Code Extensions operations.
+THEN hams SHALL resolve: code depends on homebrew, homebrew depends on bash. It SHALL execute: (1) Bash provider bootstrap (no-op if bash is available), (2) Homebrew provider bootstrap (install Homebrew if missing), (3) check if `visual-studio-code` cask is installed, and THEN proceed with VS Code Extensions operations.
 
 #### Scenario: Circular dependency detection
 
@@ -2507,7 +2507,7 @@ Each provider's Hamsfile SHALL follow the naming convention `<Display Name>.hams
 | uv | `uv.hams.yaml` |
 | goinstall | `goinstall.hams.yaml` |
 | cargo | `Cargo.hams.yaml` |
-| code-ext | `vscodeext.hams.yaml` |
+| code | `code.hams.yaml` |
 | git-config | `git config.hams.yaml` |
 | git-clone | `git clone.hams.yaml` |
 | defaults | `defaults.hams.yaml` |
@@ -2542,7 +2542,7 @@ All providers SHALL support the `enrich` operation, which uses LLM to generate o
 | uv | `uv pip show <pkg>` or PyPI API |
 | goinstall | pkg.go.dev page or `go doc` |
 | cargo | `cargo info <crate>` or crates.io API |
-| code-ext | VS Marketplace API |
+| code | VS Marketplace API |
 | mas | `mas info <id>` |
 | bash | User-provided `description` field (no external source) |
 | git-config | Inferred from key name |
