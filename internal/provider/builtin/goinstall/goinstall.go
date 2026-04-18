@@ -3,9 +3,6 @@ package goinstall
 
 import (
 	"context"
-	"errors"
-	"fmt"
-	"io/fs"
 	"log/slog"
 	"path/filepath"
 	"strings"
@@ -145,45 +142,17 @@ func (p *Provider) handleInstall(ctx context.Context, args []string, hamsFlags m
 	for _, r := range paths {
 		pkgs = append(pkgs, injectLatest(r))
 	}
-	if flags.DryRun {
-		provider.DryRunInstall(flags, "go install "+strings.Join(pkgs, " "))
-		return nil
+	hfPath, hfErr := p.hamsfilePath(hamsFlags, flags)
+	if hfErr != nil {
+		return hfErr
 	}
-
-	// Cycle 222: acquire single-writer state lock per cli-architecture spec.
-	release, lockErr := provider.AcquireMutationLockFromCfg(p.effectiveConfig(flags), flags, "goinstall install")
-	if lockErr != nil {
-		return lockErr
-	}
-	defer release()
-
-	for _, pkg := range pkgs {
-		if err := p.runner.Install(ctx, pkg); err != nil {
-			return err
-		}
-	}
-
-	hf, err := p.loadOrCreateHamsfile(hamsFlags, flags)
-	if err != nil {
-		return err
-	}
-	sf, err := p.loadOrCreateStateFile(flags)
-	if err != nil {
-		return err
-	}
-	for _, pkg := range pkgs {
-		hf.AddApp(tagCLI, pkg, "")
-		// Cycle 207: state write matches 96/202/203/204/205/206.
-		// Without this, `hams list --only=goinstall` returned empty
-		// right after a successful install. goinstall has no
-		// uninstall verb so there is no symmetric StateRemoved
-		// branch — binaries must be removed manually.
-		sf.SetResource(pkg, state.StateOK)
-	}
-	if writeErr := hf.Write(); writeErr != nil {
-		return writeErr
-	}
-	return sf.Save(p.statePath(flags))
+	return provider.AutoRecordInstall(ctx, p.runner, pkgs,
+		p.effectiveConfig(flags), flags,
+		hfPath, p.statePath(flags),
+		provider.PackageDispatchOpts{
+			CLIName: "goinstall", InstallVerb: "install", RemoveVerb: "uninstall", HamsTag: tagCLI,
+		},
+	)
 }
 
 // statePath returns the absolute path to goinstall.state.yaml for the
@@ -191,20 +160,6 @@ func (p *Provider) handleInstall(ctx context.Context, args []string, hamsFlags m
 func (p *Provider) statePath(flags *provider.GlobalFlags) string {
 	cfg := p.effectiveConfig(flags)
 	return filepath.Join(cfg.StateDir(), p.Manifest().FilePrefix+".state.yaml")
-}
-
-// loadOrCreateStateFile reads goinstall.state.yaml or returns a fresh
-// one when the file is absent. Non-ErrNotExist load failures propagate.
-func (p *Provider) loadOrCreateStateFile(flags *provider.GlobalFlags) (*state.File, error) {
-	cfg := p.effectiveConfig(flags)
-	sf, err := state.Load(p.statePath(flags))
-	if err == nil {
-		return sf, nil
-	}
-	if errors.Is(err, fs.ErrNotExist) {
-		return state.New(p.Name(), cfg.MachineID), nil
-	}
-	return nil, fmt.Errorf("loading goinstall state %s: %w", p.statePath(flags), err)
 }
 
 // packageArgs filters positional tokens: flags (leading `-`) are

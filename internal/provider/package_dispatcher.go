@@ -4,9 +4,9 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"strings"
 
 	"github.com/zthxxx/hams/internal/config"
-	hamserr "github.com/zthxxx/hams/internal/error"
 	"github.com/zthxxx/hams/internal/hamsfile"
 	"github.com/zthxxx/hams/internal/state"
 )
@@ -81,14 +81,10 @@ func AutoRecordInstall(
 	opts PackageDispatchOpts,
 ) error {
 	if len(pkgs) == 0 {
-		return hamserr.NewUserError(hamserr.ExitUsageError,
-			fmt.Sprintf("%s %s requires at least one package name", opts.CLIName, opts.InstallVerb),
-			fmt.Sprintf("Usage: hams %s %s <package>", opts.CLIName, opts.InstallVerb),
-		)
+		return UsageRequiresAtLeastOne(opts.CLIName, opts.InstallVerb, "package name", "package")
 	}
 	if flags.DryRun {
-		fmt.Fprintf(flags.Stdout(), "[dry-run] Would install: %s %s %v\n",
-			opts.CLIName, opts.InstallVerb, pkgs)
+		DryRunInstall(flags, opts.CLIName+" "+opts.InstallVerb+" "+strings.Join(pkgs, " "))
 		return nil
 	}
 
@@ -144,14 +140,10 @@ func AutoRecordRemove(
 	opts PackageDispatchOpts,
 ) error {
 	if len(pkgs) == 0 {
-		return hamserr.NewUserError(hamserr.ExitUsageError,
-			fmt.Sprintf("%s %s requires at least one package name", opts.CLIName, opts.RemoveVerb),
-			fmt.Sprintf("Usage: hams %s %s <package>", opts.CLIName, opts.RemoveVerb),
-		)
+		return UsageRequiresAtLeastOne(opts.CLIName, opts.RemoveVerb, "package name", "package")
 	}
 	if flags.DryRun {
-		fmt.Fprintf(flags.Stdout(), "[dry-run] Would remove: %s %s %v\n",
-			opts.CLIName, opts.RemoveVerb, pkgs)
+		DryRunRemove(flags, opts.CLIName+" "+opts.RemoveVerb+" "+strings.Join(pkgs, " "))
 		return nil
 	}
 

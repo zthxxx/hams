@@ -14,10 +14,23 @@ import (
 // (`go env GOPATH`, then exec'ing the binary, then PATH fallback) so
 // the seam exposes a single IsBinaryInstalled to keep the provider
 // code simple while letting tests stub the multi-step probe.
+//
+// The Uninstall method is a deliberate no-op here: `go install` has
+// no inverse verb, so the goinstall provider cannot remove binaries
+// programmatically. Keeping Uninstall on the interface (returning nil)
+// lets goinstall fit `provider.PackageInstaller` and adopt the
+// `provider.AutoRecordInstall` shared dispatcher without a second
+// install-only dispatcher variant. The provider-level `Remove` method
+// continues to warn the user to delete the binary manually.
 type CmdRunner interface {
 	// Install runs `go install <pkg>` (caller has already injected
 	// @latest if no version was specified).
 	Install(ctx context.Context, pkg string) error
+
+	// Uninstall is a no-op returning nil, matching the documented
+	// "go install has no uninstall verb" contract. Present only so
+	// goinstall can satisfy PackageInstaller.
+	Uninstall(ctx context.Context, pkg string) error
 
 	// IsBinaryInstalled reports whether the binary derived from pkg
 	// (last path segment, before @version) is present and executable.
@@ -45,6 +58,13 @@ func (r *realCmdRunner) Install(ctx context.Context, pkg string) error {
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("go install %s: %w", pkg, err)
 	}
+	return nil
+}
+
+func (r *realCmdRunner) Uninstall(_ context.Context, _ string) error {
+	// go install has no uninstall verb. Returning nil keeps the
+	// PackageInstaller contract honest without actually touching the
+	// host. The provider-level Remove method warns the user.
 	return nil
 }
 

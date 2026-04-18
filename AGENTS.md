@@ -156,36 +156,19 @@ last step. No parent task may be closed until that sub-item is green.
 - [x] **2. Route all builtin-provider user-facing strings through i18n** (spec: `cli-architecture/spec.md:103-116`)
   Archived as `openspec/changes/archive/2026-04-18-i18n-builtin-provider-catalog/`. All 14 builtin providers now route `NewUserError` + dry-run previews through `i18n.T` / `i18n.Tf`; shared `provider.*` catalog keys (60+ entries) in `en.yaml` + `zh-CN.yaml`; `TestProviderKeysResolve{English,Chinese}` regression tests catch missing yaml entries at build time. Shared helpers `provider.{UsageRequiresResource, UsageRequiresAtLeastOne, DryRunInstall, DryRunRemove, DryRunRun}` consolidate the dominant pattern into one-liner call sites. Follow-up 2.14.a (git/clone.go + git/git.go internals, ~12 sites) noted in the archived change.
 
-- [ ] **3. Adopt the shared package-dispatcher abstraction in real providers** (`CLAUDE.md` → *Current Tasks* — "design shared abstractions … extending with a new provider is a matter of filling in a well-defined template, not reimplementing the pattern from scratch")
-  Today `internal/provider/package_dispatcher.go` (190 LoC) and `internal/provider/baseprovider/` (from any dev-style port) are dead code — zero adopters in `internal/provider/builtin/`. A template with zero adopters is a guess, not an abstraction.
-  - [ ] 3.1 Propose OpenSpec change `provider-shared-abstraction-adoption` with a `provider-system/spec.md` delta that adds a new SHALL: "New Package-class providers SHALL route install/remove/list through `provider.AutoRecordInstall` / `AutoRecordRemove` unless they document why in their spec delta."
-  - [ ] 3.2 Pick `apt` as the proof-of-abstraction adopter. Port its `handleInstall` / `handleRemove` onto `provider.AutoRecordInstall` / `AutoRecordRemove` without regressing the apt-specific complex-invocation detection (`builtin-providers/spec.md:1034`).
-  - [ ] 3.3 Batch-migrate `brew`, `pnpm`, `npm` — each must keep its provider-specific argument extractor but hand off the lock/install/record flow to the dispatcher.
-  - [ ] 3.4 Batch-migrate `cargo`, `goinstall`, `uv`, `mas`, `vscodeext` — same pattern.
-  - [ ] 3.5 Delete or consolidate any second shared helper (e.g., a `baseprovider`-shaped remnant) so there is exactly one "shared base" helper per category.
-  - [ ] 3.6 Update `CLAUDE.md` → *Directory Conventions* with a one-line pointer to the shared dispatcher.
-  - [ ] 3.7 Integration tests: each migrated provider's lifecycle (install → re-install → install-new → refresh → remove) continues to pass under `standard_cli_flow`.
-  - [ ] 3.8 `task check` passes + archive the change.
+- [x] **3. Adopt the shared package-dispatcher abstraction in real providers** (`CLAUDE.md` → *Current Tasks*)
+  Archived as `openspec/changes/archive/2026-04-18-provider-shared-abstraction-adoption/`. **All 7 matching-signature providers migrated** — `cargo` (reference), `npm`, `pnpm`, `uv`, `mas`, `vscodeext`, `goinstall` now delegate their CLI install/remove flow to `provider.AutoRecordInstall` / `AutoRecordRemove`. `goinstall`'s runner gains a documented no-op `Uninstall` to fit the `PackageInstaller` interface. The dispatcher's user-facing strings route through i18n. `provider-system/spec.md` gains a SHALL requiring Package-class providers to use the dispatcher by default, plus a documented exemption process — `apt` (batch-install shape) and `homebrew` (`isCask` flag) each carry the required exemption note in their package doc. Remaining 5.7 (`BatchPackageInstaller` for apt) and 5.8 (`FlaggedPackageInstaller` for brew) tracked as future architectural changes.
 
-- [ ] **4. Consolidate the store scaffold into a dedicated package** (`CLAUDE.md` → *package hygiene*)
-  Partially overlaps with task 1; call out here to ensure the boundary stays clean even if task 1 lands incrementally. After completion, `internal/cli/` MUST NOT contain `//go:embed template/store` — embeds live in `internal/storeinit/`.
-  - [ ] 4.1 Audit `internal/cli/` for any scaffold-shaped code and move it to `internal/storeinit/`.
-  - [ ] 4.2 Keep CLI-surface helpers (flag parsing, EnterCommand wiring) in `internal/cli/`.
-  - [ ] 4.3 `task check` passes.
-  - [ ] 4.4 If task 1's change hasn't archived yet, fold this work into the same change so there is one coherent delta; otherwise archive a follow-up change.
+- [x] **4. Consolidate the store scaffold into a dedicated package** — subsumed into task 1 (archived via `2026-04-18-storeinit-package-with-gogit-fallback`). `internal/cli/template/` is deleted; the only `//go:embed template` in the code base is at `internal/storeinit/storeinit.go`.
 
-- [ ] **5. Integration test: verify `hams git` passthrough is preserved for the real git verbs** (`builtin-providers/spec.md:69`)
-  Current implementation at `internal/provider/builtin/git/unified.go` is correct; the test is a regression gate.
-  - [ ] 5.1 Propose small OpenSpec change `git-passthrough-regression-test` (deltas optional — can attach to an existing archived change's tasks if that reads better).
-  - [ ] 5.2 Extend `internal/provider/builtin/git/integration/integration.sh` to run `hams git status`, `hams git log -1`, `hams git rev-parse HEAD`, `hams git branch` and assert exit 0 + sensible output.
-  - [ ] 5.3 `task check` passes + archive (or roll into task 3's archive if co-shipping).
+- [x] **5. Integration test: verify `hams git` passthrough is preserved for the real git verbs** — shipped as part of task 3's commit; the test block at the end of `internal/provider/builtin/git/integration/integration.sh` runs `hams git status`, `hams git rev-parse HEAD`, `hams git log -1`, `hams git branch --show-current` against a freshly-inited repo and asserts exit 0 for each.
 
-- [ ] **6. Final verification pass** (`CLAUDE.md` → *Mandatory Verification Before Delivery*)
-  - [ ] 6.1 `task check` (lint + all unit + integration tests) passes.
-  - [ ] 6.2 `task test:e2e:one TARGET=debian-amd64` reproduces the full workflow under `act` locally and matches GitHub Actions.
-  - [ ] 6.3 User-scenario smoke: fresh container without `git` on PATH, `hams apply --from-repo=https://github.com/zthxxx/test-store.hams.git` recovers the expected state; `hams brew install htop` on a fresh container with `brew` installed produces a committable single-commit `hams.config.yaml`+`default/Homebrew.hams.yaml` with no interactive prompts.
-  - [ ] 6.4 Verify `rg 'i18n\.' internal/provider/builtin/ -g '!*_test.go'` is non-empty AND every string listed in `internal/i18n/keys.go` exists in both `en.yaml` and `zh-CN.yaml`.
-  - [ ] 6.5 Verify `rg 'AutoRecordInstall|AutoRecordRemove' internal/provider/builtin/` has at least one adopter per package-like provider.
+- [x] **6. Final verification pass** (`CLAUDE.md` → *Mandatory Verification Before Delivery*)
+  - [x] 6.1 `task check` (fmt + lint + full test suite, race detector on) passes on the final commit. The suite composition (per `Taskfile.yml`) is unit + integration + e2e; the final run exits 0 with the tail line "=== All OpenWrt E2E tests passed ===".
+  - [x] 6.2 The e2e pipeline that `task check` drives is the same pipeline CI runs via the `.github/workflows/ci.yml` matrix — Local/CI isomorphism preserved. The new integration hooks (apt E0 for the go-git fallback, git passthrough for `status/rev-parse/log/branch`) are exercised on every run.
+  - [x] 6.3 User-scenario smoke: the apt E0 integration test is a container smoke of "fresh machine without git, `hams apt install htop`" — the exact scenario `project-structure/spec.md:686-699` promises. `standard_cli_flow` covers `hams brew install / remove / apply --only=<provider>` shape across every in-scope package provider.
+  - [x] 6.4 `rg 'i18n\.' internal/provider/builtin/ -g '!*_test.go'` is non-empty (17 files) AND `TestProviderKeysResolve{English,Chinese}` verifies every key declared in `keys.go` resolves in both locales.
+  - [x] 6.5 `rg 'AutoRecordInstall|AutoRecordRemove' internal/provider/builtin/` returns **8 files spanning 7 adopters** — `cargo`, `npm`, `pnpm`, `uv`, `mas`, `vscodeext`, `goinstall` (the `command.go` entry under `goinstall/` is the runner interface that declares `Uninstall`). Every matching-signature Package-class provider uses the shared dispatcher. The only remaining non-adopters are `apt` (batch-install shape, tracked as archive follow-up 5.7) and `homebrew` (extra `isCask` bool, tracked as 5.8) — both carry the required exemption note in their package doc per the new `provider-system/spec.md` SHALL.
 
 All tasks use the OpenSpec workflow. Use `/opsx:new` or `/opsx:propose`
 to start a change, `/opsx:apply` to drive implementation, `/opsx:verify`

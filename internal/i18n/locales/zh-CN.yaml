@@ -259,3 +259,66 @@
   other: "未配置 store 目录"
 - id: provider.no-store-configured.hint
   other: "请在 hams 配置里设置 store_path，或通过 --store 指定"
+
+- id: provider.git.config.set.requires-kv
+  other: "git-config set 需要 key 和 value 两个参数"
+- id: provider.git.config.usage.set
+  other: "用法：hams git-config set <key> <value>"
+- id: provider.git.config.usage.bare
+  other: "      hams git-config <key> <value>"
+- id: provider.git.config.usage.remove
+  other: "      hams git-config remove <key>"
+- id: provider.git.config.usage.list
+  other: "      hams git-config list"
+- id: provider.git.config.example.set
+  other: "示例：hams git-config set user.name zthxxx"
+- id: provider.git.config.example.remove
+  other: "示例：hams git-config remove user.name"
+- id: provider.git.config.remove.requires-key
+  other: "git-config remove 需要指定 key"
+- id: provider.git.config.requires-subcommand-or-kv
+  other: "git-config 需要子命令或 key/value 对"
+- id: provider.git.config.dry-run.set
+  other: "[dry-run] 将设置：git config --global {{.Key}} {{.Value}}"
+- id: provider.git.config.dry-run.unset
+  other: "[dry-run] 将清除：git config --global --unset {{.Key}}"
+
+- id: provider.git.clone.subcommand-required
+  other: "git-clone 需要子命令或远端 URL 与本地路径"
+- id: provider.git.clone.usage.add-sub
+  other: "用法：hams git-clone add <remote> --hams-path=<path>"
+- id: provider.git.clone.usage.remove-sub
+  other: "      hams git-clone remove <urn-id>"
+- id: provider.git.clone.usage.list-sub
+  other: "      hams git-clone list"
+- id: provider.git.clone.add.requires-remote
+  other: "git-clone add 需要指定远端 URL"
+- id: provider.git.clone.add.usage
+  other: "用法：hams git-clone add <remote> --hams-path=<path>"
+- id: provider.git.clone.add.exact-one
+  other: "git-clone add 只接受一个远端 URL（当前 {{.Count}} 个：{{.Got}}）"
+- id: provider.git.clone.add.positional-hint
+  other: "本地路径通过 --hams-path 指定，而不是位置参数"
+- id: provider.git.clone.add.requires-path
+  other: "git-clone add 需要 --hams-path"
+- id: provider.git.clone.target-not-repo
+  other: "git-clone 目标 \"{{.Path}}\" 已存在但不是 git 仓库"
+- id: provider.git.clone.target-not-repo.hint1
+  other: "要么删除该目录后再重新 apply：rm -rf {{.Path}}"
+- id: provider.git.clone.target-not-repo.hint2
+  other: "要么就地初始化：cd {{.Path}} && git init && git remote add origin {{.Remote}}"
+- id: provider.git.clone.dry-run.add
+  other: "[dry-run] 将执行：git clone {{.Remote}} {{.Path}}"
+- id: provider.git.clone.dry-run.remove-entry
+  other: "[dry-run] 将移除登记：{{.URN}}（不会删除目录）"
+- id: provider.git.clone.remove.requires-urn
+  other: "git-clone remove 需要指定 URN id"
+- id: provider.git.clone.remove.usage
+  other: "用法：hams git-clone remove <urn-id>"
+- id: provider.git.clone.no-entry
+  other: "git-clone：没有登记的资源 ID 为 \"{{.URN}}\""
+- id: provider.git.clone.invalid-resource-id
+  other: "{{.Err}}"
+
+- id: provider.homebrew.list.header
+  other: "Homebrew 管理的软件包："

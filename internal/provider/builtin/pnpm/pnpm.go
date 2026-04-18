@@ -4,9 +4,6 @@ package pnpm
 import (
 	"context"
 	"encoding/json"
-	"errors"
-	"fmt"
-	"io/fs"
 	"log/slog"
 	"os/exec"
 	"path/filepath"
@@ -226,43 +223,17 @@ func (p *Provider) handleInstall(ctx context.Context, args []string, hamsFlags m
 	if len(pkgs) == 0 {
 		return provider.UsageRequiresAtLeastOne(cliName, "install", "package name", "package")
 	}
-	if flags.DryRun {
-		provider.DryRunInstall(flags, "pnpm add -g "+strings.Join(args, " "))
-		return nil
+	hfPath, hfErr := p.hamsfilePath(hamsFlags, flags)
+	if hfErr != nil {
+		return hfErr
 	}
-
-	// Cycle 222: acquire single-writer state lock per cli-architecture spec.
-	release, lockErr := provider.AcquireMutationLockFromCfg(p.effectiveConfig(flags), flags, "pnpm install")
-	if lockErr != nil {
-		return lockErr
-	}
-	defer release()
-
-	for _, pkg := range pkgs {
-		if err := p.runner.Install(ctx, pkg); err != nil {
-			return err
-		}
-	}
-
-	hf, err := p.loadOrCreateHamsfile(hamsFlags, flags)
-	if err != nil {
-		return err
-	}
-	sf, err := p.loadOrCreateStateFile(flags)
-	if err != nil {
-		return err
-	}
-	for _, pkg := range pkgs {
-		hf.AddApp(tagCLI, pkg, "")
-		// Cycle 205: state write is additive, matching cycles
-		// 96/202/203/204. Without this, `hams list --only=pnpm`
-		// returned empty immediately after a successful install.
-		sf.SetResource(pkg, state.StateOK)
-	}
-	if writeErr := hf.Write(); writeErr != nil {
-		return writeErr
-	}
-	return sf.Save(p.statePath(flags))
+	return provider.AutoRecordInstall(ctx, p.runner, pkgs,
+		p.effectiveConfig(flags), flags,
+		hfPath, p.statePath(flags),
+		provider.PackageDispatchOpts{
+			CLIName: cliName, InstallVerb: "install", RemoveVerb: "remove", HamsTag: tagCLI,
+		},
+	)
 }
 
 // handleRemove runs `pnpm remove -g <pkg>` via the CmdRunner seam and,
@@ -275,40 +246,17 @@ func (p *Provider) handleRemove(ctx context.Context, args []string, hamsFlags ma
 	if len(pkgs) == 0 {
 		return provider.UsageRequiresAtLeastOne(cliName, "remove", "package name", "package")
 	}
-	if flags.DryRun {
-		provider.DryRunRemove(flags, "pnpm remove -g "+strings.Join(args, " "))
-		return nil
+	hfPath, hfErr := p.hamsfilePath(hamsFlags, flags)
+	if hfErr != nil {
+		return hfErr
 	}
-
-	// Cycle 222: acquire single-writer state lock per cli-architecture spec.
-	release, lockErr := provider.AcquireMutationLockFromCfg(p.effectiveConfig(flags), flags, "pnpm remove")
-	if lockErr != nil {
-		return lockErr
-	}
-	defer release()
-
-	for _, pkg := range pkgs {
-		if err := p.runner.Uninstall(ctx, pkg); err != nil {
-			return err
-		}
-	}
-
-	hf, err := p.loadOrCreateHamsfile(hamsFlags, flags)
-	if err != nil {
-		return err
-	}
-	sf, err := p.loadOrCreateStateFile(flags)
-	if err != nil {
-		return err
-	}
-	for _, pkg := range pkgs {
-		hf.RemoveApp(pkg)
-		sf.SetResource(pkg, state.StateRemoved)
-	}
-	if writeErr := hf.Write(); writeErr != nil {
-		return writeErr
-	}
-	return sf.Save(p.statePath(flags))
+	return provider.AutoRecordRemove(ctx, p.runner, pkgs,
+		p.effectiveConfig(flags), flags,
+		hfPath, p.statePath(flags),
+		provider.PackageDispatchOpts{
+			CLIName: cliName, InstallVerb: "install", RemoveVerb: "remove", HamsTag: tagCLI,
+		},
+	)
 }
 
 // statePath returns the absolute path to pnpm.state.yaml for the
@@ -316,20 +264,6 @@ func (p *Provider) handleRemove(ctx context.Context, args []string, hamsFlags ma
 func (p *Provider) statePath(flags *provider.GlobalFlags) string {
 	cfg := p.effectiveConfig(flags)
 	return filepath.Join(cfg.StateDir(), p.Manifest().FilePrefix+".state.yaml")
-}
-
-// loadOrCreateStateFile reads pnpm.state.yaml or returns a fresh one
-// when the file is absent. Non-ErrNotExist load failures propagate.
-func (p *Provider) loadOrCreateStateFile(flags *provider.GlobalFlags) (*state.File, error) {
-	cfg := p.effectiveConfig(flags)
-	sf, err := state.Load(p.statePath(flags))
-	if err == nil {
-		return sf, nil
-	}
-	if errors.Is(err, fs.ErrNotExist) {
-		return state.New(p.Name(), cfg.MachineID), nil
-	}
-	return nil, fmt.Errorf("loading pnpm state %s: %w", p.statePath(flags), err)
 }
 
 // packageArgs filters positional tokens: flags (leading `-`) are

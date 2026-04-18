@@ -17,6 +17,7 @@ import (
 	"github.com/zthxxx/hams/internal/config"
 	hamserr "github.com/zthxxx/hams/internal/error"
 	"github.com/zthxxx/hams/internal/hamsfile"
+	"github.com/zthxxx/hams/internal/i18n"
 	"github.com/zthxxx/hams/internal/provider"
 	"github.com/zthxxx/hams/internal/state"
 )
@@ -190,9 +191,11 @@ func (p *CloneProvider) Apply(ctx context.Context, action provider.Action) error
 	if info, statErr := os.Stat(localPath); statErr == nil && info.IsDir() {
 		if !isGitRepoPath(localPath) {
 			return hamserr.NewUserError(hamserr.ExitGeneralError,
-				fmt.Sprintf("git-clone target %q already exists but is not a git repository", localPath),
-				"Either delete the directory and re-run apply: rm -rf "+localPath,
-				"Or initialize it in place: cd "+localPath+" && git init && git remote add origin "+remote,
+				i18n.Tf(i18n.ProviderGitCloneTargetNotRepo, map[string]any{"Path": localPath}),
+				i18n.Tf(i18n.ProviderGitCloneTargetNotRepoHint1, map[string]any{"Path": localPath}),
+				i18n.Tf(i18n.ProviderGitCloneTargetNotRepoHint2, map[string]any{
+					"Path": localPath, "Remote": remote,
+				}),
 			)
 		}
 		// Already a git repo at this path — skip clone (idempotent).
@@ -253,10 +256,10 @@ func (p *CloneProvider) HandleCommand(ctx context.Context, args []string, hamsFl
 		// Passthrough: treat as raw git clone.
 		if len(args) < 2 {
 			return hamserr.NewUserError(hamserr.ExitUsageError,
-				"git-clone requires a subcommand or remote URL and local path",
-				"Usage: hams git-clone add <remote> --hams-path=<path>",
-				"       hams git-clone remove <urn-id>",
-				"       hams git-clone list",
+				i18n.T(i18n.ProviderGitCloneSubcommandRequired),
+				i18n.T(i18n.ProviderGitCloneUsageAddSub),
+				i18n.T(i18n.ProviderGitCloneUsageRemoveSub),
+				i18n.T(i18n.ProviderGitCloneUsageListSub),
 			)
 		}
 		return p.clonePassthrough(ctx, args, flags)
@@ -266,8 +269,8 @@ func (p *CloneProvider) HandleCommand(ctx context.Context, args []string, hamsFl
 func (p *CloneProvider) handleAdd(ctx context.Context, args []string, hamsFlags map[string]string, flags *provider.GlobalFlags) error {
 	if len(args) == 0 {
 		return hamserr.NewUserError(hamserr.ExitUsageError,
-			"git-clone add requires a remote URL",
-			"Usage: hams git-clone add <remote> --hams-path=<path>",
+			i18n.T(i18n.ProviderGitCloneAddRequiresRemote),
+			i18n.T(i18n.ProviderGitCloneAddUsage),
 		)
 	}
 	// Strict arg count — same UX class as cycles 156/163/164. The
@@ -279,9 +282,11 @@ func (p *CloneProvider) handleAdd(ctx context.Context, args []string, hamsFlags 
 	// silently lost. Now: surface the mismatch.
 	if len(args) != 1 {
 		return hamserr.NewUserError(hamserr.ExitUsageError,
-			fmt.Sprintf("git-clone add takes exactly one remote URL (got %d args: %v)", len(args), args),
-			"Usage: hams git-clone add <remote> --hams-path=<path>",
-			"The local path is set via --hams-path, not as a positional arg",
+			i18n.Tf(i18n.ProviderGitCloneAddExactOne, map[string]any{
+				"Count": len(args), "Got": args,
+			}),
+			i18n.T(i18n.ProviderGitCloneAddUsage),
+			i18n.T(i18n.ProviderGitCloneAddPosHint),
 		)
 	}
 
@@ -289,8 +294,8 @@ func (p *CloneProvider) handleAdd(ctx context.Context, args []string, hamsFlags 
 	localPath := hamsFlags["path"]
 	if localPath == "" {
 		return hamserr.NewUserError(hamserr.ExitUsageError,
-			"git-clone add requires --hams-path",
-			"Usage: hams git-clone add <remote> --hams-path=<path>",
+			i18n.T(i18n.ProviderGitCloneAddRequiresPath),
+			i18n.T(i18n.ProviderGitCloneAddUsage),
 		)
 	}
 
@@ -304,7 +309,9 @@ func (p *CloneProvider) handleAdd(ctx context.Context, args []string, hamsFlags 
 	}
 
 	if flags.DryRun {
-		fmt.Printf("[dry-run] Would clone: git clone %s %s\n", remote, cloneTarget)
+		fmt.Fprintln(flags.Stdout(), i18n.Tf(i18n.ProviderGitCloneDryRunAdd, map[string]any{
+			"Remote": remote, "Path": cloneTarget,
+		}))
 		return nil
 	}
 
@@ -323,9 +330,11 @@ func (p *CloneProvider) handleAdd(ctx context.Context, args []string, hamsFlags 
 	if info, statErr := os.Stat(cloneTarget); statErr == nil && info.IsDir() {
 		if !isGitRepoPath(cloneTarget) {
 			return hamserr.NewUserError(hamserr.ExitGeneralError,
-				fmt.Sprintf("git-clone target %q already exists but is not a git repository", cloneTarget),
-				"Either delete the directory and re-run: rm -rf "+cloneTarget,
-				"Or initialize it in place: cd "+cloneTarget+" && git init && git remote add origin "+remote,
+				i18n.Tf(i18n.ProviderGitCloneTargetNotRepo, map[string]any{"Path": cloneTarget}),
+				i18n.Tf(i18n.ProviderGitCloneTargetNotRepoHint1, map[string]any{"Path": cloneTarget}),
+				i18n.Tf(i18n.ProviderGitCloneTargetNotRepoHint2, map[string]any{
+					"Path": cloneTarget, "Remote": remote,
+				}),
 			)
 		}
 		// Already a git repo — skip the clone but still record in the
@@ -386,14 +395,16 @@ func (p *CloneProvider) recordAdd(remote, localPath string, hamsFlags map[string
 func (p *CloneProvider) handleRemove(args []string, hamsFlags map[string]string, flags *provider.GlobalFlags) error {
 	if len(args) == 0 {
 		return hamserr.NewUserError(hamserr.ExitUsageError,
-			"git-clone remove requires a resource ID",
-			"Usage: hams git-clone remove <urn-id>",
+			i18n.T(i18n.ProviderGitCloneRemoveRequiresURN),
+			i18n.T(i18n.ProviderGitCloneRemoveUsage),
 		)
 	}
 
 	resourceID := args[0]
 	if flags.DryRun {
-		fmt.Printf("[dry-run] Would remove entry: %s (directory NOT deleted)\n", resourceID)
+		fmt.Fprintln(flags.Stdout(), i18n.Tf(i18n.ProviderGitCloneDryRunRemoveEntry, map[string]any{
+			"URN": resourceID,
+		}))
 		return nil
 	}
 
@@ -438,7 +449,7 @@ func (p *CloneProvider) handleRemove(args []string, hamsFlags map[string]string,
 			suggestions = append(suggestions, "Tracked IDs: "+strings.Join(tracked, ", "))
 		}
 		return hamserr.NewUserError(hamserr.ExitUsageError,
-			fmt.Sprintf("git-clone: no tracked resource with ID %q", resourceID),
+			i18n.Tf(i18n.ProviderGitCloneNoEntry, map[string]any{"URN": resourceID}),
 			suggestions...,
 		)
 	}
@@ -540,7 +551,9 @@ func (p *CloneProvider) clonePassthrough(ctx context.Context, args []string, fla
 	}
 
 	if flags.DryRun {
-		fmt.Printf("[dry-run] Would clone: git clone %s %s\n", remote, localPath)
+		fmt.Fprintln(flags.Stdout(), i18n.Tf(i18n.ProviderGitCloneDryRunAdd, map[string]any{
+			"Remote": remote, "Path": localPath,
+		}))
 		return nil
 	}
 
@@ -568,8 +581,8 @@ func (p *CloneProvider) hamsfilePath(hamsFlags map[string]string, flags *provide
 	cfg := p.effectiveConfig(flags)
 	if cfg.StorePath == "" {
 		return "", hamserr.NewUserError(hamserr.ExitUsageError,
-			"no store directory configured",
-			"Set store_path in hams config or pass --store",
+			i18n.T(i18n.ProviderNoStoreConfigured),
+			i18n.T(i18n.ProviderNoStoreConfiguredHint),
 		)
 	}
 

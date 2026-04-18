@@ -5,7 +5,6 @@ import (
 
 	"github.com/zthxxx/hams/internal/config"
 	hamserr "github.com/zthxxx/hams/internal/error"
-	"github.com/zthxxx/hams/internal/hamsfile"
 	"github.com/zthxxx/hams/internal/i18n"
 	"github.com/zthxxx/hams/internal/provider"
 )
@@ -14,17 +13,8 @@ import (
 // CLI-first `hams npm install <pkg>` path.
 const tagCLI = "cli"
 
-// loadOrCreateHamsfile reads the npm.hams.yaml (or npm.hams.local.yaml when
-// --hams-local is set) for the active profile, creating an empty document if
-// the file does not yet exist. Mirrors apt's implementation.
-func (p *Provider) loadOrCreateHamsfile(hamsFlags map[string]string, flags *provider.GlobalFlags) (*hamsfile.File, error) {
-	path, err := p.hamsfilePath(hamsFlags, flags)
-	if err != nil {
-		return nil, err
-	}
-	return hamsfile.LoadOrCreateEmpty(path)
-}
-
+// hamsfilePath returns the absolute path to the npm hamsfile (or its
+// .local.yaml variant when --hams-local is set) for the active profile.
 func (p *Provider) hamsfilePath(hamsFlags map[string]string, flags *provider.GlobalFlags) (string, error) {
 	cfg := p.effectiveConfig(flags)
 	if cfg.StorePath == "" {

@@ -1,13 +1,15 @@
 # Project Structure Spec
 
+## Purpose
+
+Defines the hams repository layout — top-level directory structure, internal-package organization, builtin-provider directory convention, SDK surface, go-module identity, build / release artifacts, docs-site host, bundled go-git dependency for fresh-machine bootstrap, and test-file conventions.
+
+## Requirements
+
 <!-- openspec:change = hams-v1-design -->
 <!-- openspec:capability = project-structure -->
 
 This spec defines the Go module layout, directory conventions, build targets, Docker-based e2e testing infrastructure, and GitHub Actions CI pipeline for the hams project.
-
----
-
-## ADDED Requirements
 
 ### Requirement: Top-Level Directory Layout
 
@@ -260,15 +262,10 @@ pkg/
 
 Go application code and JS/TS tooling (documentation site, linting configs, future Bun SDK) SHALL be cleanly separated. The Go module SHALL NOT depend on any JS/TS files for compilation. JS tooling SHALL be managed by pnpm and executed via bun. The two ecosystems SHALL share only the repository root for configuration files.
 
-```
-# Go ecosystem
-cmd/          internal/          pkg/          go.mod          go.sum
-
-# JS ecosystem
-docs/         package.json       pnpm-lock.yaml     eslint.config.ts
-
-# Shared (configuration only)
-.editorconfig     .gitignore     .gitattributes     cspell.yaml
+```text
+Go ecosystem:    cmd/  internal/  pkg/  go.mod  go.sum
+JS ecosystem:    docs/  package.json  pnpm-lock.yaml  eslint.config.ts
+Shared config:   .editorconfig  .gitignore  .gitattributes  cspell.yaml
 ```
 
 #### Scenario: Go build does not require Node.js or Bun

@@ -4,9 +4,6 @@ package npm
 import (
 	"context"
 	"encoding/json"
-	"errors"
-	"fmt"
-	"io/fs"
 	"log/slog"
 	"path/filepath"
 	"strings"
@@ -211,45 +208,17 @@ func (p *Provider) handleInstall(ctx context.Context, args []string, hamsFlags m
 	if len(pkgs) == 0 {
 		return provider.UsageRequiresAtLeastOne(cliName, "install", "package name", "package")
 	}
-	if flags.DryRun {
-		provider.DryRunInstall(flags, "npm install -g "+strings.Join(args, " "))
-		return nil
+	hfPath, hfErr := p.hamsfilePath(hamsFlags, flags)
+	if hfErr != nil {
+		return hfErr
 	}
-
-	// Cycle 222: acquire single-writer state lock per cli-architecture spec.
-	release, lockErr := provider.AcquireMutationLockFromCfg(p.effectiveConfig(flags), flags, "npm install")
-	if lockErr != nil {
-		return lockErr
-	}
-	defer release()
-
-	for _, pkg := range pkgs {
-		if err := p.runner.Install(ctx, pkg); err != nil {
-			return err
-		}
-	}
-
-	hf, err := p.loadOrCreateHamsfile(hamsFlags, flags)
-	if err != nil {
-		return err
-	}
-	sf, err := p.loadOrCreateStateFile(flags)
-	if err != nil {
-		return err
-	}
-	for _, pkg := range pkgs {
-		hf.AddApp(tagCLI, pkg, "")
-		// Cycle 204: state write is additive. Without this,
-		// `hams list --only=npm` returned empty right after a
-		// successful install because `list` reads state only.
-		// Same auto-record gap as cycle 96 (homebrew) / 202 (mas) /
-		// 203 (cargo).
-		sf.SetResource(pkg, state.StateOK)
-	}
-	if writeErr := hf.Write(); writeErr != nil {
-		return writeErr
-	}
-	return sf.Save(p.statePath(flags))
+	return provider.AutoRecordInstall(ctx, p.runner, pkgs,
+		p.effectiveConfig(flags), flags,
+		hfPath, p.statePath(flags),
+		provider.PackageDispatchOpts{
+			CLIName: cliName, InstallVerb: "install", RemoveVerb: "uninstall", HamsTag: tagCLI,
+		},
+	)
 }
 
 // handleRemove runs `npm uninstall -g <pkg>` via the CmdRunner seam
@@ -262,40 +231,17 @@ func (p *Provider) handleRemove(ctx context.Context, args []string, hamsFlags ma
 	if len(pkgs) == 0 {
 		return provider.UsageRequiresAtLeastOne(cliName, "remove", "package name", "package")
 	}
-	if flags.DryRun {
-		provider.DryRunRemove(flags, "npm uninstall -g "+strings.Join(args, " "))
-		return nil
+	hfPath, hfErr := p.hamsfilePath(hamsFlags, flags)
+	if hfErr != nil {
+		return hfErr
 	}
-
-	// Cycle 222: acquire single-writer state lock per cli-architecture spec.
-	release, lockErr := provider.AcquireMutationLockFromCfg(p.effectiveConfig(flags), flags, "npm remove")
-	if lockErr != nil {
-		return lockErr
-	}
-	defer release()
-
-	for _, pkg := range pkgs {
-		if err := p.runner.Uninstall(ctx, pkg); err != nil {
-			return err
-		}
-	}
-
-	hf, err := p.loadOrCreateHamsfile(hamsFlags, flags)
-	if err != nil {
-		return err
-	}
-	sf, err := p.loadOrCreateStateFile(flags)
-	if err != nil {
-		return err
-	}
-	for _, pkg := range pkgs {
-		hf.RemoveApp(pkg)
-		sf.SetResource(pkg, state.StateRemoved)
-	}
-	if writeErr := hf.Write(); writeErr != nil {
-		return writeErr
-	}
-	return sf.Save(p.statePath(flags))
+	return provider.AutoRecordRemove(ctx, p.runner, pkgs,
+		p.effectiveConfig(flags), flags,
+		hfPath, p.statePath(flags),
+		provider.PackageDispatchOpts{
+			CLIName: cliName, InstallVerb: "install", RemoveVerb: "uninstall", HamsTag: tagCLI,
+		},
+	)
 }
 
 // statePath returns the absolute path to npm.state.yaml for the
@@ -303,22 +249,6 @@ func (p *Provider) handleRemove(ctx context.Context, args []string, hamsFlags ma
 func (p *Provider) statePath(flags *provider.GlobalFlags) string {
 	cfg := p.effectiveConfig(flags)
 	return filepath.Join(cfg.StateDir(), p.Manifest().FilePrefix+".state.yaml")
-}
-
-// loadOrCreateStateFile reads npm.state.yaml or returns a fresh one
-// when the file is absent. Non-ErrNotExist load failures propagate so
-// the CLI handler surfaces a user-facing error instead of silently
-// overwriting unparseable state.
-func (p *Provider) loadOrCreateStateFile(flags *provider.GlobalFlags) (*state.File, error) {
-	cfg := p.effectiveConfig(flags)
-	sf, err := state.Load(p.statePath(flags))
-	if err == nil {
-		return sf, nil
-	}
-	if errors.Is(err, fs.ErrNotExist) {
-		return state.New(p.Name(), cfg.MachineID), nil
-	}
-	return nil, fmt.Errorf("loading npm state %s: %w", p.statePath(flags), err)
 }
 
 // packageArgs filters positional tokens from args: flags (leading `-`)

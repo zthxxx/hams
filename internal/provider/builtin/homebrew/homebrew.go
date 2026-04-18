@@ -1,4 +1,16 @@
 // Package homebrew wraps the Homebrew package manager for macOS and Linux.
+//
+// Dispatcher exemption: this provider does NOT route through
+// `provider.AutoRecordInstall` / `provider.AutoRecordRemove` — its
+// `CmdRunner.Install(ctx, pkg string, isCask bool)` carries an extra
+// `isCask` bool so the runner knows whether to invoke `brew install
+// --cask`. The shared dispatcher's `PackageInstaller` interface has no
+// slot for the cask flag, so forcing adoption would either inline
+// cask detection inside the dispatcher (coupling the framework to
+// homebrew-specific knowledge) or silently drop the flag. A future
+// change (openspec follow-up 5.8) will introduce a
+// `FlaggedPackageInstaller` dispatcher variant so brew can adopt the
+// shared flow while preserving cask routing.
 package homebrew
 
 import (
@@ -437,7 +449,7 @@ func (p *Provider) handleList(hamsFlags map[string]string, flags *provider.Globa
 		fmt.Fprintln(flags.Stdout(), out)
 		return nil
 	}
-	fmt.Fprintln(flags.Stdout(), "Homebrew managed packages:")
+	fmt.Fprintln(flags.Stdout(), i18n.T(i18n.ProviderHomebrewListHeader))
 	fmt.Fprint(flags.Stdout(), provider.FormatDiff(&diff))
 	return nil
 }

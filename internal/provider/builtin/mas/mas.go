@@ -3,9 +3,6 @@ package mas
 
 import (
 	"context"
-	"errors"
-	"fmt"
-	"io/fs"
 	"log/slog"
 	"os/exec"
 	"path/filepath"
@@ -155,44 +152,17 @@ func (p *Provider) handleInstall(ctx context.Context, args []string, hamsFlags m
 	if len(ids) == 0 {
 		return provider.UsageRequiresAtLeastOne("mas", "install", "numeric app ID", "app-id")
 	}
-	if flags.DryRun {
-		provider.DryRunInstall(flags, "mas install "+strings.Join(args, " "))
-		return nil
+	hfPath, hfErr := p.hamsfilePath(hamsFlags, flags)
+	if hfErr != nil {
+		return hfErr
 	}
-
-	// Cycle 222: acquire single-writer state lock per cli-architecture spec.
-	release, lockErr := provider.AcquireMutationLockFromCfg(p.effectiveConfig(flags), flags, "mas install")
-	if lockErr != nil {
-		return lockErr
-	}
-	defer release()
-
-	for _, id := range ids {
-		if err := p.runner.Install(ctx, id); err != nil {
-			return err
-		}
-	}
-
-	hf, err := p.loadOrCreateHamsfile(hamsFlags, flags)
-	if err != nil {
-		return err
-	}
-	sf, err := p.loadOrCreateStateFile(flags)
-	if err != nil {
-		return err
-	}
-	for _, id := range ids {
-		hf.AddApp(tagCLI, id, "")
-		// State write is additive — apt's U12-U15 / brew's cycle 96
-		// pattern. Without this, `hams list --only=mas` showed
-		// nothing after a successful `hams mas install <id>`
-		// because `list` reads state files only.
-		sf.SetResource(id, state.StateOK)
-	}
-	if writeErr := hf.Write(); writeErr != nil {
-		return writeErr
-	}
-	return sf.Save(p.statePath(flags))
+	return provider.AutoRecordInstall(ctx, p.runner, ids,
+		p.effectiveConfig(flags), flags,
+		hfPath, p.statePath(flags),
+		provider.PackageDispatchOpts{
+			CLIName: "mas", InstallVerb: "install", RemoveVerb: "uninstall", HamsTag: tagCLI,
+		},
+	)
 }
 
 // handleRemove runs `mas uninstall <id>` via the CmdRunner seam and,
@@ -205,40 +175,17 @@ func (p *Provider) handleRemove(ctx context.Context, args []string, hamsFlags ma
 	if len(ids) == 0 {
 		return provider.UsageRequiresAtLeastOne("mas", "remove", "numeric app ID", "app-id")
 	}
-	if flags.DryRun {
-		provider.DryRunRemove(flags, "mas uninstall "+strings.Join(args, " "))
-		return nil
+	hfPath, hfErr := p.hamsfilePath(hamsFlags, flags)
+	if hfErr != nil {
+		return hfErr
 	}
-
-	// Cycle 222: acquire single-writer state lock per cli-architecture spec.
-	release, lockErr := provider.AcquireMutationLockFromCfg(p.effectiveConfig(flags), flags, "mas remove")
-	if lockErr != nil {
-		return lockErr
-	}
-	defer release()
-
-	for _, id := range ids {
-		if err := p.runner.Uninstall(ctx, id); err != nil {
-			return err
-		}
-	}
-
-	hf, err := p.loadOrCreateHamsfile(hamsFlags, flags)
-	if err != nil {
-		return err
-	}
-	sf, err := p.loadOrCreateStateFile(flags)
-	if err != nil {
-		return err
-	}
-	for _, id := range ids {
-		hf.RemoveApp(id)
-		sf.SetResource(id, state.StateRemoved)
-	}
-	if writeErr := hf.Write(); writeErr != nil {
-		return writeErr
-	}
-	return sf.Save(p.statePath(flags))
+	return provider.AutoRecordRemove(ctx, p.runner, ids,
+		p.effectiveConfig(flags), flags,
+		hfPath, p.statePath(flags),
+		provider.PackageDispatchOpts{
+			CLIName: "mas", InstallVerb: "install", RemoveVerb: "uninstall", HamsTag: tagCLI,
+		},
+	)
 }
 
 // statePath returns the absolute path to mas.state.yaml for the
@@ -246,22 +193,6 @@ func (p *Provider) handleRemove(ctx context.Context, args []string, hamsFlags ma
 func (p *Provider) statePath(flags *provider.GlobalFlags) string {
 	cfg := p.effectiveConfig(flags)
 	return filepath.Join(cfg.StateDir(), p.Manifest().FilePrefix+".state.yaml")
-}
-
-// loadOrCreateStateFile reads the mas state file or returns a fresh
-// one when the file is absent. Non-ErrNotExist load failures propagate
-// so the CLI handler surfaces a user-facing error instead of silently
-// overwriting unparseable state. Mirrors homebrew.loadOrCreateStateFile.
-func (p *Provider) loadOrCreateStateFile(flags *provider.GlobalFlags) (*state.File, error) {
-	cfg := p.effectiveConfig(flags)
-	sf, err := state.Load(p.statePath(flags))
-	if err == nil {
-		return sf, nil
-	}
-	if errors.Is(err, fs.ErrNotExist) {
-		return state.New(p.Name(), cfg.MachineID), nil
-	}
-	return nil, fmt.Errorf("loading mas state %s: %w", p.statePath(flags), err)
 }
 
 // appIDArgs filters positional tokens: flags (leading `-`) are
