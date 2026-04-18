@@ -3,9 +3,6 @@ package vscodeext
 
 import (
 	"context"
-	"errors"
-	"fmt"
-	"io/fs"
 	"log/slog"
 	"path/filepath"
 	"strings"
@@ -204,42 +201,17 @@ func (p *Provider) handleInstall(ctx context.Context, args []string, hamsFlags m
 	if len(exts) == 0 {
 		return provider.UsageRequiresAtLeastOne(cliName, "install", "extension ID", "publisher.extension")
 	}
-	if flags.DryRun {
-		provider.DryRunInstall(flags, "code --install-extension "+strings.Join(exts, " "))
-		return nil
+	hfPath, hfErr := p.hamsfilePath(hamsFlags, flags)
+	if hfErr != nil {
+		return hfErr
 	}
-
-	// Cycle 222: acquire single-writer state lock per cli-architecture spec.
-	release, lockErr := provider.AcquireMutationLockFromCfg(p.effectiveConfig(flags), flags, "code install")
-	if lockErr != nil {
-		return lockErr
-	}
-	defer release()
-
-	for _, ext := range exts {
-		if err := p.runner.Install(ctx, ext); err != nil {
-			return err
-		}
-	}
-
-	hf, err := p.loadOrCreateHamsfile(hamsFlags, flags)
-	if err != nil {
-		return err
-	}
-	sf, err := p.loadOrCreateStateFile(flags)
-	if err != nil {
-		return err
-	}
-	for _, ext := range exts {
-		hf.AddApp(tagCLI, ext, "")
-		// Cycle 208: state write matches cycles 96/202-207. Final
-		// Package-class provider to gain CP-1 state-write parity.
-		sf.SetResource(ext, state.StateOK)
-	}
-	if writeErr := hf.Write(); writeErr != nil {
-		return writeErr
-	}
-	return sf.Save(p.statePath(flags))
+	return provider.AutoRecordInstall(ctx, p.runner, exts,
+		p.effectiveConfig(flags), flags,
+		hfPath, p.statePath(flags),
+		provider.PackageDispatchOpts{
+			CLIName: cliName, InstallVerb: "install", RemoveVerb: "uninstall", HamsTag: tagCLI,
+		},
+	)
 }
 
 // handleRemove runs `code --uninstall-extension <ext>` via the
@@ -253,40 +225,17 @@ func (p *Provider) handleRemove(ctx context.Context, args []string, hamsFlags ma
 	if len(exts) == 0 {
 		return provider.UsageRequiresAtLeastOne(cliName, "remove", "extension ID", "publisher.extension")
 	}
-	if flags.DryRun {
-		provider.DryRunRemove(flags, "code --uninstall-extension "+strings.Join(exts, " "))
-		return nil
+	hfPath, hfErr := p.hamsfilePath(hamsFlags, flags)
+	if hfErr != nil {
+		return hfErr
 	}
-
-	// Cycle 222: acquire single-writer state lock per cli-architecture spec.
-	release, lockErr := provider.AcquireMutationLockFromCfg(p.effectiveConfig(flags), flags, "code remove")
-	if lockErr != nil {
-		return lockErr
-	}
-	defer release()
-
-	for _, ext := range exts {
-		if err := p.runner.Uninstall(ctx, ext); err != nil {
-			return err
-		}
-	}
-
-	hf, err := p.loadOrCreateHamsfile(hamsFlags, flags)
-	if err != nil {
-		return err
-	}
-	sf, err := p.loadOrCreateStateFile(flags)
-	if err != nil {
-		return err
-	}
-	for _, ext := range exts {
-		hf.RemoveApp(ext)
-		sf.SetResource(ext, state.StateRemoved)
-	}
-	if writeErr := hf.Write(); writeErr != nil {
-		return writeErr
-	}
-	return sf.Save(p.statePath(flags))
+	return provider.AutoRecordRemove(ctx, p.runner, exts,
+		p.effectiveConfig(flags), flags,
+		hfPath, p.statePath(flags),
+		provider.PackageDispatchOpts{
+			CLIName: cliName, InstallVerb: "install", RemoveVerb: "uninstall", HamsTag: tagCLI,
+		},
+	)
 }
 
 // statePath returns the absolute path to vscodeext.state.yaml for the
@@ -299,20 +248,6 @@ func (p *Provider) handleRemove(ctx context.Context, args []string, hamsFlags ma
 func (p *Provider) statePath(flags *provider.GlobalFlags) string {
 	cfg := p.effectiveConfig(flags)
 	return filepath.Join(cfg.StateDir(), p.Manifest().FilePrefix+".state.yaml")
-}
-
-// loadOrCreateStateFile reads vscodeext.state.yaml or returns a fresh
-// one when the file is absent. Non-ErrNotExist load failures propagate.
-func (p *Provider) loadOrCreateStateFile(flags *provider.GlobalFlags) (*state.File, error) {
-	cfg := p.effectiveConfig(flags)
-	sf, err := state.Load(p.statePath(flags))
-	if err == nil {
-		return sf, nil
-	}
-	if errors.Is(err, fs.ErrNotExist) {
-		return state.New(p.Name(), cfg.MachineID), nil
-	}
-	return nil, fmt.Errorf("loading code-ext state %s: %w", p.statePath(flags), err)
 }
 
 // extensionArgs filters positional tokens: flags (leading `-`) are

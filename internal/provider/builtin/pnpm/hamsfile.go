@@ -5,7 +5,6 @@ import (
 
 	"github.com/zthxxx/hams/internal/config"
 	hamserr "github.com/zthxxx/hams/internal/error"
-	"github.com/zthxxx/hams/internal/hamsfile"
 	"github.com/zthxxx/hams/internal/i18n"
 	"github.com/zthxxx/hams/internal/provider"
 )
@@ -13,14 +12,6 @@ import (
 // tagCLI is the default hamsfile tag for packages recorded by the
 // CLI-first `hams pnpm add <pkg>` path.
 const tagCLI = "cli"
-
-func (p *Provider) loadOrCreateHamsfile(hamsFlags map[string]string, flags *provider.GlobalFlags) (*hamsfile.File, error) {
-	path, err := p.hamsfilePath(hamsFlags, flags)
-	if err != nil {
-		return nil, err
-	}
-	return hamsfile.LoadOrCreateEmpty(path)
-}
 
 func (p *Provider) hamsfilePath(hamsFlags map[string]string, flags *provider.GlobalFlags) (string, error) {
 	cfg := p.effectiveConfig(flags)

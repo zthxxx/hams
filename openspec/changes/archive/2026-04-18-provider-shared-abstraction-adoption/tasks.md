@@ -28,11 +28,11 @@
 
 ## 5. Follow-up (tracked, not in this change)
 
-- [ ] 5.1 Migrate `npm` onto `AutoRecordInstall` / `AutoRecordRemove`.
-- [ ] 5.2 Migrate `pnpm`.
-- [ ] 5.3 Migrate `uv`.
-- [ ] 5.4 Migrate `goinstall`.
-- [ ] 5.5 Migrate `mas`.
-- [ ] 5.6 Migrate `vscodeext`.
+- [x] 5.1 Migrate `npm` onto `AutoRecordInstall` / `AutoRecordRemove`.
+- [x] 5.2 Migrate `pnpm`.
+- [x] 5.3 Migrate `uv`.
+- [ ] 5.4 Migrate `goinstall` — blocked: runner has no `Uninstall` method (go install has no uninstall verb). Needs either a no-op `Uninstall` on the runner or a dispatcher variant that handles install-only providers. Tracked for a future change.
+- [x] 5.5 Migrate `mas`.
+- [x] 5.6 Migrate `vscodeext`.
 - [ ] 5.7 Design a second dispatcher variant for the batch-install shape (apt).
 - [ ] 5.8 Design a third dispatcher variant for the extra-arg shape (brew's `isCask`).
