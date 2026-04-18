@@ -180,6 +180,13 @@ Use 'hams apply' to replay all installations from config.`,
 	return app
 }
 
+// providerNameBash is the "bash" provider identifier extracted to a
+// constant so goconst stops flagging its repeated use across the CLI
+// package. The string appears both in the switch in
+// providerUsageDescription below and in apply.go's provider-specific
+// filtering (for the "skip bash on non-bash-platform" logic).
+const providerNameBash = "bash"
+
 // providerUsageDescription returns the help-line text for a provider's
 // `hams <name>` subcommand. Maps each shipped provider to a sensible
 // noun ("packages" / "config entries" / "playbooks" / etc.) instead
@@ -201,7 +208,7 @@ func providerUsageDescription(name, displayName string) string {
 		return "Manage macOS defaults preferences"
 	case "duti":
 		return "Manage macOS default-app associations"
-	case "bash": //nolint:goconst // provider identifier, same pattern as peers — extracting one name to a const while the others stay literals would be inconsistent
+	case providerNameBash:
 		return "Run bash provisioning scripts"
 	case "ansible":
 		return "Run Ansible playbooks"

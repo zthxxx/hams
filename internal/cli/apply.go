@@ -1384,7 +1384,7 @@ func providersNeedSudo(providers []provider.Provider, profileDir string) bool {
 		if p.Manifest().RequiresSudo {
 			return true
 		}
-		if p.Manifest().Name == "bash" {
+		if p.Manifest().Name == providerNameBash {
 			bashPath := filepath.Join(profileDir, "bash.hams.yaml")
 			if bash.HamsfileHasSudoEntries(bashPath) {
 				return true
