@@ -179,11 +179,7 @@ Outstanding tasks:
   - [ ] Update `openspec/specs/builtin-providers/spec.md` + `openspec/specs/schema-design/spec.md`.
   - [ ] Verification: `task check` passes; `rg code-ext` returns only archived-spec references.
 
-- [ ] **ci-act-opt-in** — Guard every `actions/upload-artifact@v4` step with `if: ${{ !env.ACT }}`; add "act fallback" steps that rebuild the linux binary via `task build:linux` when running under act. Rewire `Taskfile.yml` tasks `test:e2e` / `test:e2e:one` / `test:integration` / `test:sudo` / `test:itest` so they call `ci:*` directly via docker (no act). Add `:one-via-act` variants as the opt-in simulation entry points. Document the ECONNRESET root cause in comments. Reference: `/tmp/hams-loop/.github/workflows/ci.yml` + `/tmp/hams-loop/Taskfile.yml`.
-  - [ ] Update `.github/workflows/ci.yml` artifact upload guards + act fallback build steps.
-  - [ ] Rewire `Taskfile.yml` + introduce `:one-via-act` variants.
-  - [ ] `.golangci.yml` adjustments if any (port from loop).
-  - [ ] Verification: `task test:itest:one PROVIDER=apt` works locally without act; `task test:itest:one-via-act PROVIDER=apt` still reachable.
+- [x] **ci-act-opt-in** — Done 2026-04-18 via openspec/changes/2026-04-18-ci-act-opt-in/. Ported `.github/workflows/ci.yml` artifact guards + act-fallback build steps, rewired `Taskfile.yml` `test:*` tasks to `ci:*` direct, added `:one-via-act` opt-in variants. `.golangci.yml` errcheck exclude-functions extended to cover writer-bound helpers — stripped the now-redundant `//nolint:errcheck` directives in `internal/cli/bootstrap_consent.go` + `internal/selfupdate/selfupdate_test.go`.
 
 - [ ] **integration-log-assertion-fanout** — Extend log assertions to all 11 providers (apt, bash, ansible, cargo, git, goinstall, homebrew, npm, pnpm, uv, vscodeext), using both file-based (`assert_log_records_session`) and stderr-based (`assert_stderr_contains`) helpers. Add a framework-level assertion that `hams apply` itself emits `hams session started` + final-status log lines. Reference: `/tmp/hams-loop/internal/provider/builtin/{bash,ansible,git}/integration/integration.sh`.
   - [ ] Port `assert_stderr_contains` + `assert_log_line` to `e2e/base/lib/assertions.sh`.

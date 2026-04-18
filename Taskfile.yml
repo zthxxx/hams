@@ -106,7 +106,7 @@ tasks:
     interactive: true
 
   test:
-    desc: Run tests with race detection
+    desc: Run tests with race detection (unit + integration + e2e)
     cmds:
       - task: test:unit
       - task: test:integration
@@ -130,31 +130,56 @@ tasks:
       - go test -race -count=1 -run "TestProperty" ./...
 
   # ---------------------------------------------------------------------------
-  # Integration & E2E tests — all run through act against .github/workflows/ci.yml
-  # Never invoke docker build/run directly for these; act ensures local ≡ CI.
+  # Integration & E2E tests — default local runs invoke the `ci:*` tasks
+  # directly (byte-for-byte the same recipes CI runs). The `:one-via-act`
+  # variants simulate the full GitHub Actions runner via `act` when that
+  # extra scrutiny is warranted.
+  #
+  # Why not use act as the default? act's builtin artifact-server doesn't
+  # fully emulate `actions/upload-artifact@v4`'s CreateArtifact endpoint
+  # — it fails with ECONNRESET on the final PUT. The `ci:*` tasks use
+  # docker directly with a locally-built binary mounted in, so they work
+  # reliably both in real CI runners and on a dev machine.
   # ---------------------------------------------------------------------------
 
   test:e2e:
-    desc: Run all e2e targets via act (debian + alpine + openwrt)
+    desc: Run all e2e targets (debian + alpine + openwrt) via ci:e2e:run
+    deps: [build:linux]
     cmds:
-      - act push --container-architecture linux/amd64 -j build -j e2e --matrix goos:linux --matrix goarch:amd64 --artifact-server-path /tmp/act-artifacts --rm
+      - for: { var: 'TARGETS', as: TARGET, split: ' ' }
+        cmd: TARGET={{.TARGET}} task ci:e2e:run
+    vars:
+      TARGETS: debian alpine openwrt
 
   test:e2e:one:
-    desc: "Run a single e2e target via act (usage: task test:e2e:one TARGET=alpine)"
+    desc: "Run a single e2e target via ci:e2e:run (usage: task test:e2e:one TARGET=alpine)"
+    deps: [build:linux]
+    cmds:
+      - TARGET={{.TARGET}} task ci:e2e:run
+    requires:
+      vars: [TARGET]
+
+  test:e2e:one-via-act:
+    desc: "Simulate the full CI e2e job via act (usage: task test:e2e:one-via-act TARGET=alpine). act may fail on upload-artifact@v4; use the non-act variant for reliability."
     cmds:
       - act push --container-architecture linux/amd64 -j build -j e2e --matrix goos:linux --matrix goarch:amd64 --matrix target:{{.TARGET}} --artifact-server-path /tmp/act-artifacts --rm
     requires:
       vars: [TARGET]
 
   test:integration:
-    desc: Run integration tests via act
+    desc: Run integration tests via ci:integration:run (docker, no act)
     cmds:
-      - act push --container-architecture linux/amd64 -j integration --rm
+      - task: ci:integration:run
 
   test:sudo:
-    desc: Run sudo DI tests in Docker
+    desc: Run sudo DI tests via ci:sudo:run (docker, no act)
     cmds:
-      - act push --container-architecture linux/amd64 -j sudo --rm
+      - task: ci:sudo:run
+
+  test:itest:
+    desc: Run per-provider integration tests via ci:itest (docker, no act)
+    cmds:
+      - task: ci:itest
 
   ci:
     desc: Run full CI pipeline locally via act (lint + test + build + integration + e2e)
@@ -349,7 +374,15 @@ tasks:
         fi
 
   test:itest:one:
-    desc: "Run a single provider integration test via act (usage: PROVIDER=apt task test:itest:one)"
+    desc: "Run a single provider integration test via ci:itest:run (usage: PROVIDER=apt task test:itest:one)"
+    deps: [build:linux]
+    cmds:
+      - PROVIDER={{.PROVIDER}} task ci:itest:run
+    requires:
+      vars: [PROVIDER]
+
+  test:itest:one-via-act:
+    desc: "Simulate the full CI itest job via act (usage: PROVIDER=apt task test:itest:one-via-act). act may fail on upload-artifact@v4; use the non-act variant for reliability."
     cmds:
       - act push --container-architecture linux/amd64 -j itest --matrix provider:{{.PROVIDER}} --rm
     requires:
