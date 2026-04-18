@@ -1,10 +1,21 @@
 # `dev` vs `local/loop` — Gap Analysis Against Specs
 
-> Scope: compare `origin/dev @ f6c063d` and `local/loop @ 66266ff` (both diverged
-> from base `d582756`), judge each dimension against the **authoritative
-> specs** (`openspec/specs/**`) and `CLAUDE.md`, identify which branch
-> implementation is better, which is more complete, and what both branches
-> must still fix.
+> **Status (2026-04-19):** all gaps identified in this document have been
+> remediated on `local/loop` via 17 atomic commits landing between
+> `ac135d9` and `f44ea1f`. The hybrid plan at the bottom of this document
+> was applied in full plus additional hardening: see
+> `openspec/changes/archive/2026-04-18-storeinit-package-with-gogit-fallback/`,
+> `…-i18n-builtin-provider-catalog/`, and
+> `…-provider-shared-abstraction-adoption/` for the shipped spec deltas.
+> Remaining open items are architectural follow-ups (`BatchPackageInstaller`
+> for apt, `FlaggedPackageInstaller` for homebrew) tracked as 5.7 / 5.8
+> inside the provider-shared-abstraction archived change.
+>
+Scope: compare `origin/dev @ f6c063d` and `local/loop @ 66266ff` (both diverged
+from base `d582756`), judge each dimension against the **authoritative
+specs** (`openspec/specs/**`) and `CLAUDE.md`, identify which branch
+implementation is better, which is more complete, and what both branches
+must still fix.
 >
 > Companion to `docs/notes/dev-vs-loop-branch-analysis.md`, which catalogues
 > the differences. This document converts the catalogue into a prescriptive
