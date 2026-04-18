@@ -6,6 +6,7 @@ import (
 
 	"github.com/zthxxx/hams/internal/config"
 	hamserr "github.com/zthxxx/hams/internal/error"
+	"github.com/zthxxx/hams/internal/i18n"
 	"github.com/zthxxx/hams/internal/state"
 )
 
@@ -82,8 +83,8 @@ func AcquireMutationLockFromCfg(cfg *config.Config, flags *GlobalFlags, cmdName 
 	}
 	if cfg == nil {
 		return nil, hamserr.NewUserError(hamserr.ExitUsageError,
-			"no store directory configured (cfg is nil)",
-			"Set store_path in hams config or pass --store",
+			i18n.T(i18n.ProviderErrNoStore),
+			i18n.T(i18n.ProviderErrNoStoreSuggest),
 		)
 	}
 	return AcquireMutationLock(cfg.StateDir(), cmdName)

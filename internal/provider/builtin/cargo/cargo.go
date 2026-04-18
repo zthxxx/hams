@@ -13,6 +13,7 @@ import (
 	"github.com/zthxxx/hams/internal/config"
 	hamserr "github.com/zthxxx/hams/internal/error"
 	"github.com/zthxxx/hams/internal/hamsfile"
+	"github.com/zthxxx/hams/internal/i18n"
 	"github.com/zthxxx/hams/internal/provider"
 	"github.com/zthxxx/hams/internal/provider/baseprovider"
 	"github.com/zthxxx/hams/internal/state"
@@ -138,20 +139,20 @@ func (p *Provider) HandleCommand(ctx context.Context, args []string, hamsFlags m
 func (p *Provider) handleInstall(ctx context.Context, args []string, hamsFlags map[string]string, flags *provider.GlobalFlags) error {
 	if len(args) == 0 {
 		return hamserr.NewUserError(hamserr.ExitUsageError,
-			"cargo install requires a crate name",
-			"Usage: hams cargo install <crate>",
-			"To install all recorded crates, use: hams apply --only=cargo",
+			i18n.Tf(i18n.ProviderErrInstallNeedsPackage, map[string]any{"Provider": "cargo"}),
+			i18n.Tf(i18n.ProviderErrInstallNeedsPackageUsage, map[string]any{"Provider": "cargo"}),
+			i18n.Tf(i18n.ProviderErrInstallNeedsPackageBulk, map[string]any{"Provider": "cargo"}),
 		)
 	}
 	crates := crateArgs(args)
 	if len(crates) == 0 {
 		return hamserr.NewUserError(hamserr.ExitUsageError,
-			"cargo install requires at least one crate name",
-			"Usage: hams cargo install <crate>",
+			i18n.Tf(i18n.ProviderErrInstallNeedsPackageAtLeastOne, map[string]any{"Provider": "cargo"}),
+			i18n.Tf(i18n.ProviderErrInstallNeedsPackageUsage, map[string]any{"Provider": "cargo"}),
 		)
 	}
 	if flags.DryRun {
-		fmt.Printf("[dry-run] Would install: cargo install %s\n", strings.Join(args, " "))
+		fmt.Println(i18n.Tf(i18n.ProviderStatusDryRunInstall, map[string]any{"Cmd": "cargo install " + strings.Join(args, " ")}))
 		return nil
 	}
 
@@ -204,19 +205,19 @@ func (p *Provider) handleInstall(ctx context.Context, args []string, hamsFlags m
 func (p *Provider) handleRemove(ctx context.Context, args []string, hamsFlags map[string]string, flags *provider.GlobalFlags) error {
 	if len(args) == 0 {
 		return hamserr.NewUserError(hamserr.ExitUsageError,
-			"cargo remove requires a crate name",
-			"Usage: hams cargo remove <crate>",
+			i18n.Tf(i18n.ProviderErrRemoveNeedsPackage, map[string]any{"Provider": "cargo"}),
+			i18n.Tf(i18n.ProviderErrRemoveNeedsPackageUsage, map[string]any{"Provider": "cargo"}),
 		)
 	}
 	crates := crateArgs(args)
 	if len(crates) == 0 {
 		return hamserr.NewUserError(hamserr.ExitUsageError,
-			"cargo remove requires at least one crate name",
-			"Usage: hams cargo remove <crate>",
+			i18n.Tf(i18n.ProviderErrRemoveNeedsPackageAtLeastOne, map[string]any{"Provider": "cargo"}),
+			i18n.Tf(i18n.ProviderErrRemoveNeedsPackageUsage, map[string]any{"Provider": "cargo"}),
 		)
 	}
 	if flags.DryRun {
-		fmt.Printf("[dry-run] Would remove: cargo uninstall %s\n", strings.Join(args, " "))
+		fmt.Println(i18n.Tf(i18n.ProviderStatusDryRunRemove, map[string]any{"Cmd": "cargo uninstall " + strings.Join(args, " ")}))
 		return nil
 	}
 

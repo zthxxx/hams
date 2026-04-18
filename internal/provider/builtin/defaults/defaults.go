@@ -11,6 +11,7 @@ import (
 	"github.com/zthxxx/hams/internal/config"
 	hamserr "github.com/zthxxx/hams/internal/error"
 	"github.com/zthxxx/hams/internal/hamsfile"
+	"github.com/zthxxx/hams/internal/i18n"
 	"github.com/zthxxx/hams/internal/provider"
 	"github.com/zthxxx/hams/internal/state"
 )
@@ -140,7 +141,7 @@ func (p *Provider) HandleCommand(ctx context.Context, args []string, hamsFlags m
 	}
 
 	if flags.DryRun {
-		fmt.Printf("[dry-run] Would run: defaults %s\n", strings.Join(args, " "))
+		fmt.Println(i18n.Tf(i18n.ProviderStatusDryRunRun, map[string]any{"Cmd": "defaults " + strings.Join(args, " ")}))
 		return nil
 	}
 	cmd := exec.CommandContext(ctx, cliName, args...) //nolint:gosec // defaults args from CLI input
@@ -173,7 +174,7 @@ func (p *Provider) handleWrite(ctx context.Context, args []string, hamsFlags map
 	value := args[4]
 
 	if flags.DryRun {
-		fmt.Printf("[dry-run] Would run: defaults %s\n", strings.Join(args, " "))
+		fmt.Println(i18n.Tf(i18n.ProviderStatusDryRunRun, map[string]any{"Cmd": "defaults " + strings.Join(args, " ")}))
 		return nil
 	}
 
@@ -213,7 +214,7 @@ func (p *Provider) handleDelete(ctx context.Context, args []string, hamsFlags ma
 	key := args[2]
 
 	if flags.DryRun {
-		fmt.Printf("[dry-run] Would run: defaults %s\n", strings.Join(args, " "))
+		fmt.Println(i18n.Tf(i18n.ProviderStatusDryRunRun, map[string]any{"Cmd": "defaults " + strings.Join(args, " ")}))
 		return nil
 	}
 

@@ -11,6 +11,7 @@ import (
 	"github.com/zthxxx/hams/internal/config"
 	hamserr "github.com/zthxxx/hams/internal/error"
 	"github.com/zthxxx/hams/internal/hamsfile"
+	"github.com/zthxxx/hams/internal/i18n"
 	"github.com/zthxxx/hams/internal/provider"
 	"github.com/zthxxx/hams/internal/state"
 )
@@ -167,7 +168,7 @@ func (p *Provider) HandleCommand(ctx context.Context, args []string, hamsFlags m
 	}
 
 	if flags.DryRun {
-		fmt.Printf("[dry-run] Would run: duti %s\n", strings.Join(args, " "))
+		fmt.Println(i18n.Tf(i18n.ProviderStatusDryRunRun, map[string]any{"Cmd": "duti " + strings.Join(args, " ")}))
 		return nil
 	}
 
@@ -189,7 +190,7 @@ func (p *Provider) handleSet(ctx context.Context, arg string, hamsFlags map[stri
 	}
 
 	if flags.DryRun {
-		fmt.Printf("[dry-run] Would run: duti -s %s .%s all\n", bundleID, ext)
+		fmt.Println(i18n.Tf(i18n.ProviderStatusDryRunRun, map[string]any{"Cmd": fmt.Sprintf("duti -s %s .%s all", bundleID, ext)}))
 		return nil
 	}
 

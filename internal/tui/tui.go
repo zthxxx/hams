@@ -8,6 +8,8 @@ import (
 	"strings"
 
 	"golang.org/x/term"
+
+	"github.com/zthxxx/hams/internal/i18n"
 )
 
 // IsInteractive returns true if stdout is connected to a terminal.
@@ -79,5 +81,5 @@ func (r *Renderer) PrintLogPath(logPath string) {
 // WarnNonInteractive logs a warning when interactive features are requested in non-TTY mode.
 func WarnNonInteractive(feature string) {
 	slog.Warn("interactive feature unavailable in non-TTY mode", "feature", feature)
-	fmt.Fprintf(os.Stderr, "Warning: %s requires an interactive terminal\n", feature)
+	fmt.Fprintln(os.Stderr, i18n.Tf(i18n.TUIWarnNoTTY, map[string]any{"Feature": feature}))
 }

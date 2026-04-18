@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/zthxxx/hams/internal/config"
+	"github.com/zthxxx/hams/internal/i18n"
 	"github.com/zthxxx/hams/internal/logging"
 	"github.com/zthxxx/hams/internal/provider"
 )
@@ -211,12 +212,17 @@ func boolFlagMatch(arg, flag string, target *bool) bool {
 }
 
 func showProviderHelp(handler ProviderHandler) error {
-	fmt.Printf("hams %s — %s\n\n", handler.Name(), providerUsageDescription(handler.Name(), handler.DisplayName()))
-	fmt.Printf("Usage:\n")
-	fmt.Printf("  hams %s <subcommand> [args] [--hams-flags] [-- passthrough]\n\n", handler.Name())
-	fmt.Printf("Provider subcommands are defined by the %s provider.\n", handler.DisplayName())
-	fmt.Printf("Flags with --hams- prefix are consumed by hams, all others are forwarded.\n")
-	fmt.Printf("Use -- to force-forward all subsequent args to the underlying command.\n")
+	fmt.Println(i18n.Tf(i18n.ProviderHelpTitle, map[string]any{
+		"Name":        handler.Name(),
+		"Description": providerUsageDescription(handler.Name(), handler.DisplayName()),
+	}))
+	fmt.Println()
+	fmt.Println(i18n.T(i18n.ProviderHelpUsage))
+	fmt.Println(i18n.Tf(i18n.ProviderHelpUsageLine, map[string]any{"Name": handler.Name()}))
+	fmt.Println()
+	fmt.Println(i18n.Tf(i18n.ProviderHelpDescribed, map[string]any{"DisplayName": handler.DisplayName()}))
+	fmt.Println(i18n.T(i18n.ProviderHelpHamsPrefix))
+	fmt.Println(i18n.T(i18n.ProviderHelpDoubleDash))
 	return nil
 }
 

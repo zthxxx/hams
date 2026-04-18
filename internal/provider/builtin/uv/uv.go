@@ -13,6 +13,7 @@ import (
 	"github.com/zthxxx/hams/internal/config"
 	hamserr "github.com/zthxxx/hams/internal/error"
 	"github.com/zthxxx/hams/internal/hamsfile"
+	"github.com/zthxxx/hams/internal/i18n"
 	"github.com/zthxxx/hams/internal/provider"
 	"github.com/zthxxx/hams/internal/provider/baseprovider"
 	"github.com/zthxxx/hams/internal/state"
@@ -176,20 +177,20 @@ func (p *Provider) HandleCommand(ctx context.Context, args []string, hamsFlags m
 func (p *Provider) handleInstall(ctx context.Context, args []string, hamsFlags map[string]string, flags *provider.GlobalFlags) error {
 	if len(args) == 0 {
 		return hamserr.NewUserError(hamserr.ExitUsageError,
-			"uv install requires a tool name",
-			"Usage: hams uv install <tool>",
-			"To install all recorded tools, use: hams apply --only=uv",
+			i18n.Tf(i18n.ProviderErrInstallNeedsPackage, map[string]any{"Provider": "uv"}),
+			i18n.Tf(i18n.ProviderErrInstallNeedsPackageUsage, map[string]any{"Provider": "uv"}),
+			i18n.Tf(i18n.ProviderErrInstallNeedsPackageBulk, map[string]any{"Provider": "uv"}),
 		)
 	}
 	tools := toolArgs(args)
 	if len(tools) == 0 {
 		return hamserr.NewUserError(hamserr.ExitUsageError,
-			"uv install requires at least one tool name",
-			"Usage: hams uv install <tool>",
+			i18n.Tf(i18n.ProviderErrInstallNeedsPackageAtLeastOne, map[string]any{"Provider": "uv"}),
+			i18n.Tf(i18n.ProviderErrInstallNeedsPackageUsage, map[string]any{"Provider": "uv"}),
 		)
 	}
 	if flags.DryRun {
-		fmt.Printf("[dry-run] Would install: uv tool install %s\n", strings.Join(args, " "))
+		fmt.Println(i18n.Tf(i18n.ProviderStatusDryRunInstall, map[string]any{"Cmd": "uv tool install " + strings.Join(args, " ")}))
 		return nil
 	}
 
@@ -230,19 +231,19 @@ func (p *Provider) handleInstall(ctx context.Context, args []string, hamsFlags m
 func (p *Provider) handleRemove(ctx context.Context, args []string, hamsFlags map[string]string, flags *provider.GlobalFlags) error {
 	if len(args) == 0 {
 		return hamserr.NewUserError(hamserr.ExitUsageError,
-			"uv remove requires a tool name",
-			"Usage: hams uv remove <tool>",
+			i18n.Tf(i18n.ProviderErrRemoveNeedsPackage, map[string]any{"Provider": "uv"}),
+			i18n.Tf(i18n.ProviderErrRemoveNeedsPackageUsage, map[string]any{"Provider": "uv"}),
 		)
 	}
 	tools := toolArgs(args)
 	if len(tools) == 0 {
 		return hamserr.NewUserError(hamserr.ExitUsageError,
-			"uv remove requires at least one tool name",
-			"Usage: hams uv remove <tool>",
+			i18n.Tf(i18n.ProviderErrRemoveNeedsPackageAtLeastOne, map[string]any{"Provider": "uv"}),
+			i18n.Tf(i18n.ProviderErrRemoveNeedsPackageUsage, map[string]any{"Provider": "uv"}),
 		)
 	}
 	if flags.DryRun {
-		fmt.Printf("[dry-run] Would remove: uv tool uninstall %s\n", strings.Join(args, " "))
+		fmt.Println(i18n.Tf(i18n.ProviderStatusDryRunRemove, map[string]any{"Cmd": "uv tool uninstall " + strings.Join(args, " ")}))
 		return nil
 	}
 

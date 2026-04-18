@@ -14,6 +14,7 @@ import (
 	"github.com/zthxxx/hams/internal/config"
 	hamserr "github.com/zthxxx/hams/internal/error"
 	"github.com/zthxxx/hams/internal/hamsfile"
+	"github.com/zthxxx/hams/internal/i18n"
 	"github.com/zthxxx/hams/internal/provider"
 	"github.com/zthxxx/hams/internal/provider/baseprovider"
 	"github.com/zthxxx/hams/internal/state"
@@ -211,20 +212,20 @@ func (p *Provider) HandleCommand(ctx context.Context, args []string, hamsFlags m
 func (p *Provider) handleInstall(ctx context.Context, args []string, hamsFlags map[string]string, flags *provider.GlobalFlags) error {
 	if len(args) == 0 {
 		return hamserr.NewUserError(hamserr.ExitUsageError,
-			"npm install requires a package name",
-			"Usage: hams npm install <package>",
-			"To install all recorded packages, use: hams apply --only=npm",
+			i18n.Tf(i18n.ProviderErrInstallNeedsPackage, map[string]any{"Provider": "npm"}),
+			i18n.Tf(i18n.ProviderErrInstallNeedsPackageUsage, map[string]any{"Provider": "npm"}),
+			i18n.Tf(i18n.ProviderErrInstallNeedsPackageBulk, map[string]any{"Provider": "npm"}),
 		)
 	}
 	pkgs := packageArgs(args)
 	if len(pkgs) == 0 {
 		return hamserr.NewUserError(hamserr.ExitUsageError,
-			"npm install requires at least one package name",
-			"Usage: hams npm install <package>",
+			i18n.Tf(i18n.ProviderErrInstallNeedsPackageAtLeastOne, map[string]any{"Provider": "npm"}),
+			i18n.Tf(i18n.ProviderErrInstallNeedsPackageUsage, map[string]any{"Provider": "npm"}),
 		)
 	}
 	if flags.DryRun {
-		fmt.Printf("[dry-run] Would install: npm install -g %s\n", strings.Join(args, " "))
+		fmt.Println(i18n.Tf(i18n.ProviderStatusDryRunInstall, map[string]any{"Cmd": "npm install -g " + strings.Join(args, " ")}))
 		return nil
 	}
 
@@ -269,19 +270,19 @@ func (p *Provider) handleInstall(ctx context.Context, args []string, hamsFlags m
 func (p *Provider) handleRemove(ctx context.Context, args []string, hamsFlags map[string]string, flags *provider.GlobalFlags) error {
 	if len(args) == 0 {
 		return hamserr.NewUserError(hamserr.ExitUsageError,
-			"npm remove requires a package name",
-			"Usage: hams npm remove <package>",
+			i18n.Tf(i18n.ProviderErrRemoveNeedsPackage, map[string]any{"Provider": "npm"}),
+			i18n.Tf(i18n.ProviderErrRemoveNeedsPackageUsage, map[string]any{"Provider": "npm"}),
 		)
 	}
 	pkgs := packageArgs(args)
 	if len(pkgs) == 0 {
 		return hamserr.NewUserError(hamserr.ExitUsageError,
-			"npm remove requires at least one package name",
-			"Usage: hams npm remove <package>",
+			i18n.Tf(i18n.ProviderErrRemoveNeedsPackageAtLeastOne, map[string]any{"Provider": "npm"}),
+			i18n.Tf(i18n.ProviderErrRemoveNeedsPackageUsage, map[string]any{"Provider": "npm"}),
 		)
 	}
 	if flags.DryRun {
-		fmt.Printf("[dry-run] Would remove: npm uninstall -g %s\n", strings.Join(args, " "))
+		fmt.Println(i18n.Tf(i18n.ProviderStatusDryRunRemove, map[string]any{"Cmd": "npm uninstall -g " + strings.Join(args, " ")}))
 		return nil
 	}
 

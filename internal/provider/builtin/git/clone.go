@@ -302,7 +302,7 @@ func (p *CloneProvider) handleAdd(ctx context.Context, args []string, hamsFlags 
 	}
 
 	if flags.DryRun {
-		fmt.Printf("[dry-run] Would clone: git clone %s %s\n", remote, cloneTarget)
+		fmt.Println(i18n.Tf(i18n.GitCloneDryRun, map[string]any{"Remote": remote, "Path": cloneTarget}))
 		return nil
 	}
 
@@ -391,7 +391,7 @@ func (p *CloneProvider) handleRemove(args []string, hamsFlags map[string]string,
 
 	resourceID := args[0]
 	if flags.DryRun {
-		fmt.Printf("[dry-run] Would remove entry: %s (directory NOT deleted)\n", resourceID)
+		fmt.Println(i18n.Tf(i18n.GitCloneRemoveDryRun, map[string]any{"ID": resourceID}))
 		return nil
 	}
 
@@ -516,9 +516,9 @@ func (p *CloneProvider) handleList(ctx context.Context, hamsFlags map[string]str
 		return err
 	}
 
-	fmt.Println("git clone managed repositories:")
+	fmt.Println(i18n.T(i18n.ProviderListGitCloneHeader))
 	if output == "" {
-		fmt.Println("  (no clones tracked yet — add one with: hams git-clone add <remote> --hams-path=<path>)")
+		fmt.Println(i18n.T(i18n.ProviderListGitCloneEmpty))
 		return nil
 	}
 	fmt.Print(output)
@@ -538,7 +538,7 @@ func (p *CloneProvider) clonePassthrough(ctx context.Context, args []string, fla
 	}
 
 	if flags.DryRun {
-		fmt.Printf("[dry-run] Would clone: git clone %s %s\n", remote, localPath)
+		fmt.Println(i18n.Tf(i18n.GitCloneDryRun, map[string]any{"Remote": remote, "Path": localPath}))
 		return nil
 	}
 

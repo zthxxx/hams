@@ -13,6 +13,7 @@ import (
 	"github.com/zthxxx/hams/internal/config"
 	hamserr "github.com/zthxxx/hams/internal/error"
 	"github.com/zthxxx/hams/internal/hamsfile"
+	"github.com/zthxxx/hams/internal/i18n"
 	"github.com/zthxxx/hams/internal/provider"
 	"github.com/zthxxx/hams/internal/provider/baseprovider"
 	"github.com/zthxxx/hams/internal/state"
@@ -198,20 +199,20 @@ func (p *Provider) HandleCommand(ctx context.Context, args []string, hamsFlags m
 func (p *Provider) handleInstall(ctx context.Context, args []string, hamsFlags map[string]string, flags *provider.GlobalFlags) error {
 	if len(args) == 0 {
 		return hamserr.NewUserError(hamserr.ExitUsageError,
-			"code install requires an extension ID",
+			i18n.Tf(i18n.ProviderErrInstallNeedsPackage, map[string]any{"Provider": "code"}),
 			"Usage: hams code install <publisher.extension>",
-			"To install all recorded extensions, use: hams apply --only=code",
+			i18n.Tf(i18n.ProviderErrInstallNeedsPackageBulk, map[string]any{"Provider": "code"}),
 		)
 	}
 	exts := extensionArgs(args)
 	if len(exts) == 0 {
 		return hamserr.NewUserError(hamserr.ExitUsageError,
-			"code install requires at least one extension ID",
+			i18n.Tf(i18n.ProviderErrInstallNeedsPackageAtLeastOne, map[string]any{"Provider": "code"}),
 			"Usage: hams code install <publisher.extension>",
 		)
 	}
 	if flags.DryRun {
-		fmt.Printf("[dry-run] Would install: code --install-extension %s\n", strings.Join(exts, " "))
+		fmt.Println(i18n.Tf(i18n.ProviderStatusDryRunInstall, map[string]any{"Cmd": "code --install-extension " + strings.Join(exts, " ")}))
 		return nil
 	}
 
@@ -254,19 +255,19 @@ func (p *Provider) handleInstall(ctx context.Context, args []string, hamsFlags m
 func (p *Provider) handleRemove(ctx context.Context, args []string, hamsFlags map[string]string, flags *provider.GlobalFlags) error {
 	if len(args) == 0 {
 		return hamserr.NewUserError(hamserr.ExitUsageError,
-			"code remove requires an extension ID",
+			i18n.Tf(i18n.ProviderErrRemoveNeedsPackage, map[string]any{"Provider": "code"}),
 			"Usage: hams code remove <publisher.extension>",
 		)
 	}
 	exts := extensionArgs(args)
 	if len(exts) == 0 {
 		return hamserr.NewUserError(hamserr.ExitUsageError,
-			"code remove requires at least one extension ID",
+			i18n.Tf(i18n.ProviderErrRemoveNeedsPackageAtLeastOne, map[string]any{"Provider": "code"}),
 			"Usage: hams code remove <publisher.extension>",
 		)
 	}
 	if flags.DryRun {
-		fmt.Printf("[dry-run] Would remove: code --uninstall-extension %s\n", strings.Join(exts, " "))
+		fmt.Println(i18n.Tf(i18n.ProviderStatusDryRunRemove, map[string]any{"Cmd": "code --uninstall-extension " + strings.Join(exts, " ")}))
 		return nil
 	}
 

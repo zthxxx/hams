@@ -11,6 +11,7 @@ import (
 	"github.com/zthxxx/hams/internal/config"
 	hamserr "github.com/zthxxx/hams/internal/error"
 	"github.com/zthxxx/hams/internal/hamsfile"
+	"github.com/zthxxx/hams/internal/i18n"
 	"github.com/zthxxx/hams/internal/provider"
 	"github.com/zthxxx/hams/internal/state"
 )
@@ -173,7 +174,7 @@ func (p *ConfigProvider) usageError() error {
 // persists the entry into the hamsfile + state (via recordSet).
 func (p *ConfigProvider) doSet(ctx context.Context, key, value string, hamsFlags map[string]string, flags *provider.GlobalFlags) error {
 	if flags.DryRun {
-		fmt.Printf("[dry-run] Would set: git config --global %s %s\n", key, value)
+		fmt.Println(i18n.Tf(i18n.GitConfigSetDryRun, map[string]any{"Key": key, "Value": value}))
 		return nil
 	}
 
@@ -195,7 +196,7 @@ func (p *ConfigProvider) doSet(ctx context.Context, key, value string, hamsFlags
 // matching state resource StateRemoved).
 func (p *ConfigProvider) doRemove(ctx context.Context, key string, hamsFlags map[string]string, flags *provider.GlobalFlags) error {
 	if flags.DryRun {
-		fmt.Printf("[dry-run] Would unset: git config --global --unset %s\n", key)
+		fmt.Println(i18n.Tf(i18n.GitConfigUnsetDryRun, map[string]any{"Key": key}))
 		return nil
 	}
 

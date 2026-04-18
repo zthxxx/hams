@@ -13,6 +13,7 @@ import (
 	"github.com/zthxxx/hams/internal/config"
 	hamserr "github.com/zthxxx/hams/internal/error"
 	"github.com/zthxxx/hams/internal/hamsfile"
+	"github.com/zthxxx/hams/internal/i18n"
 	"github.com/zthxxx/hams/internal/provider"
 	"github.com/zthxxx/hams/internal/provider/baseprovider"
 	"github.com/zthxxx/hams/internal/state"
@@ -141,15 +142,15 @@ func (p *Provider) HandleCommand(ctx context.Context, args []string, hamsFlags m
 func (p *Provider) handleInstall(ctx context.Context, args []string, hamsFlags map[string]string, flags *provider.GlobalFlags) error {
 	if len(args) == 0 {
 		return hamserr.NewUserError(hamserr.ExitUsageError,
-			"goinstall requires a package path",
+			i18n.Tf(i18n.ProviderErrInstallNeedsPackage, map[string]any{"Provider": "goinstall"}),
 			"Usage: hams goinstall install <pkg[@version]>",
-			"To install all recorded packages, use: hams apply --only=goinstall",
+			i18n.Tf(i18n.ProviderErrInstallNeedsPackageBulk, map[string]any{"Provider": "goinstall"}),
 		)
 	}
 	paths := packageArgs(args)
 	if len(paths) == 0 {
 		return hamserr.NewUserError(hamserr.ExitUsageError,
-			"goinstall requires at least one package path",
+			i18n.Tf(i18n.ProviderErrInstallNeedsPackageAtLeastOne, map[string]any{"Provider": "goinstall"}),
 			"Usage: hams goinstall install <pkg[@version]>",
 		)
 	}
@@ -158,7 +159,7 @@ func (p *Provider) handleInstall(ctx context.Context, args []string, hamsFlags m
 		pkgs = append(pkgs, injectLatest(r))
 	}
 	if flags.DryRun {
-		fmt.Printf("[dry-run] Would install: go install %s\n", strings.Join(pkgs, " "))
+		fmt.Println(i18n.Tf(i18n.ProviderStatusDryRunInstall, map[string]any{"Cmd": "go install " + strings.Join(pkgs, " ")}))
 		return nil
 	}
 

@@ -16,6 +16,7 @@ import (
 	"github.com/zthxxx/hams/internal/config"
 	hamserr "github.com/zthxxx/hams/internal/error"
 	"github.com/zthxxx/hams/internal/hamsfile"
+	"github.com/zthxxx/hams/internal/i18n"
 	"github.com/zthxxx/hams/internal/provider"
 	"github.com/zthxxx/hams/internal/provider/baseprovider"
 	"github.com/zthxxx/hams/internal/state"
@@ -235,21 +236,21 @@ func (p *Provider) DisplayName() string { return cliName }
 func (p *Provider) handleInstall(ctx context.Context, args []string, hamsFlags map[string]string, flags *provider.GlobalFlags) error {
 	if len(args) == 0 {
 		return hamserr.NewUserError(hamserr.ExitUsageError,
-			"apt install requires a package name",
-			"Usage: hams apt install <package>",
+			i18n.Tf(i18n.ProviderErrInstallNeedsPackage, map[string]any{"Provider": "apt"}),
+			i18n.Tf(i18n.ProviderErrInstallNeedsPackageUsage, map[string]any{"Provider": "apt"}),
 		)
 	}
 
 	packages := packageArgs(args)
 	if len(packages) == 0 {
 		return hamserr.NewUserError(hamserr.ExitUsageError,
-			"apt install requires at least one package name",
-			"Usage: hams apt install <package>",
+			i18n.Tf(i18n.ProviderErrInstallNeedsPackageAtLeastOne, map[string]any{"Provider": "apt"}),
+			i18n.Tf(i18n.ProviderErrInstallNeedsPackageUsage, map[string]any{"Provider": "apt"}),
 		)
 	}
 
 	if flags.DryRun {
-		fmt.Printf("[dry-run] Would install: sudo apt-get install -y %s\n", strings.Join(args, " "))
+		fmt.Println(i18n.Tf(i18n.ProviderStatusDryRunInstall, map[string]any{"Cmd": "sudo apt-get install -y " + strings.Join(args, " ")}))
 		return nil
 	}
 
@@ -347,21 +348,21 @@ func (p *Provider) handleInstall(ctx context.Context, args []string, hamsFlags m
 func (p *Provider) handleRemove(ctx context.Context, args []string, hamsFlags map[string]string, flags *provider.GlobalFlags) error {
 	if len(args) == 0 {
 		return hamserr.NewUserError(hamserr.ExitUsageError,
-			"apt remove requires a package name",
-			"Usage: hams apt remove <package>",
+			i18n.Tf(i18n.ProviderErrRemoveNeedsPackage, map[string]any{"Provider": "apt"}),
+			i18n.Tf(i18n.ProviderErrRemoveNeedsPackageUsage, map[string]any{"Provider": "apt"}),
 		)
 	}
 
 	packages := packageArgs(args)
 	if len(packages) == 0 {
 		return hamserr.NewUserError(hamserr.ExitUsageError,
-			"apt remove requires at least one package name",
-			"Usage: hams apt remove <package>",
+			i18n.Tf(i18n.ProviderErrRemoveNeedsPackageAtLeastOne, map[string]any{"Provider": "apt"}),
+			i18n.Tf(i18n.ProviderErrRemoveNeedsPackageUsage, map[string]any{"Provider": "apt"}),
 		)
 	}
 
 	if flags.DryRun {
-		fmt.Printf("[dry-run] Would remove: sudo apt-get remove -y %s\n", strings.Join(args, " "))
+		fmt.Println(i18n.Tf(i18n.ProviderStatusDryRunRemove, map[string]any{"Cmd": "sudo apt-get remove -y " + strings.Join(args, " ")}))
 		return nil
 	}
 

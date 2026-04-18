@@ -7,6 +7,7 @@ import (
 	"os"
 
 	hamserr "github.com/zthxxx/hams/internal/error"
+	"github.com/zthxxx/hams/internal/i18n"
 )
 
 // PrintError outputs a UserFacingError in the appropriate format.
@@ -38,8 +39,8 @@ func PrintError(err error, jsonMode bool) {
 		return
 	}
 
-	fmt.Fprintf(os.Stderr, "Error: %s\n", ufe.Message)
+	fmt.Fprintf(os.Stderr, "%s%s\n", i18n.T(i18n.ErrorsPrefix), ufe.Message)
 	for _, s := range ufe.Suggestions {
-		fmt.Fprintf(os.Stderr, "  suggestion: %s\n", s)
+		fmt.Fprintf(os.Stderr, "%s%s\n", i18n.T(i18n.ErrorsSuggestionPrefix), s)
 	}
 }

@@ -196,7 +196,7 @@ var passthroughExec = func(ctx context.Context, args []string) error {
 // a preview-only mode (print the would-be invocation, skip exec).
 func (u *UnifiedHandler) passthrough(ctx context.Context, args []string, flags *provider.GlobalFlags) error {
 	if flags != nil && flags.DryRun {
-		fmt.Fprintf(flags.Stdout(), "[dry-run] Would run: git %s\n", strings.Join(args, " "))
+		fmt.Fprintln(flags.Stdout(), i18n.Tf(i18n.ProviderStatusDryRunRun, map[string]any{"Cmd": "git " + strings.Join(args, " ")}))
 		return nil
 	}
 	return passthroughExec(ctx, args)

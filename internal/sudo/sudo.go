@@ -9,6 +9,8 @@ import (
 	"os/exec"
 	"sync"
 	"time"
+
+	"github.com/zthxxx/hams/internal/i18n"
 )
 
 const heartbeatInterval = 4 * time.Minute
@@ -68,7 +70,7 @@ func (m *Manager) Acquire(ctx context.Context) error {
 		return nil
 	}
 
-	fmt.Fprintln(os.Stderr, "hams needs sudo for some operations.")
+	fmt.Fprintln(os.Stderr, i18n.T(i18n.SudoPrompt))
 	cmd := exec.CommandContext(ctx, "sudo", "-v")
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout

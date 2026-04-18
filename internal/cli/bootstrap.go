@@ -14,6 +14,7 @@ import (
 
 	"github.com/zthxxx/hams/internal/config"
 	hamserr "github.com/zthxxx/hams/internal/error"
+	"github.com/zthxxx/hams/internal/i18n"
 	"github.com/zthxxx/hams/internal/logging"
 )
 
@@ -71,7 +72,7 @@ func resolveFromRepoStorePath(ctx context.Context, repo string, paths config.Pat
 	// --json mode). CI scripts running `hams --json --dry-run apply
 	// --from-repo=X | jq .` would otherwise see this prose on stdout
 	// before the summary, breaking JSON parsing.
-	fmt.Fprintf(os.Stderr, "[dry-run] Would clone %s. Re-run without --dry-run to clone and preview the plan.\n", repo)
+	fmt.Fprintln(os.Stderr, i18n.Tf(i18n.BootstrapCloneDryRun, map[string]any{"Repo": repo}))
 	return "", true, nil
 }
 
@@ -194,7 +195,7 @@ func cloneRemoteRepo(ctx context.Context, repo string, paths config.Paths) (stri
 	// progress to stderr. This also makes `hams apply --from-repo=X
 	// > out.log` leave progress on the user's terminal while routing
 	// the final output to the file.
-	fmt.Fprintf(os.Stderr, "Downloading Hams Store to %s\n", logging.TildePath(clonePath))
+	fmt.Fprintln(os.Stderr, i18n.Tf(i18n.BootstrapDownloading, map[string]any{"Path": logging.TildePath(clonePath)}))
 	_, err := gogit.PlainCloneContext(ctx, clonePath, false, &gogit.CloneOptions{
 		URL:      repoURL,
 		Progress: os.Stderr,
@@ -203,8 +204,9 @@ func cloneRemoteRepo(ctx context.Context, repo string, paths config.Paths) (stri
 		return "", transformCloneError(repoURL, err)
 	}
 
-	fmt.Fprintf(os.Stderr, "Download Hams Store success\n")
-	fmt.Fprintf(os.Stderr, "Profile Store is %s now\n\n", logging.TildePath(clonePath))
+	fmt.Fprintln(os.Stderr, i18n.T(i18n.BootstrapDownloadSuccess))
+	fmt.Fprintln(os.Stderr, i18n.Tf(i18n.BootstrapProfileNow, map[string]any{"Path": logging.TildePath(clonePath)}))
+	fmt.Fprintln(os.Stderr)
 	return clonePath, nil
 }
 
@@ -336,14 +338,14 @@ func promptProfileInit() (tag, machineID string, err error) {
 	// channel for prompts / diagnostics; interactive users still
 	// see them on the terminal, and CI consumers redirecting stdout
 	// no longer get prose mixed with JSON.
-	fmt.Fprint(os.Stderr, "Profile tag: ")
+	fmt.Fprint(os.Stderr, i18n.T(i18n.ApplyProfileTagPrompt))
 	tag, err = reader.ReadString('\n')
 	if err != nil {
 		return "", "", fmt.Errorf("reading profile tag: %w", err)
 	}
 	tag = strings.TrimSpace(tag)
 
-	fmt.Fprint(os.Stderr, "Profile Machine-ID: ")
+	fmt.Fprint(os.Stderr, i18n.T(i18n.ApplyProfileMachineIDPrompt))
 	machineID, err = reader.ReadString('\n')
 	if err != nil {
 		return "", "", fmt.Errorf("reading machine ID: %w", err)

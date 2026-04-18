@@ -14,6 +14,7 @@ import (
 	"github.com/zthxxx/hams/internal/config"
 	hamserr "github.com/zthxxx/hams/internal/error"
 	"github.com/zthxxx/hams/internal/hamsfile"
+	"github.com/zthxxx/hams/internal/i18n"
 	"github.com/zthxxx/hams/internal/provider"
 	"github.com/zthxxx/hams/internal/provider/baseprovider"
 	"github.com/zthxxx/hams/internal/state"
@@ -155,20 +156,20 @@ func (p *Provider) HandleCommand(ctx context.Context, args []string, hamsFlags m
 func (p *Provider) handleInstall(ctx context.Context, args []string, hamsFlags map[string]string, flags *provider.GlobalFlags) error {
 	if len(args) == 0 {
 		return hamserr.NewUserError(hamserr.ExitUsageError,
-			"mas install requires a numeric app ID",
+			i18n.Tf(i18n.ProviderErrInstallNeedsPackage, map[string]any{"Provider": "mas"}),
 			"Usage: hams mas install <app-id>",
-			"To install all recorded apps, use: hams apply --only=mas",
+			i18n.Tf(i18n.ProviderErrInstallNeedsPackageBulk, map[string]any{"Provider": "mas"}),
 		)
 	}
 	ids := appIDArgs(args)
 	if len(ids) == 0 {
 		return hamserr.NewUserError(hamserr.ExitUsageError,
-			"mas install requires at least one numeric app ID",
+			i18n.Tf(i18n.ProviderErrInstallNeedsPackageAtLeastOne, map[string]any{"Provider": "mas"}),
 			"Usage: hams mas install <app-id>",
 		)
 	}
 	if flags.DryRun {
-		fmt.Printf("[dry-run] Would install: mas install %s\n", strings.Join(args, " "))
+		fmt.Println(i18n.Tf(i18n.ProviderStatusDryRunInstall, map[string]any{"Cmd": "mas install " + strings.Join(args, " ")}))
 		return nil
 	}
 
@@ -212,19 +213,19 @@ func (p *Provider) handleInstall(ctx context.Context, args []string, hamsFlags m
 func (p *Provider) handleRemove(ctx context.Context, args []string, hamsFlags map[string]string, flags *provider.GlobalFlags) error {
 	if len(args) == 0 {
 		return hamserr.NewUserError(hamserr.ExitUsageError,
-			"mas remove requires a numeric app ID",
+			i18n.Tf(i18n.ProviderErrRemoveNeedsPackage, map[string]any{"Provider": "mas"}),
 			"Usage: hams mas remove <app-id>",
 		)
 	}
 	ids := appIDArgs(args)
 	if len(ids) == 0 {
 		return hamserr.NewUserError(hamserr.ExitUsageError,
-			"mas remove requires at least one numeric app ID",
+			i18n.Tf(i18n.ProviderErrRemoveNeedsPackageAtLeastOne, map[string]any{"Provider": "mas"}),
 			"Usage: hams mas remove <app-id>",
 		)
 	}
 	if flags.DryRun {
-		fmt.Printf("[dry-run] Would remove: mas uninstall %s\n", strings.Join(args, " "))
+		fmt.Println(i18n.Tf(i18n.ProviderStatusDryRunRemove, map[string]any{"Cmd": "mas uninstall " + strings.Join(args, " ")}))
 		return nil
 	}
 
