@@ -15,6 +15,7 @@ import (
 	hamserr "github.com/zthxxx/hams/internal/error"
 	"github.com/zthxxx/hams/internal/hamsfile"
 	"github.com/zthxxx/hams/internal/provider"
+	"github.com/zthxxx/hams/internal/provider/baseprovider"
 	"github.com/zthxxx/hams/internal/state"
 )
 
@@ -140,9 +141,12 @@ func (p *Provider) HandleCommand(ctx context.Context, args []string, hamsFlags m
 		// Mac App Store apps) but shows host-wide state rather than
 		// hams's recorded apps — wrong affordance for the user who
 		// wants to know what hams is tracking.
-		return provider.HandleListCmd(ctx, p, p.effectiveConfig(flags))
+		return provider.HandleListCmd(ctx, p, baseprovider.EffectiveConfig(p.cfg, flags))
 	default:
-		return provider.WrapExecPassthrough(ctx, cliName, args, nil)
+		// Unintercepted subcommand — passthrough to real mas with
+		// stdio preserved so `hams mas outdated`, `hams mas account`,
+		// etc. behave identically to the unwrapped tool.
+		return provider.Passthrough(ctx, cliName, args, flags)
 	}
 }
 
@@ -169,7 +173,7 @@ func (p *Provider) handleInstall(ctx context.Context, args []string, hamsFlags m
 	}
 
 	// Cycle 222: acquire single-writer state lock per cli-architecture spec.
-	release, lockErr := provider.AcquireMutationLockFromCfg(p.effectiveConfig(flags), flags, "mas install")
+	release, lockErr := provider.AcquireMutationLockFromCfg(baseprovider.EffectiveConfig(p.cfg, flags), flags, "mas install")
 	if lockErr != nil {
 		return lockErr
 	}
@@ -181,7 +185,7 @@ func (p *Provider) handleInstall(ctx context.Context, args []string, hamsFlags m
 		}
 	}
 
-	hf, err := p.loadOrCreateHamsfile(hamsFlags, flags)
+	hf, err := baseprovider.LoadOrCreateHamsfile(p.cfg, p.Manifest().FilePrefix, hamsFlags, flags)
 	if err != nil {
 		return err
 	}
@@ -225,7 +229,7 @@ func (p *Provider) handleRemove(ctx context.Context, args []string, hamsFlags ma
 	}
 
 	// Cycle 222: acquire single-writer state lock per cli-architecture spec.
-	release, lockErr := provider.AcquireMutationLockFromCfg(p.effectiveConfig(flags), flags, "mas remove")
+	release, lockErr := provider.AcquireMutationLockFromCfg(baseprovider.EffectiveConfig(p.cfg, flags), flags, "mas remove")
 	if lockErr != nil {
 		return lockErr
 	}
@@ -237,7 +241,7 @@ func (p *Provider) handleRemove(ctx context.Context, args []string, hamsFlags ma
 		}
 	}
 
-	hf, err := p.loadOrCreateHamsfile(hamsFlags, flags)
+	hf, err := baseprovider.LoadOrCreateHamsfile(p.cfg, p.Manifest().FilePrefix, hamsFlags, flags)
 	if err != nil {
 		return err
 	}
@@ -258,7 +262,7 @@ func (p *Provider) handleRemove(ctx context.Context, args []string, hamsFlags ma
 // statePath returns the absolute path to mas.state.yaml for the
 // active machine. Mirrors homebrew.statePath.
 func (p *Provider) statePath(flags *provider.GlobalFlags) string {
-	cfg := p.effectiveConfig(flags)
+	cfg := baseprovider.EffectiveConfig(p.cfg, flags)
 	return filepath.Join(cfg.StateDir(), p.Manifest().FilePrefix+".state.yaml")
 }
 
@@ -267,7 +271,7 @@ func (p *Provider) statePath(flags *provider.GlobalFlags) string {
 // so the CLI handler surfaces a user-facing error instead of silently
 // overwriting unparseable state. Mirrors homebrew.loadOrCreateStateFile.
 func (p *Provider) loadOrCreateStateFile(flags *provider.GlobalFlags) (*state.File, error) {
-	cfg := p.effectiveConfig(flags)
+	cfg := baseprovider.EffectiveConfig(p.cfg, flags)
 	sf, err := state.Load(p.statePath(flags))
 	if err == nil {
 		return sf, nil
