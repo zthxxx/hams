@@ -14,6 +14,7 @@ import (
 	hamserr "github.com/zthxxx/hams/internal/error"
 	"github.com/zthxxx/hams/internal/hamsfile"
 	"github.com/zthxxx/hams/internal/provider"
+	"github.com/zthxxx/hams/internal/provider/baseprovider"
 	"github.com/zthxxx/hams/internal/state"
 )
 
@@ -160,9 +161,12 @@ func (p *Provider) HandleCommand(ctx context.Context, args []string, hamsFlags m
 		// Cycle 214: route `hams uv list` to the hams-tracked diff.
 		// `uv tool list` exists but only shows tools installed via
 		// `uv tool`, not the hams-tracked diff against the hamsfile.
-		return provider.HandleListCmd(ctx, p, p.effectiveConfig(flags))
+		return provider.HandleListCmd(ctx, p, baseprovider.EffectiveConfig(p.cfg, flags))
 	default:
-		return provider.WrapExecPassthrough(ctx, "uv", args, nil)
+		// Unintercepted subcommand — passthrough to real uv with
+		// stdio preserved so `hams uv run`, `hams uv pip list`, etc.
+		// behave identically to the unwrapped tool.
+		return provider.Passthrough(ctx, "uv", args, flags)
 	}
 }
 
@@ -190,7 +194,7 @@ func (p *Provider) handleInstall(ctx context.Context, args []string, hamsFlags m
 	}
 
 	// Cycle 222: acquire single-writer state lock per cli-architecture spec.
-	release, lockErr := provider.AcquireMutationLockFromCfg(p.effectiveConfig(flags), flags, "uv install")
+	release, lockErr := provider.AcquireMutationLockFromCfg(baseprovider.EffectiveConfig(p.cfg, flags), flags, "uv install")
 	if lockErr != nil {
 		return lockErr
 	}
@@ -202,7 +206,7 @@ func (p *Provider) handleInstall(ctx context.Context, args []string, hamsFlags m
 		}
 	}
 
-	hf, err := p.loadOrCreateHamsfile(hamsFlags, flags)
+	hf, err := baseprovider.LoadOrCreateHamsfile(p.cfg, p.Manifest().FilePrefix, hamsFlags, flags)
 	if err != nil {
 		return err
 	}
@@ -243,7 +247,7 @@ func (p *Provider) handleRemove(ctx context.Context, args []string, hamsFlags ma
 	}
 
 	// Cycle 222: acquire single-writer state lock per cli-architecture spec.
-	release, lockErr := provider.AcquireMutationLockFromCfg(p.effectiveConfig(flags), flags, "uv remove")
+	release, lockErr := provider.AcquireMutationLockFromCfg(baseprovider.EffectiveConfig(p.cfg, flags), flags, "uv remove")
 	if lockErr != nil {
 		return lockErr
 	}
@@ -255,7 +259,7 @@ func (p *Provider) handleRemove(ctx context.Context, args []string, hamsFlags ma
 		}
 	}
 
-	hf, err := p.loadOrCreateHamsfile(hamsFlags, flags)
+	hf, err := baseprovider.LoadOrCreateHamsfile(p.cfg, p.Manifest().FilePrefix, hamsFlags, flags)
 	if err != nil {
 		return err
 	}
@@ -276,14 +280,14 @@ func (p *Provider) handleRemove(ctx context.Context, args []string, hamsFlags ma
 // statePath returns the absolute path to uv.state.yaml for the
 // active machine. Mirrors homebrew/mas/cargo/npm/pnpm.statePath.
 func (p *Provider) statePath(flags *provider.GlobalFlags) string {
-	cfg := p.effectiveConfig(flags)
+	cfg := baseprovider.EffectiveConfig(p.cfg, flags)
 	return filepath.Join(cfg.StateDir(), p.Manifest().FilePrefix+".state.yaml")
 }
 
 // loadOrCreateStateFile reads uv.state.yaml or returns a fresh one
 // when the file is absent. Non-ErrNotExist load failures propagate.
 func (p *Provider) loadOrCreateStateFile(flags *provider.GlobalFlags) (*state.File, error) {
-	cfg := p.effectiveConfig(flags)
+	cfg := baseprovider.EffectiveConfig(p.cfg, flags)
 	sf, err := state.Load(p.statePath(flags))
 	if err == nil {
 		return sf, nil
