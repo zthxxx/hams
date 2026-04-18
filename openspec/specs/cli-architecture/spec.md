@@ -562,6 +562,39 @@ The `hams store` command SHALL provide subcommands for managing the hams store r
 - **WHEN** the user runs `hams store push` and there are modified Hamsfiles
 - **THEN** the system SHALL stage all Hamsfile changes, create a commit with a descriptive message, and push to the remote
 
+### Requirement: Auto-scaffold store on first provider invocation
+
+The system SHALL scaffold a working store directory the first time the user runs `hams <provider> …` on a machine that has no store configured. Scaffolding SHALL (1) create the store directory under `$HAMS_STORE` (or `${HAMS_DATA_HOME}/store` when the env var is unset), (2) run `git init` inside it so the store is a git-tracked repo from turn one, (3) write the bundled `.gitignore` + `hams.config.yaml` templates, (4) persist `store_path: <resolved path>` to the user's global `~/.config/hams/hams.config.yaml`, and (5) seed `profile_tag: default` + `machine_id: <DeriveMachineID()>` into that same global config when those keys are currently empty (leaves user-supplied values untouched). The scaffold SHALL be skipped when `--hams-no-scaffold` is passed and SHALL be a complete no-op when the store directory and all template files already exist (idempotent).
+
+#### Scenario: First `hams brew install` on a pristine host
+
+- **WHEN** a user with no `~/.config/hams/hams.config.yaml` runs `hams brew install htop`
+- **THEN** hams SHALL create `${HAMS_DATA_HOME}/store/` with `.git/`, `.gitignore`, and `hams.config.yaml`, write `store_path` + `profile_tag: default` + `machine_id: <hostname>` to the user's global config, and proceed with the install.
+
+#### Scenario: Scaffold respects pre-existing identity keys
+
+- **WHEN** the user has already run `hams config set profile_tag macOS` before their first provider invocation
+- **THEN** scaffold SHALL leave `profile_tag: macOS` untouched AND still seed any other missing keys (e.g. `machine_id`).
+
+#### Scenario: Scaffold is idempotent on a populated store
+
+- **WHEN** a user runs a second `hams <provider>` command on a machine where scaffold already completed
+- **THEN** the second invocation SHALL leave all files and config keys untouched, even if the user hand-edited `.gitignore` or `hams.config.yaml` in between.
+
+### Requirement: Metadata commands SHALL NOT emit operational diagnostics
+
+The system SHALL NOT emit the "profile_tag is empty, using 'default'" and "machine_id is empty, using 'unknown'" fallback diagnostics (or any equivalent operational warning) when the user invokes a metadata-only command — `hams --help`, `hams --version`, `hams <provider> --help`, or `hams config get`. These warnings SHALL fire only from action-site call paths (apply, refresh, list, provider-wrapped commands) after the structured logger is configured, and at most once per invocation (deduped via a process-level `sync.Once`). Metadata commands exist specifically to let first-time users explore the CLI; surfacing configuration warnings at that moment makes the tool look broken when it is not.
+
+#### Scenario: `hams --help` on an unconfigured install
+
+- **WHEN** a user runs `hams --help` on a machine whose global config has `store_path` set but no `profile_tag` / `machine_id`
+- **THEN** stderr SHALL be empty of profile/machine warnings, AND the help banner SHALL render unchanged.
+
+#### Scenario: `hams list` on the same install
+
+- **WHEN** the same user then runs `hams list` (an action command that reads `.state/<machine-id>/`)
+- **THEN** the warnings SHALL fire exactly once before the list output, so the user understands why state is being read from `.state/unknown/`.
+
 ### Requirement: List command
 
 The `hams list` command SHALL display all resources managed by hams across all providers (or filtered providers). Each entry SHALL show the provider name, resource identity (package name or URN), current state status (`ok`, `failed`, `pending`, `removed`), and version (if applicable). The output SHALL be grouped by provider. The `--only` and `--except` flags SHALL filter by provider. A `--status=<status>` flag SHALL filter by resource status. When `--json` is set, the output SHALL be a JSON array of resource objects.
@@ -588,7 +621,7 @@ The `hams list` command SHALL display all resources managed by hams across all p
 
 ### Requirement: Global flags definition
 
-The following global flags SHALL be recognized when placed between `hams` and the command: `--debug` (enable debug-level logging), `--dry-run` (show planned actions without executing), `--json` (output in JSON format for machine parsing), `--no-color` (disable ANSI color codes), `--config=<path>` (override config file path), `--store=<path>` (override store directory path), `--profile=<tag>` (override active profile tag), `--help` (display help), `--version` (display version). Global flags SHALL NOT be forwarded to providers or wrapped commands under any circumstances.
+The following global flags SHALL be recognized when placed between `hams` and the command: `--debug` (enable debug-level logging), `--dry-run` (show planned actions without executing), `--json` (output in JSON format for machine parsing), `--no-color` (disable ANSI color codes), `--config=<path>` (override config file path), `--store=<path>` (override store directory path), `--tag=<tag>` (override active profile tag — picks `<store>/<tag>/` on disk), `--profile=<tag>` (hidden alias of `--tag`, kept for backward compatibility), `--help` (display help), `--version` (display version). Global flags SHALL NOT be forwarded to providers or wrapped commands under any circumstances. When both `--tag` and `--profile` are supplied and disagree, hams SHALL fail fast with a usage error rather than silently picking one.
 
 #### Scenario: Version flag
 
@@ -614,6 +647,16 @@ The following global flags SHALL be recognized when placed between `hams` and th
 
 - **WHEN** the user runs `hams --profile=openwrt apply`
 - **THEN** the system SHALL use the `openwrt` profile directory within the store, regardless of the configured default profile
+
+#### Scenario: Tag override
+
+- **WHEN** the user runs `hams --tag=macOS apply --from-repo=zthxxx/hams-store`
+- **THEN** the system SHALL use the `macOS` profile directory from the cloned store AND SHALL seed `profile_tag: macOS` + `machine_id: <hostname-or-$HAMS_MACHINE_ID>` into the global config on a fresh machine without prompting, making the apply fully non-interactive.
+
+#### Scenario: Tag and profile conflict
+
+- **WHEN** the user runs `hams --tag=macOS --profile=openwrt apply`
+- **THEN** hams SHALL exit with a usage error naming both flags; it SHALL NOT silently prefer one value.
 
 ### Requirement: Provider-level `--hams-local` flag
 

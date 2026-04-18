@@ -2,7 +2,7 @@
 
 ### Requirement: Alternate-Screen TUI Layout — Deferred to v1.1
 
-> **v1 status (as of 2026-04-16):** The TUI scaffolding at `internal/tui/` (~500 lines of BubbleTea models) is fully built and unit-tested but **never invoked from the CLI in v1**. A grep for `tui\.` across `internal/cli/` returns zero matches; `runApply` writes plain log lines via `slog` even on a TTY. The scenarios below describe v1.1 behavior. v1 ships with plain log-line output. See `openspec/changes/2026-04-16-defer-tui-and-notify/` for the deferral rationale.
+> **v1 status (as of 2026-04-16):** The TUI scaffolding at `internal/tui/` (~500 lines of BubbleTea models) is fully built and unit-tested but **never invoked from the CLI in v1**. A grep for `tui\.` across `internal/cli/` returns zero matches; `runApply` writes plain log lines via `slog` even on a TTY. The scenarios below describe v1.1 behavior. v1 ships with plain log-line output. See `openspec/changes/archive/2026-04-17-defer-tui-and-notify/` for the deferral rationale.
 
 The system SHALL render a BubbleTea-based alternate-screen terminal UI during `hams apply` and other long-running operations when stdout is a TTY.
 

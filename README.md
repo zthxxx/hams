@@ -30,21 +30,21 @@ hams brew install htop
 hams pnpm add serve
 
 # Set git config and record it
-hams git-config user.name "Your Name"
+hams git config --global user.name "Your Name"
 
 # Restore everything on a new machine (add --bootstrap if brew isn't installed yet)
-hams apply --bootstrap --from-repo=your-username/hams-store
+hams apply --bootstrap --from-repo=your-username/hams-store --tag=macOS
 ```
 
 ### How It Works
 
 1. **Install via CLI**: `hams brew install git` runs `brew install git` AND records `git` in `Homebrew.hams.yaml`
 2. **Sync to Git**: Push your hams-store repo with all `*.hams.yaml` files
-3. **Restore anywhere**: `hams apply --bootstrap --from-repo=you/hams-store` replays all installations on a new machine (add `--bootstrap` if prerequisites like Homebrew aren't installed yet)
+3. **Restore anywhere**: `hams apply --bootstrap --from-repo=you/hams-store --tag=<profile>` replays all installations on a new machine (add `--bootstrap` if prerequisites like Homebrew aren't installed yet; `--tag` skips the interactive profile prompt)
 
 ## Features
 
-- **15 builtin providers**: Homebrew, apt, pnpm, npm, uv, goinstall, cargo, VS Code Extensions (`code-ext`), mas (App Store), git config/clone, macOS defaults, duti, Ansible
+- **14 builtin providers**: Homebrew, apt, pnpm, npm, uv, goinstall, cargo, VS Code Extensions (`code`), mas (App Store), git (unified config + clone), macOS defaults, duti, Ansible
 - **Terraform-style state**: tracks what's installed, retries failures, detects drift
 - **Comment-preserving YAML**: your Hamsfile comments survive round-trips
 - **Multi-machine profiles**: one git repo, multiple machine configs (macOS, Linux, OpenWrt)

@@ -30,21 +30,21 @@ hams brew install htop
 hams pnpm add serve
 
 # 设置 git 配置并记录
-hams git-config user.name "Your Name"
+hams git config --global user.name "Your Name"
 
 # 在新机器上恢复所有配置（如果还没装 brew，加上 --bootstrap）
-hams apply --bootstrap --from-repo=your-username/hams-store
+hams apply --bootstrap --from-repo=your-username/hams-store --tag=macOS
 ```
 
 ### 工作原理
 
 1. **通过 CLI 安装**：`hams brew install git` 执行 `brew install git` **同时** 将 `git` 记录到 `Homebrew.hams.yaml`
 2. **同步到 Git**：推送你的 hams-store 仓库，包含所有 `*.hams.yaml` 文件
-3. **随处恢复**：`hams apply --bootstrap --from-repo=you/hams-store` 在新机器上重放所有安装（新机器如果还没装 Homebrew 等前置工具，加上 `--bootstrap`）
+3. **随处恢复**：`hams apply --bootstrap --from-repo=you/hams-store --tag=<profile>` 在新机器上重放所有安装（新机器如果还没装 Homebrew 等前置工具，加上 `--bootstrap`；`--tag` 让命令完全非交互）
 
 ## 特性
 
-- **15 个内置 Provider**：Homebrew、apt、pnpm、npm、uv、goinstall、cargo、VS Code 扩展（`code-ext`）、mas（App Store）、git config/clone、macOS defaults、duti、Ansible
+- **14 个内置 Provider**：Homebrew、apt、pnpm、npm、uv、goinstall、cargo、VS Code 扩展（`code`）、mas（App Store）、git（统一的 config + clone）、macOS defaults、duti、Ansible
 - **Terraform 风格的状态管理**：跟踪已安装内容，自动重试失败项，检测配置漂移
 - **保留注释的 YAML**：你在 Hamsfile 中的注释不会丢失
 - **多机器 Profile**：一个 git 仓库，多台机器的配置（macOS、Linux、OpenWrt）
