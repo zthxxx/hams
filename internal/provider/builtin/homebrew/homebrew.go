@@ -20,6 +20,7 @@ import (
 	hamserr "github.com/zthxxx/hams/internal/error"
 	"github.com/zthxxx/hams/internal/hamsfile"
 	"github.com/zthxxx/hams/internal/provider"
+	"github.com/zthxxx/hams/internal/provider/baseprovider"
 	"github.com/zthxxx/hams/internal/state"
 )
 
@@ -319,9 +320,11 @@ func (p *Provider) HandleCommand(ctx context.Context, args []string, hamsFlags m
 	case "untap":
 		return p.handleUntap(ctx, remaining, hamsFlags, flags)
 	default:
-		// Passthrough to brew.
+		// Passthrough to real brew with stdio preserved and DryRun
+		// honored, so `hams brew upgrade htop`, `hams brew --version`,
+		// etc. behave identically to the unwrapped CLI.
 		slog.Debug("passthrough to brew", "args", args)
-		return provider.WrapExecPassthrough(ctx, "brew", args, nil)
+		return provider.Passthrough(ctx, "brew", args, flags)
 	}
 }
 
@@ -354,7 +357,7 @@ func (p *Provider) handleUntap(ctx context.Context, args []string, hamsFlags map
 	}
 
 	// Cycle 222: acquire single-writer state lock per cli-architecture spec.
-	release, lockErr := provider.AcquireMutationLockFromCfg(p.effectiveConfig(flags), flags, "brew untap")
+	release, lockErr := provider.AcquireMutationLockFromCfg(baseprovider.EffectiveConfig(p.cfg, flags), flags, "brew untap")
 	if lockErr != nil {
 		return lockErr
 	}
@@ -364,7 +367,7 @@ func (p *Provider) handleUntap(ctx context.Context, args []string, hamsFlags map
 		return err
 	}
 
-	hf, err := p.loadOrCreateHamsfile(hamsFlags, flags)
+	hf, err := baseprovider.LoadOrCreateHamsfile(p.cfg, p.Manifest().FilePrefix, hamsFlags, flags)
 	if err != nil {
 		return err
 	}
@@ -389,7 +392,7 @@ func (p *Provider) Name() string { return cliName }
 func (p *Provider) DisplayName() string { return brewDisplayName }
 
 func (p *Provider) handleList(hamsFlags map[string]string, flags *provider.GlobalFlags) error {
-	cfg := p.effectiveConfig(flags)
+	cfg := baseprovider.EffectiveConfig(p.cfg, flags)
 
 	// Cycle 220/222: validate the resolved profile dir exists via the
 	// shared helper. `hams brew list --profile=Typo` on an invalid
@@ -402,7 +405,7 @@ func (p *Provider) handleList(hamsFlags map[string]string, flags *provider.Globa
 		return err
 	}
 
-	hf, err := p.loadOrCreateHamsfile(hamsFlags, flags)
+	hf, err := baseprovider.LoadOrCreateHamsfile(p.cfg, p.Manifest().FilePrefix, hamsFlags, flags)
 	if err != nil {
 		return err
 	}
@@ -468,7 +471,7 @@ func (p *Provider) handleTap(ctx context.Context, args []string, hamsFlags map[s
 	}
 
 	// Cycle 222: acquire single-writer state lock per cli-architecture spec.
-	release, lockErr := provider.AcquireMutationLockFromCfg(p.effectiveConfig(flags), flags, "brew tap")
+	release, lockErr := provider.AcquireMutationLockFromCfg(baseprovider.EffectiveConfig(p.cfg, flags), flags, "brew tap")
 	if lockErr != nil {
 		return lockErr
 	}
@@ -484,7 +487,7 @@ func (p *Provider) handleTap(ctx context.Context, args []string, hamsFlags map[s
 		return err
 	}
 
-	hf, err := p.loadOrCreateHamsfile(hamsFlags, flags)
+	hf, err := baseprovider.LoadOrCreateHamsfile(p.cfg, p.Manifest().FilePrefix, hamsFlags, flags)
 	if err != nil {
 		return err
 	}
@@ -569,7 +572,7 @@ func (p *Provider) handleInstall(ctx context.Context, args []string, hamsFlags m
 	}
 
 	// Cycle 222: acquire single-writer state lock per cli-architecture spec.
-	release, lockErr := provider.AcquireMutationLockFromCfg(p.effectiveConfig(flags), flags, "brew install")
+	release, lockErr := provider.AcquireMutationLockFromCfg(baseprovider.EffectiveConfig(p.cfg, flags), flags, "brew install")
 	if lockErr != nil {
 		return lockErr
 	}
@@ -587,7 +590,7 @@ func (p *Provider) handleInstall(ctx context.Context, args []string, hamsFlags m
 		}
 	}
 
-	hf, err := p.loadOrCreateHamsfile(hamsFlags, flags)
+	hf, err := baseprovider.LoadOrCreateHamsfile(p.cfg, p.Manifest().FilePrefix, hamsFlags, flags)
 	if err != nil {
 		return err
 	}
@@ -634,7 +637,7 @@ func (p *Provider) handleRemove(ctx context.Context, args []string, hamsFlags ma
 	}
 
 	// Cycle 222: acquire single-writer state lock per cli-architecture spec.
-	release, lockErr := provider.AcquireMutationLockFromCfg(p.effectiveConfig(flags), flags, "brew remove")
+	release, lockErr := provider.AcquireMutationLockFromCfg(baseprovider.EffectiveConfig(p.cfg, flags), flags, "brew remove")
 	if lockErr != nil {
 		return lockErr
 	}
@@ -659,7 +662,7 @@ func (p *Provider) handleRemove(ctx context.Context, args []string, hamsFlags ma
 		}
 	}
 
-	hf, err := p.loadOrCreateHamsfile(hamsFlags, flags)
+	hf, err := baseprovider.LoadOrCreateHamsfile(p.cfg, p.Manifest().FilePrefix, hamsFlags, flags)
 	if err != nil {
 		return err
 	}
@@ -679,18 +682,10 @@ func (p *Provider) handleRemove(ctx context.Context, args []string, hamsFlags ma
 	return sf.Save(p.statePath(flags))
 }
 
-func (p *Provider) loadOrCreateHamsfile(hamsFlags map[string]string, flags *provider.GlobalFlags) (*hamsfile.File, error) {
-	path, err := p.hamsfilePath(hamsFlags, flags)
-	if err != nil {
-		return nil, err
-	}
-	return hamsfile.LoadOrCreateEmpty(path)
-}
-
 // statePath returns the absolute path to brew.state.yaml for the
 // active machine. Mirrors apt.statePath.
 func (p *Provider) statePath(flags *provider.GlobalFlags) string {
-	cfg := p.effectiveConfig(flags)
+	cfg := baseprovider.EffectiveConfig(p.cfg, flags)
 	return filepath.Join(cfg.StateDir(), p.Manifest().FilePrefix+".state.yaml")
 }
 
@@ -700,7 +695,7 @@ func (p *Provider) statePath(flags *provider.GlobalFlags) string {
 // user-facing error instead of silently overwriting unparseable state.
 // Mirrors apt.loadOrCreateStateFile.
 func (p *Provider) loadOrCreateStateFile(flags *provider.GlobalFlags) (*state.File, error) {
-	cfg := p.effectiveConfig(flags)
+	cfg := baseprovider.EffectiveConfig(p.cfg, flags)
 	sf, err := state.Load(p.statePath(flags))
 	if err == nil {
 		return sf, nil
@@ -709,43 +704,6 @@ func (p *Provider) loadOrCreateStateFile(flags *provider.GlobalFlags) (*state.Fi
 		return state.New(p.Name(), cfg.MachineID), nil
 	}
 	return nil, fmt.Errorf("loading brew state %s: %w", p.statePath(flags), err)
-}
-
-func (p *Provider) hamsfilePath(hamsFlags map[string]string, flags *provider.GlobalFlags) (string, error) {
-	cfg := p.effectiveConfig(flags)
-	if cfg.StorePath == "" {
-		return "", hamserr.NewUserError(hamserr.ExitUsageError,
-			"no store directory configured",
-			"Set store_path in hams config or pass --store",
-		)
-	}
-
-	suffix := ".hams.yaml"
-	if _, ok := hamsFlags["local"]; ok {
-		suffix = ".hams.local.yaml"
-	}
-
-	return filepath.Join(cfg.ProfileDir(), p.Manifest().FilePrefix+suffix), nil
-}
-
-func (p *Provider) effectiveConfig(flags *provider.GlobalFlags) *config.Config {
-	if p.cfg == nil {
-		p.cfg = &config.Config{}
-	}
-
-	cfg := *p.cfg
-	if flags == nil {
-		return &cfg
-	}
-
-	if flags.Store != "" {
-		cfg.StorePath = flags.Store
-	}
-	if flags.Profile != "" {
-		cfg.ProfileTag = flags.Profile
-	}
-
-	return &cfg
 }
 
 func parseInstallTag(hamsFlags map[string]string) string {

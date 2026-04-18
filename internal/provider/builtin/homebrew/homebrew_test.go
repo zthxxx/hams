@@ -6,6 +6,7 @@ import (
 
 	"github.com/zthxxx/hams/internal/config"
 	"github.com/zthxxx/hams/internal/provider"
+	"github.com/zthxxx/hams/internal/provider/baseprovider"
 )
 
 func TestManifest(t *testing.T) {
@@ -45,12 +46,12 @@ func TestLoadOrCreateHamsfile_MissingFileReturnsEmpty(t *testing.T) {
 	storeDir := t.TempDir()
 	p := New(&config.Config{StorePath: storeDir, ProfileTag: "test"}, NewFakeCmdRunner())
 
-	hf, err := p.loadOrCreateHamsfile(nil, &provider.GlobalFlags{})
+	hf, err := baseprovider.LoadOrCreateHamsfile(p.cfg, p.Manifest().FilePrefix, nil, &provider.GlobalFlags{})
 	if err != nil {
-		t.Fatalf("loadOrCreateHamsfile on missing file = %v, want nil", err)
+		t.Fatalf("LoadOrCreateHamsfile on missing file = %v, want nil", err)
 	}
 	if hf == nil {
-		t.Fatal("loadOrCreateHamsfile returned nil hamsfile")
+		t.Fatal("LoadOrCreateHamsfile returned nil hamsfile")
 	}
 	wantPath := filepath.Join(storeDir, "test", "Homebrew.hams.yaml")
 	if hf.Path != wantPath {
