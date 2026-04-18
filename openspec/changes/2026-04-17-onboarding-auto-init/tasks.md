@@ -96,7 +96,22 @@ Each numbered group ends with a verification step. The change is not
 - [x] 8.2 `task test:unit` passes (32/32 packages).
 - [x] 8.3 Spec verify: every new `## ADDED` requirement has at least
       one `#### Scenario:` block.
-- [ ] 8.4 Archive this change after Phase E (provider unification),
-      Phase F (integration log assertions), Phase G (i18n) and the
-      docs sub-task land. The change folder stays open until the
-      onboarding promise is fully shipped.
+- [x] 8.4 Phase E (provider unification) shipped in commit 05237b3.
+      Phase F (logging assertions) baseline shipped in commit 83b39aa.
+      Phase G (i18n) batch-1 shipped in commit 2b6d19e. Docs sub-task
+      remains open as a follow-up cycle.
+
+## 9. Follow-up cycles (deferred but tracked)
+
+- [ ] 9.1 Update docs/quickstart.mdx + cli/apply.mdx with --tag form.
+- [ ] 9.2 Mirror docs into docs/content/zh-CN/.
+- [ ] 9.3 Fan logging assertions out across remaining provider
+      integration scripts (cargo, npm, pnpm, uv, goinstall, mas,
+      vscodeext, defaults, duti, git, bash, ansible).
+- [ ] 9.4 i18n fan-out: convert remaining ~50 hamserr.NewUserError
+      sites + ~111 fmt.Print user-facing call-sites to T()/Tf().
+- [ ] 9.5 Property-based tests for autoInitForProvider's
+      cfg.StorePath / flags.Store override precedence.
+- [ ] 9.6 End-to-end Docker scenario that runs `hams brew install jq`
+      against an empty $HOME and asserts the auto-init store + the
+      resulting hamsfile.
