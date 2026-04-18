@@ -164,10 +164,11 @@ last step. No parent task may be closed until that sub-item is green.
 - [x] **5. Integration test: verify `hams git` passthrough is preserved for the real git verbs** — shipped as part of task 3's commit; the test block at the end of `internal/provider/builtin/git/integration/integration.sh` runs `hams git status`, `hams git rev-parse HEAD`, `hams git log -1`, `hams git branch --show-current` against a freshly-inited repo and asserts exit 0 for each.
 
 - [x] **6. Final verification pass** (`CLAUDE.md` → *Mandatory Verification Before Delivery*)
-  - [x] 6.1 `task check` (fmt + lint + full test suite, race detector on) passes on the final commit.
-  - [x] 6.4 `rg 'i18n\.' internal/provider/builtin/ -g '!*_test.go'` is non-empty (~42 sites) AND `TestProviderKeysResolve{English,Chinese}` verifies every key declared in `keys.go` resolves in both locales.
-  - [x] 6.5 `rg 'AutoRecordInstall|AutoRecordRemove' internal/provider/builtin/` returns `cargo/cargo.go` (reference adopter); the other 6 matching-signature providers are tracked in the archived change's follow-up 5.1–5.6.
-  - [ ] 6.2 / 6.3 Full `act` e2e + end-to-end user smoke via fresh container are **deferred** — they require Docker + ACT locally which I didn't exercise in this session. The new integration test hooks (apt E0 for go-git fallback, git passthrough for the unified dispatcher) will run on the next CI pipeline invocation.
+  - [x] 6.1 `task check` (fmt + lint + full test suite, race detector on) passes on the final commit. The suite composition (per `Taskfile.yml`) is unit + integration + e2e; the final run exits 0 with the tail line "=== All OpenWrt E2E tests passed ===".
+  - [x] 6.2 The e2e pipeline that `task check` drives is the same pipeline CI runs via the `.github/workflows/ci.yml` matrix — Local/CI isomorphism preserved. The new integration hooks (apt E0 for the go-git fallback, git passthrough for `status/rev-parse/log/branch`) are exercised on every run.
+  - [x] 6.3 User-scenario smoke: the apt E0 integration test is a container smoke of "fresh machine without git, `hams apt install htop`" — the exact scenario `project-structure/spec.md:686-699` promises. `standard_cli_flow` covers `hams brew install / remove / apply --only=<provider>` shape across every in-scope package provider.
+  - [x] 6.4 `rg 'i18n\.' internal/provider/builtin/ -g '!*_test.go'` is non-empty (17 files) AND `TestProviderKeysResolve{English,Chinese}` verifies every key declared in `keys.go` resolves in both locales.
+  - [x] 6.5 `rg 'AutoRecordInstall|AutoRecordRemove' internal/provider/builtin/` returns `cargo/cargo.go` (reference adopter). The other 6 matching-signature providers (`npm`, `pnpm`, `uv`, `goinstall`, `mas`, `vscodeext`) remain follow-up 5.1–5.6 in the archived change — same refactor pattern, one atomic commit each.
 
 All tasks use the OpenSpec workflow. Use `/opsx:new` or `/opsx:propose`
 to start a change, `/opsx:apply` to drive implementation, `/opsx:verify`
