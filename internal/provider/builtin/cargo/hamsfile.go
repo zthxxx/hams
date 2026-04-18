@@ -5,7 +5,6 @@ import (
 
 	"github.com/zthxxx/hams/internal/config"
 	hamserr "github.com/zthxxx/hams/internal/error"
-	"github.com/zthxxx/hams/internal/hamsfile"
 	"github.com/zthxxx/hams/internal/i18n"
 	"github.com/zthxxx/hams/internal/provider"
 )
@@ -13,17 +12,6 @@ import (
 // tagCLI is the default hamsfile tag for crates recorded by the CLI-first
 // `hams cargo install <crate>` path.
 const tagCLI = "cli"
-
-// loadOrCreateHamsfile reads the cargo.hams.yaml (or cargo.hams.local.yaml when
-// --hams-local is set) for the active profile, creating an empty document if
-// the file does not yet exist. Mirrors apt's implementation.
-func (p *Provider) loadOrCreateHamsfile(hamsFlags map[string]string, flags *provider.GlobalFlags) (*hamsfile.File, error) {
-	path, err := p.hamsfilePath(hamsFlags, flags)
-	if err != nil {
-		return nil, err
-	}
-	return hamsfile.LoadOrCreateEmpty(path)
-}
 
 // hamsfilePath returns the absolute path to the provider's hamsfile (or its
 // .local.yaml variant) for the currently active profile.

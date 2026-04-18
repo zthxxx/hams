@@ -161,5 +161,33 @@ assert_stderr_contains "git-config: provider emits slog line" \
   "git" \
   hams --store="$HAMS_STORE" apply --only=git-config
 
+# --- Unified `hams git` passthrough regression gate ---
+# builtin-providers/spec.md:69 — "All other subcommands are passthrough
+# to the underlying CLI." The unified provider's `default:` arm shells
+# out to the real `git` binary; these assertions pin that behaviour so
+# a future refactor that accidentally reverts to the strict-subset
+# shape fails CI loudly.
+echo ""
+echo "--- hams git passthrough for real git verbs ---"
+
+GIT_PASSTHROUGH_DIR=/tmp/test-git-passthrough
+mkdir -p "$GIT_PASSTHROUGH_DIR"
+pushd "$GIT_PASSTHROUGH_DIR" >/dev/null
+git init --quiet
+git -c user.email=e2e@hams.invalid -c user.name="e2e" commit --allow-empty -q -m "seed"
+
+# Passthrough verbs every git install exposes.
+assert_success "hams git status (passthrough)" \
+  hams --store="$HAMS_STORE" git status --short
+assert_success "hams git rev-parse HEAD (passthrough)" \
+  hams --store="$HAMS_STORE" git rev-parse HEAD
+assert_success "hams git log -1 (passthrough)" \
+  hams --store="$HAMS_STORE" git log -1 --format=%H
+assert_success "hams git branch --show-current (passthrough)" \
+  hams --store="$HAMS_STORE" git branch --show-current
+
+popd >/dev/null
+rm -rf "$GIT_PASSTHROUGH_DIR"
+
 echo ""
 echo "=== git integration test passed ==="

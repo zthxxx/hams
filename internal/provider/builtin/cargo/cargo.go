@@ -3,9 +3,6 @@ package cargo
 
 import (
 	"context"
-	"errors"
-	"fmt"
-	"io/fs"
 	"log/slog"
 	"path/filepath"
 	"strings"
@@ -136,51 +133,27 @@ func (p *Provider) handleInstall(ctx context.Context, args []string, hamsFlags m
 	if len(crates) == 0 {
 		return provider.UsageRequiresAtLeastOne(cliName, "install", "crate name", "crate")
 	}
-	if flags.DryRun {
-		provider.DryRunInstall(flags, "cargo install "+strings.Join(args, " "))
-		return nil
-	}
 
-	// Cycle 222: acquire single-writer state lock per the
-	// cli-architecture spec. Pre-cycle-222 only apply/refresh held
-	// the lock; a `hams cargo install ripgrep` could race with an
-	// in-flight `hams apply` and clobber cargo.state.yaml.
-	release, lockErr := provider.AcquireMutationLockFromCfg(p.effectiveConfig(flags), flags, "cargo install")
-	if lockErr != nil {
-		return lockErr
+	// Cycle shared-abstraction: delegate the dry-run + lock + exec +
+	// record + save flow to provider.AutoRecordInstall. The shared
+	// helper reproduces the all-or-nothing install loop + atomic
+	// hamsfile + state write that every Package-class provider owns.
+	// Cargo is the reference adopter for this flow (see
+	// openspec/changes/archive/2026-04-18-provider-shared-abstraction-adoption).
+	hfPath, hfErr := p.hamsfilePath(hamsFlags, flags)
+	if hfErr != nil {
+		return hfErr
 	}
-	defer release()
-
-	// Run every install first; only record once all succeed. This
-	// mirrors apt's all-or-nothing auto-record semantics — partial
-	// failures force the user to retry rather than leaving a mixed
-	// hamsfile that drifts from the host.
-	for _, crate := range crates {
-		if err := p.runner.Install(ctx, crate); err != nil {
-			return err
-		}
-	}
-
-	hf, err := p.loadOrCreateHamsfile(hamsFlags, flags)
-	if err != nil {
-		return err
-	}
-	sf, err := p.loadOrCreateStateFile(flags)
-	if err != nil {
-		return err
-	}
-	for _, crate := range crates {
-		hf.AddApp(tagCLI, crate, "")
-		// Cycle 203: state write is additive. Without this,
-		// `hams list --only=cargo` returned empty right after a
-		// successful install because `list` reads state only.
-		// Same auto-record gap as cycle 96 (homebrew) / 202 (mas).
-		sf.SetResource(crate, state.StateOK)
-	}
-	if writeErr := hf.Write(); writeErr != nil {
-		return writeErr
-	}
-	return sf.Save(p.statePath(flags))
+	return provider.AutoRecordInstall(ctx, p.runner, crates,
+		p.effectiveConfig(flags), flags,
+		hfPath, p.statePath(flags),
+		provider.PackageDispatchOpts{
+			CLIName:     cliName,
+			InstallVerb: "install",
+			RemoveVerb:  "uninstall",
+			HamsTag:     tagCLI,
+		},
+	)
 }
 
 // handleRemove runs `cargo uninstall <crate>` via the CmdRunner seam
@@ -195,40 +168,22 @@ func (p *Provider) handleRemove(ctx context.Context, args []string, hamsFlags ma
 	if len(crates) == 0 {
 		return provider.UsageRequiresAtLeastOne(cliName, "remove", "crate name", "crate")
 	}
-	if flags.DryRun {
-		provider.DryRunRemove(flags, "cargo uninstall "+strings.Join(args, " "))
-		return nil
-	}
 
-	// Cycle 222: same lock-acquisition contract as handleInstall.
-	release, lockErr := provider.AcquireMutationLockFromCfg(p.effectiveConfig(flags), flags, "cargo remove")
-	if lockErr != nil {
-		return lockErr
+	// Same shared-abstraction delegation as handleInstall above.
+	hfPath, hfErr := p.hamsfilePath(hamsFlags, flags)
+	if hfErr != nil {
+		return hfErr
 	}
-	defer release()
-
-	for _, crate := range crates {
-		if err := p.runner.Uninstall(ctx, crate); err != nil {
-			return err
-		}
-	}
-
-	hf, err := p.loadOrCreateHamsfile(hamsFlags, flags)
-	if err != nil {
-		return err
-	}
-	sf, err := p.loadOrCreateStateFile(flags)
-	if err != nil {
-		return err
-	}
-	for _, crate := range crates {
-		hf.RemoveApp(crate)
-		sf.SetResource(crate, state.StateRemoved)
-	}
-	if writeErr := hf.Write(); writeErr != nil {
-		return writeErr
-	}
-	return sf.Save(p.statePath(flags))
+	return provider.AutoRecordRemove(ctx, p.runner, crates,
+		p.effectiveConfig(flags), flags,
+		hfPath, p.statePath(flags),
+		provider.PackageDispatchOpts{
+			CLIName:     cliName,
+			InstallVerb: "install",
+			RemoveVerb:  "uninstall",
+			HamsTag:     tagCLI,
+		},
+	)
 }
 
 // statePath returns the absolute path to cargo.state.yaml for the
@@ -236,22 +191,6 @@ func (p *Provider) handleRemove(ctx context.Context, args []string, hamsFlags ma
 func (p *Provider) statePath(flags *provider.GlobalFlags) string {
 	cfg := p.effectiveConfig(flags)
 	return filepath.Join(cfg.StateDir(), p.Manifest().FilePrefix+".state.yaml")
-}
-
-// loadOrCreateStateFile reads the cargo state file or returns a
-// fresh one when the file is absent. Non-ErrNotExist load failures
-// propagate so the CLI handler surfaces a user-facing error instead
-// of silently overwriting unparseable state.
-func (p *Provider) loadOrCreateStateFile(flags *provider.GlobalFlags) (*state.File, error) {
-	cfg := p.effectiveConfig(flags)
-	sf, err := state.Load(p.statePath(flags))
-	if err == nil {
-		return sf, nil
-	}
-	if errors.Is(err, fs.ErrNotExist) {
-		return state.New(p.Name(), cfg.MachineID), nil
-	}
-	return nil, fmt.Errorf("loading cargo state %s: %w", p.statePath(flags), err)
 }
 
 // crateArgs filters the positional tokens from args: any token
