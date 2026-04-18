@@ -21,6 +21,7 @@ import (
 
 	"github.com/zthxxx/hams/internal/config"
 	hamserr "github.com/zthxxx/hams/internal/error"
+	"github.com/zthxxx/hams/internal/i18n"
 	"github.com/zthxxx/hams/internal/logging"
 	"github.com/zthxxx/hams/internal/provider"
 	"github.com/zthxxx/hams/internal/selfupdate"
@@ -82,9 +83,9 @@ Only resources already tracked in state are probed — no new resources are disc
 			// typo (e.g. `hams refresh apt` instead of `--only=apt`).
 			if cmd.Args().Len() > 0 {
 				return hamserr.NewUserError(hamserr.ExitUsageError,
-					fmt.Sprintf("hams refresh does not take positional arguments (got %q)", cmd.Args().First()),
-					"To filter providers: hams refresh --only=<provider1>,<provider2>",
-					"To refresh everything: hams refresh",
+					i18n.Tf(i18n.CLIErrNoPositionalArgs, map[string]any{"Cmd": "refresh", "Arg": fmt.Sprintf("%q", cmd.Args().First())}),
+					i18n.Tf(i18n.CLIErrNoPositionalArgsSuggestFilter, map[string]any{"Cmd": "refresh"}),
+					i18n.Tf(i18n.CLIErrNoPositionalArgsSuggestAll, map[string]any{"Verb": "refresh", "Cmd": "refresh"}),
 				)
 			}
 			flags := globalFlags(cmd)
@@ -107,8 +108,8 @@ func runRefresh(ctx context.Context, flags *provider.GlobalFlags, registry *prov
 	// load so a misconfigured store doesn't mask the args error.
 	if only != "" && except != "" {
 		return hamserr.NewUserError(hamserr.ExitUsageError,
-			"--only and --except are mutually exclusive",
-			"Use --only to include specific providers, or --except to exclude them",
+			i18n.T(i18n.CLIErrOnlyExceptConflict),
+			i18n.T(i18n.CLIErrOnlyExceptConflictSuggest),
 		)
 	}
 	paths := resolvePaths(flags)
@@ -136,9 +137,9 @@ func runRefresh(ctx context.Context, flags *provider.GlobalFlags, registry *prov
 		profileDir := cfg.ProfileDir()
 		if info, statErr := os.Stat(profileDir); statErr != nil || !info.IsDir() {
 			return hamserr.NewUserError(hamserr.ExitUsageError,
-				fmt.Sprintf("profile %q not found at %s", cliTagOverride, profileDir),
-				"Check available profiles: ls "+cfg.StorePath,
-				"Or create this profile: mkdir -p "+profileDir,
+				i18n.Tf(i18n.CLIErrProfileNotFound, map[string]any{"Tag": fmt.Sprintf("%q", cliTagOverride), "Dir": profileDir}),
+				i18n.Tf(i18n.CLIErrProfileNotFoundSuggestList, map[string]any{"Store": cfg.StorePath}),
+				i18n.Tf(i18n.CLIErrProfileNotFoundSuggestCreate, map[string]any{"Dir": profileDir}),
 			)
 		}
 	}
@@ -170,10 +171,10 @@ func runRefresh(ctx context.Context, flags *provider.GlobalFlags, registry *prov
 	if cfg.StorePath != "" {
 		if info, statErr := os.Stat(cfg.StorePath); statErr != nil || !info.IsDir() {
 			return hamserr.NewUserError(hamserr.ExitUsageError,
-				fmt.Sprintf("store_path %q does not exist or is not a directory", cfg.StorePath),
-				"Fix store_path in ~/.config/hams/hams.config.yaml",
-				"Or clone a store: hams apply --from-repo=<user/repo>",
-				"Or initialize one: hams store init",
+				i18n.Tf(i18n.CLIErrStorePathInvalid, map[string]any{"Path": fmt.Sprintf("%q", cfg.StorePath)}),
+				i18n.T(i18n.CLIErrStorePathInvalidSuggestFix),
+				i18n.T(i18n.UFENoStoreConfiguredSuggestClone),
+				i18n.T(i18n.UFENoStoreConfiguredSuggestInit),
 			)
 		}
 	}
@@ -248,9 +249,9 @@ func runRefresh(ctx context.Context, flags *provider.GlobalFlags, registry *prov
 		// empty (artifacts exist but --only/--except excluded them all).
 		switch {
 		case len(stageOneProviders) == 0:
-			fmt.Println("No providers match: no hamsfile or state file present for any registered provider.")
+			fmt.Println(i18n.T(i18n.ApplyNoProvidersMatch))
 		default:
-			fmt.Println("No providers match: --only/--except excluded every provider that has artifacts.")
+			fmt.Println(i18n.T(i18n.ApplyNoProvidersFiltered))
 		}
 		return nil
 	}
@@ -290,8 +291,10 @@ func runRefresh(ctx context.Context, flags *provider.GlobalFlags, registry *prov
 		// cycle 182's --json refresh shape) so machine consumers
 		// distinguish dry-run from real runs without grepping prose.
 		if !flags.JSON {
-			fmt.Printf("[dry-run] Would write state for %d %s:\n",
-				len(probeNames), pluralize(len(probeNames), "provider", "providers"))
+			fmt.Println(i18n.Tf(i18n.RefreshStateWrittenHeader, map[string]any{
+				"Count": len(probeNames),
+				"Noun":  pluralize(len(probeNames), "provider", "providers"),
+			}))
 			for _, name := range probeNames {
 				fmt.Printf("  %s\n", logging.TildePath(filepath.Join(stateDir, name+".state.yaml")))
 			}
@@ -359,8 +362,12 @@ func runRefresh(ctx context.Context, flags *provider.GlobalFlags, registry *prov
 			// Cycle 239: append elapsed even on the interrupted path
 			// so users know how long the run took before they Ctrl+C'd.
 			// Useful for "did the probe just hang?" debugging.
-			fmt.Printf("Refresh interrupted: %d/%d %s probed before cancellation (took %dms)\n",
-				probed, planned, providersNoun, time.Since(refreshStart).Milliseconds())
+			fmt.Println(i18n.Tf(i18n.RefreshInterrupted, map[string]any{
+				"Done":      probed,
+				"Total":     planned,
+				"Noun":      providersNoun,
+				"ElapsedMs": time.Since(refreshStart).Milliseconds(),
+			}))
 		}
 		return hamserr.NewUserError(hamserr.ExitPartialFailure,
 			fmt.Sprintf("refresh interrupted by signal (%v) after probing %d/%d providers",
@@ -430,8 +437,11 @@ func runRefresh(ctx context.Context, flags *provider.GlobalFlags, registry *prov
 	if probed == planned && len(saveFailures) == 0 {
 		// Cycle 238: append "(took Xms)" so interactive users can
 		// spot slowdowns without grepping slog timestamps.
-		fmt.Printf("Refresh complete: %d %s probed (took %dms)\n",
-			planned, providersNoun, time.Since(refreshStart).Milliseconds())
+		fmt.Println(i18n.Tf(i18n.RefreshSummaryComplete, map[string]any{
+			"Count":     planned,
+			"Noun":      providersNoun,
+			"ElapsedMs": time.Since(refreshStart).Milliseconds(),
+		}))
 		return nil
 	}
 	// Partial failure: some providers couldn't probe or their state
@@ -450,8 +460,13 @@ func runRefresh(ctx context.Context, flags *provider.GlobalFlags, registry *prov
 	// hit save failures, or hit probe failures.
 	elapsedMs := time.Since(refreshStart).Milliseconds()
 	if probed == planned {
-		fmt.Printf("Refresh complete: %d %s probed, but %d state file(s) failed to save: %s (took %dms)\n",
-			planned, providersNoun, len(saveFailures), strings.Join(saveFailures, ", "), elapsedMs)
+		fmt.Println(i18n.Tf(i18n.RefreshSummaryCompleteWithSaveFails, map[string]any{
+			"Count":     planned,
+			"Noun":      providersNoun,
+			"FailCount": len(saveFailures),
+			"FailList":  strings.Join(saveFailures, ", "),
+			"ElapsedMs": elapsedMs,
+		}))
 	} else {
 		probeFailedNames := make([]string, 0, planned-probed)
 		for _, p := range providers {
@@ -460,12 +475,20 @@ func runRefresh(ctx context.Context, flags *provider.GlobalFlags, registry *prov
 			}
 		}
 		sort.Strings(probeFailedNames)
-		fmt.Printf("Refresh complete: %d/%d %s probed (%d probe error(s) in: %s; see log for details) (took %dms)\n",
-			probed, planned, providersNoun, planned-probed, strings.Join(probeFailedNames, ", "), elapsedMs)
+		fmt.Println(i18n.Tf(i18n.RefreshSummaryCompleteWithProbeFails, map[string]any{
+			"Count":          probed,
+			"Total":          planned,
+			"Noun":           providersNoun,
+			"ProbeFailCount": planned - probed,
+			"ProbeFailList":  strings.Join(probeFailedNames, ", "),
+			"ElapsedMs":      elapsedMs,
+		}))
 	}
 	if len(saveFailures) > 0 {
-		fmt.Printf("Warning: %d state save failure(s): %s — next run may re-probe these\n",
-			len(saveFailures), strings.Join(saveFailures, ", "))
+		fmt.Println(i18n.Tf(i18n.RefreshSummarySaveFailWarning, map[string]any{
+			"Count": len(saveFailures),
+			"Names": strings.Join(saveFailures, ", "),
+		}))
 	}
 	return hamserr.NewUserError(hamserr.ExitPartialFailure,
 		fmt.Sprintf("%d of %d providers failed to probe, %d state saves failed",
@@ -548,20 +571,20 @@ func configCmd() *cli.Command {
 						return nil
 					}
 
-					fmt.Printf("Config home:       %s\n", logging.TildePath(paths.ConfigHome))
-					fmt.Printf("Data home:         %s\n", logging.TildePath(paths.DataHome))
-					fmt.Printf("Global config:     %s\n", logging.TildePath(paths.GlobalConfigPath()))
+					fmt.Println(i18n.Tf(i18n.ConfigHomeLine, map[string]any{"Path": logging.TildePath(paths.ConfigHome)}))
+					fmt.Println(i18n.Tf(i18n.ConfigDataHomeLine, map[string]any{"Path": logging.TildePath(paths.DataHome)}))
+					fmt.Println(i18n.Tf(i18n.ConfigGlobalConfigLine, map[string]any{"Path": logging.TildePath(paths.GlobalConfigPath())}))
 					if localPath != "" {
-						fmt.Printf("Local overrides:   %s\n", logging.TildePath(localPath))
+						fmt.Println(i18n.Tf(i18n.ConfigLocalOverridesLine, map[string]any{"Path": logging.TildePath(localPath)}))
 					}
-					fmt.Printf("Profile tag:       %s\n", cfg.ProfileTag)
-					fmt.Printf("Machine ID:        %s\n", cfg.MachineID)
-					fmt.Printf("Store path:        %s\n", logging.TildePath(cfg.StorePath))
+					fmt.Println(i18n.Tf(i18n.ConfigProfileTagLine, map[string]any{"Tag": cfg.ProfileTag}))
+					fmt.Println(i18n.Tf(i18n.ConfigMachineIDLine, map[string]any{"ID": cfg.MachineID}))
+					fmt.Println(i18n.Tf(i18n.ConfigStorePathLine, map[string]any{"Path": logging.TildePath(cfg.StorePath)}))
 					if cfg.StoreRepo != "" {
-						fmt.Printf("Store repo:        %s\n", cfg.StoreRepo)
+						fmt.Println(i18n.Tf(i18n.ConfigStoreRepoLine, map[string]any{"Repo": cfg.StoreRepo}))
 					}
-					fmt.Printf("LLM CLI:           %s\n", cfg.LLMCLI)
-					fmt.Printf("Provider priority: %v\n", cfg.ProviderPriority)
+					fmt.Println(i18n.Tf(i18n.ConfigLLMCLILine, map[string]any{"Path": cfg.LLMCLI}))
+					fmt.Println(i18n.Tf(i18n.ConfigProviderPriorityLine, map[string]any{"List": fmt.Sprintf("%v", cfg.ProviderPriority)}))
 					return nil
 				},
 			},
@@ -732,10 +755,12 @@ func configCmd() *cli.Command {
 					// commands: apply, refresh, store push/pull/init,
 					// config set/unset, and now config edit.
 					if flags.DryRun {
-						fmt.Printf("[dry-run] Would open %s in %s\n",
-							logging.TildePath(configPath), editor)
+						fmt.Println(i18n.Tf(i18n.ConfigOpenDryRun, map[string]any{
+							"Path":   logging.TildePath(configPath),
+							"Editor": editor,
+						}))
 						if _, statErr := os.Stat(configPath); os.IsNotExist(statErr) {
-							fmt.Printf("[dry-run]   (file does not exist; would be created with a stub header)\n")
+							fmt.Println(i18n.T(i18n.ConfigOpenDryRunStub))
 						}
 						return nil
 					}
@@ -871,7 +896,7 @@ func runStorePush(ctx context.Context, storePath, commitMsg string) error {
 	}
 
 	if status == "" {
-		fmt.Println("Nothing to commit — the store is clean. Skipping commit+push.")
+		fmt.Println(i18n.T(i18n.StoreNothingToCommit))
 		return nil
 	}
 
@@ -927,10 +952,10 @@ func emitConfigSetResult(jsonMode bool, key, value, target string, dryRun bool) 
 		return nil
 	}
 	if dryRun {
-		fmt.Printf("[dry-run] Would set %s = %s (in %s)\n", key, value, target)
+		fmt.Println(i18n.Tf(i18n.ConfigSetDryRun, map[string]any{"Key": key, "Value": value, "Target": target}))
 		return nil
 	}
-	fmt.Printf("Set %s = %s (in %s)\n", key, value, target)
+	fmt.Println(i18n.Tf(i18n.ConfigSetDone, map[string]any{"Key": key, "Value": value, "Target": target}))
 	return nil
 }
 
@@ -952,10 +977,10 @@ func emitConfigUnsetResult(jsonMode bool, key, target string, dryRun bool) error
 		return nil
 	}
 	if dryRun {
-		fmt.Printf("[dry-run] Would unset %s (from %s)\n", key, target)
+		fmt.Println(i18n.Tf(i18n.ConfigUnsetDryRun, map[string]any{"Key": key, "Target": target}))
 		return nil
 	}
-	fmt.Printf("Unset %s (from %s)\n", key, target)
+	fmt.Println(i18n.Tf(i18n.ConfigUnsetDone, map[string]any{"Key": key, "Target": target}))
 	return nil
 }
 
@@ -1126,24 +1151,24 @@ func storeCmd() *cli.Command {
 		}
 
 		if !storeDirExists {
-			fmt.Printf("Store path:    %s  (does NOT exist)\n", logging.TildePath(storePath))
-			fmt.Println("  The configured store_path points at a missing directory.")
-			fmt.Println("  Run 'hams store init' to create it, or fix store_path in hams.config.yaml.")
+			fmt.Println(i18n.Tf(i18n.StoreStatusPathMissing, map[string]any{"Path": logging.TildePath(storePath)}))
+			fmt.Println(i18n.T(i18n.StoreStatusPathMissingLine1))
+			fmt.Println(i18n.T(i18n.StoreStatusPathMissingLine2))
 			return nil
 		}
 
-		fmt.Printf("Store path:    %s\n", logging.TildePath(storePath))
-		fmt.Printf("Profile tag:   %s\n", cfg.ProfileTag)
-		fmt.Printf("Machine ID:    %s\n", cfg.MachineID)
-		fmt.Printf("Profile dir:   %s\n", logging.TildePath(cfg.ProfileDir()))
-		fmt.Printf("State dir:     %s\n", logging.TildePath(cfg.StateDir()))
+		fmt.Println(i18n.Tf(i18n.StoreStatusPath, map[string]any{"Path": logging.TildePath(storePath)}))
+		fmt.Println(i18n.Tf(i18n.StoreStatusProfileTag, map[string]any{"Tag": cfg.ProfileTag}))
+		fmt.Println(i18n.Tf(i18n.StoreStatusMachineID, map[string]any{"ID": cfg.MachineID}))
+		fmt.Println(i18n.Tf(i18n.StoreStatusProfileDir, map[string]any{"Dir": logging.TildePath(cfg.ProfileDir())}))
+		fmt.Println(i18n.Tf(i18n.StoreStatusStateDir, map[string]any{"Dir": logging.TildePath(cfg.StateDir())}))
 		if hamsfiles >= 0 {
-			fmt.Printf("Hamsfiles:     %d\n", hamsfiles)
+			fmt.Println(i18n.Tf(i18n.StoreStatusHamsfiles, map[string]any{"Count": hamsfiles}))
 		} else {
-			fmt.Printf("Hamsfiles:     (profile dir not found)\n")
+			fmt.Println(i18n.T(i18n.StoreStatusHamsfilesMissing))
 		}
 		if gitStatus != "" {
-			fmt.Printf("Git status:    %s\n", gitStatus)
+			fmt.Println(i18n.Tf(i18n.StoreStatusGit, map[string]any{"Status": gitStatus}))
 		}
 
 		return nil
@@ -1173,7 +1198,7 @@ func storeCmd() *cli.Command {
 					storePath := cfg.StorePath
 					if storePath == "" {
 						return hamserr.NewUserError(hamserr.ExitUsageError,
-							"no store directory configured",
+							i18n.T(i18n.ProviderErrNoStore),
 							"Set store_path first: hams config set store_path <path>",
 						)
 					}
@@ -1186,15 +1211,13 @@ func storeCmd() *cli.Command {
 					// `hams --dry-run store init` performed the real
 					// init — matches cycle 143's push/pull fix.
 					if flags.DryRun {
-						fmt.Printf("[dry-run] Would initialize store at %s\n", logging.TildePath(storePath))
-						fmt.Printf("  Would create profile dir:    %s\n", logging.TildePath(cfg.ProfileDir()))
-						fmt.Printf("  Would create state dir:      %s\n", logging.TildePath(cfg.StateDir()))
-						fmt.Printf("  Would create %s/hams.config.yaml (if missing)\n",
-							logging.TildePath(storePath))
-						fmt.Printf("  Would create %s/.gitignore (if missing)\n",
-							logging.TildePath(storePath))
+						fmt.Println(i18n.Tf(i18n.StoreInitDryRunHeader, map[string]any{"Path": logging.TildePath(storePath)}))
+						fmt.Println(i18n.Tf(i18n.StoreInitDryRunProfileDir, map[string]any{"Path": logging.TildePath(cfg.ProfileDir())}))
+						fmt.Println(i18n.Tf(i18n.StoreInitDryRunStateDir, map[string]any{"Path": logging.TildePath(cfg.StateDir())}))
+						fmt.Println(i18n.Tf(i18n.StoreInitDryRunConfigFile, map[string]any{"Path": logging.TildePath(storePath)}))
+						fmt.Println(i18n.Tf(i18n.StoreInitDryRunGitignore, map[string]any{"Path": logging.TildePath(storePath)}))
 						if cfg.ProfileTag == "" && term.IsTerminal(int(os.Stdin.Fd())) { //nolint:gosec // Fd() returns uintptr that fits in int on all supported platforms
-							fmt.Println("  Would prompt for profile_tag + machine_id (TTY detected)")
+							fmt.Println(i18n.T(i18n.StoreInitDryRunPromptNotice))
 						}
 						return nil
 					}
@@ -1263,10 +1286,10 @@ func storeCmd() *cli.Command {
 						}
 					}
 
-					fmt.Printf("Store initialized at %s\n", logging.TildePath(storePath))
-					fmt.Printf("  Profile dir: %s\n", logging.TildePath(profileDir))
-					fmt.Printf("  State dir:   %s\n", logging.TildePath(stateDir))
-					fmt.Printf("  .gitignore:  %s\n", logging.TildePath(gitignorePath))
+					fmt.Println(i18n.Tf(i18n.StoreInitDone, map[string]any{"Path": logging.TildePath(storePath)}))
+					fmt.Println(i18n.Tf(i18n.StoreInitDoneProfileDir, map[string]any{"Path": logging.TildePath(profileDir)}))
+					fmt.Println(i18n.Tf(i18n.StoreInitDoneStateDir, map[string]any{"Path": logging.TildePath(stateDir)}))
+					fmt.Println(i18n.Tf(i18n.StoreInitDoneGitignore, map[string]any{"Path": logging.TildePath(gitignorePath)}))
 					return nil
 				},
 			},
@@ -1314,8 +1337,10 @@ func storeCmd() *cli.Command {
 					// global flag's documented contract ("Show what would
 					// be done without making changes").
 					if flags.DryRun {
-						fmt.Printf("[dry-run] Would commit changes in %s with message %q and push to origin\n",
-							logging.TildePath(storePath), commitMsg)
+						fmt.Println(i18n.Tf(i18n.StoreCommitDryRun, map[string]any{
+							"Path": logging.TildePath(storePath),
+							"Msg":  fmt.Sprintf("%q", commitMsg),
+						}))
 						return nil
 					}
 
@@ -1336,8 +1361,8 @@ func storeCmd() *cli.Command {
 					storePath := cfg.StorePath
 					if storePath == "" {
 						return hamserr.NewUserError(hamserr.ExitUsageError,
-							"no store directory configured",
-							"Set store_path in ~/.config/hams/hams.config.yaml",
+							i18n.T(i18n.ProviderErrNoStore),
+							i18n.T(i18n.UFENoStoreConfiguredSuggestSet),
 						)
 					}
 
@@ -1350,8 +1375,7 @@ func storeCmd() *cli.Command {
 					// via rebase. Skip it under --dry-run so the global
 					// flag's "no changes" contract holds.
 					if flags.DryRun {
-						fmt.Printf("[dry-run] Would run: git -C %s pull --rebase\n",
-							logging.TildePath(storePath))
+						fmt.Println(i18n.Tf(i18n.StorePullDryRun, map[string]any{"Path": logging.TildePath(storePath)}))
 						return nil
 					}
 
@@ -1606,7 +1630,11 @@ func listCmd(registry *provider.Registry) *cli.Command {
 					}
 				} else {
 					noun := pluralize(len(filteredIDs), "resource", "resources")
-					fmt.Printf("\n%s (%d %s):\n", displayName, len(filteredIDs), noun)
+					fmt.Println(i18n.Tf(i18n.ListGroupHeader, map[string]any{
+						"DisplayName": displayName,
+						"Count":       len(filteredIDs),
+						"Noun":        noun,
+					}))
 					for _, id := range filteredIDs {
 						r := sf.Resources[id]
 						status := string(r.State)
@@ -1654,14 +1682,14 @@ func listCmd(registry *provider.Registry) *cli.Command {
 				// misleading in the latter case.
 				switch {
 				case hadAnyResources:
-					fmt.Println("No resources match the current filter.")
+					fmt.Println(i18n.T(i18n.ListNoResourcesFilter))
 					if statusFilter != "" {
-						fmt.Printf("  --status=%q matched zero entries. Try without it or widen the set.\n", statusFilter)
+						fmt.Println(i18n.Tf(i18n.ListNoResourcesStatus, map[string]any{"Status": fmt.Sprintf("%q", statusFilter)}))
 					}
 				default:
-					fmt.Println("No managed resources found.")
-					fmt.Println("Run 'hams <provider> install <package>' to start managing resources,")
-					fmt.Println("or 'hams apply' to replay configurations from the store.")
+					fmt.Println(i18n.T(i18n.ListNoResourcesEmpty))
+					fmt.Println(i18n.T(i18n.ListNoResourcesEmptyLine1))
+					fmt.Println(i18n.T(i18n.ListNoResourcesEmptyLine2))
 				}
 			}
 
@@ -1699,10 +1727,10 @@ func runSelfUpgrade(ctx context.Context, flags *provider.GlobalFlags) error {
 
 func runHomebrewUpgrade(ctx context.Context, flags *provider.GlobalFlags) error {
 	if flags.DryRun {
-		fmt.Println("[dry-run] Would run: brew upgrade zthxxx/tap/hams")
+		fmt.Println(i18n.T(i18n.UpgradeBrewDryRun))
 		return nil
 	}
-	fmt.Println("Detected Homebrew install, running brew upgrade...")
+	fmt.Println(i18n.T(i18n.UpgradeBrewDetected))
 	cmd := exec.CommandContext(ctx, "brew", "upgrade", "zthxxx/tap/hams")
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
@@ -1723,7 +1751,7 @@ func runBinaryUpgrade(ctx context.Context, flags *provider.GlobalFlags) error {
 	}
 
 	if selfupdate.IsUpToDate(current, release.Version) {
-		fmt.Printf("Already up-to-date (version %s)\n", current)
+		fmt.Println(i18n.Tf(i18n.UpgradeAlreadyUpToDate, map[string]any{"Version": current}))
 		return nil
 	}
 
@@ -1743,8 +1771,12 @@ func runBinaryUpgrade(ctx context.Context, flags *provider.GlobalFlags) error {
 	}
 
 	if flags.DryRun {
-		fmt.Printf("[dry-run] Would download %s and upgrade hams from v%s to v%s\n", wantName, current, release.Version)
-		fmt.Printf("[dry-run]   asset URL: %s\n", downloadURL)
+		fmt.Println(i18n.Tf(i18n.UpgradeDryRun, map[string]any{
+			"Asset":   wantName,
+			"Current": current,
+			"Target":  release.Version,
+		}))
+		fmt.Println(i18n.Tf(i18n.UpgradeDryRunAssetURL, map[string]any{"URL": downloadURL}))
 		return nil
 	}
 
@@ -1768,7 +1800,11 @@ func runBinaryUpgrade(ctx context.Context, flags *provider.GlobalFlags) error {
 			"release", release.Version, "asset", wantName)
 	}
 
-	fmt.Printf("Downloading %s (v%s -> v%s)...\n", wantName, current, release.Version)
+	fmt.Println(i18n.Tf(i18n.UpgradeDownloading, map[string]any{
+		"Asset":   wantName,
+		"Current": current,
+		"Target":  release.Version,
+	}))
 	body, err := updater.DownloadAsset(ctx, downloadURL)
 	if err != nil {
 		return fmt.Errorf("downloading release: %w", err)
@@ -1784,6 +1820,9 @@ func runBinaryUpgrade(ctx context.Context, flags *provider.GlobalFlags) error {
 		return fmt.Errorf("replacing binary: %w", err)
 	}
 
-	fmt.Printf("Successfully upgraded hams from v%s to v%s\n", current, release.Version)
+	fmt.Println(i18n.Tf(i18n.UpgradeSuccess, map[string]any{
+		"Current": current,
+		"Target":  release.Version,
+	}))
 	return nil
 }

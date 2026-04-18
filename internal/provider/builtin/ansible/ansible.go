@@ -172,7 +172,7 @@ func (p *Provider) HandleCommand(ctx context.Context, args []string, _ map[strin
 	}
 
 	if flags.DryRun {
-		fmt.Printf("[dry-run] Would run: ansible-playbook %s\n", strings.Join(args, " "))
+		fmt.Println(i18n.Tf(i18n.ProviderStatusDryRunRun, map[string]any{"Cmd": "ansible-playbook " + strings.Join(args, " ")}))
 		return nil
 	}
 
