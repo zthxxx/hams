@@ -11,6 +11,7 @@ import (
 	"github.com/zthxxx/hams/internal/config"
 	"github.com/zthxxx/hams/internal/hamsfile"
 	"github.com/zthxxx/hams/internal/provider"
+	"github.com/zthxxx/hams/internal/provider/baseprovider"
 	"github.com/zthxxx/hams/internal/state"
 )
 
@@ -853,7 +854,7 @@ func TestPlan_VersionDriftEmitsUpdate(t *testing.T) {
 	h := newHarness(t)
 
 	// Seed hamsfile with `{app: nginx, version: "1.24.0"}` via the new helper.
-	hf, err := h.provider.loadOrCreateHamsfile(nil, h.flags)
+	hf, err := baseprovider.LoadOrCreateHamsfile(h.provider.cfg, h.provider.Manifest().FilePrefix, nil, h.flags)
 	if err != nil {
 		t.Fatalf("loadOrCreateHamsfile: %v", err)
 	}
@@ -905,7 +906,7 @@ func TestPlan_VersionDriftEmitsUpdate(t *testing.T) {
 // U28: Plan emits Skip when observed matches requested (no drift).
 func TestPlan_VersionMatchEmitsSkip(t *testing.T) {
 	h := newHarness(t)
-	hf, err := h.provider.loadOrCreateHamsfile(nil, h.flags)
+	hf, err := baseprovider.LoadOrCreateHamsfile(h.provider.cfg, h.provider.Manifest().FilePrefix, nil, h.flags)
 	if err != nil {
 		t.Fatalf("loadOrCreateHamsfile: %v", err)
 	}
@@ -1068,7 +1069,7 @@ func TestHandleCommand_BareInstallClearsPriorPin(t *testing.T) {
 // the hamsfile-declared pin via action.Resource. Locks in finding I.
 func TestPlan_HamsfilePinReplaysOnFreshMachine(t *testing.T) {
 	h := newHarness(t)
-	hf, err := h.provider.loadOrCreateHamsfile(nil, h.flags)
+	hf, err := baseprovider.LoadOrCreateHamsfile(h.provider.cfg, h.provider.Manifest().FilePrefix, nil, h.flags)
 	if err != nil {
 		t.Fatalf("loadOrCreateHamsfile: %v", err)
 	}
@@ -1156,7 +1157,7 @@ func TestApply_FallsBackToIDWhenResourceEmpty(t *testing.T) {
 // pin. Locks in the round-5 finding I fix.
 func TestPlan_PinnedSkipCarriesPinMetadataEvenWithoutDrift(t *testing.T) {
 	h := newHarness(t)
-	hf, err := h.provider.loadOrCreateHamsfile(nil, h.flags)
+	hf, err := baseprovider.LoadOrCreateHamsfile(h.provider.cfg, h.provider.Manifest().FilePrefix, nil, h.flags)
 	if err != nil {
 		t.Fatalf("loadOrCreateHamsfile: %v", err)
 	}
@@ -1334,7 +1335,7 @@ func TestHandleCommand_U37_RemoveWithPinKeysStateOnBareName(t *testing.T) {
 // hash-promotes Skip→Update.
 func TestPlan_UnpinClearsStaleStatePin(t *testing.T) {
 	h := newHarness(t)
-	hf, err := h.provider.loadOrCreateHamsfile(nil, h.flags)
+	hf, err := baseprovider.LoadOrCreateHamsfile(h.provider.cfg, h.provider.Manifest().FilePrefix, nil, h.flags)
 	if err != nil {
 		t.Fatalf("loadOrCreateHamsfile: %v", err)
 	}
