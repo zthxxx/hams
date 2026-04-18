@@ -158,13 +158,7 @@ Outstanding tasks:
   - [ ] Update `openspec/specs/provider-system/spec.md` with a new "Passthrough for Unhandled Subcommands" requirement.
   - [ ] Verification: `task check` passes; integration test exercises `hams git log`, `hams git status`.
 
-- [ ] **tag-profile-conflict-detection** — Add `Tag string` field to `provider.GlobalFlags`, add `config.ResolveCLITagOverride(cliTag, cliProfile) (string, error)` + `config.DeriveMachineID()` helpers, wire into apply + provider_cmd. When both `--tag` and `--profile` are provided with different values, emit UFE + i18n key. Reference: `/tmp/hams-loop/internal/config/resolve.go`.
-  - [ ] Add `Tag` field on `GlobalFlags`; parse `--tag` into it (separate from `Profile`).
-  - [ ] Create `internal/config/resolve.go` with `ResolveCLITagOverride` + `DeriveMachineID` + `HostnameLookup` DI seam.
-  - [ ] Wire resolver into `internal/cli/apply.go` + `internal/cli/provider_cmd.go`.
-  - [ ] New i18n key `cli.err.tag-profile-conflict` with en/zh-CN translations.
-  - [ ] Unit tests (rapid-based property tests for the resolver).
-  - [ ] Verification: `task check` passes.
+- [x] **tag-profile-conflict-detection** — Done 2026-04-18 (openspec/changes/2026-04-18-tag-profile-conflict-detection/). `Tag` field added to `provider.GlobalFlags` (separate from `Profile`); `Out`/`Err` io.Writer seams added with `Stdout()`/`Stderr()` accessors + `EffectiveTag()` shim. `config.ResolveCLITagOverride` / `ResolveActiveTag` / `DeriveMachineID` / `HostnameLookup` seam shipped in `internal/config/resolve.go`. `--tag` and `--profile` now register as sibling `StringFlag`s (not aliases); `apply.go` / `commands.go` / `provider_cmd.go` / `register.go` call the resolver at action entry. i18n key `cli.err.tag-profile-conflict` added to en + zh-CN. Property-based tests cover precedence + conflict branch; deterministic tests cover DeriveMachineID env/hostname/error paths.
 
 - [ ] **typed-i18n-keys** — Add `internal/i18n/keys.go` with typed constants for every message ID currently referenced. Refactor every `i18n.T("literal")` / `i18n.Tf("literal", …)` call-site to use `i18n.T(i18n.KeyName)`. Reference: `/tmp/hams-loop/internal/i18n/keys.go`.
   - [ ] Create `internal/i18n/keys.go` listing every ID currently in `locales/*.yaml` with doc comments.

@@ -97,7 +97,7 @@ func autoInitForProvider(flags *provider.GlobalFlags) error {
 		return nil
 	}
 	paths := resolvePaths(flags)
-	cfg, _ := config.Load(paths, "", flags.Profile) //nolint:errcheck // best-effort; auto-init still runs even when load fails so a corrupt config doesn't block first-run
+	cfg, _ := config.Load(paths, "", flags.EffectiveTag()) //nolint:errcheck // best-effort; auto-init still runs even when load fails so a corrupt config doesn't block first-run
 	if cfg != nil && cfg.StorePath != "" {
 		return nil
 	}
@@ -181,9 +181,9 @@ func parseProviderArgs(args []string, flags *provider.GlobalFlags) (hamsFlags ma
 			flags.Profile = args[i+1]
 			skip = true
 		case strings.HasPrefix(arg, "--tag="):
-			flags.Profile = strings.TrimPrefix(arg, "--tag=")
+			flags.Tag = strings.TrimPrefix(arg, "--tag=")
 		case arg == "--tag" && i+1 < len(args):
-			flags.Profile = args[i+1]
+			flags.Tag = args[i+1]
 			skip = true
 		default:
 			passthrough = append(passthrough, arg)
@@ -255,9 +255,9 @@ func stripGlobalFlags(args []string, flags *provider.GlobalFlags) []string {
 			flags.Profile = args[i+1]
 			skip = true
 		case strings.HasPrefix(arg, "--tag="):
-			flags.Profile = strings.TrimPrefix(arg, "--tag=")
+			flags.Tag = strings.TrimPrefix(arg, "--tag=")
 		case arg == "--tag" && i+1 < len(args):
-			flags.Profile = args[i+1]
+			flags.Tag = args[i+1]
 			skip = true
 		default:
 			cleaned = append(cleaned, arg)

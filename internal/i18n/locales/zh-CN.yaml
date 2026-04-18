@@ -63,3 +63,9 @@
 
 - id: git.unknown_subcommand
   other: "未识别的 git 子命令 {{.Sub}}"
+
+# ---------------------------------------------------------------------------
+# CLI framework errors — top-level hams command validation
+# ---------------------------------------------------------------------------
+- id: cli.err.tag-profile-conflict
+  other: "--tag 与 --profile 提供了不同的值"

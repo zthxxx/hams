@@ -65,3 +65,10 @@
 
 - id: git.unknown_subcommand
   other: "unknown git subcommand {{.Sub}}"
+
+# ---------------------------------------------------------------------------
+# CLI framework errors — top-level hams command validation
+# (cf. openspec/changes/2026-04-18-tag-profile-conflict-detection/)
+# ---------------------------------------------------------------------------
+- id: cli.err.tag-profile-conflict
+  other: "--tag and --profile supplied with different values"

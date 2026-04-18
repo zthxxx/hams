@@ -119,12 +119,16 @@ func runRefresh(ctx context.Context, flags *provider.GlobalFlags, registry *prov
 	cleanupLog := SetupLogging(flags)
 	defer cleanupLog()
 
-	cfg, err := config.Load(paths, flags.Store, flags.Profile)
+	cliTagOverride, tagResolveErr := config.ResolveCLITagOverride(flags.Tag, flags.Profile)
+	if tagResolveErr != nil {
+		return tagResolveErr
+	}
+	cfg, err := config.Load(paths, flags.Store, cliTagOverride)
 	if err != nil {
 		return fmt.Errorf("loading config: %w", err)
 	}
-	if flags.Profile != "" {
-		// Cycle 219 puts the --profile overlay inside config.Load, so
+	if cliTagOverride != "" {
+		// Cycle 219 puts the tag overlay inside config.Load, so
 		// cfg.ProfileTag already reflects the override. Refresh still
 		// hard-fails when the resulting profile dir doesn't exist
 		// (cycle 93's no-silent-typo guarantee), so the validation
@@ -132,7 +136,7 @@ func runRefresh(ctx context.Context, flags *provider.GlobalFlags, registry *prov
 		profileDir := cfg.ProfileDir()
 		if info, statErr := os.Stat(profileDir); statErr != nil || !info.IsDir() {
 			return hamserr.NewUserError(hamserr.ExitUsageError,
-				fmt.Sprintf("profile %q not found at %s", flags.Profile, profileDir),
+				fmt.Sprintf("profile %q not found at %s", cliTagOverride, profileDir),
 				"Check available profiles: ls "+cfg.StorePath,
 				"Or create this profile: mkdir -p "+profileDir,
 			)
@@ -506,7 +510,11 @@ func configCmd() *cli.Command {
 				Action: func(_ context.Context, cmd *cli.Command) error {
 					flags := globalFlags(cmd)
 					paths := resolvePaths(flags)
-					cfg, loadErr := config.Load(paths, flags.Store, flags.Profile)
+					cliTagOverride, tagResolveErr := config.ResolveCLITagOverride(flags.Tag, flags.Profile)
+					if tagResolveErr != nil {
+						return tagResolveErr
+					}
+					cfg, loadErr := config.Load(paths, flags.Store, cliTagOverride)
 					if loadErr != nil {
 						return fmt.Errorf("loading config: %w", loadErr)
 					}
@@ -575,7 +583,7 @@ func configCmd() *cli.Command {
 					}
 					flags := globalFlags(cmd)
 					paths := resolvePaths(flags)
-					cfg, loadErr := config.Load(paths, flags.Store, flags.Profile)
+					cfg, loadErr := config.Load(paths, flags.Store, flags.EffectiveTag())
 					if loadErr != nil {
 						return fmt.Errorf("loading config: %w", loadErr)
 					}
@@ -1025,7 +1033,7 @@ func storeCmd() *cli.Command {
 	storeStatusAction := func(ctx context.Context, cmd *cli.Command) error {
 		flags := globalFlags(cmd)
 		paths := resolvePaths(flags)
-		cfg, err := config.Load(paths, flags.Store, flags.Profile)
+		cfg, err := config.Load(paths, flags.Store, flags.EffectiveTag())
 		if err != nil {
 			return fmt.Errorf("loading config: %w", err)
 		}
@@ -1157,7 +1165,7 @@ func storeCmd() *cli.Command {
 				Action: func(_ context.Context, cmd *cli.Command) error {
 					flags := globalFlags(cmd)
 					paths := resolvePaths(flags)
-					cfg, err := config.Load(paths, flags.Store, flags.Profile)
+					cfg, err := config.Load(paths, flags.Store, flags.EffectiveTag())
 					if err != nil {
 						return fmt.Errorf("loading config: %w", err)
 					}
@@ -1275,7 +1283,7 @@ func storeCmd() *cli.Command {
 				Action: func(ctx context.Context, cmd *cli.Command) error {
 					flags := globalFlags(cmd)
 					paths := resolvePaths(flags)
-					cfg, err := config.Load(paths, flags.Store, flags.Profile)
+					cfg, err := config.Load(paths, flags.Store, flags.EffectiveTag())
 					if err != nil {
 						return fmt.Errorf("loading config: %w", err)
 					}
@@ -1320,7 +1328,7 @@ func storeCmd() *cli.Command {
 				Action: func(ctx context.Context, cmd *cli.Command) error {
 					flags := globalFlags(cmd)
 					paths := resolvePaths(flags)
-					cfg, err := config.Load(paths, flags.Store, flags.Profile)
+					cfg, err := config.Load(paths, flags.Store, flags.EffectiveTag())
 					if err != nil {
 						return fmt.Errorf("loading config: %w", err)
 					}
@@ -1434,7 +1442,11 @@ func listCmd(registry *provider.Registry) *cli.Command {
 			}
 			flags := globalFlags(cmd)
 			paths := resolvePaths(flags)
-			cfg, err := config.Load(paths, flags.Store, flags.Profile)
+			cliTagOverride, tagResolveErr := config.ResolveCLITagOverride(flags.Tag, flags.Profile)
+			if tagResolveErr != nil {
+				return tagResolveErr
+			}
+			cfg, err := config.Load(paths, flags.Store, cliTagOverride)
 			if err != nil {
 				return fmt.Errorf("loading config: %w", err)
 			}
@@ -1443,13 +1455,13 @@ func listCmd(registry *provider.Registry) *cli.Command {
 			// 219 promoted the overlay into config.Load itself, so
 			// cfg.ProfileTag already reflects the override here. Keep
 			// the per-command stat: list still hard-fails on a
-			// missing/typo'd --profile so users don't see the
-			// misleading "No managed resources found" fallback.
-			if flags.Profile != "" {
+			// missing/typo'd --tag so users don't see the misleading
+			// "No managed resources found" fallback.
+			if cliTagOverride != "" {
 				profileDir := cfg.ProfileDir()
 				if info, statErr := os.Stat(profileDir); statErr != nil || !info.IsDir() {
 					return hamserr.NewUserError(hamserr.ExitUsageError,
-						fmt.Sprintf("profile %q not found at %s", flags.Profile, profileDir),
+						fmt.Sprintf("profile %q not found at %s", cliTagOverride, profileDir),
 						"Check available profiles: ls "+cfg.StorePath,
 						"Or create this profile: mkdir -p "+profileDir,
 					)

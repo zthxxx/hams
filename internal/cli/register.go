@@ -121,7 +121,7 @@ func loadBuiltinProviderConfig() *config.Config {
 
 	paths := resolvePaths(flags)
 
-	cfg, err := config.Load(paths, flags.Store, flags.Profile)
+	cfg, err := config.Load(paths, flags.Store, flags.EffectiveTag())
 	if err != nil {
 		slog.Warn("failed to load config for builtin providers", "error", err)
 		cfg = &config.Config{}

@@ -144,10 +144,20 @@ func runApply(ctx context.Context, flags *provider.GlobalFlags, registry *provid
 	cleanupLog := SetupLogging(flags)
 	defer cleanupLog()
 
+	// Resolve --tag/--profile into a single value up front so the rest
+	// of apply.go sees one consistent override regardless of which form
+	// the user typed. Fails fast on the conflict case (--tag=X
+	// --profile=Y with X != Y) so corrupt precedence never leaks into
+	// deeper layers.
+	cliTagOverride, tagResolveErr := config.ResolveCLITagOverride(flags.Tag, flags.Profile)
+	if tagResolveErr != nil {
+		return tagResolveErr
+	}
+
 	storePath := flags.Store
 	var configuredRepo string
 	if storePath == "" {
-		cfg, err := config.Load(paths, "", flags.Profile)
+		cfg, err := config.Load(paths, "", cliTagOverride)
 		if err != nil {
 			// Previously this error was swallowed — which meant malformed
 			// YAML in ~/.config/hams/hams.config.yaml was demoted into a
@@ -241,23 +251,23 @@ func runApply(ctx context.Context, flags *provider.GlobalFlags, registry *provid
 		)
 	}
 
-	cfg, err := config.Load(paths, storePath, flags.Profile)
+	cfg, err := config.Load(paths, storePath, cliTagOverride)
 	if err != nil {
 		return fmt.Errorf("loading config: %w", err)
 	}
 
-	// Cycle 219 puts the --profile overlay inside config.Load, so
+	// Cycle 219 puts the tag overlay inside config.Load, so
 	// cfg.ProfileTag already reflects the override. Apply still
 	// hard-fails when the resulting profile dir doesn't exist
 	// (cycle 92's no-silent-typo guarantee), so the validation stays
-	// in place — a typo like `--profile=Linux` (vs "linux") used to
+	// in place — a typo like `--tag=Linux` (vs "linux") used to
 	// produce a misleading "No providers match" + exit 0 instead of
 	// "profile directory not found".
-	if flags.Profile != "" {
+	if cliTagOverride != "" {
 		profileDir := cfg.ProfileDir()
 		if info, statErr := os.Stat(profileDir); statErr != nil || !info.IsDir() {
 			return hamserr.NewUserError(hamserr.ExitUsageError,
-				fmt.Sprintf("profile %q not found at %s", flags.Profile, profileDir),
+				fmt.Sprintf("profile %q not found at %s", cliTagOverride, profileDir),
 				"Check available profiles: ls "+storePath,
 				"Or create this profile: mkdir -p "+profileDir,
 			)

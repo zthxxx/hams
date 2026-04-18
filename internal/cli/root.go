@@ -24,9 +24,12 @@ import (
 
 // globalFlags extracts GlobalFlags from the urfave/cli context.
 //
-// `--tag` is the canonical name; `--profile` is registered as an alias on
-// the same flag (see globalFlagDefs), so cmd.String("tag") returns the
-// value regardless of which form the user typed.
+// `--tag` is the canonical flag; `--profile` is a legacy alias kept as a
+// separate flag so config.ResolveCLITagOverride can detect conflicts.
+// Callers that need the resolved single value SHOULD call
+// config.ResolveCLITagOverride(flags.Tag, flags.Profile) rather than
+// picking one field themselves — that keeps the "loud error when they
+// disagree" contract in a single place.
 func globalFlags(cmd *cli.Command) *provider.GlobalFlags {
 	return &provider.GlobalFlags{
 		Debug:   cmd.Bool("debug"),
@@ -35,7 +38,8 @@ func globalFlags(cmd *cli.Command) *provider.GlobalFlags {
 		NoColor: cmd.Bool("no-color"),
 		Config:  cmd.String("config"),
 		Store:   cmd.String("store"),
-		Profile: cmd.String("tag"),
+		Tag:     cmd.String("tag"),
+		Profile: cmd.String("profile"),
 	}
 }
 
@@ -254,10 +258,17 @@ func globalFlagDefs() []cli.Flag {
 		&cli.BoolFlag{Name: "no-color", Usage: "Disable colored output"},
 		&cli.StringFlag{Name: "config", Usage: "Override config file path"},
 		&cli.StringFlag{Name: "store", Usage: "Override store directory path"},
+		// --tag and --profile are registered separately (NOT as aliases) so
+		// config.ResolveCLITagOverride can detect `--tag=macOS --profile=linux`
+		// conflict. An alias collapses them too early (urfave/cli's last-
+		// value-wins makes the conflict impossible to observe).
 		&cli.StringFlag{
-			Name:    "tag",
-			Aliases: []string{"profile"},
-			Usage:   "Active profile tag (precedence: --tag > config tag > default 'default'). Aliases --profile for back-compat.",
+			Name:  "tag",
+			Usage: "Active profile tag (canonical). Precedence: --tag > --profile > config tag > 'default'.",
+		},
+		&cli.StringFlag{
+			Name:  "profile",
+			Usage: "Legacy alias of --tag. If both are supplied with different values, hams errors out.",
 		},
 	}
 }
