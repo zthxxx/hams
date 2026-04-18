@@ -32,7 +32,7 @@ const DefaultProfileTag = "default"
 func ResolveCLITagOverride(cliTag, cliProfile string) (string, error) {
 	if cliTag != "" && cliProfile != "" && cliTag != cliProfile {
 		return "", hamserr.NewUserError(hamserr.ExitUsageError,
-			i18n.T("cli.err.tag-profile-conflict"),
+			i18n.T(i18n.CLIErrTagProfileConflict),
 			"Remove either --tag="+cliTag+" or --profile="+cliProfile,
 		)
 	}

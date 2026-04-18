@@ -66,7 +66,7 @@ func EnsureGlobalConfig(paths config.Paths) error {
 	}
 	// i18n user-facing line: surfaces to TTY users so the auto-init is
 	// visible. slog still records structured fields for log scraping.
-	fmt.Fprintln(os.Stderr, i18n.Tf("autoinit.global_config_created", map[string]any{
+	fmt.Fprintln(os.Stderr, i18n.Tf(i18n.AutoInitGlobalConfigCreated, map[string]any{
 		"Path":      logging.TildePath(target),
 		"Tag":       DefaultTag,
 		"MachineID": machineID,
@@ -129,7 +129,7 @@ func EnsureStoreReady(paths config.Paths, cfg *config.Config, cliOverride string
 
 	// i18n user-facing line so first-run users see WHERE the store
 	// landed without scraping slog records.
-	fmt.Fprintln(os.Stderr, i18n.Tf("autoinit.store_created", map[string]any{
+	fmt.Fprintln(os.Stderr, i18n.Tf(i18n.AutoInitStoreCreated, map[string]any{
 		"Path": logging.TildePath(target),
 	}))
 	slog.Info("auto-initialized hams store",

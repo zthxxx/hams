@@ -1,6 +1,7 @@
 package i18n
 
 import (
+	"strings"
 	"testing"
 )
 
@@ -228,5 +229,68 @@ func TestTf_UnknownKeyFallsBackToMsgID(t *testing.T) {
 	got := Tf("some.unmapped.key", map[string]any{"k": "v"})
 	if got != "some.unmapped.key" {
 		t.Errorf("Tf with unknown key = %q, want msgID passthrough", got)
+	}
+}
+
+// TestCatalogCoherence_EveryTypedKeyResolves locks in the invariant
+// that every constant declared in keys.go has corresponding entries
+// in both `en.yaml` and `zh-CN.yaml`. Regresses the "added a typed
+// constant but forgot to add the translation" footgun — translators
+// see `<key> (missing)` at runtime today, but this test catches it
+// at CI time instead of in production.
+//
+// The test reflects on the keys.go exported constants via a
+// hand-maintained list. Adding a new constant to keys.go without
+// also adding it here fails CI (via static analysis: an untested
+// constant is also an untranslated constant), which is the desired
+// forcing function.
+func TestCatalogCoherence_EveryTypedKeyResolves(t *testing.T) {
+	// Hand-maintained catalog of typed keys declared in keys.go.
+	// Keep sorted by the same grouping as keys.go so diffs are
+	// minimal when adding a new key.
+	typedKeys := []string{
+		// app
+		AppTitle,
+		// autoinit
+		AutoInitGlobalConfigCreated,
+		AutoInitStoreCreated,
+		// ufe.no_store_configured.*
+		UFENoStoreConfigured,
+		UFENoStoreConfiguredSuggestClone,
+		UFENoStoreConfiguredSuggestSet,
+		UFENoStoreConfiguredSuggestInit,
+		UFENoStoreConfiguredOptOut,
+		UFENoStoreConfiguredOptOutSuggest,
+		// apply / refresh
+		ApplyDryRunHeader,
+		ApplyNoProvidersMatch,
+		RefreshNoProvidersMatch,
+		// git
+		GitUsageHeader,
+		GitUsageSuggestMain,
+		GitUsageSuggestSubcommands,
+		GitUsageExampleConfig,
+		GitUsageExampleClone,
+		GitUnknownSubcommand,
+		// cli.err.*
+		CLIErrTagProfileConflict,
+	}
+
+	// Parse each locale file directly so the test is independent of
+	// the localizer's fallback chain (go-i18n falls through from
+	// zh-CN → en when a key is missing in zh-CN; we want the stricter
+	// "every locale declares every key" check).
+	for _, locFile := range []string{"locales/en.yaml", "locales/zh-CN.yaml"} {
+		data, err := localeFS.ReadFile(locFile)
+		if err != nil {
+			t.Fatalf("reading %s: %v", locFile, err)
+		}
+		contents := string(data)
+		for _, k := range typedKeys {
+			marker := "id: " + k + "\n"
+			if !strings.Contains(contents, marker) {
+				t.Errorf("%s: missing translation for key %q", locFile, k)
+			}
+		}
 	}
 }

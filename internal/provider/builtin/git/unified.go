@@ -55,11 +55,11 @@ func (u *UnifiedHandler) DisplayName() string { return unifiedCLIName }
 func (u *UnifiedHandler) HandleCommand(ctx context.Context, args []string, hamsFlags map[string]string, flags *provider.GlobalFlags) error {
 	if len(args) == 0 {
 		return hamserr.NewUserError(hamserr.ExitUsageError,
-			i18n.T("git.usage.header"),
-			i18n.T("git.usage.suggest_main"),
-			i18n.T("git.usage.suggest_subcommands"),
-			i18n.T("git.usage.example_config"),
-			i18n.T("git.usage.example_clone"),
+			i18n.T(i18n.GitUsageHeader),
+			i18n.T(i18n.GitUsageSuggestMain),
+			i18n.T(i18n.GitUsageSuggestSubcommands),
+			i18n.T(i18n.GitUsageExampleConfig),
+			i18n.T(i18n.GitUsageExampleClone),
 		)
 	}
 	subcommand, rest := args[0], args[1:]
@@ -73,8 +73,8 @@ func (u *UnifiedHandler) HandleCommand(ctx context.Context, args []string, hamsF
 		return u.cloneProvider.HandleCommand(ctx, append([]string{"add"}, rest...), hamsFlags, flags)
 	default:
 		return hamserr.NewUserError(hamserr.ExitUsageError,
-			i18n.Tf("git.unknown_subcommand", map[string]any{"Sub": subcommand}),
-			i18n.T("git.usage.suggest_subcommands"),
+			i18n.Tf(i18n.GitUnknownSubcommand, map[string]any{"Sub": subcommand}),
+			i18n.T(i18n.GitUsageSuggestSubcommands),
 			"Run 'hams git --help' for usage.",
 		)
 	}

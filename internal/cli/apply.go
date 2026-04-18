@@ -219,10 +219,10 @@ func runApply(ctx context.Context, flags *provider.GlobalFlags, registry *provid
 		// via HAMS_NO_AUTO_INIT=1.
 		if IsAutoInitDisabled() {
 			return hamserr.NewUserError(hamserr.ExitUsageError,
-				i18n.T("ufe.no_store_configured.opt_out"),
-				i18n.T("ufe.no_store_configured.suggest_clone"),
-				i18n.T("ufe.no_store_configured.suggest_set"),
-				i18n.T("ufe.no_store_configured.opt_out_suggest"),
+				i18n.T(i18n.UFENoStoreConfiguredOptOut),
+				i18n.T(i18n.UFENoStoreConfiguredSuggestClone),
+				i18n.T(i18n.UFENoStoreConfiguredSuggestSet),
+				i18n.T(i18n.UFENoStoreConfiguredOptOutSuggest),
 			)
 		}
 		if ensureErr := EnsureGlobalConfig(paths); ensureErr != nil {
