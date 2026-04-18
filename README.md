@@ -44,7 +44,7 @@ hams apply --from-repo=your-username/hams-store --tag=macOS
 
 ## Features
 
-- **15 builtin providers, 13 CLI entry points**: Homebrew, apt, pnpm, npm, uv, goinstall, cargo, VS Code (`hams code` — internal `code`), mas (App Store), git (`hams git config` + `hams git clone` — internal `git-config` + `git-clone`), macOS defaults, duti, Ansible
+- **15 builtin providers, 13 CLI entry points**: Homebrew, apt, pnpm, npm, uv, goinstall, cargo, VS Code (`hams code` — internal `code`), mas (App Store), git (`hams git config` + `hams git clone` — internal `git-config` + `git-clone`; every other `hams git <verb>` passes straight through to real `git`), macOS defaults, duti, Ansible
 - **Terraform-style state**: tracks what's installed, retries failures, detects drift
 - **Comment-preserving YAML**: your Hamsfile comments survive round-trips
 - **Multi-machine profiles**: one git repo, multiple machine configs (macOS, Linux, OpenWrt)

@@ -44,7 +44,7 @@ hams apply --from-repo=your-username/hams-store --tag=macOS
 
 ## 特性
 
-- **15 个内置 Provider，13 个 CLI 入口**：Homebrew、apt、pnpm、npm、uv、goinstall、cargo、VS Code（`hams code`，内部名 `code`）、mas（App Store）、git（`hams git config` + `hams git clone`，内部名 `git-config` + `git-clone`）、macOS defaults、duti、Ansible
+- **15 个内置 Provider，13 个 CLI 入口**：Homebrew、apt、pnpm、npm、uv、goinstall、cargo、VS Code（`hams code`，内部名 `code`）、mas（App Store）、git（`hams git config` + `hams git clone`，内部名 `git-config` + `git-clone`；其余所有 `hams git <verb>` 原样透传到真 `git`）、macOS defaults、duti、Ansible
 - **Terraform 风格的状态管理**：跟踪已安装内容，自动重试失败项，检测配置漂移
 - **保留注释的 YAML**：你在 Hamsfile 中的注释不会丢失
 - **多机器 Profile**：一个 git 仓库，多台机器的配置（macOS、Linux、OpenWrt）
