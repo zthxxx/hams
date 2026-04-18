@@ -193,14 +193,15 @@ func TestT_ZhCN_FallbackForMissingKey(t *testing.T) {
 	}
 }
 
-func TestT_NilLocalizer_Passthrough(t *testing.T) {
-	// Reset localizer to nil.
-	prev := localizer
-	localizer = nil
-	t.Cleanup(func() { localizer = prev })
-
-	if got := T("hello world"); got != "hello world" {
-		t.Errorf("T() = %q, want 'hello world'", got)
+// TestT_UnknownKey_Passthrough asserts that T() returns the message ID
+// when the key isn't in any loaded locale file (covers the
+// "fall through to key" branch). The pre-lazy-init "nil localizer"
+// branch is no longer reachable from production code — ensureLocalizer
+// triggers Init() on first T()/Tf() call — so the legacy nil-locker
+// test was reduced to this single semantic check.
+func TestT_UnknownKey_Passthrough(t *testing.T) {
+	if got := T("nonexistent.message.id"); got != "nonexistent.message.id" {
+		t.Errorf("T() = %q, want msgID passthrough", got)
 	}
 }
 
@@ -217,18 +218,15 @@ func TestTf_WithTemplateData(t *testing.T) {
 	}
 }
 
-// TestTf_NilLocalizerFallsBackToMsgID asserts the early-return
-// branch of Tf: when Init() hasn't been called (or failed), the
-// package-level `localizer` is nil. Callers of Tf must get the
-// msgID back — NOT a panic. Previously 0% on that branch.
-func TestTf_NilLocalizerFallsBackToMsgID(t *testing.T) {
-	// Swap out any existing localizer to simulate "Init not called".
-	orig := localizer
-	localizer = nil
-	t.Cleanup(func() { localizer = orig })
-
-	got := Tf("some.key", map[string]any{"k": "v"})
-	if got != "some.key" {
-		t.Errorf("Tf with nil localizer = %q, want msgID passthrough", got)
+// TestTf_UnknownKeyFallsBackToMsgID asserts the unknown-key branch of
+// Tf: callers MUST get the msgID back — NOT a panic — when the
+// requested key isn't in any loaded locale file. The pre-lazy-init
+// "nil localizer" branch is no longer reachable from production code
+// (ensureLocalizer triggers Init() on first call); this single
+// unknown-key check now covers the entire fallback path.
+func TestTf_UnknownKeyFallsBackToMsgID(t *testing.T) {
+	got := Tf("some.unmapped.key", map[string]any{"k": "v"})
+	if got != "some.unmapped.key" {
+		t.Errorf("Tf with unknown key = %q, want msgID passthrough", got)
 	}
 }

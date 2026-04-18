@@ -1,0 +1,189 @@
+import { Callout } from 'nextra/components'
+
+# git Provider (`hams git`)
+
+Wraps the real `git` CLI behind a single hams entry point. Two subcommands today:
+
+- **`hams git config <key> <value>`** — manages git's global configuration. Redoing
+  `git config --global user.name "..."` on every new machine, fearing a typo in your email, is
+  the small annoyance this kills.
+- **`hams git clone <remote> <path>`** — manages git repositories you want present at specific
+  local paths. Typical uses: a dotfiles repo, personal notes, a frequently-used self-built
+  tool — anything you want in the same spot on every machine.
+
+The `hams git config` and `hams git clone` verbs route to two underlying providers
+(`git-config` and `git-clone`) — they keep separate hamsfiles + state files for back-compat with
+v1.0 stores, but the user-facing CLI is the natural git syntax.
+
+**Platforms:** macOS, Linux
+
+## `hams git config` — manage git's global config
+
+```bash
+# Set a value (and record it to the Hamsfile). Same shape as `git config`.
+hams git config user.name "Your Name"
+hams git config user.email "you@example.com"
+
+# Explicit verbs are also accepted
+hams git config set user.name "Your Name"
+hams git config remove rerere.autoUpdate
+
+# See what's managed
+hams git config list
+```
+
+### Hamsfile example
+
+```yaml
+# default/git-config.hams.yaml
+schema_version: 1
+provider: git-config
+
+groups:
+  - tag: identity
+    items:
+      - urn: "urn:hams:git-config:user-name"
+        step: Set git user name
+        key: user.name
+        value: "Your Name"
+      - urn: "urn:hams:git-config:user-email"
+        step: Set git user email
+        key: user.email
+        value: "you@example.com"
+
+  - tag: workflow
+    items:
+      - urn: "urn:hams:git-config:rerere"
+        step: Enable git rerere (remember conflict resolutions)
+        key: rerere.autoUpdate
+        value: "true"
+      - urn: "urn:hams:git-config:default-branch"
+        step: Default branch name for new repos
+        key: init.defaultBranch
+        value: "main"
+```
+
+Fields:
+
+- `urn` — hams's internal ID. Keep it readable.
+- `step` — a one-line description that shows up in apply logs.
+- `key` / `value` — exactly the `git config` key and value.
+
+### How state is probed
+
+For each entry, hams runs `git config --global --get <key>` and compares the result to the
+Hamsfile `value`. Match → `ok`. Different → `outdated`. Missing → `missing`. No magic, no
+surprises.
+
+### System vs user scope
+
+By default, hams writes to `--global` scope (your user's `~/.gitconfig`). Special cases:
+
+- **Repo-scope** (`--local`) — doesn't belong in hams at all. That's per-project config, and it
+  lives with the project.
+- **System-scope** (`--system`) — use the `bash` provider with `sudo git config --system ...`.
+
+### Handy patterns
+
+**Separate work and personal identity.** git's `includeIf` directive loads different configs based
+on where the repo sits. hams can manage both the directive and the pointer:
+
+```yaml
+- urn: "urn:hams:git-config:work-includeif"
+  step: Include work config when under ~/work/
+  key: 'includeIf."gitdir:~/work/".path'
+  value: ~/.gitconfig-work
+```
+
+**GPG signing.** The signing key ID is identity-level config, so this is a natural fit:
+
+```yaml
+- urn: "urn:hams:git-config:signing-key"
+  step: Set GPG signing key
+  key: user.signingkey
+  value: "AAAAAAAAAA"
+- urn: "urn:hams:git-config:commit-gpgsign"
+  step: Sign all commits
+  key: commit.gpgsign
+  value: "true"
+```
+
+<Callout type="tip">
+  **Don't** put sensitive values into the committed Hamsfile. Tokens, the GPG key's private ID,
+  anything secret — put them in `git-config.hams.local.yaml` (gitignored) or the system keychain.
+</Callout>
+
+## `hams git clone` — keep repos at known paths
+
+```bash
+# Clone a repo to a local path. Same shape as `git clone`.
+hams git clone https://github.com/zthxxx/dotfiles ~/Projects/dotfiles
+
+# See what's managed
+hams git clone list
+
+# Remove (stops managing; leaves the local files alone)
+hams git clone remove ~/Projects/dotfiles
+```
+
+### Hamsfile example
+
+```yaml
+# default/git-clone.hams.yaml
+schema_version: 1
+provider: git-clone
+
+groups:
+  - tag: personal
+    items:
+      - urn: "urn:hams:git-clone:dotfiles"
+        step: Clone dotfiles repository
+        remote: https://github.com/zthxxx/dotfiles.git
+        local_path: ~/Projects/dotfiles
+        default_branch: main
+
+      - urn: "urn:hams:git-clone:notes"
+        step: Clone personal notes
+        remote: git@github.com:zthxxx/notes.git
+        local_path: ~/Documents/notes
+```
+
+Fields:
+
+- `remote` — repo URL (HTTPS or SSH, your choice).
+- `local_path` — local target path. `~/` is expanded.
+- `default_branch` — optional. Checkout to this branch after cloning. If omitted, use the remote default.
+
+### How state is probed
+
+The check is pragmatic:
+
+1. Does `local_path` exist?
+2. If so, does `git -C <local_path> remote get-url origin` match the Hamsfile `remote`?
+3. Both match → `ok`.
+
+**hams doesn't pull for you.** Auto-pulling every apply would slow things down and occasionally
+cause conflicts. Deciding when to pull is your call.
+
+### go-git, not the system `git`
+
+The hams binary bundles [go-git](https://github.com/go-git/go-git), which means **the machine
+doesn't need `git` installed** for clone-based resources to work. That matters during
+bootstrap: you don't need to `brew install git` before starting an apply.
+
+### SSH authentication
+
+For SSH-style remotes (`git@github.com:...`), hams tries in order:
+
+1. Common key paths: `~/.ssh/id_ed25519`, `~/.ssh/id_rsa`, and similar.
+2. Keys loaded in a running `ssh-agent`.
+3. Falls back to interactive prompts if needed.
+
+The typical snag on a fresh machine: SSH keys haven't been set up yet. Two workarounds: use HTTPS
+URLs (pair with `gh auth login` or a PAT), or get SSH keys in place before running apply.
+
+<Callout type="tip">
+  `hams git clone` is for "I need this repo, at this exact path." If you just want to run a script
+  once, `curl | bash` inside a `bash` provider step is simpler. `hams git clone` earns its weight
+  when you want hams to **keep ensuring** the repo exists at the right location.
+</Callout>

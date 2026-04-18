@@ -29,11 +29,11 @@ hams brew install htop
 # 通过 pnpm 安装（自动添加 --global）
 hams pnpm add serve
 
-# 设置 git 配置并记录
-hams git-config user.name "Your Name"
+# 设置 git 配置并记录（natural git 语法走 `hams git`）
+hams git config user.name "Your Name"
 
-# 在新机器上恢复所有配置（如果还没装 brew，加上 --bootstrap）
-hams apply --bootstrap --from-repo=your-username/hams-store
+# 在新机器上一条命令恢复（如果还没装 brew，加上 --bootstrap）
+hams apply --from-repo=your-username/hams-store --tag=macOS
 ```
 
 ### 工作原理
@@ -44,7 +44,7 @@ hams apply --bootstrap --from-repo=your-username/hams-store
 
 ## 特性
 
-- **15 个内置 Provider**：Homebrew、apt、pnpm、npm、uv、goinstall、cargo、VS Code 扩展（`code-ext`）、mas（App Store）、git config/clone、macOS defaults、duti、Ansible
+- **15 个内置 Provider，13 个 CLI 入口**：Homebrew、apt、pnpm、npm、uv、goinstall、cargo、VS Code（`hams code`，内部名 `code-ext`）、mas（App Store）、git（`hams git config` + `hams git clone`，内部名 `git-config` + `git-clone`）、macOS defaults、duti、Ansible
 - **Terraform 风格的状态管理**：跟踪已安装内容，自动重试失败项，检测配置漂移
 - **保留注释的 YAML**：你在 Hamsfile 中的注释不会丢失
 - **多机器 Profile**：一个 git 仓库，多台机器的配置（macOS、Linux、OpenWrt）

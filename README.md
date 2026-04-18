@@ -29,11 +29,11 @@ hams brew install htop
 # Install via pnpm (auto-adds --global)
 hams pnpm add serve
 
-# Set git config and record it
-hams git-config user.name "Your Name"
+# Set git config and record it (natural git syntax via the unified `hams git`)
+hams git config user.name "Your Name"
 
-# Restore everything on a new machine (add --bootstrap if brew isn't installed yet)
-hams apply --bootstrap --from-repo=your-username/hams-store
+# Restore everything on a new machine in one command (add --bootstrap if brew isn't installed yet)
+hams apply --from-repo=your-username/hams-store --tag=macOS
 ```
 
 ### How It Works
@@ -44,7 +44,7 @@ hams apply --bootstrap --from-repo=your-username/hams-store
 
 ## Features
 
-- **15 builtin providers**: Homebrew, apt, pnpm, npm, uv, goinstall, cargo, VS Code Extensions (`code-ext`), mas (App Store), git config/clone, macOS defaults, duti, Ansible
+- **15 builtin providers, 13 CLI entry points**: Homebrew, apt, pnpm, npm, uv, goinstall, cargo, VS Code (`hams code` — internal `code-ext`), mas (App Store), git (`hams git config` + `hams git clone` — internal `git-config` + `git-clone`), macOS defaults, duti, Ansible
 - **Terraform-style state**: tracks what's installed, retries failures, detects drift
 - **Comment-preserving YAML**: your Hamsfile comments survive round-trips
 - **Multi-machine profiles**: one git repo, multiple machine configs (macOS, Linux, OpenWrt)

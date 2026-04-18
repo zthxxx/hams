@@ -23,10 +23,14 @@ No flags? It applies everything in the current store to this machine.
 # The everyday case: apply everything in the current store
 hams apply
 
-# Fresh machine: clone the store from GitHub and apply in one go.
-# Add --bootstrap if the machine doesn't have Homebrew installed yet —
-# hams will run the official install.sh for you (asks first on a TTY).
-hams apply --bootstrap --from-repo=zthxxx/hams-store
+# Fresh machine, one command: clone the store, pick the macOS profile,
+# and apply. Auto-creates ~/.config/hams/hams.config.yaml when missing.
+hams apply --from-repo=zthxxx/hams-store --tag=macOS
+
+# Same, but also auto-run the provider bootstrap script when something
+# is missing (e.g. Homebrew). hams asks first on a TTY; --bootstrap
+# pre-confirms.
+hams apply --bootstrap --from-repo=zthxxx/hams-store --tag=macOS
 
 # Not sure what's about to happen? Dry-run first
 hams apply --dry-run
@@ -36,6 +40,9 @@ hams apply --only=homebrew,pnpm
 
 # Run everything *except* Ansible (which tends to be the slow one)
 hams apply --except=ansible
+
+# Switch profile for a single run without touching the global config
+hams apply --tag=work-linux
 ```
 
 ## Flags
@@ -43,6 +50,7 @@ hams apply --except=ansible
 | Flag | Type | What it does |
 |------|------|--------------|
 | `--from-repo` | string | Clone the store from a remote GitHub repo and apply. Perfect for a new machine |
+| `--tag` | string | Active profile tag (alias `--profile`). Precedence: `--tag` > config `tag:` > `"default"` |
 | `--only` | string | Comma-separated providers to run. Everything else is skipped |
 | `--except` | string | Comma-separated providers to skip. Everything else runs |
 | `--no-refresh` | bool | Skip the refresh phase. hams normally probes the environment first to catch drift; `--no-refresh` trusts whatever's in `.state/` and skips straight to the diff. Useful when you just ran `hams refresh` and want to re-apply without re-probing |
@@ -80,11 +88,11 @@ bootstrap consent flow — each with its own install script declared in the prov
 | `mas` | `brew install mas` | macOS; chains through brew |
 | `ansible` | `pipx install --include-deps ansible` | requires pipx (apt install pipx / brew install pipx) |
 
-Other providers (`npm`, `cargo`, `goinstall`, `uv`, `code-ext`, `apt`, `defaults`, `git`) intentionally
+Other providers (`npm`, `cargo`, `goinstall`, `uv`, `code`, `apt`, `defaults`, `git`) intentionally
 DO NOT adopt `--bootstrap` — language runtime installation is user-owned (nvm / fnm / rustup /
-distro), `code-ext` needs a GUI app, `apt`/`defaults` are platform-gated, `git` is pre-present
-on any machine that ran hams's installer. For these, hams emits a plain "not found in PATH" error
-with the install hint.
+distro), `code` needs a GUI app (VS Code), `apt`/`defaults` are platform-gated, `git` is
+pre-present on any machine that ran hams's installer. For these, hams emits a plain "not found in
+PATH" error with the install hint.
 
 When hams reaches a provider whose prerequisite is absent, it stops and does one of three things:
 

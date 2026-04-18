@@ -16,10 +16,9 @@ hams 自带 15 个 provider，把工作站上常见的"东西"都覆盖了。
 | [uv](./uv) | `uv` | macOS、Linux | Python 命令行工具 |
 | [goinstall](./goinstall) | `go install` | macOS、Linux | Go 二进制 |
 | [cargo](./cargo) | `cargo install` | macOS、Linux | Rust 二进制 |
-| [code-ext](./code-ext) | `code` | macOS、Linux | VS Code 扩展 |
+| [code](./code) | `code` | macOS、Linux | VS Code 扩展（CLI 入口 `hams code`） |
 | [mas](./mas) | `mas` | 仅 macOS | Mac App Store 应用 |
-| [git-config](./git-config) | `git config` | macOS、Linux | git 全局配置 |
-| [git-clone](./git-clone) | `git clone` | macOS、Linux | 克隆仓库到固定路径 |
+| [git](./git) | `git config` + `git clone` | macOS、Linux | git 全局配置 + 克隆仓库到固定路径（CLI 入口 `hams git`） |
 | [defaults](./defaults) | `defaults` | 仅 macOS | macOS 系统设置 |
 | [duti](./duti) | `duti` | 仅 macOS | 文件类型的默认应用 |
 | [bash](./bash) | `bash` | macOS、Linux | 带 check 的任意 shell 脚本 |
@@ -31,7 +30,7 @@ hams 自带 15 个 provider，把工作站上常见的"东西"都覆盖了。
 
 ### Package —— 问原生列表
 
-**涉及 provider**：Homebrew、apt、pnpm、npm、uv、goinstall、cargo、mas、code-ext
+**涉及 provider**：Homebrew、apt、pnpm、npm、uv、goinstall、cargo、mas、code（VS Code 扩展）
 
 **探测办法**：跑一下原生的 `list` 命令（`brew list --formula`、`npm list -g` 等），看包名在不在输出里，顺手把版本记下来。
 
@@ -42,7 +41,7 @@ hams 自带 15 个 provider，把工作站上常见的"东西"都覆盖了。
 
 ### KV Config —— 读回来对一下
 
-**涉及 provider**：defaults、git-config、duti
+**涉及 provider**：defaults、git（config 子命令）、duti
 
 **探测办法**：跑对应的 read 命令（`defaults read`、`git config --get`）拿回当前值，跟 Hamsfile 里期望的比。
 对得上就 `ok`。
@@ -71,12 +70,12 @@ hams 自带 15 个 provider，把工作站上常见的"东西"都覆盖了。
 
 ### Filesystem —— 路径在不在
 
-**涉及 provider**：git-clone、file
+**涉及 provider**：git（clone 子命令）、file
 
-**探测办法**：看目标路径在硬盘上存不存在。git-clone 额外会再验一下 remote URL 对不对。
+**探测办法**：看目标路径在硬盘上存不存在。`git clone` 额外会再验一下 remote URL 对不对。
 
 ```yaml
-- urn: "urn:hams:git-clone:dotfiles"
+- urn: "urn:hams:git-clone:dotfiles"   # state 文件仍是 git-clone.state.yaml
   step: Clone dotfiles repository
   remote: https://github.com/zthxxx/dotfiles.git
   local_path: ~/Projects/dotfiles
@@ -100,10 +99,10 @@ provider_priority:
   - uv
   - goinstall
   - cargo
-  - code-ext
+  - code-ext            # 内部 manifest 名；CLI 入口是 `hams code`
   - mas
-  - git-config
-  - git-clone
+  - git-config          # 内部 manifest 名；CLI 入口是 `hams git config`
+  - git-clone           # 内部 manifest 名；CLI 入口是 `hams git clone`
   - defaults
   - duti
   - ansible

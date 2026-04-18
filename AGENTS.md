@@ -69,7 +69,7 @@ Single test: `go test -race -run TestFuncName ./path/to/package/...`
 - **OTel**: trace + metrics, local file exporter at `${HAMS_DATA_HOME}/otel/`.
 - **Docs**: Nextra on GitHub Pages at `hams.zthxxx.me`.
 
-15 builtin providers: Bash, Homebrew, apt, pnpm, npm, uv, goinstall, cargo, VS Code Extensions (`code-ext`), git (config/clone), defaults, duti, mas, Ansible.
+15 builtin providers, 13 CLI entry points: Bash, Homebrew, apt, pnpm, npm, uv, goinstall, cargo, VS Code (`hams code`, internal name `code-ext`), git (`hams git config` + `hams git clone`, internal names `git-config` + `git-clone`), defaults, duti, mas, Ansible.
 
 ## Directory Conventions
 

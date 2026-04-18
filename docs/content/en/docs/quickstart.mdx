@@ -62,15 +62,21 @@ hams brew install htop
 # Globally install serve through pnpm, also recorded
 hams pnpm add serve
 
-# Set git identity, also recorded
-hams git-config user.name "Your Name"
-hams git-config user.email "you@example.com"
+# Set git identity, also recorded — natural git syntax behind `hams git`
+hams git config user.name "Your Name"
+hams git config user.email "you@example.com"
+
+# VS Code extensions, also recorded
+hams code install ms-python.python
 ```
 
-Behind each command, hams quietly does two things:
+Behind each command, hams quietly does three things:
 
-1. Runs the actual tool (`brew install htop`, `pnpm add -g serve`)
-2. Writes the installation into the matching Hamsfile (`macOS/Homebrew.hams.yaml`, `macOS/pnpm.hams.yaml`)
+1. Runs the actual tool (`brew install htop`, `pnpm add -g serve`, `git config --global user.name ...`, `code --install-extension ...`)
+2. Writes the installation into the matching Hamsfile (`default/Homebrew.hams.yaml`, `default/pnpm.hams.yaml`, `default/git-config.hams.yaml`, `default/vscodeext.hams.yaml`)
+3. **Auto-creates the store** at `~/.local/share/hams/store/` on first run if you don't have one yet — `git init`'d, with a bundled `.gitignore` and `hams.config.yaml`. No `hams store init` first.
+
+Set `HAMS_NO_AUTO_INIT=1` if you want the legacy "no store directory configured" hard-fail (e.g., in CI scripts that pre-provision the store).
 
 ## Restore everything on a fresh machine
 
@@ -88,10 +94,13 @@ hams bundles go-git, so you don't need to install `git` first. Classic chicken-a
 ### Apply from your store repo
 
 ```bash
-# If the machine doesn't have Homebrew / pnpm / ansible etc. yet, add --bootstrap
-# so hams auto-installs prerequisites under your consent. See the `apply` page
-# for the full list of bootstrap-supported providers.
-hams apply --bootstrap --from-repo=<your-username>/hams-store
+# One-command restore: clone the store, pick the profile, run.
+# Add --bootstrap if the machine doesn't have Homebrew / pnpm / ansible etc.
+# yet so hams auto-installs prerequisites under your consent.
+hams apply --from-repo=<your-username>/hams-store --tag=macOS
+
+# Or with bootstrap allowed:
+hams apply --bootstrap --from-repo=<your-username>/hams-store --tag=macOS
 ```
 
 Replace the placeholder with your GitHub username and store repo name. On an
@@ -99,22 +108,16 @@ interactive terminal, `--bootstrap` is optional — hams will show a `[y/N/s]`
 prompt before running any install script. In CI / scripts, pass `--bootstrap`
 explicitly (or `--no-bootstrap` to fail fast).
 
-### Answer two quick questions
+### No interactive prompts needed
 
-The first time a machine sees hams, it asks:
+If `~/.config/hams/hams.config.yaml` doesn't exist yet, hams writes a default one
+on first run with `tag: default` and a hostname-derived `machine_id`. Pass
+`--tag=<your-profile>` to override the default for the current run; the value also
+gets persisted via `hams config set tag <name>` for future runs.
 
-```
-No profile found for this machine.
-
-Profile tag (e.g. macOS, openwrt, work-linux): macOS
-Machine ID (unique name for this machine, e.g. MacbookProM5X): MacbookProM3
-
-Creating profile directory: macOS/
-Writing ~/.config/hams/hams.config.yaml...
-```
-
-- **Profile tag** picks which directory inside your store to use (`macOS/`, `openwrt/`, etc.)
-- **Machine ID** uniquely names this machine, so its state lives at `.state/MacbookProM3/`
+The legacy interactive `Profile tag / Machine ID` prompt is reserved for `hams
+store init`, which you only need when you're hand-crafting a store outside the
+default `${HAMS_DATA_HOME}/store/` location.
 
 ### Enter your sudo password, if anything needs it
 
@@ -141,8 +144,8 @@ hams apply  •  profile: macOS  •  machine: MacbookProM3
 [Homebrew]  fd                   installing...        ✓
 [pnpm]      Refreshing state...                      ✓
 [pnpm]      serve                installing...        ✓
-[git-config] user.name           setting...           ✓
-[git-config] user.email          setting...           ✓
+[git]       user.name            setting...           ✓
+[git]       user.email           setting...           ✓
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 8 resources  •  7 installed  •  1 already present  •  0 failed

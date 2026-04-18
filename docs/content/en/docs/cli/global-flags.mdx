@@ -21,7 +21,7 @@ So `hams --debug apply` works. `hams apply --debug` doesn't — the second one i
 | `--no-color` | bool | `false` | Disable ANSI colors (for file redirects, plain terminals) |
 | `--config=<path>` | string | `~/.config/hams/hams.config.yaml` | Use a different config file |
 | `--store=<path>` | string | from config | Override the store directory |
-| `--profile=<tag>` | string | from config | Switch profile for this run only |
+| `--tag=<name>` | string | from config (or `default`) | Active profile tag for this run. Aliases `--profile` for back-compat. Precedence: `--tag` > config `tag:` > `"default"` |
 | `--help` | bool | `false` | Print help |
 | `--version` | bool | `false` | Print version info |
 
@@ -41,8 +41,19 @@ hams --config=/tmp/test-config.yaml apply
 hams --json list | jq '.[] | select(.state == "missing")'
 
 # Try a different profile once, without changing global config
-hams --profile=work-linux apply
+hams --tag=work-linux apply           # canonical
+hams --profile=work-linux apply       # legacy alias still works
 ```
+
+## Auto-init on first run
+
+Running `hams apply` or any provider command (`hams brew install jq`, `hams git config user.name X`, …) on a clean machine triggers a one-time auto-init:
+
+1. `~/.config/hams/hams.config.yaml` is written with `tag: default` plus a hostname-derived `machine_id`.
+2. A store is created at `${HAMS_DATA_HOME}/store/` (default `~/.local/share/hams/store/`) — `git init`'d, with a bundled `.gitignore` (covers `.state/` and `*.local.*`) and a placeholder `hams.config.yaml`.
+3. The store path is persisted into the global config so subsequent runs skip the auto-init.
+
+To opt out (e.g., CI scripts that want the legacy "no store directory configured" hard-fail), set `HAMS_NO_AUTO_INIT=1` in the environment.
 
 ## Why split global and command flags?
 

@@ -20,7 +20,7 @@ hams [全局 flag] <命令> [参数]
 | `--no-color` | bool | `false` | 关掉 ANSI 颜色码（输出到文件或不支持颜色的终端时用） |
 | `--config=<path>` | string | `~/.config/hams/hams.config.yaml` | 指定另一份配置文件 |
 | `--store=<path>` | string | 来自配置 | 覆盖 store 目录路径 |
-| `--profile=<tag>` | string | 来自配置 | 临时切换到另一个 profile |
+| `--tag=<name>` | string | 来自配置（缺省为 `default`） | 当次执行使用的 profile tag。`--profile` 是兼容别名。优先级：`--tag` > 配置 `tag:` > `"default"` |
 | `--help` | bool | `false` | 打印帮助 |
 | `--version` | bool | `false` | 打印版本信息 |
 
@@ -40,8 +40,21 @@ hams --config=/tmp/test-config.yaml apply
 hams --json list | jq '.[] | select(.state == "missing")'
 
 # 临时切换 profile，不改全局配置
-hams --profile=work-linux apply
+hams --tag=work-linux apply           # 推荐写法
+hams --profile=work-linux apply       # 兼容旧写法
 ```
+
+## 首次运行自动初始化
+
+第一次执行 `hams apply` 或任意 provider 命令（`hams brew install jq`、`hams git config user.name X` 等）时，
+hams 会自动：
+
+1. 在 `~/.config/hams/hams.config.yaml` 写入默认配置（`tag: default` + 主机名衍生的 `machine_id`）
+2. 在 `${HAMS_DATA_HOME}/store/`（默认 `~/.local/share/hams/store/`）创建 store —— `git init` 初始化、
+   写入内置的 `.gitignore`（含 `.state/`、`*.local.*`）和占位 `hams.config.yaml`
+3. 把 store 路径写回全局配置，供之后运行直接使用
+
+如需关闭自动初始化（例如 CI 脚本希望保留旧的 "no store directory configured" 报错），设置环境变量 `HAMS_NO_AUTO_INIT=1` 即可。
 
 ## 为什么要区分"全局 flag"和"命令 flag"
 

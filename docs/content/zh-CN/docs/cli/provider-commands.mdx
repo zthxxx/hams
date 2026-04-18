@@ -26,7 +26,8 @@ hams <provider> <verb> [args] [--hams-flags] [-- <透传参数>]
 | `list` | 列出这个 provider 管的所有包 | `hams brew list` |
 | `enrich` | 给已经记录的包补上 tag 和 intro 元信息 | `hams brew enrich htop` |
 
-不是所有 provider 都支持所有动词 —— 比如 `git-clone` 没有 `install`，它用 `add`；
+不是所有 provider 都支持所有动词 —— `hams git clone` 接受原生 git 语法
+（`hams git clone <url> <path>`，内部映射到 git-clone provider 的 `add` 动词）；
 `bash` 没有 `install`，它用 `run`。具体见每个 provider 自己的文档。
 
 ## 场景示例

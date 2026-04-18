@@ -1,0 +1,77 @@
+import { Callout } from 'nextra/components'
+
+# VS Code Provider（`hams code`）
+
+包装 VS Code 的 `code` CLI 来管扩展。每次换新机器重新一个个点装扩展是最烦的事情之一，
+这个 provider 就是为了让那个过程消失。
+
+CLI 入口是 `hams code`（2026-04-17 起从原来的 `hams code-ext` 重命名 ——
+底层 provider 仍以 `code-ext` 作为内部 manifest 名以保持已有 state 文件兼容）。
+对应的 hamsfile 是 `<profile>/vscodeext.hams.yaml`，名字也保持不变以兼容旧 store。
+
+未来如需支持 Cursor / VSCodium，会**单独**提供 `cursor` provider，而非通过 `cli_command:`
+覆盖 `hams code` —— 这些编辑器在扩展市场、Settings Sync、telemetry endpoint 等处的差异够大，
+混在一起反而成为坑。
+
+**支持平台：** macOS、Linux
+
+## 怎么用
+
+```bash
+# 安装（publisher.name 形式）
+hams code install esbenp.prettier-vscode
+
+# 卸载
+hams code uninstall esbenp.prettier-vscode
+
+# 看当前管理的扩展
+hams code list
+```
+
+获取扩展 ID：在 VS Code 扩展面板里右键任何扩展 → Copy Extension ID，
+拿到的 `publisher.name` 就是要填的。
+
+## Hamsfile 示例
+
+```yaml
+# default/vscodeext.hams.yaml
+schema_version: 1
+provider: code-ext
+
+groups:
+  - tag: language-support
+    items:
+      - app: golang.go
+        intro: 强大的 Go 语言支持
+      - app: rust-lang.rust-analyzer
+        intro: Rust 语言服务器
+      - app: dbaeumer.vscode-eslint
+        intro: ESLint 集成
+
+  - tag: theme
+    items:
+      - app: esbenp.prettier-vscode
+        intro: VS Code 的 Prettier 格式化插件
+      - app: PKief.material-icon-theme
+```
+
+## 状态怎么探测
+
+`code --list-extensions` 会逐行打印当前所有扩展 ID，hams 直接读这份列表对一下。简单粗暴，但管用。
+
+## Bootstrap
+
+机器上得先有 `code` 命令在 PATH 里。macOS 装好 VS Code 之后还要在命令面板里手动跑一下
+"Shell Command: Install 'code' command in PATH"。可以用 bash provider 自动化：
+
+```yaml
+- urn: "urn:hams:bash:link-vscode-cli"
+  step: 把 VS Code CLI 链到 /usr/local/bin
+  run: ln -sf "/Applications/Visual Studio Code.app/Contents/Resources/app/bin/code" /usr/local/bin/code
+  check: command -v code
+```
+
+<Callout type="info">
+  用户配置（`settings.json`）和键位绑定（`keybindings.json`）不归这个 provider 管 ——
+  那是普通的 dotfiles，用 file provider，或者用 `hams git clone` 把 dotfiles 仓库搬过来更直接。
+</Callout>

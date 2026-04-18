@@ -1,13 +1,19 @@
 import { Callout } from 'nextra/components'
 
-# VS Code Extensions Provider
+# VS Code Provider (`hams code`)
 
-Wraps the `code` command-line tool to manage VS Code extensions. Clicking through the extension
-store one at a time on every new machine is one of life's lesser joys — this provider exists to
-make that moment disappear.
+Wraps VS Code's `code` CLI to manage extensions. Clicking through the extension store one at a
+time on every new machine is one of life's lesser joys — this provider exists to make that moment
+disappear.
 
-Works with VS Code forks like Cursor and VSCodium too, as long as they ship a compatible CLI.
-Swap it via `hams.config.yaml`'s `code_ext.cli_command`.
+The CLI verb is `hams code` (renamed from the legacy `hams code-ext` in 2026-04-17 — the
+underlying provider keeps `code-ext` as its internal manifest name for back-compat with existing
+state files). The on-disk hamsfile is `<profile>/vscodeext.hams.yaml` for the same back-compat
+reason.
+
+For Cursor or VSCodium, hams will ship a separate `cursor` provider rather than overloading
+`hams code` with a `cli_command:` switch — the editor-specific CLI behaves differently enough
+(extension marketplace, settings sync, telemetry endpoints) that conflating them was a footgun.
 
 **Platforms:** macOS, Linux
 
@@ -15,13 +21,13 @@ Swap it via `hams.config.yaml`'s `code_ext.cli_command`.
 
 ```bash
 # Install (publisher.name form)
-hams code-ext install esbenp.prettier-vscode
+hams code install esbenp.prettier-vscode
 
 # Remove
-hams code-ext uninstall esbenp.prettier-vscode
+hams code uninstall esbenp.prettier-vscode
 
 # See what's managed
-hams code-ext list
+hams code list
 ```
 
 To find an extension's ID: open the VS Code extensions panel, right-click any extension → Copy
@@ -30,7 +36,7 @@ Extension ID. That `publisher.name` string is what you want.
 ## Hamsfile example
 
 ```yaml
-# macOS/vscodeext.hams.yaml
+# default/vscodeext.hams.yaml
 schema_version: 1
 provider: code-ext
 
@@ -68,20 +74,8 @@ it with a `bash` provider step:
   check: command -v code
 ```
 
-## Using Cursor / VSCodium
-
-In `hams.config.yaml`:
-
-```yaml
-providers:
-  code-ext:
-    cli_command: cursor   # or codium
-```
-
-From then on, hams uses `cursor --install-extension` instead of `code --install-extension`.
-
 <Callout type="info">
   User settings (`settings.json`) and key bindings (`keybindings.json`) are out of scope for this
   provider — they're just dotfiles. Use the `file` provider, or clone a dotfiles repo with
-  git-clone.
+  `hams git clone`.
 </Callout>

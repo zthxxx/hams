@@ -60,15 +60,21 @@ hams brew install htop
 # 走 pnpm 全局装 serve，顺手记
 hams pnpm add serve
 
-# 配 git 身份，顺手记
-hams git-config user.name "Your Name"
-hams git-config user.email "you@example.com"
+# 配 git 身份，顺手记 —— `hams git` 接受原生 git 语法
+hams git config user.name "Your Name"
+hams git config user.email "you@example.com"
+
+# VS Code 扩展也能记
+hams code install ms-python.python
 ```
 
-每条命令背后，hams 默默做两件事：
+每条命令背后，hams 默默做三件事：
 
-1. 真调底下的工具（`brew install htop`、`pnpm add -g serve`）
-2. 把这次安装写进对应的 Hamsfile（`macOS/Homebrew.hams.yaml`、`macOS/pnpm.hams.yaml`）
+1. 真调底下的工具（`brew install htop`、`pnpm add -g serve`、`git config --global user.name ...`、`code --install-extension ...`）
+2. 把这次安装写进对应的 Hamsfile（`default/Homebrew.hams.yaml`、`default/pnpm.hams.yaml`、`default/git-config.hams.yaml`、`default/vscodeext.hams.yaml`）
+3. **首次运行时自动初始化 store** —— 在 `~/.local/share/hams/store/` 帮你 `git init`、写好 `.gitignore` 与 `hams.config.yaml`。无需先跑 `hams store init`。
+
+CI 脚本如希望恢复旧的 "no store directory configured" 报错（不要自动初始化），设置 `HAMS_NO_AUTO_INIT=1` 即可。
 
 ## 在新机器上把一切恢复
 
@@ -83,12 +89,15 @@ bash -c "$(curl -fsSL https://github.com/zthxxx/hams/raw/master/scripts/install.
 
 hams 二进制里内置了 go-git，所以哪怕这机器连 git 命令都还没有也没关系。
 
-### 从 store 仓库 apply
+### 从 store 仓库 apply（一条命令）
 
 ```bash
-# 机器上还没装 Homebrew / pnpm / ansible 之类的前置工具？加上 --bootstrap，
-# hams 会在你确认后自动装好。完整的 bootstrap 支持列表见 `apply` 命令页。
-hams apply --bootstrap --from-repo=<your-username>/hams-store
+# 一条命令开箱：拉 store、选 macOS profile、直接 apply。
+# 缺失的 ~/.config/hams/hams.config.yaml 会自动创建。
+hams apply --from-repo=<your-username>/hams-store --tag=macOS
+
+# 也可以同时让 hams 在前置工具（Homebrew / pnpm / ansible）缺失时自动装：
+hams apply --bootstrap --from-repo=<your-username>/hams-store --tag=macOS
 ```
 
 把 `<your-username>/hams-store` 换成你自己的 GitHub 用户和 store 仓库名。
@@ -96,22 +105,14 @@ hams apply --bootstrap --from-repo=<your-username>/hams-store
 弹 `[y/N/s]` 让你确认。CI / 脚本里记得显式传 `--bootstrap`（或 `--no-bootstrap`
 让它前置缺失时直接报错退出）。
 
-### 回答两个小问题
+### 不需要交互式问问题
 
-第一次在新机器上跑 apply，hams 会问你两件事：
+如果 `~/.config/hams/hams.config.yaml` 还不存在，hams 第一次运行时会自动写一份：
+`tag: default` + 由主机名衍生的 `machine_id`。`--tag=<your-profile>` 可以临时覆盖默认 tag；
+要持久化用 `hams config set tag <name>` 即可。
 
-```
-No profile found for this machine.
-
-Profile tag (e.g. macOS, openwrt, work-linux): macOS
-Machine ID (unique name for this machine, e.g. MacbookProM5X): MacbookProM3
-
-Creating profile directory: macOS/
-Writing ~/.config/hams/hams.config.yaml...
-```
-
-- **Profile tag** 决定用 store 里哪个目录下的 Hamsfile（比如 `macOS/` 或 `openwrt/`）
-- **Machine ID** 是这台机器的唯一名字，状态文件会放到 `.state/MacbookProM3/`
+旧版本里那个交互式 `Profile tag / Machine ID` 提示现在只在 `hams store init` 中保留 ——
+仅在你想把 store 放在 `${HAMS_DATA_HOME}/store/` 之外的目录、并手工准备时才用得上。
 
 ### 输 sudo 密码（如果需要）
 
@@ -137,8 +138,8 @@ hams apply  •  profile: macOS  •  machine: MacbookProM3
 [Homebrew]  fd                   installing...        ✓
 [pnpm]      Refreshing state...                      ✓
 [pnpm]      serve                installing...        ✓
-[git-config] user.name           setting...           ✓
-[git-config] user.email          setting...           ✓
+[git]       user.name            setting...           ✓
+[git]       user.email           setting...           ✓
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 8 resources  •  7 installed  •  1 already present  •  0 failed

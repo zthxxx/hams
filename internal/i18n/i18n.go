@@ -8,6 +8,7 @@ import (
 	"os"
 	"sort"
 	"strings"
+	"sync"
 
 	"github.com/nicksnyder/go-i18n/v2/i18n"
 	"golang.org/x/text/language"
@@ -204,14 +205,18 @@ func Tf(msgID string, data map[string]any) string {
 	return msg
 }
 
+// initOnce guards the lazy-init path so concurrent T()/Tf() callers
+// from different goroutines do not race on the package-level
+// `localizer` pointer. Once initialized, the pointer is read-only.
+var initOnce sync.Once
+
 // ensureLocalizer triggers Init() once when callers reach T() before
-// the explicit cmd/hams/main.go init path has fired. Safe under
-// concurrent T() calls because Init() rebuilds the package-level
-// localizer pointer atomically (write-once-then-read pattern; no
-// goroutines mutate it after the first build).
+// the explicit cmd/hams/main.go init path has fired. The sync.Once
+// makes the lazy build race-free under concurrent provider tests.
 func ensureLocalizer() {
-	if localizer != nil {
-		return
-	}
-	Init()
+	initOnce.Do(func() {
+		if localizer == nil {
+			Init()
+		}
+	})
 }

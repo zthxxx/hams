@@ -21,10 +21,12 @@ hams apply [flags]
 # 最常见：把当前 store 里的所有配置跑一遍
 hams apply
 
-# 新机器开箱：从 GitHub 仓库拉 store，直接开跑。
-# 如果机器上还没装 Homebrew，加上 --bootstrap 让 hams 代你跑官方的
-# install.sh（交互终端会先弹提示确认）
-hams apply --bootstrap --from-repo=zthxxx/hams-store
+# 新机器开箱一条命令：从 GitHub 仓库拉 store、选 macOS profile、直接 apply。
+# 缺失的 ~/.config/hams/hams.config.yaml 会自动创建。
+hams apply --from-repo=zthxxx/hams-store --tag=macOS
+
+# 同样的开箱场景，再带上 bootstrap（缺失 Homebrew 时自动跑官方 install.sh）
+hams apply --bootstrap --from-repo=zthxxx/hams-store --tag=macOS
 
 # 不放心？先 dry-run 预览一下会动哪些东西
 hams apply --dry-run
@@ -34,13 +36,17 @@ hams apply --only=homebrew,pnpm
 
 # 除了 Ansible 其他都跑（Ansible 通常最耗时）
 hams apply --except=ansible
+
+# 临时切换到另一个 profile（不改全局配置）
+hams apply --tag=work-linux
 ```
 
 ## Flag
 
 | Flag | 类型 | 说明 |
 |------|------|------|
-| `--from-repo` | string | 从远端 GitHub 仓库克隆 store 再 apply。适合新机器开荒。 |
+| `--from-repo` | string | 从远端 GitHub 仓库克隆 store 再 apply。适合新机器开荒 |
+| `--tag` | string | 当次执行使用的 profile tag（兼容别名 `--profile`）。优先级：`--tag` > 配置 `tag:` > `"default"` |
 | `--only` | string | 只跑指定的 provider，逗号分隔 |
 | `--except` | string | 排除掉指定的 provider，其他都跑 |
 | `--no-refresh` | bool | 跳过 apply 前的 refresh 阶段。默认 apply 会先扫一遍机器状态捕获 drift；加了 `--no-refresh` 就直接信任 `.state/` 里的数据去算 diff。适合刚跑完 `hams refresh` 想再 apply 一次的场景 |
@@ -75,9 +81,9 @@ hams apply --except=ansible
 | `mas` | `brew install mas` | macOS；链式经过 brew |
 | `ansible` | `pipx install --include-deps ansible` | 前置需要 pipx（apt install pipx / brew install pipx） |
 
-其他 provider（`npm`、`cargo`、`goinstall`、`uv`、`code-ext`、`apt`、`defaults`、`git`）故意**不**接入
+其他 provider（`npm`、`cargo`、`goinstall`、`uv`、`code`、`apt`、`defaults`、`git`）故意**不**接入
 `--bootstrap` —— 语言 runtime 的安装属于你自己的决定（nvm / fnm / rustup / 发行版），
-`code-ext` 需要 GUI 应用，`apt`/`defaults` 平台门控，`git` 是 hams 安装器运行所需的前置。
+`code` 需要 GUI 应用（VS Code），`apt`/`defaults` 平台门控，`git` 是 hams 安装器运行所需的前置。
 这些 provider 前置缺失时 hams 直接给一条 "not found in PATH" 的简单错误 + 安装提示。
 
 当 hams 跑到一个缺前置工具的 provider 时，它会停下来，然后根据当前情境做三件事之一：

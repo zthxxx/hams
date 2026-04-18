@@ -17,10 +17,9 @@ on top.
 | [uv](./uv) | `uv` | macOS, Linux | Python command-line tools |
 | [goinstall](./goinstall) | `go install` | macOS, Linux | Go binaries |
 | [cargo](./cargo) | `cargo install` | macOS, Linux | Rust binaries |
-| [code-ext](./code-ext) | `code` | macOS, Linux | VS Code extensions |
+| [code](./code) | `code` | macOS, Linux | VS Code extensions (entry point: `hams code`) |
 | [mas](./mas) | `mas` | macOS only | Mac App Store apps |
-| [git-config](./git-config) | `git config` | macOS, Linux | Git global configuration |
-| [git-clone](./git-clone) | `git clone` | macOS, Linux | Repositories cloned to fixed paths |
+| [git](./git) | `git config` + `git clone` | macOS, Linux | Git global config + repos cloned to fixed paths (entry point: `hams git`) |
 | [defaults](./defaults) | `defaults` | macOS only | macOS system settings |
 | [duti](./duti) | `duti` | macOS only | Default app associations for file types |
 | [bash](./bash) | `bash` | macOS, Linux | Any shell script, with a `check:` for idempotency |
@@ -33,7 +32,7 @@ Every provider's resources fit one of four classes. Each class has its own way o
 
 ### Package — ask the native list command
 
-**Providers:** Homebrew, apt, pnpm, npm, uv, goinstall, cargo, mas, code-ext
+**Providers:** Homebrew, apt, pnpm, npm, uv, goinstall, cargo, mas, code (VS Code extensions)
 
 **How it probes:** Run the native `list` command (`brew list --formula`, `npm list -g`, etc.),
 check whether the package shows up, grab the version from the output.
@@ -45,7 +44,7 @@ check whether the package shows up, grab the version from the output.
 
 ### KV Config — read it back and compare
 
-**Providers:** defaults, git-config, duti
+**Providers:** defaults, git (config subcommand), duti
 
 **How it probes:** Run the corresponding read command (`defaults read`, `git config --get`),
 compare the returned value to the expected one. Match? `ok`.
@@ -74,13 +73,13 @@ to run. Idempotency is on you — which means these providers can manage anythin
 
 ### Filesystem — does the path exist?
 
-**Providers:** git-clone, file
+**Providers:** git (clone subcommand), file
 
-**How it probes:** Check whether the target path exists. `git-clone` also confirms the remote URL
+**How it probes:** Check whether the target path exists. `git clone` also confirms the remote URL
 matches.
 
 ```yaml
-- urn: "urn:hams:git-clone:dotfiles"
+- urn: "urn:hams:git-clone:dotfiles"   # underlying state file is git-clone.state.yaml
   step: Clone dotfiles repository
   remote: https://github.com/zthxxx/dotfiles.git
   local_path: ~/Projects/dotfiles
@@ -104,10 +103,10 @@ provider_priority:
   - uv
   - goinstall
   - cargo
-  - code-ext
+  - code-ext            # internal manifest name; CLI is `hams code`
   - mas
-  - git-config
-  - git-clone
+  - git-config          # internal manifest name; CLI is `hams git config`
+  - git-clone           # internal manifest name; CLI is `hams git clone`
   - defaults
   - duti
   - ansible

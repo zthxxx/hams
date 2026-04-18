@@ -1,0 +1,183 @@
+import { Callout } from 'nextra/components'
+
+# git Provider（`hams git`）
+
+把真正的 `git` CLI 包装在一个 hams 入口下。当前支持两个子命令：
+
+- **`hams git config <key> <value>`** —— 管 git 全局配置。每次换新机器重做
+  `git config --global user.name "..."`、还要担心邮箱拼错，就是这个 provider 想消灭的小烦恼。
+- **`hams git clone <remote> <path>`** —— 管你想要保持在固定路径上的仓库。常见用途：dotfiles、
+  个人笔记、自己写的常用工具——任何想在每台机器上都存在、且存在同一位置的东西。
+
+`hams git config` 与 `hams git clone` 路由到底层两个 provider（`git-config` 与 `git-clone`），
+它们各自保留独立的 hamsfile + state 文件以兼容 v1.0 的 store；用户面前则只剩一个自然的 git 语法。
+
+**支持平台：** macOS、Linux
+
+## `hams git config` —— 管 git 全局配置
+
+```bash
+# 设置一个值，并写到 Hamsfile 里。形状跟 git config 一致
+hams git config user.name "Your Name"
+hams git config user.email "you@example.com"
+
+# 也接受显式动词
+hams git config set user.name "Your Name"
+hams git config remove rerere.autoUpdate
+
+# 看一下当前在管什么
+hams git config list
+```
+
+### Hamsfile 示例
+
+```yaml
+# default/git-config.hams.yaml
+schema_version: 1
+provider: git-config
+
+groups:
+  - tag: identity
+    items:
+      - urn: "urn:hams:git-config:user-name"
+        step: 设置 git 用户名
+        key: user.name
+        value: "Your Name"
+      - urn: "urn:hams:git-config:user-email"
+        step: 设置 git 邮箱
+        key: user.email
+        value: "you@example.com"
+
+  - tag: workflow
+    items:
+      - urn: "urn:hams:git-config:rerere"
+        step: 开启 git rerere（记忆冲突解决方案）
+        key: rerere.autoUpdate
+        value: "true"
+      - urn: "urn:hams:git-config:default-branch"
+        step: 新仓库的默认分支
+        key: init.defaultBranch
+        value: "main"
+```
+
+字段：
+
+- `urn` —— hams 内部 ID，写得有可读性
+- `step` —— 一句话描述，会出现在 apply 日志里
+- `key` / `value` —— 与 `git config` 一致
+
+### 状态怎么探测
+
+对每个条目，hams 跑一次 `git config --global --get <key>` 拿当前值，再和 Hamsfile 里的
+`value` 对比。一致 → `ok`，不一致 → `outdated`，缺失 → `missing`。
+
+### system / user 作用域
+
+默认写到 `--global`（用户级 `~/.gitconfig`）。两个特例：
+
+- **仓库级**（`--local`）—— 不该交给 hams 管，那是 per-project 配置，跟项目放在一起。
+- **system 级**（`--system`）—— 用 bash provider + `sudo git config --system ...`。
+
+### 常用模式
+
+**工作和个人身份分开。** git 的 `includeIf` 指令可以根据仓库位置加载不同配置；
+hams 既能管这个指令，也能管它指向的文件：
+
+```yaml
+- urn: "urn:hams:git-config:work-includeif"
+  step: 在 ~/work/ 下加载工作配置
+  key: 'includeIf."gitdir:~/work/".path'
+  value: ~/.gitconfig-work
+```
+
+**GPG 签名。** 签名用的 key ID 属于身份级配置，正合适：
+
+```yaml
+- urn: "urn:hams:git-config:signing-key"
+  step: 配置 GPG 签名 key
+  key: user.signingkey
+  value: "AAAAAAAAAA"
+- urn: "urn:hams:git-config:commit-gpgsign"
+  step: 所有 commit 都签名
+  key: commit.gpgsign
+  value: "true"
+```
+
+<Callout type="tip">
+  **不要**把敏感值写进会被 commit 的 Hamsfile。Token、GPG 私钥、密码 —— 放到
+  `git-config.hams.local.yaml`（被 gitignore）或系统 keychain 里。
+</Callout>
+
+## `hams git clone` —— 把仓库放到指定路径
+
+```bash
+# 克隆远程仓库到本地路径，形状跟 git clone 一致
+hams git clone https://github.com/zthxxx/dotfiles ~/Projects/dotfiles
+
+# 看一下当前在管什么
+hams git clone list
+
+# 移除（停止管理；本地文件不会动）
+hams git clone remove ~/Projects/dotfiles
+```
+
+### Hamsfile 示例
+
+```yaml
+# default/git-clone.hams.yaml
+schema_version: 1
+provider: git-clone
+
+groups:
+  - tag: personal
+    items:
+      - urn: "urn:hams:git-clone:dotfiles"
+        step: 克隆 dotfiles 仓库
+        remote: https://github.com/zthxxx/dotfiles.git
+        local_path: ~/Projects/dotfiles
+        default_branch: main
+
+      - urn: "urn:hams:git-clone:notes"
+        step: 克隆个人笔记
+        remote: git@github.com:zthxxx/notes.git
+        local_path: ~/Documents/notes
+```
+
+字段：
+
+- `remote` —— 仓库 URL（HTTPS 或 SSH 都行）
+- `local_path` —— 本地目标路径，`~/` 会展开
+- `default_branch` —— 可选，clone 后切到这个分支；不填就用 remote 默认分支
+
+### 状态怎么探测
+
+简单粗暴的两步：
+
+1. `local_path` 存在吗？
+2. 如果存在，`git -C <local_path> remote get-url origin` 跟 Hamsfile 里的 `remote` 一致吗？
+3. 都对 → `ok`。
+
+**hams 不会自动 pull**。每次 apply 自动 pull 又慢、又会偶尔冲突，要不要 pull 由你决定。
+
+### 用 go-git，不依赖系统 `git`
+
+hams 二进制内嵌了 [go-git](https://github.com/go-git/go-git)，这意味着
+**机器上不需要装 `git`** 也能跑 clone 类资源。这点在 bootstrap 时很重要：
+新机器还没有 `brew install git`，apply 也能开跑。
+
+### SSH 认证
+
+对 SSH 风格的 remote（`git@github.com:...`），hams 按这个顺序找 key：
+
+1. 常见 key 路径：`~/.ssh/id_ed25519`、`~/.ssh/id_rsa` 等
+2. `ssh-agent` 里挂的 key
+3. 实在没有就交互式 prompt
+
+新机器最常踩的坑是 SSH key 还没准备好。两个绕开办法：用 HTTPS URL（搭配 `gh auth login` 或 PAT），
+或者在跑 apply 之前先把 SSH key 准备好。
+
+<Callout type="tip">
+  `hams git clone` 适合"我需要这个仓库，必须在这个路径"。如果只是想跑一次脚本，
+  bash provider 里 `curl | bash` 更简单。`hams git clone` 的价值是
+  **持续保证**仓库在那个位置。
+</Callout>
