@@ -262,15 +262,10 @@ pkg/
 
 Go application code and JS/TS tooling (documentation site, linting configs, future Bun SDK) SHALL be cleanly separated. The Go module SHALL NOT depend on any JS/TS files for compilation. JS tooling SHALL be managed by pnpm and executed via bun. The two ecosystems SHALL share only the repository root for configuration files.
 
-```
-# Go ecosystem
-cmd/          internal/          pkg/          go.mod          go.sum
-
-# JS ecosystem
-docs/         package.json       pnpm-lock.yaml     eslint.config.ts
-
-# Shared (configuration only)
-.editorconfig     .gitignore     .gitattributes     cspell.yaml
+```text
+Go ecosystem:    cmd/  internal/  pkg/  go.mod  go.sum
+JS ecosystem:    docs/  package.json  pnpm-lock.yaml  eslint.config.ts
+Shared config:   .editorconfig  .gitignore  .gitattributes  cspell.yaml
 ```
 
 #### Scenario: Go build does not require Node.js or Bun

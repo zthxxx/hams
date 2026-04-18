@@ -30,8 +30,9 @@ The `notification` mapping SHALL contain:
 |-------|------|----------|-------------|
 | `bark_token` | string | NO | Bark push notification token. MUST NOT appear in this file; reserved for `.local.yaml` or keychain. Presence here SHALL trigger a validation warning. |
 
+Example `~/.config/hams/hams.config.yaml`:
+
 ```yaml
-# ~/.config/hams/hams.config.yaml
 schema_version: 1
 profile_tag: macOS
 machine_id: MacbookProM5X
@@ -55,14 +56,14 @@ provider_priority:
 
 #### Scenario: First-time setup writes global config
 
-WHEN the user runs `hams apply --from-repo=zthxxx/hams-store` on a fresh machine
-AND is prompted for profile tag `macOS` and machine ID `MacbookProM5X`
-THEN hams SHALL create `~/.config/hams/hams.config.yaml` with `schema_version: 1`, the provided `profile_tag`, `machine_id`, and `store_repo` fields.
+- **WHEN** the user runs `hams apply --from-repo=zthxxx/hams-store` on a fresh machine
+- **AND** is prompted for profile tag `macOS` and machine ID `MacbookProM5X`
+- **THEN** hams SHALL create `~/.config/hams/hams.config.yaml` with `schema_version: 1`, the provided `profile_tag`, `machine_id`, and `store_repo` fields.
 
 #### Scenario: Missing required fields produce validation error
 
-WHEN hams loads a global config file that is missing `machine_id`
-THEN hams SHALL exit with a non-zero exit code and an error message stating which required field is missing, along with a suggested fix command.
+- **WHEN** hams loads a global config file that is missing `machine_id`
+- **THEN** hams SHALL exit with a non-zero exit code and an error message stating which required field is missing, along with a suggested fix command.
 
 ---
 
@@ -73,7 +74,6 @@ A companion file `${HAMS_CONFIG_HOME}/hams.config.local.yaml` SHALL exist for se
 The local file SHALL support the same schema as the global config. Fields present in the local file SHALL override the corresponding fields in the base config. The `provider_priority` list, if present in the local file, SHALL fully replace (not merge with) the base list.
 
 ```yaml
-# ~/.config/hams/hams.config.local.yaml
 notification:
   bark_token: "aBcDeFgHiJkLmNoPqRsT"
 llm_cli: /opt/homebrew/bin/codex
@@ -81,13 +81,13 @@ llm_cli: /opt/homebrew/bin/codex
 
 #### Scenario: Bark token in local config is accepted
 
-WHEN hams loads a global config where `hams.config.local.yaml` contains `notification.bark_token`
-THEN hams SHALL merge the token into the effective config and use it for Bark push notifications.
+- **WHEN** hams loads a global config where `hams.config.local.yaml` contains `notification.bark_token`
+- **THEN** hams SHALL merge the token into the effective config and use it for Bark push notifications.
 
 #### Scenario: Bark token in base config triggers warning
 
-WHEN hams loads `hams.config.yaml` (non-local) and it contains `notification.bark_token`
-THEN hams SHALL emit a warning to stderr recommending the user move the token to `hams.config.local.yaml` or OS keychain.
+- **WHEN** hams loads `hams.config.yaml` (non-local) and it contains `notification.bark_token`
+- **THEN** hams SHALL emit a warning to stderr recommending the user move the token to `hams.config.local.yaml` or OS keychain.
 
 ---
 
@@ -128,7 +128,6 @@ The effective configuration SHALL be resolved by merging in the following preced
 Scalar fields SHALL use last-writer-wins. The `provider_priority` list SHALL be fully replaced (not merged) by any higher-precedence source that defines it.
 
 ```yaml
-# <store>/hams.config.yaml (valid)
 schema_version: 1
 provider_priority:
   - bash
@@ -138,7 +137,6 @@ provider_priority:
 ```
 
 ```yaml
-# <store>/hams.config.yaml (INVALID — hams will reject at load)
 schema_version: 1
 profile_tag: dev          # ERROR: machine-scoped, belongs in ~/.config/hams/hams.config.yaml
 machine_id: sandbox        # ERROR: machine-scoped, belongs in ~/.config/hams/hams.config.yaml
@@ -214,7 +212,6 @@ For package-type providers (Homebrew, pnpm, npm, uv, goinstall, cargo, mas, apt,
 | `hooks` | mapping | NO | Lifecycle hooks (see Hooks section). |
 
 ```yaml
-# <store>/macOS/Homebrew.hams.yaml
 schema_version: 1
 provider: Homebrew
 
@@ -260,7 +257,6 @@ For script-type providers (bash, defaults, duti, git-config, ansible):
 Provider-specific fields (e.g., `domain`, `key`, `value` for defaults; `scope`, `key`, `value` for git-config) SHALL be defined per-provider in the Builtin Providers spec. The Hamsfile schema accommodates them as extension fields within each item.
 
 ```yaml
-# <store>/macOS/bash.hams.yaml
 schema_version: 1
 provider: bash
 
@@ -288,7 +284,6 @@ groups:
 ```
 
 ```yaml
-# <store>/macOS/defaults.hams.yaml
 schema_version: 1
 provider: defaults
 
@@ -310,18 +305,18 @@ groups:
 
 #### Scenario: Valid Hamsfile is parsed without error
 
-WHEN hams loads a Hamsfile with `schema_version: 1`, a valid `provider` field, and at least one group with one item
-THEN hams SHALL parse the file successfully and make all items available to the provider.
+- **WHEN** hams loads a Hamsfile with `schema_version: 1`, a valid `provider` field, and at least one group with one item
+- **THEN** hams SHALL parse the file successfully and make all items available to the provider.
 
 #### Scenario: Duplicate app identity across groups is rejected
 
-WHEN a Hamsfile contains the same `app: git` in two different groups
-THEN hams SHALL exit with a validation error identifying the duplicate entry and the groups it appears in.
+- **WHEN** a Hamsfile contains the same `app: git` in two different groups
+- **THEN** hams SHALL exit with a validation error identifying the duplicate entry and the groups it appears in.
 
 #### Scenario: Script-type entry missing URN is rejected
 
-WHEN a bash Hamsfile contains an item without a `urn` field
-THEN hams SHALL exit with a validation error stating that script-type resources require a URN.
+- **WHEN** a bash Hamsfile contains an item without a `urn` field
+- **THEN** hams SHALL exit with a validation error stating that script-type resources require a URN.
 
 ---
 
@@ -357,14 +352,14 @@ Each hook entry SHALL contain:
 
 #### Scenario: Pre-hook failure blocks installation
 
-WHEN a resource has a `pre_install` hook that exits with a non-zero code
-THEN the parent resource SHALL NOT be installed, and both the hook and the resource SHALL be marked `failed` in state.
+- **WHEN** a resource has a `pre_install` hook that exits with a non-zero code
+- **THEN** the parent resource SHALL NOT be installed, and both the hook and the resource SHALL be marked `failed` in state.
 
 #### Scenario: Deferred post-hook executes after provider completes
 
-WHEN a resource has a `post_install` hook with `defer: true`
-AND the provider finishes all its regular installs
-THEN the deferred hook SHALL execute after the provider's last regular install, but before the next provider begins.
+- **WHEN** a resource has a `post_install` hook with `defer: true`
+- **AND** the provider finishes all its regular installs
+- **THEN** the deferred hook SHALL execute after the provider's last regular install, but before the next provider begins.
 
 ---
 
@@ -379,7 +374,6 @@ The local file SHALL use the same schema as the base Hamsfile. Merge semantics S
 3. **Group merging**: If the local file contains a group with a `tag` that exists in the base file, items are merged into that group. If the tag is new, the entire group is appended.
 
 ```yaml
-# <store>/macOS/Homebrew.hams.local.yaml
 schema_version: 1
 provider: Homebrew
 
@@ -402,21 +396,21 @@ groups:
 
 #### Scenario: Local items append to base list
 
-WHEN `Homebrew.hams.yaml` contains `[git, ripgrep]` under tag `dev-tools`
-AND `Homebrew.hams.local.yaml` contains `[slack]` under a new tag `work`
-THEN the effective Hamsfile SHALL contain both groups with all three items.
+- **WHEN** `Homebrew.hams.yaml` contains `[git, ripgrep]` under tag `dev-tools`
+- **AND** `Homebrew.hams.local.yaml` contains `[slack]` under a new tag `work`
+- **THEN** the effective Hamsfile SHALL contain both groups with all three items.
 
 #### Scenario: Same-URN local entry overrides base entry
 
-WHEN `bash.hams.yaml` contains an item with `urn: urn:hams:bash:setup-proxy`
-AND `bash.hams.local.yaml` contains an item with the same URN but a different `run` command
-THEN the effective item SHALL use the local file's `run` command.
+- **WHEN** `bash.hams.yaml` contains an item with `urn: urn:hams:bash:setup-proxy`
+- **AND** `bash.hams.local.yaml` contains an item with the same URN but a different `run` command
+- **THEN** the effective item SHALL use the local file's `run` command.
 
 #### Scenario: Same-app local entry merges sub-fields
 
-WHEN `Homebrew.hams.yaml` contains `app: visual-studio-code` with `intro` and `hooks.post_install`
-AND `Homebrew.hams.local.yaml` contains `app: visual-studio-code` with only `hooks.post_install`
-THEN the effective entry SHALL retain the base `intro` and use the local `hooks.post_install`.
+- **WHEN** `Homebrew.hams.yaml` contains `app: visual-studio-code` with `intro` and `hooks.post_install`
+- **AND** `Homebrew.hams.local.yaml` contains `app: visual-studio-code` with only `hooks.post_install`
+- **THEN** the effective entry SHALL retain the base `intro` and use the local `hooks.post_install`.
 
 ---
 
@@ -493,7 +487,6 @@ Each resource state entry SHALL contain the following fields:
 | Any state → `state: failed` | UNCHANGED | SET to `now` | untouched | SET |
 
 ```yaml
-# <store>/.state/MacbookProM5X/Homebrew.state.yaml
 schema_version: 2
 provider: Homebrew
 machine_id: MacbookProM5X
@@ -580,18 +573,18 @@ urn:hams:file:zshrc-symlink
 
 #### Scenario: Valid URN is accepted
 
-WHEN a Hamsfile contains `urn: "urn:hams:bash:install-homebrew"`
-THEN the hamsfile SDK SHALL parse it successfully and extract provider `bash` and resource ID `install-homebrew`.
+- **WHEN** a Hamsfile contains `urn: "urn:hams:bash:install-homebrew"`
+- **THEN** the hamsfile SDK SHALL parse it successfully and extract provider `bash` and resource ID `install-homebrew`.
 
 #### Scenario: Malformed URN is rejected
 
-WHEN a Hamsfile contains `urn: "hams:bash:install-homebrew"` (missing `urn:` prefix)
-THEN the hamsfile SDK SHALL reject the entry with an error message describing the expected format.
+- **WHEN** a Hamsfile contains `urn: "hams:bash:install-homebrew"` (missing `urn:` prefix)
+- **THEN** the hamsfile SDK SHALL reject the entry with an error message describing the expected format.
 
 #### Scenario: URN with colon in resource ID is rejected
 
-WHEN a Hamsfile contains `urn: "urn:hams:bash:install:homebrew"` (colon in resource-id)
-THEN the hamsfile SDK SHALL reject the entry because colons are not allowed in the resource-id segment.
+- **WHEN** a Hamsfile contains `urn: "urn:hams:bash:install:homebrew"` (colon in resource-id)
+- **THEN** the hamsfile SDK SHALL reject the entry because colons are not allowed in the resource-id segment.
 
 ---
 
@@ -606,8 +599,6 @@ Implementation requirements:
 3. Round-trip fidelity: loading a Hamsfile and saving it without modifications SHALL produce byte-identical output (excluding trailing newline normalization).
 
 ```yaml
-# This is my Homebrew setup
-# Last reviewed: 2026-03-15
 
 schema_version: 1
 provider: Homebrew
@@ -626,14 +617,14 @@ After adding a new entry programmatically, ALL existing comments SHALL be preser
 
 #### Scenario: Comments survive round-trip
 
-WHEN hams reads a Hamsfile containing inline comments and block comments
-AND writes it back without modifications
-THEN the output file SHALL be byte-identical to the input file (modulo trailing newline).
+- **WHEN** hams reads a Hamsfile containing inline comments and block comments
+- **AND** writes it back without modifications
+- **THEN** the output file SHALL be byte-identical to the input file (modulo trailing newline).
 
 #### Scenario: Comments survive entry addition
 
-WHEN hams adds `app: fd` to the `dev-tools` group of a Hamsfile that contains inline and block comments
-THEN all pre-existing comments SHALL remain in their original positions relative to their associated nodes.
+- **WHEN** hams adds `app: fd` to the `dev-tools` group of a Hamsfile that contains inline and block comments
+- **THEN** all pre-existing comments SHALL remain in their original positions relative to their associated nodes.
 
 ---
 
@@ -650,14 +641,14 @@ The write procedure SHALL be:
 
 #### Scenario: Crash during write does not corrupt file
 
-WHEN hams is writing a state file and the process is killed after step 1 but before step 3
-THEN the original state file SHALL remain intact and the orphaned temporary file SHALL be cleaned up on the next hams invocation.
+- **WHEN** hams is writing a state file and the process is killed after step 1 but before step 3
+- **THEN** the original state file SHALL remain intact and the orphaned temporary file SHALL be cleaned up on the next hams invocation.
 
 #### Scenario: Concurrent read during write sees consistent state
 
-WHEN a state file is being written atomically
-AND another process reads the same file path during the write
-THEN the reader SHALL see either the old complete file or the new complete file, never a partial write.
+- **WHEN** a state file is being written atomically
+- **AND** another process reads the same file path during the write
+- **THEN** the reader SHALL see either the old complete file or the new complete file, never a partial write.
 
 ---
 
@@ -674,7 +665,6 @@ The lock file SHALL contain the following fields:
 | `started_at` | string | ISO timestamp (`YYYYMMDDTHHmmss`) when the lock was acquired. |
 
 ```yaml
-# <store>/.state/MacbookProM5X/.lock
 pid: 42567
 command: apply
 started_at: "20260412T143022"
@@ -689,15 +679,15 @@ Lock acquisition procedure:
 
 #### Scenario: Concurrent apply is blocked
 
-WHEN `hams apply` is running with PID 42567
-AND the user runs `hams apply` in another terminal
-THEN the second invocation SHALL exit with a non-zero code and a message like: `Lock held by PID 42567 (command: apply, started at 20260412T143022). Another hams session is running.`
+- **WHEN** `hams apply` is running with PID 42567
+- **AND** the user runs `hams apply` in another terminal
+- **THEN** the second invocation SHALL exit with a non-zero code and a message like: `Lock held by PID 42567 (command: apply, started at 20260412T143022). Another hams session is running.`
 
 #### Scenario: Stale lock is cleaned up
 
-WHEN a lock file exists with PID 99999
-AND no process with PID 99999 is running
-THEN hams SHALL remove the stale lock file, log a warning about the stale lock, and proceed with lock acquisition.
+- **WHEN** a lock file exists with PID 99999
+- **AND** no process with PID 99999 is running
+- **THEN** hams SHALL remove the stale lock file, log a warning about the stale lock, and proceed with lock acquisition.
 
 ---
 
@@ -759,18 +749,18 @@ Each provider SHALL register its merge strategy with the SDK at registration tim
 
 #### Scenario: Provider adds a package via SDK
 
-WHEN the Homebrew provider calls `AddItem("dev-tools", Item{App: "fd", Intro: "Fast find alternative."})` on a Hamsfile that already has items in the `dev-tools` group
-THEN the SDK SHALL append the new item to the group's items list, preserve all existing comments, and write the file atomically.
+- **WHEN** the Homebrew provider calls `AddItem("dev-tools", Item{App: "fd", Intro: "Fast find alternative."})` on a Hamsfile that already has items in the `dev-tools` group
+- **THEN** the SDK SHALL append the new item to the group's items list, preserve all existing comments, and write the file atomically.
 
 #### Scenario: Provider removes a package via SDK
 
-WHEN the Homebrew provider calls `RemoveItem("htop")` on a Hamsfile
-THEN the SDK SHALL remove the `htop` entry from its group, remove the group if empty, and write the file atomically.
+- **WHEN** the Homebrew provider calls `RemoveItem("htop")` on a Hamsfile
+- **THEN** the SDK SHALL remove the `htop` entry from its group, remove the group if empty, and write the file atomically.
 
 #### Scenario: Concurrent writes are serialized
 
-WHEN two goroutines attempt to call `Save` simultaneously on the same Hamsfile
-THEN the SDK SHALL serialize the writes via its global mutex, ensuring each write sees the result of the previous one.
+- **WHEN** two goroutines attempt to call `Save` simultaneously on the same Hamsfile
+- **THEN** the SDK SHALL serialize the writes via its global mutex, ensuring each write sees the result of the previous one.
 
 ---
 
@@ -793,14 +783,14 @@ The detailed field definitions for each provider are specified in the Builtin Pr
 
 #### Scenario: Extension fields survive round-trip
 
-WHEN a defaults Hamsfile contains `domain: NSGlobalDomain` and `key: AppleShowAllExtensions` on an item
-AND the hamsfile SDK loads and saves the file without modifications
-THEN the extension fields SHALL be preserved in the output.
+- **WHEN** a defaults Hamsfile contains `domain: NSGlobalDomain` and `key: AppleShowAllExtensions` on an item
+- **AND** the hamsfile SDK loads and saves the file without modifications
+- **THEN** the extension fields SHALL be preserved in the output.
 
 #### Scenario: Unknown fields do not cause errors
 
-WHEN a Hamsfile contains a field `custom_metadata: foo` on an item that the SDK does not recognize
-THEN the SDK SHALL preserve the field without error, passing it through for provider-level validation.
+- **WHEN** a Hamsfile contains a field `custom_metadata: foo` on an item that the SDK does not recognize
+- **THEN** the SDK SHALL preserve the field without error, passing it through for provider-level validation.
 
 ---
 
@@ -816,13 +806,13 @@ Timestamps SHALL be stored as quoted YAML strings to prevent YAML parsers from i
 
 #### Scenario: Timestamps are quoted in YAML output
 
-WHEN hams writes a state file with `checked_at: "20260412T143022"`
-THEN the value SHALL be quoted in the YAML output to prevent parser reinterpretation.
+- **WHEN** hams writes a state file with `checked_at: "20260412T143022"`
+- **THEN** the value SHALL be quoted in the YAML output to prevent parser reinterpretation.
 
 #### Scenario: Timestamp format is consistent across files
 
-WHEN hams writes timestamps to state files, lock files, and log references
-THEN all timestamps SHALL use the `YYYYMMDDTHHmmss` format without timezone suffix, colons, or hyphens.
+- **WHEN** hams writes timestamps to state files, lock files, and log references
+- **THEN** all timestamps SHALL use the `YYYYMMDDTHHmmss` format without timezone suffix, colons, or hyphens.
 
 ---
 
@@ -848,14 +838,14 @@ The `.state/` directory SHALL be listed in the store's `.gitignore` by default. 
 
 #### Scenario: State directory is created on first apply
 
-WHEN `hams apply` runs for the first time on a machine with ID `MacbookProM5X`
-AND the `.state/MacbookProM5X/` directory does not exist
-THEN hams SHALL create the directory before writing any state files.
+- **WHEN** `hams apply` runs for the first time on a machine with ID `MacbookProM5X`
+- **AND** the `.state/MacbookProM5X/` directory does not exist
+- **THEN** hams SHALL create the directory before writing any state files.
 
 #### Scenario: State directory is gitignored
 
-WHEN `hams apply --from-repo=` initializes a new store
-THEN the `.gitignore` file in the store root SHALL contain `.state/` (or a pattern that excludes the state directory from git tracking).
+- **WHEN** `hams apply --from-repo=` initializes a new store
+- **THEN** the `.gitignore` file in the store root SHALL contain `.state/` (or a pattern that excludes the state directory from git tracking).
 
 ### Requirement: Optional git backend for remote state storage
 
@@ -863,15 +853,14 @@ The state system SHALL support an optional git backend mode where state files ar
 
 #### Scenario: State backend abstraction
 
-WHEN the state package is initialized
-THEN it SHALL use a `StateBackend` interface that abstracts read/write/list operations
-AND the default implementation SHALL be `LocalFilesystemBackend`
-AND the interface SHALL be sufficient to later implement a `GitBackend` that pushes state to a `state/<machine-id>` branch in a configurable remote repository.
+- **WHEN** the state package is initialized
+- **THEN** it SHALL use a `StateBackend` interface that abstracts read/write/list operations
+- **AND** the default implementation SHALL be `LocalFilesystemBackend`
+- **AND** the interface SHALL be sufficient to later implement a `GitBackend` that pushes state to a `state/<machine-id>` branch in a configurable remote repository.
 
 ---
 <!-- Merged from change: fix-v1-planning-gaps -->
 
-# Schema Design — Spec Delta (fix-v1-planning-gaps)
 
 ## ADDED
 

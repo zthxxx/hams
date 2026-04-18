@@ -8,9 +8,7 @@ Documents the BubbleTea TUI scaffolding (alternate screen, collapsible logs, int
 
 ### Requirement: Alternate-Screen TUI Layout — Deferred to v1.1
 
-> **v1 status (as of 2026-04-16):** The TUI scaffolding at `internal/tui/` (~500 lines of BubbleTea models) is fully built and unit-tested but **never invoked from the CLI in v1**. A grep for `tui\.` across `internal/cli/` returns zero matches; `runApply` writes plain log lines via `slog` even on a TTY. The scenarios below describe v1.1 behavior. v1 ships with plain log-line output. See `openspec/changes/archive/2026-04-17-defer-tui-and-notify/` for the deferral rationale.
-
-The system SHALL render a BubbleTea-based alternate-screen terminal UI during `hams apply` and other long-running operations when stdout is a TTY.
+The system SHALL render a BubbleTea-based alternate-screen terminal UI during `hams apply` and other long-running operations when stdout is a TTY. **v1 status (as of 2026-04-16):** the TUI scaffolding at `internal/tui/` (~500 lines of BubbleTea models) is fully built and unit-tested but SHALL NOT be invoked from the CLI in v1 — `runApply` ships plain log lines via `slog` even on a TTY, and the scenarios below describe the v1.1 target behavior. See `openspec/changes/archive/2026-04-17-defer-tui-and-notify/` for the deferral rationale.
 
 The TUI layout SHALL consist of the following regions, top to bottom:
 
@@ -45,9 +43,7 @@ The TUI SHALL occupy the full alternate screen and restore the original terminal
 
 ### Requirement: Interactive Popup for Blocking Stdin Operations — Deferred to v1.1
 
-> **v1 status (as of 2026-04-16):** Same status as the alternate-screen TUI deferral above. `internal/tui/popup.go` defines `PopupModel` but has zero callers. Forward-looking — no v1 provider needs interactive stdin.
-
-The system SHALL provide a tmux-popup-style overlay within the alternate-screen TUI for operations that require interactive stdin (e.g., signin flows, OAuth authorization, manual confirmation prompts).
+The system SHALL provide a tmux-popup-style overlay within the alternate-screen TUI for operations that require interactive stdin (e.g., signin flows, OAuth authorization, manual confirmation prompts). **v1 status (as of 2026-04-16):** `internal/tui/popup.go` defines `PopupModel` but has zero callers; popup rendering SHALL NOT fire in v1 because no v1 provider needs interactive stdin.
 
 Providers SHALL NOT directly read from stdin. Instead, a provider SHALL call the hams interactive API to request a popup session. The hams runtime SHALL then display the popup, route stdin/stdout to the subprocess within the popup, and dismiss the popup when the subprocess exits.
 
@@ -70,9 +66,9 @@ All log output and user interaction for the blocking operation SHALL be containe
 
 ### Requirement: Notification System — Deferred to v1.1
 
-> **v1 status (as of 2026-04-16):** `internal/notify/` defines the multi-channel notification scaffolding (terminal-notifier + Bark) but `Manager.Send` has zero callers in `internal/cli/`. v1 `hams apply` completion does NOT trigger any notification. v1.1 will wire `Manager.Send` at apply-completion + popup-trigger points.
+The system SHALL provide a notification system with the following channels. **v1 status (as of 2026-04-16):** `internal/notify/` defines the multi-channel notification scaffolding (terminal-notifier + Bark) but `Manager.Send` SHALL remain uncalled by any `internal/cli/` code path in v1; v1 `hams apply` completion does NOT trigger any notification. v1.1 will wire `Manager.Send` at apply-completion + popup-trigger points.
 
-The system SHALL provide a notification system with the following channels:
+The channels are:
 
 1. **terminal-notifier**: mandatory, always enabled, not user-configurable. SHALL be used on macOS. On Linux, the system SHALL use `notify-send` or equivalent.
 2. **Bark app**: optional iOS push notification. Tokens SHALL be stored in `hams.config.local.yaml` (gitignored) or OS keychain via the keyring library. Token management SHALL be available via `hams config set bark-token <token>`.
