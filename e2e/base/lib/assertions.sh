@@ -2,6 +2,51 @@
 # Shared E2E assertion helpers.
 # Source this file from per-distro test scripts.
 
+# assert_log_contains asserts that after `hams apply` / `hams refresh` /
+# any provider invocation, the rolling slog log file under
+# `${HAMS_DATA_HOME}/<YYYY-MM>/hams.YYYYMM.log` contains the expected
+# substring. Closes the CLAUDE.md task: "Whether logging is emitted —
+# for each provider as well as for hams itself — must be verified in
+# integration tests."
+#
+# Usage: assert_log_contains "<description>" "<expected-substring>"
+# Requires HAMS_DATA_HOME to point at the integration test sandbox so
+# the helper does not pick up unrelated logs from the host's real
+# `~/.local/share/hams/`.
+assert_log_contains() {
+  local desc="$1"
+  local expected="$2"
+  local data_home="${HAMS_DATA_HOME:-$HOME/.local/share/hams}"
+  echo "Testing log: $desc"
+  local log_file
+  log_file=$(find "$data_home" -type f -name 'hams.*.log' 2>/dev/null | sort | tail -1)
+  if [ -z "$log_file" ] || [ ! -s "$log_file" ]; then
+    echo "FAIL: $desc"
+    echo "  no rolling log file found under $data_home"
+    exit 1
+  fi
+  if ! grep -qF "$expected" "$log_file"; then
+    echo "FAIL: $desc"
+    echo "  expected log to contain: $expected"
+    echo "  log file: $log_file"
+    echo "  recent log lines:"
+    tail -20 "$log_file" | sed 's/^/    /'
+    exit 1
+  fi
+  echo "  ok: log contains '$expected'"
+  echo ""
+}
+
+# assert_log_records_session asserts that the rolling log file records
+# at least one "hams session started" entry — the per-invocation slog
+# bootstrap line emitted by SetupLogging in apply / refresh paths.
+# Catches regressions where the log file is created but no records
+# actually flow through (wrong slog handler, output redirected, etc.).
+assert_log_records_session() {
+  local desc="$1"
+  assert_log_contains "$desc — session started" "hams session started"
+}
+
 assert_success() {
   local desc="$1"
   shift

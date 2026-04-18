@@ -27,8 +27,12 @@ echo ""
 export HAMS_STORE=/tmp/test-apt-store
 export HAMS_MACHINE_ID=e2e-apt
 export HAMS_CONFIG_HOME=/tmp/test-apt-config
+# HAMS_DATA_HOME isolated per test run so assert_log_contains finds only
+# the logs this script emitted (the assertion helper greps the most-
+# recent rolling log under HAMS_DATA_HOME).
+export HAMS_DATA_HOME=/tmp/test-apt-data
 
-mkdir -p "$HAMS_STORE/test" "$HAMS_STORE/.state/$HAMS_MACHINE_ID" "$HAMS_CONFIG_HOME"
+mkdir -p "$HAMS_STORE/test" "$HAMS_STORE/.state/$HAMS_MACHINE_ID" "$HAMS_CONFIG_HOME" "$HAMS_DATA_HOME"
 cat > "$HAMS_CONFIG_HOME/hams.config.yaml" <<YAML
 profile_tag: test
 machine_id: ${HAMS_MACHINE_ID}
@@ -280,6 +284,15 @@ else
   fi
   echo "  ok: state has exactly one row keyed on the bare 'jq' name"
 fi
+
+echo ""
+echo "--- logging assertions (CLAUDE.md task: integration tests verify log emission) ---"
+# Apply / refresh paths route slog to the rolling log file under
+# ${HAMS_DATA_HOME}/<YYYY-MM>/. Re-run a representative apply so the
+# helper has a recent log to grep.
+hams --store="$HAMS_STORE" refresh --only=apt >/dev/null 2>&1 || true
+assert_log_records_session "apt integration"
+assert_log_contains "apt provider records applied actions" "provider"
 
 echo ""
 echo "=== apt integration test passed ==="
