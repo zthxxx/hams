@@ -122,6 +122,132 @@ func AutoRecordInstall(
 	return nil
 }
 
+// AutoRecordInstallFn is the closure-based variant of AutoRecordInstall.
+// Use it for Package-class providers whose runner.Install signature
+// carries extra arguments the `PackageInstaller` interface cannot
+// capture (e.g., homebrew's `Install(ctx, pkg, isCask bool)` where the
+// cask flag is derived from the raw args before the install loop).
+//
+// The caller supplies `installFn` — a per-package closure that curries
+// in any extra context (isCask, flags, per-pkg options) before
+// delegating to the real runner. The dispatcher handles the rest of
+// the shared "validate → dry-run → lock → loop → load → record → save"
+// sequence identically to AutoRecordInstall.
+//
+// Use AutoRecordInstall (not this function) when the runner's Install
+// signature matches the PackageInstaller interface — that's the
+// simpler call site and doesn't require a closure allocation.
+//
+// Follow-up 5.8 from 2026-04-18-provider-shared-abstraction-adoption:
+// homebrew was previously exempt because its Install carried isCask;
+// AutoRecordInstallFn lifts that exemption.
+func AutoRecordInstallFn(
+	ctx context.Context,
+	installFn func(ctx context.Context, pkg string) error,
+	pkgs []string,
+	cfg *config.Config,
+	flags *GlobalFlags,
+	hfPath, statePath string,
+	opts PackageDispatchOpts,
+) error {
+	if len(pkgs) == 0 {
+		return UsageRequiresAtLeastOne(opts.CLIName, opts.InstallVerb, "package name", "package")
+	}
+	if flags.DryRun {
+		DryRunInstall(flags, opts.CLIName+" "+opts.InstallVerb+" "+strings.Join(pkgs, " "))
+		return nil
+	}
+
+	release, lockErr := AcquireMutationLockFromCfg(cfg, flags, opts.CLIName+" "+opts.InstallVerb)
+	if lockErr != nil {
+		return lockErr
+	}
+	defer release()
+
+	for _, pkg := range pkgs {
+		slog.Info(opts.CLIName+" "+opts.InstallVerb, "package", pkg)
+		if err := installFn(ctx, pkg); err != nil {
+			return err
+		}
+	}
+
+	hf, err := hamsfile.LoadOrCreateEmpty(hfPath)
+	if err != nil {
+		return fmt.Errorf("loading hamsfile %s: %w", hfPath, err)
+	}
+	sf := state.New(opts.CLIName, cfg.MachineID)
+	if loaded, loadErr := state.Load(statePath); loadErr == nil {
+		sf = loaded
+	}
+	for _, pkg := range pkgs {
+		hf.AddApp(opts.HamsTag, pkg, "")
+		sf.SetResource(pkg, state.StateOK)
+	}
+	if writeErr := hf.Write(); writeErr != nil {
+		return fmt.Errorf("writing hamsfile %s: %w", hfPath, writeErr)
+	}
+	if saveErr := sf.Save(statePath); saveErr != nil {
+		return fmt.Errorf("saving state %s: %w", statePath, saveErr)
+	}
+	return nil
+}
+
+// AutoRecordRemoveFn is the closure-based variant of AutoRecordRemove.
+// Use it when a provider's remove flow dispatches differently per
+// package (e.g., homebrew routes tap-format IDs to `runner.Untap` and
+// ordinary formulae to `runner.Uninstall` — one static interface
+// method cannot express that branching, but a closure can).
+func AutoRecordRemoveFn(
+	ctx context.Context,
+	uninstallFn func(ctx context.Context, pkg string) error,
+	pkgs []string,
+	cfg *config.Config,
+	flags *GlobalFlags,
+	hfPath, statePath string,
+	opts PackageDispatchOpts,
+) error {
+	if len(pkgs) == 0 {
+		return UsageRequiresAtLeastOne(opts.CLIName, opts.RemoveVerb, "package name", "package")
+	}
+	if flags.DryRun {
+		DryRunRemove(flags, opts.CLIName+" "+opts.RemoveVerb+" "+strings.Join(pkgs, " "))
+		return nil
+	}
+
+	release, lockErr := AcquireMutationLockFromCfg(cfg, flags, opts.CLIName+" "+opts.RemoveVerb)
+	if lockErr != nil {
+		return lockErr
+	}
+	defer release()
+
+	for _, pkg := range pkgs {
+		slog.Info(opts.CLIName+" "+opts.RemoveVerb, "package", pkg)
+		if err := uninstallFn(ctx, pkg); err != nil {
+			return err
+		}
+	}
+
+	hf, err := hamsfile.LoadOrCreateEmpty(hfPath)
+	if err != nil {
+		return fmt.Errorf("loading hamsfile %s: %w", hfPath, err)
+	}
+	sf := state.New(opts.CLIName, cfg.MachineID)
+	if loaded, loadErr := state.Load(statePath); loadErr == nil {
+		sf = loaded
+	}
+	for _, pkg := range pkgs {
+		hf.RemoveApp(pkg)
+		sf.SetResource(pkg, state.StateRemoved)
+	}
+	if writeErr := hf.Write(); writeErr != nil {
+		return fmt.Errorf("writing hamsfile %s: %w", hfPath, writeErr)
+	}
+	if saveErr := sf.Save(statePath); saveErr != nil {
+		return fmt.Errorf("saving state %s: %w", statePath, saveErr)
+	}
+	return nil
+}
+
 // AutoRecordRemove mirrors AutoRecordInstall for the uninstall
 // flow. Removes each named package via runner.Uninstall, then
 // deletes the corresponding entry from the hamsfile and tombstones

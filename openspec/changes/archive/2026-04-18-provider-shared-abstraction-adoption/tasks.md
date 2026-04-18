@@ -34,5 +34,5 @@
 - [x] 5.4 Migrate `goinstall` — landed. Runner gains a no-op `Uninstall(ctx, pkg) → nil` that matches the provider-level `Remove` documented no-op, satisfying `PackageInstaller` without any dispatcher variant. The user-visible "remove the binary manually" warning still fires from the apply-time `Provider.Remove` method.
 - [x] 5.5 Migrate `mas`.
 - [x] 5.6 Migrate `vscodeext`.
-- [ ] 5.7 Design a second dispatcher variant for the batch-install shape (apt).
-- [ ] 5.8 Design a third dispatcher variant for the extra-arg shape (brew's `isCask`).
+- [ ] 5.7 Design a second dispatcher variant for the batch-install shape (apt) — **still open**. apt's complexity extends beyond batch shape (per-pkg structured-field recording + complex-invocation detection + post-install version probe via `dpkg -s`); needs a richer hook contract than a closure, so deferred to a dedicated change.
+- [x] 5.8 Closure-based dispatcher variant shipped — `provider.AutoRecordInstallFn` + `provider.AutoRecordRemoveFn` take a per-package closure so brew's `Install(ctx, pkg, isCask)` and the tap-vs-uninstall routing on remove can curry the extra context in. brew's handleInstall / handleRemove now delegate to these variants; the package doc's exemption note is lifted.
