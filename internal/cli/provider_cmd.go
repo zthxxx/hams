@@ -101,10 +101,10 @@ func autoInitForProvider(flags *provider.GlobalFlags) error {
 	if cfg != nil && cfg.StorePath != "" {
 		return nil
 	}
-	if err := EnsureGlobalConfig(paths); err != nil {
+	if err := EnsureGlobalConfig(paths, flags); err != nil {
 		return fmt.Errorf("auto-init global config: %w", err)
 	}
-	resolved, _, err := EnsureStoreReady(paths, cfg, "")
+	resolved, _, err := EnsureStoreReady(paths, cfg, "", flags)
 	if err != nil {
 		return fmt.Errorf("auto-init default store: %w", err)
 	}

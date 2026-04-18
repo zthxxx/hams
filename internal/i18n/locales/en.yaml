@@ -10,6 +10,12 @@
 - id: autoinit.store_created
   other: "Auto-initialized hams store at {{.Path}} — edit ~/.config/hams/hams.config.yaml to relocate"
 
+- id: autoinit.dry_run.global_config
+  other: "[dry-run] Would auto-create hams global config at {{.Path}}"
+
+- id: autoinit.dry_run.store
+  other: "[dry-run] Would auto-init hams store at {{.Path}}"
+
 # ---------------------------------------------------------------------------
 # Common UFE messages (user-facing error strings — always English-readable
 # for default users; non-English locales fall through to the en text when

@@ -2,6 +2,7 @@ package cli
 
 import (
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -10,6 +11,7 @@ import (
 	"github.com/zthxxx/hams/internal/config"
 	"github.com/zthxxx/hams/internal/i18n"
 	"github.com/zthxxx/hams/internal/logging"
+	"github.com/zthxxx/hams/internal/provider"
 	"github.com/zthxxx/hams/internal/storeinit"
 )
 
@@ -31,6 +33,23 @@ const DefaultAutoStoreSubdir = "store"
 // Aligns with CLAUDE.md's task-list wording: "default `tag: default`".
 const DefaultTag = "default"
 
+// isDryRun reports whether flags requests a side-effect-free preview.
+// Nil-safe so call-sites can pass `flags` without guarding.
+func isDryRun(flags *provider.GlobalFlags) bool {
+	return flags != nil && flags.DryRun
+}
+
+// stderrSink returns the configured stderr writer for flags, or the
+// process stderr when flags is nil. Keeps status + dry-run preview
+// lines test-injectable via flags.Err without forcing callers to
+// construct a GlobalFlags just to get plain stderr behavior.
+func stderrSink(flags *provider.GlobalFlags) io.Writer {
+	if flags != nil {
+		return flags.Stderr()
+	}
+	return os.Stderr
+}
+
 // EnsureGlobalConfig writes a minimal default global config when
 // paths.GlobalConfigPath() does not yet exist. Called at the start of any
 // command that needs a config so first-run users do not see "config file
@@ -41,10 +60,28 @@ const DefaultTag = "default"
 // EnsureStoreReady once the auto-init store is created (so the two writes
 // are decoupled and tests can exercise them independently).
 //
+// When flags.DryRun is set, EnsureGlobalConfig emits a
+// `[dry-run] Would ...` preview line to flags.Stderr() and returns nil
+// without touching the filesystem. Honors CLAUDE.md's "first principle"
+// of isolated verification: `--dry-run` promises no side effects, and
+// that promise MUST hold even on the first-run auto-init path.
+//
 // Idempotent: if the file exists, EnsureGlobalConfig is a no-op.
-func EnsureGlobalConfig(paths config.Paths) error {
+func EnsureGlobalConfig(paths config.Paths, flags *provider.GlobalFlags) error {
 	target := paths.GlobalConfigPath()
 	if _, err := os.Stat(target); err == nil {
+		return nil
+	}
+
+	if isDryRun(flags) {
+		// Preview only — skip the mkdir, skip the write, skip the
+		// hostname derivation (the derived value is inherently a
+		// side-effect at the caller's level via config.WriteConfigKey
+		// calls downstream; here we only want the user to see where the
+		// config WOULD land).
+		fmt.Fprintln(stderrSink(flags), i18n.Tf(i18n.AutoInitDryRunGlobalConfig, map[string]any{
+			"Path": logging.TildePath(target),
+		}))
 		return nil
 	}
 
@@ -66,7 +103,7 @@ func EnsureGlobalConfig(paths config.Paths) error {
 	}
 	// i18n user-facing line: surfaces to TTY users so the auto-init is
 	// visible. slog still records structured fields for log scraping.
-	fmt.Fprintln(os.Stderr, i18n.Tf(i18n.AutoInitGlobalConfigCreated, map[string]any{
+	fmt.Fprintln(stderrSink(flags), i18n.Tf(i18n.AutoInitGlobalConfigCreated, map[string]any{
 		"Path":      logging.TildePath(target),
 		"Tag":       DefaultTag,
 		"MachineID": machineID,
@@ -83,6 +120,12 @@ func EnsureGlobalConfig(paths config.Paths) error {
 //  3. Auto-init at `${HAMS_DATA_HOME}/${DefaultAutoStoreSubdir}` and
 //     persist the path back into the global config.
 //
+// When flags.DryRun is set AND the auto-init path would otherwise fire,
+// EnsureStoreReady emits a `[dry-run] Would ...` preview line to
+// flags.Stderr() and returns (targetPath, false, nil) WITHOUT calling
+// storeinit.Bootstrap or persisting store_path. Side-effect-free by
+// construction, matching the global-config dry-run semantics above.
+//
 // Returns ("", false, err) when auto-init fails.
 //
 // Returns (storePath, autoInited=true, nil) when this call performed
@@ -90,7 +133,7 @@ func EnsureGlobalConfig(paths config.Paths) error {
 //
 // Returns (storePath, autoInited=false, nil) when the path was already
 // configured.
-func EnsureStoreReady(paths config.Paths, cfg *config.Config, cliOverride string) (storePath string, autoInited bool, err error) {
+func EnsureStoreReady(paths config.Paths, cfg *config.Config, cliOverride string, flags *provider.GlobalFlags) (storePath string, autoInited bool, err error) {
 	if cliOverride != "" {
 		return cliOverride, false, nil
 	}
@@ -103,12 +146,34 @@ func EnsureStoreReady(paths config.Paths, cfg *config.Config, cliOverride string
 		if cfg != nil {
 			cfg.StorePath = target
 		}
+		if isDryRun(flags) {
+			// Already-bootstrapped store is a no-op even outside
+			// dry-run, but we MUST NOT call WriteConfigKey here in
+			// dry-run mode — that would mutate ~/.config/hams/
+			// hams.config.yaml. Surface a preview line only.
+			fmt.Fprintln(stderrSink(flags), i18n.Tf(i18n.AutoInitDryRunStore, map[string]any{
+				"Path": logging.TildePath(target),
+			}))
+			return target, false, nil
+		}
 		// Persist for next-time discoverability even if the in-memory
 		// cfg already had it (cheap; no-op when value matches).
 		if err := config.WriteConfigKey(paths, "", "store_path", target); err != nil {
 			slog.Warn("auto-init: failed to persist store_path to global config",
 				"error", err, "path", target)
 		}
+		return target, false, nil
+	}
+
+	if isDryRun(flags) {
+		// Fresh target that WOULD be scaffolded. Emit the preview line
+		// so the user sees where the store is headed, but create
+		// nothing — no directory, no git init, no template files, no
+		// global-config mutation. Honors CLAUDE.md's "dry-run is
+		// lossless" guarantee on the first-run path.
+		fmt.Fprintln(stderrSink(flags), i18n.Tf(i18n.AutoInitDryRunStore, map[string]any{
+			"Path": logging.TildePath(target),
+		}))
 		return target, false, nil
 	}
 
@@ -123,19 +188,62 @@ func EnsureStoreReady(paths config.Paths, cfg *config.Config, cliOverride string
 			"error", writeErr, "path", target)
 	}
 
+	// Seed machine-scoped identity (profile_tag + machine_id) so the
+	// user does not see the "profile_tag is empty / machine_id is
+	// empty" nudges on every subsequent `hams <provider>` invocation.
+	// This makes the first-time onboarding loop single-shot: `hams
+	// brew install htop` produces a complete, committable config in
+	// one command. seedIdentityIfMissing is a no-op when the user has
+	// already set either key (e.g. via `hams config set profile_tag
+	// macOS` before the first provider install).
+	seedIdentityIfMissing(paths)
+
 	if cfg != nil {
 		cfg.StorePath = target
 	}
 
 	// i18n user-facing line so first-run users see WHERE the store
 	// landed without scraping slog records.
-	fmt.Fprintln(os.Stderr, i18n.Tf(i18n.AutoInitStoreCreated, map[string]any{
+	fmt.Fprintln(stderrSink(flags), i18n.Tf(i18n.AutoInitStoreCreated, map[string]any{
 		"Path": logging.TildePath(target),
 	}))
 	slog.Info("auto-initialized hams store",
 		"path", logging.TildePath(target),
 		"hint", "edit ~/.config/hams/hams.config.yaml to relocate")
 	return target, true, nil
+}
+
+// seedIdentityIfMissing writes `profile_tag` + `machine_id` to the global
+// config IFF those keys are currently empty. Respects user-supplied
+// values: if the user ran `hams config set profile_tag macOS` before
+// their first provider install, the explicit choice is preserved.
+//
+// Failures are logged (slog.Warn) but not propagated — identity seeding
+// is best-effort and the surrounding auto-init path already succeeded;
+// a failure here does not invalidate the store itself.
+func seedIdentityIfMissing(paths config.Paths) {
+	cfg, err := config.Load(paths, "", "")
+	if err != nil {
+		slog.Warn("auto-init: failed to load config for identity seeding", "error", err)
+		return
+	}
+	seeds := []struct {
+		key   string
+		empty bool
+		value string
+	}{
+		{"profile_tag", cfg.ProfileTag == "", config.DefaultProfileTag},
+		{"machine_id", cfg.MachineID == "", config.DeriveMachineID()},
+	}
+	for _, s := range seeds {
+		if !s.empty || s.value == "" {
+			continue
+		}
+		if wErr := config.WriteConfigKey(paths, "", s.key, s.value); wErr != nil {
+			slog.Warn("auto-init: failed to seed identity key",
+				"key", s.key, "error", wErr)
+		}
+	}
 }
 
 // defaultMachineID picks a reasonable default for the machine_id field

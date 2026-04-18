@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"bytes"
 	"context"
 	"os"
 	"path/filepath"
@@ -20,7 +21,7 @@ func TestEnsureGlobalConfig_CreatesWhenMissing(t *testing.T) {
 	home := t.TempDir()
 	paths := config.Paths{ConfigHome: home, DataHome: t.TempDir()}
 
-	if err := EnsureGlobalConfig(paths); err != nil {
+	if err := EnsureGlobalConfig(paths, nil); err != nil {
 		t.Fatalf("EnsureGlobalConfig: %v", err)
 	}
 
@@ -46,7 +47,7 @@ func TestEnsureGlobalConfig_IsIdempotent(t *testing.T) {
 	home := t.TempDir()
 	paths := config.Paths{ConfigHome: home, DataHome: t.TempDir()}
 
-	if err := EnsureGlobalConfig(paths); err != nil {
+	if err := EnsureGlobalConfig(paths, nil); err != nil {
 		t.Fatalf("first EnsureGlobalConfig: %v", err)
 	}
 
@@ -56,7 +57,7 @@ func TestEnsureGlobalConfig_IsIdempotent(t *testing.T) {
 		t.Fatalf("write custom: %v", err)
 	}
 
-	if err := EnsureGlobalConfig(paths); err != nil {
+	if err := EnsureGlobalConfig(paths, nil); err != nil {
 		t.Fatalf("second EnsureGlobalConfig: %v", err)
 	}
 
@@ -75,7 +76,7 @@ func TestEnsureStoreReady_AutoInitsAtDefaultLocation(t *testing.T) {
 	data := t.TempDir()
 	paths := config.Paths{ConfigHome: home, DataHome: data}
 
-	storePath, autoInited, err := EnsureStoreReady(paths, &config.Config{}, "")
+	storePath, autoInited, err := EnsureStoreReady(paths, &config.Config{}, "", nil)
 	if err != nil {
 		t.Fatalf("EnsureStoreReady: %v", err)
 	}
@@ -109,7 +110,7 @@ func TestEnsureStoreReady_RespectsCLIOverride(t *testing.T) {
 	paths := config.Paths{ConfigHome: t.TempDir(), DataHome: t.TempDir()}
 	override := "/custom/path"
 
-	storePath, autoInited, err := EnsureStoreReady(paths, &config.Config{}, override)
+	storePath, autoInited, err := EnsureStoreReady(paths, &config.Config{}, override, nil)
 	if err != nil {
 		t.Fatalf("EnsureStoreReady with override: %v", err)
 	}
@@ -202,4 +203,155 @@ func TestRouteToProvider_AutoInitSkippedWhenStoreOverridden(t *testing.T) {
 func testContext(t *testing.T) context.Context {
 	t.Helper()
 	return context.Background()
+}
+
+// TestEnsureStoreReady_DryRunHasNoSideEffects locks in CLAUDE.md's
+// first-principle: `--dry-run` MUST NOT touch the filesystem, even on
+// the fresh-machine auto-init path that would otherwise mkdir /
+// git-init / write templates. Asserts that:
+//
+//  1. The store directory is NOT created under HAMS_DATA_HOME.
+//  2. The global config is NOT persisted (no store_path key write).
+//  3. The stderr sink captures a `[dry-run] Would ...` preview line.
+//
+// Regression gate for the "auto-init-ux-hardening" task's dry-run
+// short-circuit requirement.
+func TestEnsureStoreReady_DryRunHasNoSideEffects(t *testing.T) {
+	t.Setenv("HAMS_NO_AUTO_INIT", "")
+	home := t.TempDir()
+	data := t.TempDir()
+	paths := config.Paths{ConfigHome: home, DataHome: data}
+
+	var stderr bytes.Buffer
+	flags := &provider.GlobalFlags{DryRun: true, Err: &stderr}
+
+	storePath, autoInited, err := EnsureStoreReady(paths, &config.Config{}, "", flags)
+	if err != nil {
+		t.Fatalf("EnsureStoreReady (dry-run): %v", err)
+	}
+	if autoInited {
+		t.Errorf("autoInited = true, want false under dry-run (no Bootstrap ran)")
+	}
+	wantPath := filepath.Join(data, DefaultAutoStoreSubdir)
+	if storePath != wantPath {
+		t.Errorf("storePath = %q, want preview target %q", storePath, wantPath)
+	}
+
+	// Filesystem invariant: the target dir must NOT exist on disk.
+	if _, err := os.Stat(wantPath); err == nil {
+		t.Errorf("dry-run created target directory at %s — expected no side effect", wantPath)
+	}
+	// Global config invariant: the helper must NOT have written
+	// store_path back. A missing config file is the strongest form
+	// of "no side effect" — we assert the file doesn't exist.
+	if _, err := os.Stat(paths.GlobalConfigPath()); err == nil {
+		t.Errorf("dry-run wrote global config at %s — expected no side effect",
+			paths.GlobalConfigPath())
+	}
+	// Preview line invariant: the stderr sink MUST have captured the
+	// `[dry-run] Would ...` line. Substring check is tolerant of
+	// locale drift (the same key is translated).
+	got := stderr.String()
+	if !strings.Contains(got, "[dry-run]") || !strings.Contains(got, "store") {
+		t.Errorf("stderr preview missing; got: %q", got)
+	}
+}
+
+// TestEnsureGlobalConfig_DryRunSkipsWrite mirrors the above for the
+// global-config helper: `--dry-run` MUST NOT write
+// ~/.config/hams/hams.config.yaml on a pristine host.
+func TestEnsureGlobalConfig_DryRunSkipsWrite(t *testing.T) {
+	t.Setenv("HAMS_NO_AUTO_INIT", "")
+	home := t.TempDir()
+	paths := config.Paths{ConfigHome: home, DataHome: t.TempDir()}
+
+	var stderr bytes.Buffer
+	flags := &provider.GlobalFlags{DryRun: true, Err: &stderr}
+
+	if err := EnsureGlobalConfig(paths, flags); err != nil {
+		t.Fatalf("EnsureGlobalConfig (dry-run): %v", err)
+	}
+
+	if _, err := os.Stat(paths.GlobalConfigPath()); err == nil {
+		t.Errorf("dry-run wrote global config at %s — expected no side effect",
+			paths.GlobalConfigPath())
+	}
+	got := stderr.String()
+	if !strings.Contains(got, "[dry-run]") || !strings.Contains(got, "global config") {
+		t.Errorf("stderr preview missing; got: %q", got)
+	}
+}
+
+// TestEnsureStoreReady_SeedsIdentity asserts that after a real (non-
+// dry-run) Bootstrap, the global config now contains profile_tag +
+// machine_id — so subsequent `hams <provider> …` invocations don't
+// see the "profile_tag empty / machine_id empty" nudge. Pins
+// config.HostnameLookup to a deterministic value so the test doesn't
+// depend on the real CI hostname.
+func TestEnsureStoreReady_SeedsIdentity(t *testing.T) {
+	t.Setenv("HAMS_NO_AUTO_INIT", "")
+	t.Setenv("HAMS_MACHINE_ID", "")
+
+	origHostname := config.HostnameLookup
+	t.Cleanup(func() { config.HostnameLookup = origHostname })
+	config.HostnameLookup = func() (string, error) { return "testbox", nil }
+
+	home := t.TempDir()
+	data := t.TempDir()
+	paths := config.Paths{ConfigHome: home, DataHome: data}
+
+	if _, _, err := EnsureStoreReady(paths, &config.Config{}, "", nil); err != nil {
+		t.Fatalf("EnsureStoreReady: %v", err)
+	}
+
+	// Re-load the config from disk: the seeded identity keys must
+	// now round-trip through the YAML + UnmarshalYAML path.
+	cfg, err := config.Load(paths, "", "")
+	if err != nil {
+		t.Fatalf("config.Load after seed: %v", err)
+	}
+	if cfg.ProfileTag != config.DefaultProfileTag {
+		t.Errorf("profile_tag = %q, want %q after seed",
+			cfg.ProfileTag, config.DefaultProfileTag)
+	}
+	if cfg.MachineID != "testbox" {
+		t.Errorf("machine_id = %q, want %q after seed (via HostnameLookup seam)",
+			cfg.MachineID, "testbox")
+	}
+}
+
+// TestEnsureStoreReady_RespectsPreSetIdentity asserts the seed helper
+// MUST NOT overwrite a user-supplied value. If the user ran `hams
+// config set profile_tag macOS` before their first provider install,
+// the scaffolder keeps "macOS" — it does not silently downgrade to
+// "default".
+func TestEnsureStoreReady_RespectsPreSetIdentity(t *testing.T) {
+	t.Setenv("HAMS_NO_AUTO_INIT", "")
+
+	home := t.TempDir()
+	data := t.TempDir()
+	paths := config.Paths{ConfigHome: home, DataHome: data}
+
+	// Pre-seed the global config with a user-chosen identity.
+	userConfig := "profile_tag: macOS\nmachine_id: laptop-m5x\n"
+	if err := os.WriteFile(paths.GlobalConfigPath(), []byte(userConfig), 0o600); err != nil {
+		t.Fatalf("pre-seed global config: %v", err)
+	}
+
+	if _, _, err := EnsureStoreReady(paths, &config.Config{}, "", nil); err != nil {
+		t.Fatalf("EnsureStoreReady: %v", err)
+	}
+
+	cfg, err := config.Load(paths, "", "")
+	if err != nil {
+		t.Fatalf("config.Load after seed: %v", err)
+	}
+	if cfg.ProfileTag != "macOS" {
+		t.Errorf("seedIdentityIfMissing overwrote user profile_tag: got %q, want %q",
+			cfg.ProfileTag, "macOS")
+	}
+	if cfg.MachineID != "laptop-m5x" {
+		t.Errorf("seedIdentityIfMissing overwrote user machine_id: got %q, want %q",
+			cfg.MachineID, "laptop-m5x")
+	}
 }

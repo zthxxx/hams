@@ -254,6 +254,8 @@ func TestCatalogCoherence_EveryTypedKeyResolves(t *testing.T) {
 		// autoinit
 		AutoInitGlobalConfigCreated,
 		AutoInitStoreCreated,
+		AutoInitDryRunGlobalConfig,
+		AutoInitDryRunStore,
 		// ufe.no_store_configured.*
 		UFENoStoreConfigured,
 		UFENoStoreConfiguredSuggestClone,

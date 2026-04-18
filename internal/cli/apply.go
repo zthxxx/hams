@@ -225,10 +225,10 @@ func runApply(ctx context.Context, flags *provider.GlobalFlags, registry *provid
 				i18n.T(i18n.UFENoStoreConfiguredOptOutSuggest),
 			)
 		}
-		if ensureErr := EnsureGlobalConfig(paths); ensureErr != nil {
+		if ensureErr := EnsureGlobalConfig(paths, flags); ensureErr != nil {
 			return fmt.Errorf("auto-init global config: %w", ensureErr)
 		}
-		resolved, _, ensureErr := EnsureStoreReady(paths, nil, "")
+		resolved, _, ensureErr := EnsureStoreReady(paths, nil, "", flags)
 		if ensureErr != nil {
 			return fmt.Errorf("auto-init default store: %w", ensureErr)
 		}

@@ -10,6 +10,12 @@
 - id: autoinit.store_created
   other: "已自动初始化 hams 存储库 {{.Path}} — 如需迁移路径请编辑 ~/.config/hams/hams.config.yaml"
 
+- id: autoinit.dry_run.global_config
+  other: "[dry-run] 将自动创建 hams 全局配置 {{.Path}}"
+
+- id: autoinit.dry_run.store
+  other: "[dry-run] 将自动初始化 hams 存储库 {{.Path}}"
+
 # ---------------------------------------------------------------------------
 # 通用错误（UFE）信息
 # ---------------------------------------------------------------------------

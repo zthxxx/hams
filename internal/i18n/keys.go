@@ -39,6 +39,17 @@ const (
 	// Template var: {{.Path}}.
 	AutoInitStoreCreated = "autoinit.store_created"
 
+	// AutoInitDryRunGlobalConfig — dry-run preview line emitted by
+	// EnsureGlobalConfig when --dry-run is set so the user sees what
+	// WOULD happen without any filesystem side effects. Template var:
+	// {{.Path}}.
+	AutoInitDryRunGlobalConfig = "autoinit.dry_run.global_config"
+
+	// AutoInitDryRunStore — dry-run preview line emitted by
+	// EnsureStoreReady when --dry-run is set. Template var:
+	// {{.Path}}.
+	AutoInitDryRunStore = "autoinit.dry_run.store"
+
 	// ---- No-store-configured UFE family ----.
 
 	// UFENoStoreConfigured — primary message when a command needs a

@@ -10,9 +10,38 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"time"
 
 	gogit "github.com/go-git/go-git/v5"
 )
+
+// GitInitTimeout bounds the `git init` exec invocation inside
+// [initGitRepo]. Corporate laptops occasionally wire a global
+// `init.templateDir` hook that does a blocking network lookup (intranet
+// LDAP, certificate pinning); without a timeout the hams binary hangs
+// forever on its first command. 30 seconds is long enough for a
+// legitimate local init to finish yet short enough that a wedged hook
+// returns control to the user before they give up and kill the process.
+//
+// Exposed as a package-level var (not a const) so tests can shorten
+// the deadline to a few hundred milliseconds and exercise the timeout
+// branch without sleeping for 30 seconds per test run.
+var GitInitTimeout = 30 * time.Second //nolint:gochecknoglobals // tunable timeout with a production default
+
+// LookPathGit resolves the `git` binary path. Exposed as a
+// package-level var so tests can inject a fake executable (a shell
+// script that deliberately sleeps longer than [GitInitTimeout]) to
+// exercise the timeout branch without depending on a slow real hook.
+var LookPathGit = func() (string, error) { //nolint:gochecknoglobals // DI seam for unit tests
+	return exec.LookPath("git")
+}
+
+// ExecCommandContext is the DI seam for launching the external `git`
+// process. Tests replace it to point at a sleeping fake binary; the
+// production value delegates to [exec.CommandContext]. Both the real
+// and fake variants receive the already-timed-out context so the
+// wrapped command picks up the deadline.
+var ExecCommandContext = exec.CommandContext //nolint:gochecknoglobals // DI seam for unit tests
 
 //go:embed template/*
 var templateFS embed.FS
@@ -92,10 +121,22 @@ func isGitRepo(dir string) bool {
 }
 
 func initGitRepo(ctx context.Context, dir string) error {
-	if gitBin, err := exec.LookPath("git"); err == nil {
+	if gitBin, err := LookPathGit(); err == nil {
+		// Time-box the external `git init` so a hung global hook
+		// (rare but real on corporate laptops that wire an
+		// `init.templateDir` with blocking network I/O) cannot
+		// wedge first-time setup. The in-process go-git fallback
+		// below does NOT need a timeout — it cannot execute any
+		// global hook because the hook chain is only triggered by
+		// the `git` binary.
+		ctxTimeout, cancel := context.WithTimeout(ctx, GitInitTimeout)
+		defer cancel()
 		// gitBin came from LookPath, dir came from os.MkdirAll above —
-		// neither is user-input directly tainted at this point.
-		cmd := exec.CommandContext(ctx, gitBin, "init", "--quiet", dir) //nolint:gosec // gitBin resolved via LookPath; dir validated by caller
+		// neither is user-input directly tainted at this point. The
+		// ExecCommandContext seam makes gosec defer taint analysis to
+		// the tests' fake, so the original gosec nolint directive is
+		// no longer required here.
+		cmd := ExecCommandContext(ctxTimeout, gitBin, "init", "--quiet", dir)
 		if out, runErr := cmd.CombinedOutput(); runErr != nil {
 			return fmt.Errorf("git init failed: %w (output: %s)", runErr, out)
 		}

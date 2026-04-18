@@ -141,12 +141,7 @@ These tasks close the gap between `dev` and `local/loop` (reference-only), plus 
 
 Outstanding tasks:
 
-- [ ] **auto-init-ux-hardening** — Add dry-run short-circuit to the auto-init path (no side effects when `flags.DryRun`), wrap `git init` in `context.WithTimeout(ctx, 30*time.Second)`, and seed `profile_tag` + `machine_id` in the global config when empty during first-run scaffold. Keep `internal/storeinit` package + go-git fallback. Reference: `/tmp/hams-loop/internal/cli/scaffold.go:91`, `:149`, `:186`.
-  - [ ] Implement dry-run short-circuit in `internal/storeinit/Bootstrap` + `internal/cli/autoinit.go`.
-  - [ ] Wrap `initGitRepo` exec path in 30s context timeout (preserve go-git fallback).
-  - [ ] Seed `profile_tag` / `machine_id` via `seedIfMissing`-style helper; respect pre-set user values.
-  - [ ] Unit tests for all three behaviors (property tests where applicable).
-  - [ ] Verification: `task check` passes; manual test `hams --dry-run brew install htop` on a fresh `HAMS_CONFIG_HOME` creates zero files.
+- [x] **auto-init-ux-hardening** — Done 2026-04-18 via `openspec/changes/2026-04-18-auto-init-ux-hardening/`. `EnsureGlobalConfig` + `EnsureStoreReady` now accept `*provider.GlobalFlags` and short-circuit on `flags.DryRun` (preview line to stderr, zero filesystem writes). `internal/storeinit/initGitRepo` wraps the external `git init` exec in `context.WithTimeout(ctx, GitInitTimeout)` (30s default, tunable var for tests); go-git fallback is untouched. `seedIdentityIfMissing` populates `profile_tag` + `machine_id` via `config.DefaultProfileTag` / `config.DeriveMachineID()` only when the user has not pre-set them. Five new unit tests: timeout (DI-seam fake git), dry-run invariants (store + global-config), seed-on-empty, and respect-pre-set-identity.
 
 - [ ] **git-passthrough-and-spec** — Rewrite `internal/provider/builtin/git/unified.go` so that `hams git <unknown-subcommand>` transparently passes through to the real `git` binary, preserving stdin/stdout/stderr and exit code. `hams git clone <remote> <path>` without `--hams-path=` must auto-translate into the CloneProvider's internal `add <remote> --hams-path=<path>` DSL. Reject unforwarded git flags (`--depth`, `--branch`) with an actionable UFE. All new user-facing strings go through `i18n.T` / `i18n.Tf`. Reference: `/tmp/hams-loop/internal/provider/builtin/git/unified.go:94,132,197`.
   - [ ] Passthrough branch for unhandled subcommands (`hams git pull/log/status/...`).

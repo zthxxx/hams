@@ -154,10 +154,10 @@ func runRefresh(ctx context.Context, flags *provider.GlobalFlags, registry *prov
 	// a fresh machine returns "0 providers refreshed" rather than
 	// hard-failing on missing config (matches runApply's auto-init).
 	if cfg.StorePath == "" && !IsAutoInitDisabled() {
-		if ensureErr := EnsureGlobalConfig(paths); ensureErr != nil {
+		if ensureErr := EnsureGlobalConfig(paths, flags); ensureErr != nil {
 			return fmt.Errorf("auto-init global config: %w", ensureErr)
 		}
-		if _, _, ensureErr := EnsureStoreReady(paths, cfg, ""); ensureErr != nil {
+		if _, _, ensureErr := EnsureStoreReady(paths, cfg, "", flags); ensureErr != nil {
 			return fmt.Errorf("auto-init default store: %w", ensureErr)
 		}
 	}
