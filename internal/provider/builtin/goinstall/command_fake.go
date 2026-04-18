@@ -76,6 +76,13 @@ func (f *FakeCmdRunner) Install(_ context.Context, pkg string) error {
 	return nil
 }
 
+// Uninstall implements CmdRunner as a no-op, matching realCmdRunner.
+// goinstall has no uninstall verb at runtime, so the fake mirrors that
+// contract and returns nil without touching the virtual installed set.
+func (f *FakeCmdRunner) Uninstall(_ context.Context, _ string) error {
+	return nil
+}
+
 // IsBinaryInstalled implements CmdRunner.
 func (f *FakeCmdRunner) IsBinaryInstalled(_ context.Context, pkg string) bool {
 	f.mu.Lock()

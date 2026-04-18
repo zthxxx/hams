@@ -31,7 +31,7 @@
 - [x] 5.1 Migrate `npm` onto `AutoRecordInstall` / `AutoRecordRemove`.
 - [x] 5.2 Migrate `pnpm`.
 - [x] 5.3 Migrate `uv`.
-- [ ] 5.4 Migrate `goinstall` — blocked: runner has no `Uninstall` method (go install has no uninstall verb). Needs either a no-op `Uninstall` on the runner or a dispatcher variant that handles install-only providers. Tracked for a future change.
+- [x] 5.4 Migrate `goinstall` — landed. Runner gains a no-op `Uninstall(ctx, pkg) → nil` that matches the provider-level `Remove` documented no-op, satisfying `PackageInstaller` without any dispatcher variant. The user-visible "remove the binary manually" warning still fires from the apply-time `Provider.Remove` method.
 - [x] 5.5 Migrate `mas`.
 - [x] 5.6 Migrate `vscodeext`.
 - [ ] 5.7 Design a second dispatcher variant for the batch-install shape (apt).
