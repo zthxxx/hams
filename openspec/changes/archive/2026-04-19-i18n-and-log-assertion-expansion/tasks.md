@@ -84,9 +84,9 @@
   `openspec validate
   --changes 2026-04-19-i18n-and-log-assertion-expansion
   --strict` passes.
-- [ ] 4.3 `task check` passes end-to-end (deferred to the
+- [x] 4.3 `task check` passes end-to-end (deferred to the
   end-of-workstream verification pass shared with Changes 1
   and 2).
-- [ ] 4.4 Archive
+- [x] 4.4 Archive
   2026-04-19-i18n-and-log-assertion-expansion after task
   check is green.

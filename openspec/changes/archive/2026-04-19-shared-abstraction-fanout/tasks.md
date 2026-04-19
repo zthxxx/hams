@@ -67,7 +67,7 @@
   "`internal/storeinit` MUST expose `LookPathGit`,
   `ExecCommandContext`, `GitInitTimeout` as package-level
   variables for unit-test substitution".
-- [ ] 4.3 `task check` passes end-to-end (fmt + lint + unit +
+- [x] 4.3 `task check` passes end-to-end (fmt + lint + unit +
   integration + e2e).
-- [ ] 4.4 Archive 2026-04-19-shared-abstraction-fanout after
+- [x] 4.4 Archive 2026-04-19-shared-abstraction-fanout after
   task check is green.

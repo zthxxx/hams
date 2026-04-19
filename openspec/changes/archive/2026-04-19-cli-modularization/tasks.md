@@ -65,8 +65,8 @@
   two SHALLs (autoinit.go boundary + every-entry-point tag
   validation). `openspec validate
   --changes 2026-04-19-cli-modularization --strict` passes.
-- [ ] 4.2 `task check` passes end-to-end (deferred to the
-  end-of-workstream verification pass shared with Changes 1
-  and 3).
-- [ ] 4.3 Archive 2026-04-19-cli-modularization after task
-  check is green.
+- [x] 4.2 `task check` passes end-to-end ("=== All OpenWrt
+  E2E tests passed ===", exit 0) on the workstream's final
+  verification pass.
+- [x] 4.3 Archived 2026-04-19-cli-modularization. Spec deltas
+  merged into `openspec/specs/cli-architecture/spec.md`.
