@@ -30,20 +30,16 @@ jobs:
         with:
           go-version: "1.26"
 
+      - uses: go-task/setup-task@v2
+        with:
+          version: 3.x
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Build
         env:
-          CGO_ENABLED: "0"
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
-        run: |
-          VERSION="${GITHUB_REF_NAME}"
-          COMMIT="$(git rev-parse --short HEAD)"
-          DATE="$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
-          LDFLAGS="-s -w \
-            -X github.com/zthxxx/hams/internal/version.version=${VERSION} \
-            -X github.com/zthxxx/hams/internal/version.commit=${COMMIT} \
-            -X github.com/zthxxx/hams/internal/version.date=${DATE}"
-          go build -ldflags "${LDFLAGS}" -o bin/hams-${{ matrix.goos }}-${{ matrix.goarch }} ./cmd/hams
+        run: task ci:build
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -58,16 +54,18 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - uses: go-task/setup-task@v2
+        with:
+          version: 3.x
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Download all artifacts
         uses: actions/download-artifact@v4
         with:
           path: dist/
 
-      - name: Prepare release files
-        run: |
-          mkdir -p release
-          find dist -type f -name 'hams-*' -exec cp {} release/ \;
-          cd release && sha256sum hams-* > checksums.txt
+      - name: Package release files
+        run: task ci:release:package
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2

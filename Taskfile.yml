@@ -222,6 +222,16 @@ tasks:
     requires:
       vars: []
 
+  ci:release:package:
+    desc: "CI release packaging — flatten download-artifact dist/**/hams-* into release/ and generate checksums.txt"
+    cmds:
+      - mkdir -p release
+      - find dist -type f -name 'hams-*' -exec cp {} release/ \;
+      - cd release && sha256sum hams-* > checksums.txt
+    generates:
+      - release/hams-*
+      - release/checksums.txt
+
   ci:integration:run:
     desc: CI integration — build Dockerfile and run go test -tags=integration inside it
     cmds:
