@@ -339,7 +339,6 @@ func TestEnforceTagProfileConsistency_TableDriven(t *testing.T) {
 		{name: "conflicting tag and profile", flags: &provider.GlobalFlags{Tag: "macOS", Profile: "linux"}, wantErr: true},
 	}
 	for _, tc := range cases {
-		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			got := enforceTagProfileConsistency(tc.flags)

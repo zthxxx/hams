@@ -322,3 +322,774 @@
 
 - id: provider.homebrew.list.header
   other: "Homebrew managed packages:"
+
+# ===========================================================================
+# Imported from origin/dev in 2026-04-19-i18n-and-log-assertion-expansion.
+# Translations are taken verbatim from origin/dev so the wording matches
+# dev's UX exactly.
+# ===========================================================================
+
+- id: app.title
+  other: "hams — declarative workstation environment management"
+
+# ---------------------------------------------------------------------------
+# Auto-init flow (`hams brew install jq` / `hams apply` on a clean machine)
+# ---------------------------------------------------------------------------
+
+- id: autoinit.global_config_created
+  other: "Auto-created hams global config at {{.Path}} (tag={{.Tag}}, machine_id={{.MachineID}})"
+
+
+- id: autoinit.store_created
+  other: "Auto-initialized hams store at {{.Path}} — edit ~/.config/hams/hams.config.yaml to relocate"
+
+
+- id: autoinit.dry_run.global_config
+  other: "[dry-run] Would auto-create hams global config at {{.Path}}"
+
+
+- id: autoinit.dry_run.store
+  other: "[dry-run] Would auto-init hams store at {{.Path}}"
+
+# ---------------------------------------------------------------------------
+# Common UFE messages (user-facing error strings — always English-readable
+# for default users; non-English locales fall through to the en text when
+# the translation is missing).
+# ---------------------------------------------------------------------------
+
+- id: ufe.no_store_configured
+  other: "no store directory configured"
+
+
+- id: ufe.no_store_configured.suggest_clone
+  other: "Run 'hams apply --from-repo=<user/repo>' to clone a store"
+
+
+- id: ufe.no_store_configured.suggest_set
+  other: "Or set store_path in ~/.config/hams/hams.config.yaml"
+
+
+- id: ufe.no_store_configured.suggest_init
+  other: "Or initialize one: hams store init"
+
+
+- id: ufe.no_store_configured.opt_out
+  other: "no store directory configured (auto-init disabled via HAMS_NO_AUTO_INIT)"
+
+
+- id: ufe.no_store_configured.opt_out_suggest
+  other: "Or unset HAMS_NO_AUTO_INIT to enable auto-init"
+
+# ---------------------------------------------------------------------------
+# Apply / refresh status lines
+# ---------------------------------------------------------------------------
+
+- id: apply.dry_run_header
+  other: "[dry-run] Would apply configurations. No changes will be made."
+
+
+- id: apply.no_providers_match
+  other: "No providers match: no hamsfile or state file present for any registered provider."
+
+
+- id: refresh.no_providers_match
+  other: "No providers match the current filter."
+
+# ---------------------------------------------------------------------------
+# `hams git` unified handler
+# ---------------------------------------------------------------------------
+
+- id: git.usage.header
+  other: "hams git requires a subcommand"
+
+
+- id: git.usage.suggest_main
+  other: "Usage: hams git <subcommand> [args]"
+
+
+- id: git.usage.suggest_subcommands
+  other: "Subcommands: config, clone"
+
+
+- id: git.usage.example_config
+  other: "Example: hams git config user.name zthxxx"
+
+
+- id: git.usage.example_clone
+  other: "Example: hams git clone https://github.com/zthxxx/dotfiles ~/repos/dotfiles"
+
+
+- id: git.unknown_subcommand
+  other: "unknown git subcommand {{.Sub}}"
+
+# ---------------------------------------------------------------------------
+# CLI framework errors — top-level hams command validation
+# ---------------------------------------------------------------------------
+
+- id: cli.err.no-positional-args
+  other: "hams {{.Cmd}} does not take positional arguments (got {{.Arg}})"
+
+
+- id: cli.err.no-positional-args.suggest-filter
+  other: "To filter providers: hams {{.Cmd}} --only=<provider1>,<provider2>"
+
+
+- id: cli.err.no-positional-args.suggest-all
+  other: "To {{.Verb}} everything: hams {{.Cmd}}"
+
+
+- id: cli.err.only-except-conflict
+  other: "--only and --except are mutually exclusive"
+
+
+- id: cli.err.only-except-conflict.suggest
+  other: "Use --only to include specific providers, or --except to exclude them"
+
+
+- id: cli.err.bootstrap-mode-conflict
+  other: "--bootstrap and --no-bootstrap are mutually exclusive"
+
+
+- id: cli.err.bootstrap-mode-conflict.suggest
+  other: "Pick one: --bootstrap to auto-run, --no-bootstrap to fail fast"
+
+
+- id: cli.err.from-repo-store-conflict
+  other: "--from-repo and --store are mutually exclusive"
+
+
+- id: cli.err.store-path-invalid
+  other: "store_path {{.Path}} does not exist or is not a directory"
+
+
+- id: cli.err.store-path-invalid.suggest-fix
+  other: "Fix store_path in ~/.config/hams/hams.config.yaml"
+
+
+- id: cli.err.profile-not-found
+  other: "profile {{.Tag}} not found at {{.Dir}}"
+
+
+- id: cli.err.profile-not-found.suggest-list
+  other: "Check available profiles: ls {{.Store}}"
+
+
+- id: cli.err.profile-not-found.suggest-create
+  other: "Or create this profile: mkdir -p {{.Dir}}"
+
+
+- id: cli.err.config-file-missing
+  other: "config file {{.Path}} does not exist"
+
+
+- id: cli.err.config-file-missing.suggest-check
+  other: "Check the path spelling"
+
+
+- id: cli.err.config-file-missing.suggest-create
+  other: "Create the file: touch {{.Path}}"
+
+
+- id: cli.err.config-file-missing.suggest-default
+  other: "Or omit --config to use the default at ~/.config/hams/hams.config.yaml"
+
+
+- id: cli.err.only-empty
+  other: "--only value is empty after trimming whitespace"
+
+
+- id: cli.err.except-empty
+  other: "--except value is empty after trimming whitespace"
+
+
+- id: cli.err.unknown-provider
+  other: "unknown provider(s): {{.Names}}"
+
+
+- id: cli.err.unknown-provider.suggest-list
+  other: "Available providers: {{.Names}}"
+
+
+- id: cli.err.profile-not-configured
+  other: "{{.Missing}} not configured and stdin is not a terminal"
+
+
+- id: cli.err.sudo-acquisition-failed
+  other: "sudo acquisition failed: {{.Err}}"
+
+
+- id: cli.err.sudo-acquisition-failed.suggest-reenter
+  other: "Re-run and enter the sudo password when prompted"
+
+
+- id: cli.err.sudo-acquisition-failed.suggest-passwordless
+  other: "Or arrange passwordless sudo for this user (NOPASSWD entry in sudoers)"
+
+
+- id: cli.err.sudo-acquisition-failed.suggest-filter
+  other: "Or filter out sudo-requiring providers: hams apply --except=apt"
+
+
+- id: cli.err.interrupted
+  other: "hams apply interrupted: {{.Err}}"
+
+
+- id: cli.err.interrupted.suggest-inspect
+  other: "Partially-applied state has been saved to disk; inspect with `hams refresh`"
+
+
+- id: cli.err.interrupted.suggest-rerun
+  other: "Re-run `hams apply` to continue installing remaining resources"
+
+# ---------------------------------------------------------------------------
+# Apply status lines (extra beyond apply.dry_run_header / no_providers_match)
+# ---------------------------------------------------------------------------
+
+- id: apply.execution-order-header
+  other: "[dry-run] Provider execution order:"
+
+
+- id: apply.bootstrap-dry-run
+  other: "[dry-run] Would bootstrap {{.Provider}} via: {{.Script}}"
+
+
+- id: apply.no-providers-state-only
+  other: "No providers match: every selected provider is state-only and --prune-orphans was not given."
+
+
+- id: apply.no-providers-filtered
+  other: "No providers match: --only/--except excluded every provider that has artifacts."
+
+
+- id: apply.no-providers-only-missing
+  other: "No providers match: {{.Names}} {{.Verb}} no hamsfile or state file for the current profile — nothing to apply."
+
+
+- id: apply.no-providers-profile-line
+  other: "  Profile: {{.Tag}} ({{.Dir}})"
+
+
+- id: apply.no-providers-suggest-install
+  other: "  Run 'hams {{.Provider}} install <pkg>' to start tracking, or omit --only to apply every provider with artifacts."
+
+
+- id: apply.no-providers-profile-dir-missing
+  other: "No providers match: profile directory {{.Dir}} does not exist (profile_tag={{.Tag}})."
+
+
+- id: apply.no-providers-available-profiles
+  other: "  Available profiles in this store: {{.List}}"
+
+
+- id: apply.no-providers-suggest-profile-fix
+  other: "  Fix: hams config set profile_tag <profile>  OR  pass --profile=<profile>"
+
+
+- id: apply.summary-complete
+  other: "\nhams apply complete: {{.Installed}} installed, {{.Updated}} updated, {{.Removed}} removed, {{.Skipped}} skipped, {{.Failed}} failed (took {{.ElapsedMs}}ms)"
+
+
+- id: apply.summary-failed-warning
+  other: "Warning: {{.Count}} provider(s) had failed actions: {{.Names}}"
+
+
+- id: apply.summary-failed-warning.suggest
+  other: "  Re-run with --debug for the underlying error from each provider's runner."
+
+
+- id: apply.summary-skipped-warning
+  other: "Warning: {{.Count}} provider(s) skipped due to errors: {{.Names}}"
+
+
+- id: apply.summary-state-fail-warning
+  other: "Warning: {{.Count}} provider(s) failed to persist state after apply: {{.Names}}"
+
+
+- id: apply.summary-state-fail-warning.suggest
+  other: "  Next `hams apply` may re-execute these resources. Check permissions on the store."
+
+
+- id: apply.summary-partial-failure-err
+  other: "{{.Failed}} resources failed, {{.Skipped}} providers skipped, {{.SaveFailed}} state saves failed"
+
+
+- id: apply.summary-partial-failure-err.suggest-retry
+  other: "Run 'hams apply' again to retry failed resources"
+
+
+- id: apply.summary-partial-failure-err.suggest-debug
+  other: "Use '--debug' for detailed error output"
+
+
+- id: apply.dry-run-no-changes
+  other: "[dry-run] No changes made (took {{.ElapsedMs}}ms)"
+
+
+- id: apply.dry-run-per-provider-header
+  other: "[dry-run] {{.DisplayName}} ({{.Name}}):"
+
+
+- id: apply.dry-run-no-changes-provider
+  other: "  no changes ({{.Count}} {{.Noun}} already at desired state)"
+
+
+- id: apply.dry-run-unchanged-tail
+  other: "  ({{.Count}} {{.Noun}} unchanged)"
+
+
+- id: apply.dry-run-state-fail-err
+  other: "[dry-run] {{.Count}} state save failure(s) during refresh"
+
+
+- id: apply.dry-run-state-fail-err.suggest-perms
+  other: "Check filesystem permissions on the store's .state/ directory"
+
+
+- id: apply.dry-run-state-fail-err.suggest-no-refresh
+  other: "Use '--no-refresh' to skip the pre-apply probe if state intentionally read-only"
+
+
+- id: apply.dry-run-skipped-err
+  other: "[dry-run] {{.Count}} providers skipped due to errors (see log for details)"
+
+
+- id: apply.dry-run-skipped-err.suggest-fix
+  other: "Fix the hamsfile or remove broken provider entries before running apply"
+
+
+- id: apply.state-fail-drift-line
+  other: "  Drift tracking is broken for these providers. Fix permissions on the store, then re-run."
+
+
+- id: apply.not-found-profile
+  other: "Not Found Profile in config, init it at first"
+
+
+- id: apply.profile-tag-prompt
+  other: "Profile tag: "
+
+
+- id: apply.profile-machine-id-prompt
+  other: "Profile Machine-ID: "
+
+# ---------------------------------------------------------------------------
+# Refresh status lines (extra beyond refresh.no_providers_match)
+# ---------------------------------------------------------------------------
+
+- id: refresh.summary-complete
+  other: "Refresh complete: {{.Count}} {{.Noun}} probed (took {{.ElapsedMs}}ms)"
+
+
+- id: refresh.summary-complete-with-save-fails
+  other: "Refresh complete: {{.Count}} {{.Noun}} probed, but {{.FailCount}} state file(s) failed to save: {{.FailList}} (took {{.ElapsedMs}}ms)"
+
+
+- id: refresh.summary-complete-with-probe-fails
+  other: "Refresh complete: {{.Count}}/{{.Total}} {{.Noun}} probed ({{.ProbeFailCount}} probe error(s) in: {{.ProbeFailList}}; see log for details) (took {{.ElapsedMs}}ms)"
+
+
+- id: refresh.summary-save-fail-warning
+  other: "Warning: {{.Count}} state save failure(s): {{.Names}} — next run may re-probe these"
+
+
+- id: refresh.interrupted
+  other: "Refresh interrupted: {{.Done}}/{{.Total}} {{.Noun}} probed before cancellation (took {{.ElapsedMs}}ms)"
+
+
+- id: refresh.state-written-header
+  other: "[dry-run] Would write state for {{.Count}} {{.Noun}}:"
+
+# ---------------------------------------------------------------------------
+# Store commands
+# ---------------------------------------------------------------------------
+
+- id: store.nothing-to-commit
+  other: "Nothing to commit — the store is clean. Skipping commit+push."
+
+
+- id: store.status.path-missing
+  other: "Store path:    {{.Path}}  (does NOT exist)"
+
+
+- id: store.status.path-missing.line1
+  other: "  The configured store_path points at a missing directory."
+
+
+- id: store.status.path-missing.line2
+  other: "  Run 'hams store init' to create it, or fix store_path in hams.config.yaml."
+
+
+- id: store.status.path
+  other: "Store path:    {{.Path}}"
+
+
+- id: store.status.profile-tag
+  other: "Profile tag:   {{.Tag}}"
+
+
+- id: store.status.machine-id
+  other: "Machine ID:    {{.ID}}"
+
+
+- id: store.status.profile-dir
+  other: "Profile dir:   {{.Dir}}"
+
+
+- id: store.status.state-dir
+  other: "State dir:     {{.Dir}}"
+
+
+- id: store.status.hamsfiles
+  other: "Hamsfiles:     {{.Count}}"
+
+
+- id: store.status.hamsfiles-missing
+  other: "Hamsfiles:     (profile dir not found)"
+
+
+- id: store.status.git
+  other: "Git status:    {{.Status}}"
+
+
+- id: store.init.dry-run-header
+  other: "[dry-run] Would initialize store at {{.Path}}"
+
+
+- id: store.init.dry-run-profile-dir
+  other: "  Would create profile dir:    {{.Path}}"
+
+
+- id: store.init.dry-run-state-dir
+  other: "  Would create state dir:      {{.Path}}"
+
+
+- id: store.init.dry-run-config-file
+  other: "  Would create {{.Path}}/hams.config.yaml (if missing)"
+
+
+- id: store.init.dry-run-gitignore
+  other: "  Would create {{.Path}}/.gitignore (if missing)"
+
+
+- id: store.init.dry-run-prompt-notice
+  other: "  Would prompt for profile_tag + machine_id (TTY detected)"
+
+
+- id: store.init.done
+  other: "Store initialized at {{.Path}}"
+
+
+- id: store.init.done.profile-dir
+  other: "  Profile dir: {{.Path}}"
+
+
+- id: store.init.done.state-dir
+  other: "  State dir:   {{.Path}}"
+
+
+- id: store.init.done.gitignore
+  other: "  .gitignore:  {{.Path}}"
+
+
+- id: store.pull.dry-run
+  other: "[dry-run] Would run: git -C {{.Path}} pull --rebase"
+
+
+- id: store.commit.dry-run
+  other: "[dry-run] Would commit changes in {{.Path}} with message {{.Msg}} and push to origin"
+
+# ---------------------------------------------------------------------------
+# Config command output
+# ---------------------------------------------------------------------------
+
+- id: config.line.config-home
+  other: "Config home:       {{.Path}}"
+
+
+- id: config.line.data-home
+  other: "Data home:         {{.Path}}"
+
+
+- id: config.line.global-config
+  other: "Global config:     {{.Path}}"
+
+
+- id: config.line.local-overrides
+  other: "Local overrides:   {{.Path}}"
+
+
+- id: config.line.profile-tag
+  other: "Profile tag:       {{.Tag}}"
+
+
+- id: config.line.machine-id
+  other: "Machine ID:        {{.ID}}"
+
+
+- id: config.line.store-path
+  other: "Store path:        {{.Path}}"
+
+
+- id: config.line.store-repo
+  other: "Store repo:        {{.Repo}}"
+
+
+- id: config.line.llm-cli
+  other: "LLM CLI:           {{.Path}}"
+
+
+- id: config.line.provider-priority
+  other: "Provider priority: {{.List}}"
+
+
+- id: config.set.dry-run
+  other: "[dry-run] Would set {{.Key}} = {{.Value}} (in {{.Target}})"
+
+
+- id: config.set.done
+  other: "Set {{.Key}} = {{.Value}} (in {{.Target}})"
+
+
+- id: config.unset.dry-run
+  other: "[dry-run] Would unset {{.Key}} (from {{.Target}})"
+
+
+- id: config.unset.done
+  other: "Unset {{.Key}} (from {{.Target}})"
+
+
+- id: config.open.dry-run
+  other: "[dry-run] Would open {{.Path}} in {{.Editor}}"
+
+
+- id: config.open.dry-run.stub
+  other: "[dry-run]   (file does not exist; would be created with a stub header)"
+
+# ---------------------------------------------------------------------------
+# hams list output
+# ---------------------------------------------------------------------------
+
+- id: list.no-resources-filter
+  other: "No resources match the current filter."
+
+
+- id: list.no-resources-status
+  other: "  --status={{.Status}} matched zero entries. Try without it or widen the set."
+
+
+- id: list.no-resources-empty
+  other: "No managed resources found."
+
+
+- id: list.no-resources-empty.line1
+  other: "Run 'hams <provider> install <package>' to start managing resources,"
+
+
+- id: list.no-resources-empty.line2
+  other: "or 'hams apply' to replay configurations from the store."
+
+
+- id: list.group-header
+  other: "\n{{.DisplayName}} ({{.Count}} {{.Noun}}):"
+
+# ---------------------------------------------------------------------------
+# hams self-upgrade
+# ---------------------------------------------------------------------------
+
+- id: upgrade.brew.dry-run
+  other: "[dry-run] Would run: brew upgrade zthxxx/tap/hams"
+
+
+- id: upgrade.brew.detected
+  other: "Detected Homebrew install, running brew upgrade..."
+
+
+- id: upgrade.already-up-to-date
+  other: "Already up-to-date (version {{.Version}})"
+
+
+- id: upgrade.dry-run
+  other: "[dry-run] Would download {{.Asset}} and upgrade hams from v{{.Current}} to v{{.Target}}"
+
+
+- id: upgrade.dry-run.asset-url
+  other: "[dry-run]   asset URL: {{.URL}}"
+
+
+- id: upgrade.downloading
+  other: "Downloading {{.Asset}} (v{{.Current}} -> v{{.Target}})..."
+
+
+- id: upgrade.success
+  other: "Successfully upgraded hams from v{{.Current}} to v{{.Target}}"
+
+# ---------------------------------------------------------------------------
+# hams version
+# ---------------------------------------------------------------------------
+
+- id: version.info
+  other: "{{.Info}}"
+
+# ---------------------------------------------------------------------------
+# Provider shared errors
+# ---------------------------------------------------------------------------
+
+- id: provider.err.no-store
+  other: "no store directory configured"
+
+
+- id: provider.err.no-store.suggest
+  other: "Set store_path in hams config or pass --store"
+
+
+- id: provider.err.install-needs-package
+  other: "{{.Provider}} install requires a package name"
+
+
+- id: provider.err.install-needs-package.usage
+  other: "Usage: hams {{.Provider}} install <package>"
+
+
+- id: provider.err.install-needs-package.bulk
+  other: "To install all recorded packages, use: hams apply --only={{.Provider}}"
+
+
+- id: provider.err.install-needs-package.at-least-one
+  other: "{{.Provider}} install requires at least one package name"
+
+
+- id: provider.err.remove-needs-package
+  other: "{{.Provider}} remove requires a package name"
+
+
+- id: provider.err.remove-needs-package.usage
+  other: "Usage: hams {{.Provider}} remove <package>"
+
+
+- id: provider.err.remove-needs-package.at-least-one
+  other: "{{.Provider}} remove requires at least one package name"
+
+
+- id: provider.err.unknown-subcommand
+  other: "unknown {{.Provider}} subcommand: {{.Sub}}"
+
+# ---------------------------------------------------------------------------
+# Provider dry-run status lines
+# ---------------------------------------------------------------------------
+
+- id: provider.status.dry-run-install
+  other: "[dry-run] Would install: {{.Cmd}}"
+
+
+- id: provider.status.dry-run-remove
+  other: "[dry-run] Would remove: {{.Cmd}}"
+
+
+- id: provider.status.dry-run-run
+  other: "[dry-run] Would run: {{.Cmd}}"
+
+# ---------------------------------------------------------------------------
+# Provider list headers
+# ---------------------------------------------------------------------------
+
+- id: provider.list.homebrew-header
+  other: "Homebrew managed packages:"
+
+
+- id: provider.list.git-clone-header
+  other: "git clone managed repositories:"
+
+
+- id: provider.list.git-clone-empty
+  other: "  (no clones tracked yet — add one with: hams git-clone add <remote> --hams-path=<path>)"
+
+# ---------------------------------------------------------------------------
+# git provider extras
+# ---------------------------------------------------------------------------
+
+- id: git.config.set-dry-run
+  other: "[dry-run] Would set: git config --global {{.Key}} {{.Value}}"
+
+
+- id: git.config.unset-dry-run
+  other: "[dry-run] Would unset: git config --global --unset {{.Key}}"
+
+
+- id: git.clone.dry-run
+  other: "[dry-run] Would clone: git clone {{.Remote}} {{.Path}}"
+
+
+- id: git.clone.remove-dry-run
+  other: "[dry-run] Would remove entry: {{.ID}} (directory NOT deleted)"
+
+# ---------------------------------------------------------------------------
+# Sudo prompt
+# ---------------------------------------------------------------------------
+
+- id: sudo.prompt
+  other: "hams needs sudo for some operations."
+
+# ---------------------------------------------------------------------------
+# TUI fallback
+# ---------------------------------------------------------------------------
+
+- id: tui.warn-no-tty
+  other: "Warning: {{.Feature}} requires an interactive terminal"
+
+# ---------------------------------------------------------------------------
+# Bootstrap (repo clone)
+# ---------------------------------------------------------------------------
+
+- id: bootstrap.clone-dry-run
+  other: "[dry-run] Would clone {{.Repo}}. Re-run without --dry-run to clone and preview the plan."
+
+
+- id: bootstrap.downloading
+  other: "Downloading Hams Store to {{.Path}}"
+
+
+- id: bootstrap.download-success
+  other: "Download Hams Store success"
+
+
+- id: bootstrap.profile-now
+  other: "Profile Store is {{.Path}} now"
+
+# ---------------------------------------------------------------------------
+# Errors rendering
+# ---------------------------------------------------------------------------
+
+- id: errors.prefix
+  other: "Error: "
+
+
+- id: errors.suggestion-prefix
+  other: "  suggestion: "
+
+# ---------------------------------------------------------------------------
+# Provider help
+# ---------------------------------------------------------------------------
+
+- id: provider.help.title
+  other: "hams {{.Name}} — {{.Description}}"
+
+
+- id: provider.help.usage
+  other: "Usage:"
+
+
+- id: provider.help.usage-line
+  other: "  hams {{.Name}} <subcommand> [args] [--hams-flags] [-- passthrough]"
+
+
+- id: provider.help.described
+  other: "Provider subcommands are defined by the {{.DisplayName}} provider."
+
+
+- id: provider.help.hams-prefix
+  other: "Flags with --hams- prefix are consumed by hams, all others are forwarded."
+
+
+- id: provider.help.double-dash
+  other: "Use -- to force-forward all subsequent args to the underlying command."
+
