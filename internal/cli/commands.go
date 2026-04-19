@@ -1730,33 +1730,21 @@ func runBinaryUpgrade(ctx context.Context, flags *provider.GlobalFlags) error {
 	updater := selfupdate.NewUpdater()
 	current := selfupdate.CurrentVersion()
 
-	release, err := updater.LatestRelease(ctx)
+	latest, err := updater.LatestVersion(ctx)
 	if err != nil {
 		return fmt.Errorf("checking latest version: %w", err)
 	}
 
-	if selfupdate.IsUpToDate(current, release.Version) {
+	if selfupdate.IsUpToDate(current, latest) {
 		fmt.Printf("Already up-to-date (version %s)\n", current)
 		return nil
 	}
 
 	wantName := selfupdate.AssetName()
-	var downloadURL string
-	for _, asset := range release.Assets {
-		if asset.Name == wantName {
-			downloadURL = asset.DownloadURL
-			break
-		}
-	}
-	if downloadURL == "" {
-		return hamserr.NewUserError(hamserr.ExitGeneralError,
-			fmt.Sprintf("no release asset found for %s", wantName),
-			"Download manually from https://github.com/zthxxx/hams/releases",
-		)
-	}
+	downloadURL := selfupdate.AssetURL(latest, wantName)
 
 	if flags.DryRun {
-		fmt.Printf("[dry-run] Would download %s and upgrade hams from v%s to v%s\n", wantName, current, release.Version)
+		fmt.Printf("[dry-run] Would download %s and upgrade hams from v%s to v%s\n", wantName, current, latest)
 		fmt.Printf("[dry-run]   asset URL: %s\n", downloadURL)
 		return nil
 	}
@@ -1769,7 +1757,7 @@ func runBinaryUpgrade(ctx context.Context, flags *provider.GlobalFlags) error {
 	// but not a hostile origin or a swapped CDN object — the
 	// checksums file (published by .github/workflows/release.yml)
 	// is the integrity anchor.
-	expectedSHA, err := updater.LookupChecksum(ctx, release.Assets, wantName)
+	expectedSHA, err := updater.LookupChecksum(ctx, latest, wantName)
 	if err != nil {
 		return fmt.Errorf("verifying release integrity: %w", err)
 	}
@@ -1778,10 +1766,10 @@ func runBinaryUpgrade(ctx context.Context, flags *provider.GlobalFlags) error {
 		// loudly so the user can opt to wait for a newer release that
 		// ships verified checksums.
 		slog.Warn("release does not publish checksums.txt; binary integrity will NOT be verified",
-			"release", release.Version, "asset", wantName)
+			"release", latest, "asset", wantName)
 	}
 
-	fmt.Printf("Downloading %s (v%s -> v%s)...\n", wantName, current, release.Version)
+	fmt.Printf("Downloading %s (v%s -> v%s)...\n", wantName, current, latest)
 	body, err := updater.DownloadAsset(ctx, downloadURL)
 	if err != nil {
 		return fmt.Errorf("downloading release: %w", err)
@@ -1797,6 +1785,6 @@ func runBinaryUpgrade(ctx context.Context, flags *provider.GlobalFlags) error {
 		return fmt.Errorf("replacing binary: %w", err)
 	}
 
-	fmt.Printf("Successfully upgraded hams from v%s to v%s\n", current, release.Version)
+	fmt.Printf("Successfully upgraded hams from v%s to v%s\n", current, latest)
 	return nil
 }

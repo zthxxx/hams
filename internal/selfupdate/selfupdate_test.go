@@ -219,53 +219,29 @@ func TestCurrentVersion(t *testing.T) {
 	}
 }
 
-// TestLatestRelease_SuccessPopulatesAssets is the ReleaseInfo counterpart
-// of TestLatestVersion_Success — asserts the tag_name + assets are
-// both mapped onto ReleaseInfo so the binary-upgrade flow can find
-// the right download URL.
-func TestLatestRelease_SuccessPopulatesAssets(t *testing.T) {
+// TestLatestVersion_RedirectDiscovery asserts the happy-path
+// discovery flow: HEAD /releases/latest returns 302 → /releases/tag/<tag>,
+// and LatestVersion returns the tag (without "v" prefix) read from the
+// final URL after following redirects. This is how the refactored
+// updater avoids api.github.com's 60-req/h rate limit.
+func TestLatestVersion_RedirectDiscovery(t *testing.T) {
 	t.Parallel()
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprint(w, `{"tag_name":"v2.0.0","assets":[{"name":"hams-linux-amd64","browser_download_url":"https://example.test/hams-linux-amd64"}]}`)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/releases/latest"):
+			// Redirect to the tagged release URL, as GitHub's CDN does.
+			http.Redirect(w, r, "/zthxxx/hams/releases/tag/v1.2.3", http.StatusFound)
+		case strings.HasSuffix(r.URL.Path, "/releases/tag/v1.2.3"):
+			w.WriteHeader(http.StatusOK)
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
 	}))
 	defer srv.Close()
 
 	u := &Updater{HTTPClient: &http.Client{
 		Transport: &rewriteTransport{base: srv.Client().Transport, target: srv.URL},
 	}}
-
-	rel, err := u.LatestRelease(context.Background())
-	if err != nil {
-		t.Fatalf("LatestRelease: %v", err)
-	}
-	if rel.Version != "2.0.0" {
-		t.Errorf("Version = %q, want 2.0.0", rel.Version)
-	}
-	if len(rel.Assets) != 1 {
-		t.Fatalf("Assets len = %d, want 1", len(rel.Assets))
-	}
-	if rel.Assets[0].Name != "hams-linux-amd64" {
-		t.Errorf("asset name = %q", rel.Assets[0].Name)
-	}
-	if rel.Assets[0].DownloadURL != "https://example.test/hams-linux-amd64" {
-		t.Errorf("asset URL = %q", rel.Assets[0].DownloadURL)
-	}
-}
-
-func TestLatestVersion_Success(t *testing.T) {
-	t.Parallel()
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprint(w, `{"tag_name":"v1.2.3","assets":[]}`)
-	}))
-	defer srv.Close()
-
-	u := &Updater{HTTPClient: srv.Client()}
-	// Override the URL by using a custom transport that redirects to our test server.
-	u.HTTPClient = &http.Client{
-		Transport: &rewriteTransport{base: srv.Client().Transport, target: srv.URL},
-	}
 
 	ver, err := u.LatestVersion(context.Background())
 	if err != nil {
@@ -276,6 +252,10 @@ func TestLatestVersion_Success(t *testing.T) {
 	}
 }
 
+// TestLatestVersion_HTTPError asserts a non-2xx final response
+// (after following redirects) is surfaced as an error. Silent
+// failure would make the updater stuck on the current version
+// without the user noticing.
 func TestLatestVersion_HTTPError(t *testing.T) {
 	t.Parallel()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -293,6 +273,65 @@ func TestLatestVersion_HTTPError(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "500") {
 		t.Errorf("error should mention status code 500, got: %v", err)
+	}
+}
+
+// TestLatestVersion_UnexpectedRedirectTarget asserts the updater
+// rejects a redirect that doesn't look like /releases/tag/<tag>.
+// Without this guard, a server returning e.g. a login-wall redirect
+// could yield an empty or nonsense version that would then be
+// pasted into download URLs, producing confusing 404s.
+func TestLatestVersion_UnexpectedRedirectTarget(t *testing.T) {
+	t.Parallel()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/releases/latest"):
+			http.Redirect(w, r, "/login", http.StatusFound)
+		case strings.HasSuffix(r.URL.Path, "/login"):
+			w.WriteHeader(http.StatusOK)
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer srv.Close()
+
+	u := &Updater{HTTPClient: &http.Client{
+		Transport: &rewriteTransport{base: srv.Client().Transport, target: srv.URL},
+	}}
+
+	_, err := u.LatestVersion(context.Background())
+	if err == nil {
+		t.Fatal("expected error for redirect target not matching /releases/tag/<tag>")
+	}
+	if !strings.Contains(err.Error(), "unexpected redirect target") {
+		t.Errorf("error should mention unexpected redirect target, got: %v", err)
+	}
+}
+
+// TestAssetURL_FormatAndPrefix asserts the deterministic
+// construction of public-CDN download URLs. The format is
+// contractually tied to .github/workflows/release.yml's artifact
+// naming + softprops/action-gh-release upload path — if this test
+// breaks we've drifted from the release workflow and install paths
+// silently 404.
+func TestAssetURL_FormatAndPrefix(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		version string
+		asset   string
+		want    string
+	}{
+		{"0.0.1", "hams-linux-amd64", "https://github.com/zthxxx/hams/releases/download/v0.0.1/hams-linux-amd64"},
+		{"v0.0.1", "hams-darwin-arm64", "https://github.com/zthxxx/hams/releases/download/v0.0.1/hams-darwin-arm64"},
+		{"1.2.3", ChecksumAssetName, "https://github.com/zthxxx/hams/releases/download/v1.2.3/checksums.txt"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.version+"/"+tt.asset, func(t *testing.T) {
+			t.Parallel()
+			if got := AssetURL(tt.version, tt.asset); got != tt.want {
+				t.Errorf("AssetURL(%q, %q) = %q, want %q", tt.version, tt.asset, got, tt.want)
+			}
+		})
 	}
 }
 
@@ -477,22 +516,24 @@ func readAll(r interface{ Read([]byte) (int, error) }) ([]byte, error) {
 	}
 }
 
-// TestLookupChecksum_HappyPath asserts cycle 159: when the release
-// includes a checksums.txt asset and the manifest contains the
-// requested binary, LookupChecksum returns the hex sha256.
-// Without this verification, runBinaryUpgrade was calling
-// ReplaceBinary with empty expectedSHA256 — skipping the integrity
-// check entirely. A MITM on the GitHub Releases CDN could swap the
-// binary undetected.
+// TestLookupChecksum_HappyPath asserts: when the release CDN serves
+// checksums.txt and the manifest contains the requested binary,
+// LookupChecksum returns its hex sha256. Without this verification,
+// runBinaryUpgrade falls back to ReplaceBinary with empty
+// expectedSHA256 — skipping the integrity check entirely. A MITM on
+// the GitHub Releases CDN could swap the binary undetected.
 func TestLookupChecksum_HappyPath(t *testing.T) {
 	t.Parallel()
 	const wantHash = "abc123def456000000000000000000000000000000000000000000000000abcd"
 	const otherHash = "ffeeddccbbaa99887766554433221100ffeeddccbbaa99887766554433221100"
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		// Body mimics `sha256sum hams-* > checksums.txt` output.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !strings.HasSuffix(r.URL.Path, "/"+ChecksumAssetName) {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
 		body := wantHash + "  hams-linux-amd64\n" +
 			otherHash + "  hams-darwin-arm64\n"
-		w.Write([]byte(body))
+		_, _ = w.Write([]byte(body))
 	}))
 	defer srv.Close()
 
@@ -500,12 +541,7 @@ func TestLookupChecksum_HappyPath(t *testing.T) {
 		Transport: &rewriteTransport{base: srv.Client().Transport, target: srv.URL},
 	}}
 
-	assets := []Asset{
-		{Name: "hams-linux-amd64", DownloadURL: "https://example.test/hams-linux-amd64"},
-		{Name: ChecksumAssetName, DownloadURL: "https://example.test/" + ChecksumAssetName},
-	}
-
-	got, err := u.LookupChecksum(context.Background(), assets, "hams-linux-amd64")
+	got, err := u.LookupChecksum(context.Background(), "0.0.1", "hams-linux-amd64")
 	if err != nil {
 		t.Fatalf("LookupChecksum: %v", err)
 	}
@@ -514,21 +550,23 @@ func TestLookupChecksum_HappyPath(t *testing.T) {
 	}
 }
 
-// TestLookupChecksum_NoManifestAssetReturnsEmptyNoError asserts the
-// older-release fallback path: when checksums.txt is absent from the
-// asset list (older releases pre-date the manifest), LookupChecksum
+// TestLookupChecksum_Manifest404ReturnsEmptyNoError asserts the
+// older-release fallback path: when the CDN returns 404 for
+// checksums.txt (a release predating the manifest), LookupChecksum
 // returns ("", nil) so the caller can warn-and-proceed without
 // erroring out the upgrade.
-func TestLookupChecksum_NoManifestAssetReturnsEmptyNoError(t *testing.T) {
+func TestLookupChecksum_Manifest404ReturnsEmptyNoError(t *testing.T) {
 	t.Parallel()
-	u := &Updater{HTTPClient: http.DefaultClient}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer srv.Close()
 
-	assets := []Asset{
-		{Name: "hams-linux-amd64", DownloadURL: "https://example.test/hams-linux-amd64"},
-		// No checksums.txt asset.
-	}
+	u := &Updater{HTTPClient: &http.Client{
+		Transport: &rewriteTransport{base: srv.Client().Transport, target: srv.URL},
+	}}
 
-	got, err := u.LookupChecksum(context.Background(), assets, "hams-linux-amd64")
+	got, err := u.LookupChecksum(context.Background(), "0.0.1", "hams-linux-amd64")
 	if err != nil {
 		t.Errorf("expected nil err for missing manifest, got %v", err)
 	}
@@ -538,7 +576,7 @@ func TestLookupChecksum_NoManifestAssetReturnsEmptyNoError(t *testing.T) {
 }
 
 // TestLookupChecksum_ManifestPresentButBinaryMissingErrors asserts
-// the security-critical case: when checksums.txt IS present but
+// the security-critical case: when checksums.txt IS served but
 // doesn't list the requested binary, LookupChecksum returns an
 // error instead of silently falling through. We must NOT skip
 // integrity verification when the manifest disagrees with our
@@ -547,9 +585,8 @@ func TestLookupChecksum_NoManifestAssetReturnsEmptyNoError(t *testing.T) {
 func TestLookupChecksum_ManifestPresentButBinaryMissingErrors(t *testing.T) {
 	t.Parallel()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		// Manifest lists ONLY hams-darwin-arm64; not the requested linux build.
 		body := "1234567890123456789012345678901234567890123456789012345678901234  hams-darwin-arm64\n"
-		w.Write([]byte(body))
+		_, _ = w.Write([]byte(body))
 	}))
 	defer srv.Close()
 
@@ -557,11 +594,7 @@ func TestLookupChecksum_ManifestPresentButBinaryMissingErrors(t *testing.T) {
 		Transport: &rewriteTransport{base: srv.Client().Transport, target: srv.URL},
 	}}
 
-	assets := []Asset{
-		{Name: ChecksumAssetName, DownloadURL: "https://example.test/" + ChecksumAssetName},
-	}
-
-	_, err := u.LookupChecksum(context.Background(), assets, "hams-linux-amd64")
+	_, err := u.LookupChecksum(context.Background(), "0.0.1", "hams-linux-amd64")
 	if err == nil {
 		t.Fatal("expected error for binary missing from manifest")
 	}
@@ -571,8 +604,8 @@ func TestLookupChecksum_ManifestPresentButBinaryMissingErrors(t *testing.T) {
 }
 
 // TestLookupChecksum_ManifestNetworkErrorPropagates asserts a
-// transient HTTP failure on the manifest fetch surfaces as an
-// error so we don't proceed with an unverified install.
+// transient HTTP failure (non-404 non-200) on the manifest fetch
+// surfaces as an error so we don't proceed with an unverified install.
 func TestLookupChecksum_ManifestNetworkErrorPropagates(t *testing.T) {
 	t.Parallel()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -584,11 +617,7 @@ func TestLookupChecksum_ManifestNetworkErrorPropagates(t *testing.T) {
 		Transport: &rewriteTransport{base: srv.Client().Transport, target: srv.URL},
 	}}
 
-	assets := []Asset{
-		{Name: ChecksumAssetName, DownloadURL: "https://example.test/" + ChecksumAssetName},
-	}
-
-	_, err := u.LookupChecksum(context.Background(), assets, "hams-linux-amd64")
+	_, err := u.LookupChecksum(context.Background(), "0.0.1", "hams-linux-amd64")
 	if err == nil {
 		t.Fatal("expected error for 500 response")
 	}
