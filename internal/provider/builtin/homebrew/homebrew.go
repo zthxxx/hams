@@ -30,6 +30,7 @@ import (
 	"github.com/zthxxx/hams/internal/hamsfile"
 	"github.com/zthxxx/hams/internal/i18n"
 	"github.com/zthxxx/hams/internal/provider"
+	"github.com/zthxxx/hams/internal/provider/baseprovider"
 	"github.com/zthxxx/hams/internal/state"
 )
 
@@ -638,11 +639,7 @@ func (p *Provider) handleRemove(ctx context.Context, args []string, hamsFlags ma
 }
 
 func (p *Provider) loadOrCreateHamsfile(hamsFlags map[string]string, flags *provider.GlobalFlags) (*hamsfile.File, error) {
-	path, err := p.hamsfilePath(hamsFlags, flags)
-	if err != nil {
-		return nil, err
-	}
-	return hamsfile.LoadOrCreateEmpty(path)
+	return baseprovider.LoadOrCreateHamsfile(p.cfg, p.Manifest().FilePrefix, hamsFlags, flags)
 }
 
 // statePath returns the absolute path to brew.state.yaml for the
@@ -670,40 +667,11 @@ func (p *Provider) loadOrCreateStateFile(flags *provider.GlobalFlags) (*state.Fi
 }
 
 func (p *Provider) hamsfilePath(hamsFlags map[string]string, flags *provider.GlobalFlags) (string, error) {
-	cfg := p.effectiveConfig(flags)
-	if cfg.StorePath == "" {
-		return "", hamserr.NewUserError(hamserr.ExitUsageError,
-			"no store directory configured",
-			"Set store_path in hams config or pass --store",
-		)
-	}
-
-	suffix := ".hams.yaml"
-	if _, ok := hamsFlags["local"]; ok {
-		suffix = ".hams.local.yaml"
-	}
-
-	return filepath.Join(cfg.ProfileDir(), p.Manifest().FilePrefix+suffix), nil
+	return baseprovider.HamsfilePath(p.cfg, p.Manifest().FilePrefix, hamsFlags, flags)
 }
 
 func (p *Provider) effectiveConfig(flags *provider.GlobalFlags) *config.Config {
-	if p.cfg == nil {
-		p.cfg = &config.Config{}
-	}
-
-	cfg := *p.cfg
-	if flags == nil {
-		return &cfg
-	}
-
-	if flags.Store != "" {
-		cfg.StorePath = flags.Store
-	}
-	if flags.Profile != "" {
-		cfg.ProfileTag = flags.Profile
-	}
-
-	return &cfg
+	return baseprovider.EffectiveConfig(p.cfg, flags)
 }
 
 func parseInstallTag(hamsFlags map[string]string) string {
