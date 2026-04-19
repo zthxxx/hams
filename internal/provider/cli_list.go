@@ -65,7 +65,7 @@ func ValidateProfileDirExists(cfg *config.Config) (string, error) {
 // The builtin-providers spec table for every Package-class (and many
 // non-Package-class) providers promises "Diff view" for `hams
 // <provider> list`, but pre-cycle-214 the CLI dispatchers fell through
-// to WrapExecPassthrough, which tried to exec the underlying tool's
+// to Passthrough (formerly WrapExecPassthrough), which tried to exec the underlying tool's
 // `list` subcommand. That either errored (cargo, vscodeext, goinstall)
 // or emitted raw unrelated output (apt, mas) instead of the
 // hams-tracked diff. Cycle 213 fixed ansible inline; cycle 214 pulled

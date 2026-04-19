@@ -117,7 +117,7 @@ func (p *Provider) HandleCommand(ctx context.Context, args []string, hamsFlags m
 		// `hams goinstall install github.com/…`.
 		return provider.HandleListCmd(ctx, p, p.effectiveConfig(flags))
 	default:
-		return provider.WrapExecPassthrough(ctx, "go", args, nil)
+		return provider.Passthrough(ctx, "go", args, flags)
 	}
 }
 

@@ -32,15 +32,36 @@ import (
 //go:embed template
 var templateFS embed.FS
 
-// gitInitTimeout bounds the shell-out to `git init` so a hung corporate
+// GitInitTimeout bounds the shell-out to `git init` so a hung corporate
 // `core.hooksPath` cannot wedge the first-run path. go-git's PlainInit
-// runs in-process and does not need this guard.
-const gitInitTimeout = 30 * time.Second
+// runs in-process and does not need this guard. Exposed as a var so
+// tests can shrink it without touching the production timeout.
+//
+//nolint:gochecknoglobals // DI seam; immutable after init except in tests.
+var GitInitTimeout = 30 * time.Second
 
-// ExecGitInit is the DI seam that shells out to the system `git` when
-// it is on PATH. Tests rebind this to a fake that records the call
-// without forking a real child. Production value runs `git init --quiet
-// <dir>`.
+// LookPathGit is the DI seam that resolves the `git` binary on PATH.
+// Tests rebind this to return exec.ErrNotFound to force the go-git
+// fallback branch in defaultExecGitInit, without having to swap the
+// whole ExecGitInit function.
+//
+//nolint:gochecknoglobals // DI seam; immutable after init except in tests.
+var LookPathGit = func() (string, error) { return exec.LookPath("git") }
+
+// ExecCommandContext is the DI seam for spawning `git init`. Tests
+// rebind this to record invocations or simulate spawn failure without
+// having to swap the whole ExecGitInit function.
+//
+//nolint:gochecknoglobals // DI seam; immutable after init except in tests.
+var ExecCommandContext = exec.CommandContext
+
+// ExecGitInit is the function-level DI seam that shells out to the
+// system `git` when it is on PATH. Tests rebind this to a fake that
+// records the call without forking a real child. The default
+// implementation is composed of the fine-grained LookPathGit /
+// ExecCommandContext / GitInitTimeout seams above; rebind those for
+// targeted slice-of-pipeline mocking, or rebind ExecGitInit itself
+// for whole-function replacement.
 //
 //nolint:gochecknoglobals // DI seam; immutable after init except in tests.
 var ExecGitInit = defaultExecGitInit
@@ -55,17 +76,17 @@ var ExecGitInit = defaultExecGitInit
 var GoGitInit = defaultGoGitInit
 
 func defaultExecGitInit(ctx context.Context, dir string) error {
-	gitBin, lookErr := exec.LookPath("git")
+	gitBin, lookErr := LookPathGit()
 	if lookErr != nil {
 		// Signal "git is not available" so Bootstrap's caller triggers
 		// the go-git fallback. Wrap so callers can match via errors.Is.
 		return fmt.Errorf("git not on PATH: %w", errors.Join(lookErr, exec.ErrNotFound))
 	}
-	initCtx, cancel := context.WithTimeout(ctx, gitInitTimeout)
+	initCtx, cancel := context.WithTimeout(ctx, GitInitTimeout)
 	defer cancel()
-	// gitBin comes from exec.LookPath (not user input); dir comes from
-	// a trusted in-process value. Safe to pass through.
-	cmd := exec.CommandContext(initCtx, gitBin, "init", "--quiet", dir) //nolint:gosec // gitBin from LookPath; dir trusted.
+	// gitBin comes from LookPathGit (resolved via exec.LookPath in
+	// production); dir comes from a trusted in-process value. Safe.
+	cmd := ExecCommandContext(initCtx, gitBin, "init", "--quiet", dir)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	return cmd.Run()

@@ -17,6 +17,7 @@ import (
 	"github.com/zthxxx/hams/internal/hamsfile"
 	"github.com/zthxxx/hams/internal/i18n"
 	"github.com/zthxxx/hams/internal/provider"
+	"github.com/zthxxx/hams/internal/provider/baseprovider"
 	"github.com/zthxxx/hams/internal/state"
 )
 
@@ -226,24 +227,9 @@ func (p *Provider) handleList(flags *provider.GlobalFlags) error {
 	return nil
 }
 
-// effectiveConfig returns the provider's config overlaid with any
-// per-invocation flags (--store, --profile). Mirrors the helper used
-// by other providers' CLI paths.
+// effectiveConfig delegates to baseprovider.EffectiveConfig.
 func (p *Provider) effectiveConfig(flags *provider.GlobalFlags) *config.Config {
-	if p.cfg == nil {
-		p.cfg = &config.Config{}
-	}
-	cfg := *p.cfg
-	if flags == nil {
-		return &cfg
-	}
-	if flags.Store != "" {
-		cfg.StorePath = flags.Store
-	}
-	if flags.Profile != "" {
-		cfg.ProfileTag = flags.Profile
-	}
-	return &cfg
+	return baseprovider.EffectiveConfig(p.cfg, flags)
 }
 
 // Name returns the CLI name.

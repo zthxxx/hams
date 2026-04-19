@@ -228,7 +228,7 @@ func (p *Provider) HandleCommand(ctx context.Context, args []string, hamsFlags m
 		// and now wants to see what hams is tracking.
 		return provider.HandleListCmd(ctx, p, p.effectiveConfig(flags))
 	default:
-		return provider.WrapExecPassthrough(ctx, "apt-get", args, nil)
+		return provider.Passthrough(ctx, "apt-get", args, flags)
 	}
 }
 

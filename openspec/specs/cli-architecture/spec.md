@@ -920,3 +920,59 @@ Rationale: `cli-architecture/spec.md`'s "all user-facing strings (errors, help t
 - **WHEN** `task check` runs
 - **THEN** the provider-keys resolution test SHALL fail with a clear "missing translation for key X" message
 - **AND** the failing test SHALL identify which key is missing from which locale
+
+### Requirement: storeinit MUST expose fine-grained DI seams
+
+The `internal/storeinit` package MUST expose `LookPathGit`, `ExecCommandContext`, and `GitInitTimeout` as package-level variables (not constants) so unit tests can simulate "git not on PATH", record the spawn argv, or shrink the timeout independently, without having to swap the entire `ExecGitInit` function. The function-level `ExecGitInit` and `GoGitInit` seams from the 2026-04-18 storeinit-package change SHALL be retained for the existing whole-flow swap-out tests; the new fine-grained seams SHALL compose into the default `ExecGitInit` body so production behaviour is unchanged.
+
+#### Scenario: Unit test simulates missing git binary
+
+- **WHEN** a unit test needs to exercise the go-git fallback branch in `storeinit.ensureGitRepo` without modifying the host PATH
+- **THEN** it MAY rebind `storeinit.LookPathGit` to return `("", exec.ErrNotFound)` (with `t.Cleanup` restore) and assert the fallback branch fires without touching the real `exec.LookPath`
+
+#### Scenario: apt E0 integration test still uses real git path
+
+- **WHEN** the apt E0 container scenario runs `hams apt install htop` on a machine where `/usr/bin/git` has been moved aside
+- **THEN** the storeinit fallback path SHALL still fire via the real `LookPathGit` binding (production behaviour) and the "bundled go-git" log line SHALL appear on stderr
+
+### Requirement: Auto-init helpers MUST live in autoinit.go
+
+The first-run auto-init helpers MUST live in `internal/cli/autoinit.go`, not be inlined into the apply pipeline or other command orchestration files. The `internal/cli/apply.go`, `internal/cli/commands.go`, and `internal/cli/provider_cmd.go` orchestration files MUST NOT inline auto-init logic; they MUST call into the autoinit module. The local/loop branch's `WarnIfDefaultsUsed` extraction (commit `3cafb27`) is preserved so `--help` / `--version` stay fully silent.
+
+#### Scenario: New auto-init UX change touches one file
+
+- **WHEN** a developer needs to add a new first-run prompt (e.g., "choose between zsh and bash for hooks")
+- **THEN** the change SHALL land in `internal/cli/autoinit.go` and `internal/cli/autoinit_test.go` only — the apply pipeline, provider_cmd, and refresh entry points SHALL NOT need edits
+
+#### Scenario: Auto-init test coverage is complete
+
+- **WHEN** `go test -race ./internal/cli/...` runs
+- **THEN** `autoinit_test.go` SHALL execute at minimum 8 dedicated unit tests covering: fresh-machine seed, no-op-when-config-exists, non-TTY without CLI tag fails, --tag and --profile alias equivalence, conflict rejection, statFile missing/present/directory branches
+
+### Requirement: Every --tag/--profile entry point MUST validate conflict
+
+Every CLI command entry point MUST validate `--tag` and `--profile` conflict via `config.ResolveCLITagOverride` (or the `enforceTagProfileConsistency` thin wrapper) BEFORE the first `config.Load` call. Silent precedence ("--profile wins, --tag ignored") is forbidden. The currently-required entry points are: `apply`, `refresh`, `list`, `config list`, `config get`, `store status`, `store init`, `store push`, `store pull`, plus every `hams <provider>` shortcut.
+
+#### Scenario: hams refresh --tag X --profile Y rejects the conflict
+
+- **WHEN** a user runs `hams refresh --tag macOS --profile linux`
+- **THEN** refresh SHALL return the same UsageError text as `hams apply --tag macOS --profile linux` and SHALL NOT load config or execute the refresh
+
+#### Scenario: Adding a new command verb gates the conflict
+
+- **WHEN** a developer adds a new command verb that reads `flags.Tag` or `flags.Profile`
+- **THEN** the implementation SHALL call `enforceTagProfileConsistency(flags)` before any config load, and a regression test SHALL cover the conflict path
+
+### Requirement: i18n catalog MUST cover the full CLI lifecycle
+
+The `internal/i18n/keys.go` catalog MUST cover every user-facing string emitted by the `internal/cli/**` packages and the builtin provider command handlers, including (but not limited to): app metadata, auto-init lifecycle, user-facing error family, apply / refresh status & summary, store / config / list / upgrade commands, sudo prompt, TUI fallbacks, bootstrap repo clone, errors rendering, provider help, and git dispatcher. Translations MUST exist in every `internal/i18n/locales/*.yaml` file. New CLI commands MUST add their user-facing strings to the catalog before merging.
+
+#### Scenario: Adding a new CLI command requires catalog entries
+
+- **WHEN** a developer adds a new subcommand under `hams config` (e.g., `hams config edit`)
+- **THEN** every user-facing line the command prints SHALL go through `i18n.T` / `i18n.Tf` with a typed constant declared in `keys.go`, and corresponding entries SHALL be added to both `en.yaml` and `zh-CN.yaml` before the change can pass CI
+
+#### Scenario: Hardcoded English strings fail review
+
+- **WHEN** a code review encounters `fmt.Println("…")` or `fmt.Fprintln(os.Stderr, "…")` with English literal user-facing text in `internal/cli/**` or `internal/provider/builtin/**`
+- **THEN** the review SHALL block the change and request the literal be replaced with `i18n.T(<TypedKey>)` / `i18n.Tf(<TypedKey>, data)`. Operator-only log records (`slog.Info`, `slog.Warn`) remain in English by design — they are not user-facing

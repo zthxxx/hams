@@ -115,7 +115,7 @@ func (p *Provider) HandleCommand(ctx context.Context, args []string, hamsFlags m
 		// desired-vs-observed diff, matching `hams list --only=cargo`.
 		return provider.HandleListCmd(ctx, p, p.effectiveConfig(flags))
 	default:
-		return provider.WrapExecPassthrough(ctx, cliName, args, nil)
+		return provider.Passthrough(ctx, cliName, args, flags)
 	}
 }
 

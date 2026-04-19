@@ -322,3 +322,771 @@
 
 - id: provider.homebrew.list.header
   other: "Homebrew 管理的软件包："
+
+# ===========================================================================
+# 来自 origin/dev 在 2026-04-19-i18n-and-log-assertion-expansion 中的导入。
+# 译文与 origin/dev 完全一致，避免文案漂移。
+# ===========================================================================
+
+- id: app.title
+  other: "hams — 声明式工作站环境管理工具"
+
+# ---------------------------------------------------------------------------
+# 首次自动初始化流程（在干净机器上执行 `hams brew install jq` / `hams apply`）
+# ---------------------------------------------------------------------------
+
+- id: autoinit.global_config_created
+  other: "已自动创建 hams 全局配置 {{.Path}}（tag={{.Tag}}, machine_id={{.MachineID}}）"
+
+
+- id: autoinit.store_created
+  other: "已自动初始化 hams 存储库 {{.Path}} — 如需迁移路径请编辑 ~/.config/hams/hams.config.yaml"
+
+
+- id: autoinit.dry_run.global_config
+  other: "[dry-run] 将自动创建 hams 全局配置 {{.Path}}"
+
+
+- id: autoinit.dry_run.store
+  other: "[dry-run] 将自动初始化 hams 存储库 {{.Path}}"
+
+# ---------------------------------------------------------------------------
+# 通用错误（UFE）信息
+# ---------------------------------------------------------------------------
+
+- id: ufe.no_store_configured
+  other: "未配置存储目录（store directory）"
+
+
+- id: ufe.no_store_configured.suggest_clone
+  other: "可执行 'hams apply --from-repo=<user/repo>' 从远程仓库克隆"
+
+
+- id: ufe.no_store_configured.suggest_set
+  other: "或在 ~/.config/hams/hams.config.yaml 中设置 store_path"
+
+
+- id: ufe.no_store_configured.suggest_init
+  other: "或在本地初始化新的存储：hams store init"
+
+
+- id: ufe.no_store_configured.opt_out
+  other: "未配置存储目录（已通过 HAMS_NO_AUTO_INIT 关闭自动初始化）"
+
+
+- id: ufe.no_store_configured.opt_out_suggest
+  other: "如需启用自动初始化，请取消 HAMS_NO_AUTO_INIT 环境变量"
+
+# ---------------------------------------------------------------------------
+# Apply / refresh 状态行
+# ---------------------------------------------------------------------------
+
+- id: apply.dry_run_header
+  other: "[dry-run] 将应用所有配置。本次执行不会产生任何变更。"
+
+
+- id: apply.no_providers_match
+  other: "没有任何 Provider 匹配：当前 profile 下未发现 hamsfile 或 state 文件。"
+
+
+- id: refresh.no_providers_match
+  other: "没有任何 Provider 匹配当前过滤条件。"
+
+# ---------------------------------------------------------------------------
+# `hams git` 统一入口
+# ---------------------------------------------------------------------------
+
+- id: git.usage.header
+  other: "hams git 需要子命令"
+
+
+- id: git.usage.suggest_main
+  other: "用法：hams git <子命令> [参数]"
+
+
+- id: git.usage.suggest_subcommands
+  other: "支持的子命令：config, clone"
+
+
+- id: git.usage.example_config
+  other: "示例：hams git config user.name zthxxx"
+
+
+- id: git.usage.example_clone
+  other: "示例：hams git clone https://github.com/zthxxx/dotfiles ~/repos/dotfiles"
+
+
+- id: git.unknown_subcommand
+  other: "未识别的 git 子命令 {{.Sub}}"
+
+# ---------------------------------------------------------------------------
+# CLI framework errors — top-level hams command validation
+# ---------------------------------------------------------------------------
+
+- id: cli.err.no-positional-args
+  other: "hams {{.Cmd}} 不接受位置参数（收到 {{.Arg}}）"
+
+
+- id: cli.err.no-positional-args.suggest-filter
+  other: "如需筛选 provider，请使用：hams {{.Cmd}} --only=<provider1>,<provider2>"
+
+
+- id: cli.err.no-positional-args.suggest-all
+  other: "如需{{.Verb}}全部内容：hams {{.Cmd}}"
+
+
+- id: cli.err.only-except-conflict
+  other: "--only 与 --except 不能同时使用"
+
+
+- id: cli.err.only-except-conflict.suggest
+  other: "使用 --only 指定包含的 provider，或使用 --except 指定排除的 provider"
+
+
+- id: cli.err.bootstrap-mode-conflict
+  other: "--bootstrap 与 --no-bootstrap 不能同时使用"
+
+
+- id: cli.err.bootstrap-mode-conflict.suggest
+  other: "二选一：--bootstrap 自动执行，--no-bootstrap 快速失败"
+
+
+- id: cli.err.from-repo-store-conflict
+  other: "--from-repo 与 --store 不能同时使用"
+
+
+- id: cli.err.store-path-invalid
+  other: "store_path {{.Path}} 不存在或不是目录"
+
+
+- id: cli.err.store-path-invalid.suggest-fix
+  other: "请修正 ~/.config/hams/hams.config.yaml 中的 store_path"
+
+
+- id: cli.err.profile-not-found
+  other: "未找到 profile {{.Tag}}（路径 {{.Dir}}）"
+
+
+- id: cli.err.profile-not-found.suggest-list
+  other: "查看可用 profile：ls {{.Store}}"
+
+
+- id: cli.err.profile-not-found.suggest-create
+  other: "或新建该 profile：mkdir -p {{.Dir}}"
+
+
+- id: cli.err.config-file-missing
+  other: "config 文件 {{.Path}} 不存在"
+
+
+- id: cli.err.config-file-missing.suggest-check
+  other: "请检查路径拼写"
+
+
+- id: cli.err.config-file-missing.suggest-create
+  other: "创建该文件：touch {{.Path}}"
+
+
+- id: cli.err.config-file-missing.suggest-default
+  other: "或移除 --config，使用默认路径 ~/.config/hams/hams.config.yaml"
+
+
+- id: cli.err.only-empty
+  other: "--only 去除空白后为空"
+
+
+- id: cli.err.except-empty
+  other: "--except 去除空白后为空"
+
+
+- id: cli.err.unknown-provider
+  other: "未知 provider：{{.Names}}"
+
+
+- id: cli.err.unknown-provider.suggest-list
+  other: "可用 provider：{{.Names}}"
+
+
+- id: cli.err.profile-not-configured
+  other: "{{.Missing}} 未配置且 stdin 不是终端"
+
+
+- id: cli.err.sudo-acquisition-failed
+  other: "获取 sudo 失败：{{.Err}}"
+
+
+- id: cli.err.sudo-acquisition-failed.suggest-reenter
+  other: "重新执行并在提示时输入 sudo 密码"
+
+
+- id: cli.err.sudo-acquisition-failed.suggest-passwordless
+  other: "或为该用户配置免密 sudo（sudoers 中设置 NOPASSWD）"
+
+
+- id: cli.err.sudo-acquisition-failed.suggest-filter
+  other: "或排除需要 sudo 的 provider：hams apply --except=apt"
+
+
+- id: cli.err.interrupted
+  other: "hams apply 被中断：{{.Err}}"
+
+
+- id: cli.err.interrupted.suggest-inspect
+  other: "已保存部分 apply 状态至磁盘，可使用 `hams refresh` 查看"
+
+
+- id: cli.err.interrupted.suggest-rerun
+  other: "重新执行 `hams apply` 以继续安装剩余资源"
+
+# ---------------------------------------------------------------------------
+# Apply 状态行（apply.dry_run_header / no_providers_match 之外）
+# ---------------------------------------------------------------------------
+
+- id: apply.execution-order-header
+  other: "[dry-run] Provider 执行顺序："
+
+
+- id: apply.bootstrap-dry-run
+  other: "[dry-run] 将通过如下命令引导 {{.Provider}}：{{.Script}}"
+
+
+- id: apply.no-providers-state-only
+  other: "没有 provider 匹配：所有选中的 provider 仅有 state，而未传入 --prune-orphans。"
+
+
+- id: apply.no-providers-filtered
+  other: "没有 provider 匹配：--only/--except 过滤掉了所有具有 artifact 的 provider。"
+
+
+- id: apply.no-providers-only-missing
+  other: "没有 provider 匹配：{{.Names}} {{.Verb}}当前 profile 无对应 hamsfile 或 state，无需执行。"
+
+
+- id: apply.no-providers-profile-line
+  other: "  Profile：{{.Tag}}（{{.Dir}}）"
+
+
+- id: apply.no-providers-suggest-install
+  other: "  使用 'hams {{.Provider}} install <pkg>' 开始跟踪，或去掉 --only 以 apply 所有具有 artifact 的 provider。"
+
+
+- id: apply.no-providers-profile-dir-missing
+  other: "没有 provider 匹配：profile 目录 {{.Dir}} 不存在（profile_tag={{.Tag}}）。"
+
+
+- id: apply.no-providers-available-profiles
+  other: "  该 store 中可用的 profile：{{.List}}"
+
+
+- id: apply.no-providers-suggest-profile-fix
+  other: "  修复方式：hams config set profile_tag <profile>  或  传入 --profile=<profile>"
+
+
+- id: apply.summary-complete
+  other: "\nhams apply 完成：已安装 {{.Installed}}，更新 {{.Updated}}，移除 {{.Removed}}，跳过 {{.Skipped}}，失败 {{.Failed}}（耗时 {{.ElapsedMs}}ms）"
+
+
+- id: apply.summary-failed-warning
+  other: "警告：{{.Count}} 个 provider 存在失败动作：{{.Names}}"
+
+
+- id: apply.summary-failed-warning.suggest
+  other: "  可使用 --debug 重新执行以查看每个 provider runner 的详细错误。"
+
+
+- id: apply.summary-skipped-warning
+  other: "警告：{{.Count}} 个 provider 因错误被跳过：{{.Names}}"
+
+
+- id: apply.summary-state-fail-warning
+  other: "警告：apply 后 {{.Count}} 个 provider 未能持久化 state：{{.Names}}"
+
+
+- id: apply.summary-state-fail-warning.suggest
+  other: "  下一次 `hams apply` 可能会重新执行这些资源，请检查 store 的权限。"
+
+
+- id: apply.summary-partial-failure-err
+  other: "{{.Failed}} 个资源失败、{{.Skipped}} 个 provider 被跳过、{{.SaveFailed}} 次 state 保存失败"
+
+
+- id: apply.summary-partial-failure-err.suggest-retry
+  other: "重新执行 'hams apply' 以重试失败的资源"
+
+
+- id: apply.summary-partial-failure-err.suggest-debug
+  other: "使用 '--debug' 查看详细错误输出"
+
+
+- id: apply.dry-run-no-changes
+  other: "[dry-run] 未作任何变更（耗时 {{.ElapsedMs}}ms）"
+
+
+- id: apply.dry-run-per-provider-header
+  other: "[dry-run] {{.DisplayName}}（{{.Name}}）："
+
+
+- id: apply.dry-run-no-changes-provider
+  other: "  无变更（{{.Count}} 项{{.Noun}}已处于期望状态）"
+
+
+- id: apply.dry-run-unchanged-tail
+  other: "  （{{.Count}} 项{{.Noun}}保持不变）"
+
+
+- id: apply.dry-run-state-fail-err
+  other: "[dry-run] refresh 阶段 state 保存失败 {{.Count}} 次"
+
+
+- id: apply.dry-run-state-fail-err.suggest-perms
+  other: "检查 store 的 .state/ 目录权限"
+
+
+- id: apply.dry-run-state-fail-err.suggest-no-refresh
+  other: "如 state 目录有意只读，请使用 '--no-refresh' 跳过 apply 前 probe"
+
+
+- id: apply.dry-run-skipped-err
+  other: "[dry-run] {{.Count}} 个 provider 因错误被跳过（详见日志）"
+
+
+- id: apply.dry-run-skipped-err.suggest-fix
+  other: "请在执行 apply 前修复 hamsfile 或移除出错的 provider 配置"
+
+
+- id: apply.state-fail-drift-line
+  other: "  这些 provider 的 drift 跟踪已中断，请修复 store 权限后重试。"
+
+
+- id: apply.not-found-profile
+  other: "配置中未找到 Profile，请先进行初始化"
+
+
+- id: apply.profile-tag-prompt
+  other: "Profile 标签："
+
+
+- id: apply.profile-machine-id-prompt
+  other: "Profile 机器 ID："
+
+# ---------------------------------------------------------------------------
+# Refresh 状态行（refresh.no_providers_match 之外）
+# ---------------------------------------------------------------------------
+
+- id: refresh.summary-complete
+  other: "Refresh 完成：探测 {{.Count}} 个{{.Noun}}（耗时 {{.ElapsedMs}}ms）"
+
+
+- id: refresh.summary-complete-with-save-fails
+  other: "Refresh 完成：探测 {{.Count}} 个{{.Noun}}，但 {{.FailCount}} 个 state 文件保存失败：{{.FailList}}（耗时 {{.ElapsedMs}}ms）"
+
+
+- id: refresh.summary-complete-with-probe-fails
+  other: "Refresh 完成：探测 {{.Count}}/{{.Total}} 个{{.Noun}}（{{.ProbeFailCount}} 次 probe 失败：{{.ProbeFailList}}，详见日志）（耗时 {{.ElapsedMs}}ms）"
+
+
+- id: refresh.summary-save-fail-warning
+  other: "警告：state 保存失败 {{.Count}} 次：{{.Names}} — 下次运行可能会重新 probe"
+
+
+- id: refresh.interrupted
+  other: "Refresh 被中断：已完成 {{.Done}}/{{.Total}} 个{{.Noun}}（耗时 {{.ElapsedMs}}ms）"
+
+
+- id: refresh.state-written-header
+  other: "[dry-run] 将为 {{.Count}} 个{{.Noun}}写入 state："
+
+# ---------------------------------------------------------------------------
+# Store 命令
+# ---------------------------------------------------------------------------
+
+- id: store.nothing-to-commit
+  other: "无需 commit — store 工作区干净，跳过 commit+push。"
+
+
+- id: store.status.path-missing
+  other: "Store 路径：  {{.Path}}  （不存在）"
+
+
+- id: store.status.path-missing.line1
+  other: "  配置的 store_path 指向一个缺失的目录。"
+
+
+- id: store.status.path-missing.line2
+  other: "  使用 'hams store init' 创建该目录，或修正 hams.config.yaml 中的 store_path。"
+
+
+- id: store.status.path
+  other: "Store 路径：  {{.Path}}"
+
+
+- id: store.status.profile-tag
+  other: "Profile 标签：{{.Tag}}"
+
+
+- id: store.status.machine-id
+  other: "机器 ID：     {{.ID}}"
+
+
+- id: store.status.profile-dir
+  other: "Profile 目录：{{.Dir}}"
+
+
+- id: store.status.state-dir
+  other: "State 目录：  {{.Dir}}"
+
+
+- id: store.status.hamsfiles
+  other: "Hamsfiles：  {{.Count}}"
+
+
+- id: store.status.hamsfiles-missing
+  other: "Hamsfiles：  （未找到 profile 目录）"
+
+
+- id: store.status.git
+  other: "Git 状态：   {{.Status}}"
+
+
+- id: store.init.dry-run-header
+  other: "[dry-run] 将在 {{.Path}} 初始化 store"
+
+
+- id: store.init.dry-run-profile-dir
+  other: "  将创建 profile 目录：  {{.Path}}"
+
+
+- id: store.init.dry-run-state-dir
+  other: "  将创建 state 目录：    {{.Path}}"
+
+
+- id: store.init.dry-run-config-file
+  other: "  将创建 {{.Path}}/hams.config.yaml（如不存在）"
+
+
+- id: store.init.dry-run-gitignore
+  other: "  将创建 {{.Path}}/.gitignore（如不存在）"
+
+
+- id: store.init.dry-run-prompt-notice
+  other: "  将提示输入 profile_tag 与 machine_id（检测到 TTY）"
+
+
+- id: store.init.done
+  other: "已在 {{.Path}} 完成 store 初始化"
+
+
+- id: store.init.done.profile-dir
+  other: "  Profile 目录：{{.Path}}"
+
+
+- id: store.init.done.state-dir
+  other: "  State 目录：  {{.Path}}"
+
+
+- id: store.init.done.gitignore
+  other: "  .gitignore：  {{.Path}}"
+
+
+- id: store.pull.dry-run
+  other: "[dry-run] 将执行：git -C {{.Path}} pull --rebase"
+
+
+- id: store.commit.dry-run
+  other: "[dry-run] 将在 {{.Path}} 提交并推送到 origin，提交信息：{{.Msg}}"
+
+# ---------------------------------------------------------------------------
+# Config 命令输出
+# ---------------------------------------------------------------------------
+
+- id: config.line.config-home
+  other: "Config 目录：    {{.Path}}"
+
+
+- id: config.line.data-home
+  other: "Data 目录：      {{.Path}}"
+
+
+- id: config.line.global-config
+  other: "全局 config：    {{.Path}}"
+
+
+- id: config.line.local-overrides
+  other: "本地覆盖：       {{.Path}}"
+
+
+- id: config.line.profile-tag
+  other: "Profile 标签：   {{.Tag}}"
+
+
+- id: config.line.machine-id
+  other: "机器 ID：        {{.ID}}"
+
+
+- id: config.line.store-path
+  other: "Store 路径：     {{.Path}}"
+
+
+- id: config.line.store-repo
+  other: "Store 仓库：     {{.Repo}}"
+
+
+- id: config.line.llm-cli
+  other: "LLM CLI：        {{.Path}}"
+
+
+- id: config.line.provider-priority
+  other: "Provider 优先级：{{.List}}"
+
+
+- id: config.set.dry-run
+  other: "[dry-run] 将设置 {{.Key}} = {{.Value}}（位于 {{.Target}}）"
+
+
+- id: config.set.done
+  other: "已设置 {{.Key}} = {{.Value}}（位于 {{.Target}}）"
+
+
+- id: config.unset.dry-run
+  other: "[dry-run] 将清除 {{.Key}}（位于 {{.Target}}）"
+
+
+- id: config.unset.done
+  other: "已清除 {{.Key}}（位于 {{.Target}}）"
+
+
+- id: config.open.dry-run
+  other: "[dry-run] 将使用 {{.Editor}} 打开 {{.Path}}"
+
+
+- id: config.open.dry-run.stub
+  other: "[dry-run]   （该文件不存在，将以 stub 头部自动创建）"
+
+# ---------------------------------------------------------------------------
+# hams list 输出
+# ---------------------------------------------------------------------------
+
+- id: list.no-resources-filter
+  other: "没有资源匹配当前过滤条件。"
+
+
+- id: list.no-resources-status
+  other: "  --status={{.Status}} 未匹配任何条目，请去掉该过滤或放宽范围。"
+
+
+- id: list.no-resources-empty
+  other: "未找到任何受管资源。"
+
+
+- id: list.no-resources-empty.line1
+  other: "使用 'hams <provider> install <package>' 开始管理资源，"
+
+
+- id: list.no-resources-empty.line2
+  other: "或使用 'hams apply' 从 store 回放配置。"
+
+
+- id: list.group-header
+  other: "\n{{.DisplayName}}（{{.Count}} 个{{.Noun}}）："
+
+# ---------------------------------------------------------------------------
+# hams self-upgrade
+# ---------------------------------------------------------------------------
+
+- id: upgrade.brew.dry-run
+  other: "[dry-run] 将执行：brew upgrade zthxxx/tap/hams"
+
+
+- id: upgrade.brew.detected
+  other: "检测到 Homebrew 安装，正在执行 brew upgrade..."
+
+
+- id: upgrade.already-up-to-date
+  other: "已是最新版本（{{.Version}}）"
+
+
+- id: upgrade.dry-run
+  other: "[dry-run] 将下载 {{.Asset}} 并把 hams 从 v{{.Current}} 升级到 v{{.Target}}"
+
+
+- id: upgrade.dry-run.asset-url
+  other: "[dry-run]   Asset URL：{{.URL}}"
+
+
+- id: upgrade.downloading
+  other: "正在下载 {{.Asset}}（v{{.Current}} -> v{{.Target}}）..."
+
+
+- id: upgrade.success
+  other: "已将 hams 从 v{{.Current}} 升级到 v{{.Target}}"
+
+# ---------------------------------------------------------------------------
+# hams version
+# ---------------------------------------------------------------------------
+
+- id: version.info
+  other: "{{.Info}}"
+
+# ---------------------------------------------------------------------------
+# Provider 共享错误
+# ---------------------------------------------------------------------------
+
+- id: provider.err.no-store
+  other: "未配置 store 目录"
+
+
+- id: provider.err.no-store.suggest
+  other: "请在 hams config 中设置 store_path，或使用 --store 参数"
+
+
+- id: provider.err.install-needs-package
+  other: "{{.Provider}} install 需要指定包名"
+
+
+- id: provider.err.install-needs-package.usage
+  other: "用法：hams {{.Provider}} install <package>"
+
+
+- id: provider.err.install-needs-package.bulk
+  other: "如需安装所有已记录的包：hams apply --only={{.Provider}}"
+
+
+- id: provider.err.install-needs-package.at-least-one
+  other: "{{.Provider}} install 至少需要一个包名"
+
+
+- id: provider.err.remove-needs-package
+  other: "{{.Provider}} remove 需要指定包名"
+
+
+- id: provider.err.remove-needs-package.usage
+  other: "用法：hams {{.Provider}} remove <package>"
+
+
+- id: provider.err.remove-needs-package.at-least-one
+  other: "{{.Provider}} remove 至少需要一个包名"
+
+
+- id: provider.err.unknown-subcommand
+  other: "未知的 {{.Provider}} 子命令：{{.Sub}}"
+
+# ---------------------------------------------------------------------------
+# Provider dry-run 状态
+# ---------------------------------------------------------------------------
+
+- id: provider.status.dry-run-install
+  other: "[dry-run] 将执行安装：{{.Cmd}}"
+
+
+- id: provider.status.dry-run-remove
+  other: "[dry-run] 将执行移除：{{.Cmd}}"
+
+
+- id: provider.status.dry-run-run
+  other: "[dry-run] 将执行：{{.Cmd}}"
+
+# ---------------------------------------------------------------------------
+# Provider list 列头
+# ---------------------------------------------------------------------------
+
+- id: provider.list.homebrew-header
+  other: "Homebrew 管理的包："
+
+
+- id: provider.list.git-clone-header
+  other: "git clone 管理的仓库："
+
+
+- id: provider.list.git-clone-empty
+  other: "  （尚未跟踪任何 clone — 可通过 hams git-clone add <remote> --hams-path=<path> 添加）"
+
+# ---------------------------------------------------------------------------
+# git provider 扩展
+# ---------------------------------------------------------------------------
+
+- id: git.config.set-dry-run
+  other: "[dry-run] 将执行：git config --global {{.Key}} {{.Value}}"
+
+
+- id: git.config.unset-dry-run
+  other: "[dry-run] 将执行：git config --global --unset {{.Key}}"
+
+
+- id: git.clone.dry-run
+  other: "[dry-run] 将执行：git clone {{.Remote}} {{.Path}}"
+
+
+- id: git.clone.remove-dry-run
+  other: "[dry-run] 将移除记录：{{.ID}}（不会删除目录）"
+
+# ---------------------------------------------------------------------------
+# Sudo 提示
+# ---------------------------------------------------------------------------
+
+- id: sudo.prompt
+  other: "部分操作需要 sudo 权限。"
+
+# ---------------------------------------------------------------------------
+# TUI 回退
+# ---------------------------------------------------------------------------
+
+- id: tui.warn-no-tty
+  other: "警告：{{.Feature}} 需要交互式终端"
+
+# ---------------------------------------------------------------------------
+# Bootstrap（仓库克隆）
+# ---------------------------------------------------------------------------
+
+- id: bootstrap.clone-dry-run
+  other: "[dry-run] 将克隆 {{.Repo}}，去掉 --dry-run 后重新执行即可进入 apply 预览。"
+
+
+- id: bootstrap.downloading
+  other: "正在下载 Hams Store 到 {{.Path}}"
+
+
+- id: bootstrap.download-success
+  other: "Hams Store 下载完成"
+
+
+- id: bootstrap.profile-now
+  other: "当前 Profile Store 位于 {{.Path}}"
+
+# ---------------------------------------------------------------------------
+# Errors 渲染
+# ---------------------------------------------------------------------------
+
+- id: errors.prefix
+  other: "错误："
+
+
+- id: errors.suggestion-prefix
+  other: "  建议："
+
+# ---------------------------------------------------------------------------
+# Provider help
+# ---------------------------------------------------------------------------
+
+- id: provider.help.title
+  other: "hams {{.Name}} — {{.Description}}"
+
+
+- id: provider.help.usage
+  other: "用法："
+
+
+- id: provider.help.usage-line
+  other: "  hams {{.Name}} <子命令> [参数] [--hams-flags] [-- 透传参数]"
+
+
+- id: provider.help.described
+  other: "Provider 子命令由 {{.DisplayName}} provider 自行定义。"
+
+
+- id: provider.help.hams-prefix
+  other: "带 --hams- 前缀的 flag 会被 hams 自身消费，其余 flag 会被透传。"
+
+
+- id: provider.help.double-dash
+  other: "使用 -- 可强制透传其后的所有参数给底层命令。"
+

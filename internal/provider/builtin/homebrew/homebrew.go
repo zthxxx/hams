@@ -1,16 +1,13 @@
 // Package homebrew wraps the Homebrew package manager for macOS and Linux.
 //
-// Dispatcher exemption: this provider does NOT route through
-// `provider.AutoRecordInstall` / `provider.AutoRecordRemove` — its
-// `CmdRunner.Install(ctx, pkg string, isCask bool)` carries an extra
-// `isCask` bool so the runner knows whether to invoke `brew install
-// --cask`. The shared dispatcher's `PackageInstaller` interface has no
-// slot for the cask flag, so forcing adoption would either inline
-// cask detection inside the dispatcher (coupling the framework to
-// homebrew-specific knowledge) or silently drop the flag. A future
-// change (openspec follow-up 5.8) will introduce a
-// `FlaggedPackageInstaller` dispatcher variant so brew can adopt the
-// shared flow while preserving cask routing.
+// Install/remove flows delegate to the shared dispatcher variants
+// `provider.AutoRecordInstallFn` / `provider.AutoRecordRemoveFn` — the
+// closure variants introduced by follow-up 5.8 of
+// `2026-04-18-provider-shared-abstraction-adoption`. The closure
+// around `runner.Install(ctx, pkg, isCask)` curries in the cask
+// flag that `PackageInstaller.Install(ctx, pkg)` cannot express;
+// the remove-side closure routes tap-format IDs through
+// `runner.Untap` and ordinary formulae through `runner.Uninstall`.
 package homebrew
 
 import (
@@ -33,6 +30,7 @@ import (
 	"github.com/zthxxx/hams/internal/hamsfile"
 	"github.com/zthxxx/hams/internal/i18n"
 	"github.com/zthxxx/hams/internal/provider"
+	"github.com/zthxxx/hams/internal/provider/baseprovider"
 	"github.com/zthxxx/hams/internal/state"
 )
 
@@ -334,7 +332,7 @@ func (p *Provider) HandleCommand(ctx context.Context, args []string, hamsFlags m
 	default:
 		// Passthrough to brew.
 		slog.Debug("passthrough to brew", "args", args)
-		return provider.WrapExecPassthrough(ctx, "brew", args, nil)
+		return provider.Passthrough(ctx, "brew", args, flags)
 	}
 }
 
@@ -583,53 +581,27 @@ func (p *Provider) handleInstall(ctx context.Context, args []string, hamsFlags m
 		)
 	}
 
-	if flags.DryRun {
-		provider.DryRunInstall(flags, "brew install "+strings.Join(args, " "))
-		return nil
-	}
-
-	// Cycle 222: acquire single-writer state lock per cli-architecture spec.
-	release, lockErr := provider.AcquireMutationLockFromCfg(p.effectiveConfig(flags), flags, "brew install")
-	if lockErr != nil {
-		return lockErr
-	}
-	defer release()
-
+	// Close follow-up 5.8: adopt the shared dispatcher via its closure
+	// variant so isCask can be curried into the per-package install
+	// call without widening `PackageInstaller`. `tag` is computed
+	// above (falls back to `tagCask` when --cask is set + the user
+	// didn't override via --hams-tag), and dry-run / lock / load /
+	// record / save are all handled uniformly by the dispatcher.
 	isCask := hasCaskFlag(args)
-	// Drive the runner per-package so the flow is DI-testable
-	// (previously `provider.WrapExecPassthrough` shelled out directly,
-	// so unit tests couldn't cover handleInstall without a real brew).
-	// Fail fast on first error to preserve apt-style atomic semantics:
-	// partial install → no recording.
-	for _, pkg := range packages {
-		if err := p.runner.Install(ctx, pkg, isCask); err != nil {
-			return err
-		}
+	hfPath, hfErr := p.hamsfilePath(hamsFlags, flags)
+	if hfErr != nil {
+		return hfErr
 	}
-
-	hf, err := p.loadOrCreateHamsfile(hamsFlags, flags)
-	if err != nil {
-		return err
-	}
-	sf, err := p.loadOrCreateStateFile(flags)
-	if err != nil {
-		return err
-	}
-
-	for _, pkg := range packages {
-		hf.AddApp(tag, pkg, "")
-		// State write is additive — apt's U12-U15 pattern. Without
-		// this, `hams list --only=brew` showed nothing after a
-		// `hams brew install git` because `list` reads state files
-		// only. The hamsfile record alone is not enough for the
-		// list / refresh / drift paths.
-		sf.SetResource(pkg, state.StateOK)
-	}
-
-	if writeErr := hf.Write(); writeErr != nil {
-		return writeErr
-	}
-	return sf.Save(p.statePath(flags))
+	return provider.AutoRecordInstallFn(ctx,
+		func(ctx context.Context, pkg string) error {
+			return p.runner.Install(ctx, pkg, isCask)
+		},
+		packages, p.effectiveConfig(flags), flags,
+		hfPath, p.statePath(flags),
+		provider.PackageDispatchOpts{
+			CLIName: cliName, InstallVerb: "install", RemoveVerb: "uninstall", HamsTag: tag,
+		},
+	)
 }
 
 func (p *Provider) handleRemove(ctx context.Context, args []string, hamsFlags map[string]string, flags *provider.GlobalFlags) error {
@@ -642,63 +614,32 @@ func (p *Provider) handleRemove(ctx context.Context, args []string, hamsFlags ma
 		return provider.UsageRequiresAtLeastOne(cliName, "remove", "package name", "package")
 	}
 
-	if flags.DryRun {
-		provider.DryRunRemove(flags, "brew uninstall "+strings.Join(args, " "))
-		return nil
+	// Close follow-up 5.8: adopt the shared dispatcher via its closure
+	// variant. The closure handles brew's cycle-177 dual-routing — tap-
+	// format IDs go through Untap; ordinary formulae go through
+	// Uninstall. PackageInstaller.Uninstall cannot express that
+	// branching (one static method), but a closure can.
+	hfPath, hfErr := p.hamsfilePath(hamsFlags, flags)
+	if hfErr != nil {
+		return hfErr
 	}
-
-	// Cycle 222: acquire single-writer state lock per cli-architecture spec.
-	release, lockErr := provider.AcquireMutationLockFromCfg(p.effectiveConfig(flags), flags, "brew remove")
-	if lockErr != nil {
-		return lockErr
-	}
-	defer release()
-
-	// Cycle 177: route tap-format IDs through Untap so `hams brew
-	// remove user/repo` works symmetrically with the apply path
-	// (Provider.Remove already does this routing). Pre-cycle-177 the
-	// CLI handler always called runner.Uninstall, which fails with
-	// "No installed keg or cask" for tap names — user couldn't
-	// remove a tap via the CLI without going through `hams apply`
-	// (forcing a full reconcile just to drop one tap).
-	for _, pkg := range packages {
-		if isTapFormat(pkg) {
-			if err := p.runner.Untap(ctx, pkg); err != nil {
-				return err
+	return provider.AutoRecordRemoveFn(ctx,
+		func(ctx context.Context, pkg string) error {
+			if isTapFormat(pkg) {
+				return p.runner.Untap(ctx, pkg)
 			}
-			continue
-		}
-		if err := p.runner.Uninstall(ctx, pkg); err != nil {
-			return err
-		}
-	}
-
-	hf, err := p.loadOrCreateHamsfile(hamsFlags, flags)
-	if err != nil {
-		return err
-	}
-	sf, err := p.loadOrCreateStateFile(flags)
-	if err != nil {
-		return err
-	}
-
-	for _, pkg := range packages {
-		hf.RemoveApp(pkg)
-		sf.SetResource(pkg, state.StateRemoved)
-	}
-
-	if writeErr := hf.Write(); writeErr != nil {
-		return writeErr
-	}
-	return sf.Save(p.statePath(flags))
+			return p.runner.Uninstall(ctx, pkg)
+		},
+		packages, p.effectiveConfig(flags), flags,
+		hfPath, p.statePath(flags),
+		provider.PackageDispatchOpts{
+			CLIName: cliName, InstallVerb: "install", RemoveVerb: "remove", HamsTag: tagCLI,
+		},
+	)
 }
 
 func (p *Provider) loadOrCreateHamsfile(hamsFlags map[string]string, flags *provider.GlobalFlags) (*hamsfile.File, error) {
-	path, err := p.hamsfilePath(hamsFlags, flags)
-	if err != nil {
-		return nil, err
-	}
-	return hamsfile.LoadOrCreateEmpty(path)
+	return baseprovider.LoadOrCreateHamsfile(p.cfg, p.Manifest().FilePrefix, hamsFlags, flags)
 }
 
 // statePath returns the absolute path to brew.state.yaml for the
@@ -726,40 +667,11 @@ func (p *Provider) loadOrCreateStateFile(flags *provider.GlobalFlags) (*state.Fi
 }
 
 func (p *Provider) hamsfilePath(hamsFlags map[string]string, flags *provider.GlobalFlags) (string, error) {
-	cfg := p.effectiveConfig(flags)
-	if cfg.StorePath == "" {
-		return "", hamserr.NewUserError(hamserr.ExitUsageError,
-			"no store directory configured",
-			"Set store_path in hams config or pass --store",
-		)
-	}
-
-	suffix := ".hams.yaml"
-	if _, ok := hamsFlags["local"]; ok {
-		suffix = ".hams.local.yaml"
-	}
-
-	return filepath.Join(cfg.ProfileDir(), p.Manifest().FilePrefix+suffix), nil
+	return baseprovider.HamsfilePath(p.cfg, p.Manifest().FilePrefix, hamsFlags, flags)
 }
 
 func (p *Provider) effectiveConfig(flags *provider.GlobalFlags) *config.Config {
-	if p.cfg == nil {
-		p.cfg = &config.Config{}
-	}
-
-	cfg := *p.cfg
-	if flags == nil {
-		return &cfg
-	}
-
-	if flags.Store != "" {
-		cfg.StorePath = flags.Store
-	}
-	if flags.Profile != "" {
-		cfg.ProfileTag = flags.Profile
-	}
-
-	return &cfg
+	return baseprovider.EffectiveConfig(p.cfg, flags)
 }
 
 func parseInstallTag(hamsFlags map[string]string) string {

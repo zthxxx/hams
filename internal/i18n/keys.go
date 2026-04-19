@@ -294,4 +294,274 @@ const (
 	// generic "<Provider> managed packages:" template) because
 	// "Homebrew" is a brand name the user identifies by.
 	ProviderHomebrewListHeader = "provider.homebrew.list.header"
+
+	// ============================================================
+	// Imported from origin/dev in 2026-04-19-i18n-and-log-assertion-
+	// expansion. These keys cover the CLI lifecycle (autoinit, ufe,
+	// store, config, list, upgrade, sudo, TUI, expanded apply/refresh,
+	// git-dispatcher, errors prefix, provider help) that loop's pre-
+	// expansion catalog left as hardcoded English. Translations are
+	// taken verbatim from origin/dev's locales/*.yaml so the wording
+	// matches dev's UX exactly.
+	// ============================================================.
+
+	// ---- App metadata ----.
+
+	// AppTitle — top-of-help title string.
+	AppTitle = "app.title"
+
+	// ---- Auto-init status lines ----.
+
+	// AutoInitGlobalConfigCreated — Template vars: {{.Path}} {{.Tag}} {{.MachineID}}.
+	AutoInitGlobalConfigCreated = "autoinit.global_config_created"
+	// AutoInitStoreCreated — Template var: {{.Path}}.
+	AutoInitStoreCreated = "autoinit.store_created"
+	// AutoInitDryRunGlobalConfig — Template var: {{.Path}}.
+	AutoInitDryRunGlobalConfig = "autoinit.dry_run.global_config"
+	// AutoInitDryRunStore — Template var: {{.Path}}.
+	AutoInitDryRunStore = "autoinit.dry_run.store"
+
+	// ---- No-store-configured UFE family ----.
+
+	UFENoStoreConfigured              = "ufe.no_store_configured"
+	UFENoStoreConfiguredSuggestClone  = "ufe.no_store_configured.suggest_clone"
+	UFENoStoreConfiguredSuggestSet    = "ufe.no_store_configured.suggest_set"
+	UFENoStoreConfiguredSuggestInit   = "ufe.no_store_configured.suggest_init"
+	UFENoStoreConfiguredOptOut        = "ufe.no_store_configured.opt_out"
+	UFENoStoreConfiguredOptOutSuggest = "ufe.no_store_configured.opt_out_suggest"
+
+	// ---- Apply status (dev-style hyphenated keys, distinct from
+	// loop's pre-existing apply.status.* keys above). ----.
+
+	ApplyDryRunHeader     = "apply.dry_run_header"
+	ApplyNoProvidersMatch = "apply.no_providers_match"
+
+	// ---- Refresh status (dev-style sibling of apply.no_providers_match) ----.
+
+	RefreshNoProvidersMatch = "refresh.no_providers_match"
+
+	// ---- hams git dispatcher (usage + errors) ----.
+
+	GitUsageHeader             = "git.usage.header"
+	GitUsageSuggestMain        = "git.usage.suggest_main"
+	GitUsageSuggestSubcommands = "git.usage.suggest_subcommands"
+	GitUsageExampleConfig      = "git.usage.example_config"
+	GitUsageExampleClone       = "git.usage.example_clone"
+	GitUnknownSubcommand       = "git.unknown_subcommand"
+
+	// ---- CLI framework errors (broader hierarchy ported from dev) ----.
+
+	CLIErrNoPositionalArgs              = "cli.err.no-positional-args"
+	CLIErrNoPositionalArgsSuggestFilter = "cli.err.no-positional-args.suggest-filter"
+	CLIErrNoPositionalArgsSuggestAll    = "cli.err.no-positional-args.suggest-all"
+
+	CLIErrOnlyExceptConflict        = "cli.err.only-except-conflict"
+	CLIErrOnlyExceptConflictSuggest = "cli.err.only-except-conflict.suggest"
+
+	CLIErrBootstrapModeConflict        = "cli.err.bootstrap-mode-conflict"
+	CLIErrBootstrapModeConflictSuggest = "cli.err.bootstrap-mode-conflict.suggest"
+
+	CLIErrFromRepoStoreConflict = "cli.err.from-repo-store-conflict"
+
+	CLIErrStorePathInvalid           = "cli.err.store-path-invalid"
+	CLIErrStorePathInvalidSuggestFix = "cli.err.store-path-invalid.suggest-fix"
+
+	CLIErrProfileNotFound              = "cli.err.profile-not-found"
+	CLIErrProfileNotFoundSuggestList   = "cli.err.profile-not-found.suggest-list"
+	CLIErrProfileNotFoundSuggestCreate = "cli.err.profile-not-found.suggest-create"
+
+	CLIErrConfigFileMissing               = "cli.err.config-file-missing"
+	CLIErrConfigFileMissingSuggestCheck   = "cli.err.config-file-missing.suggest-check"
+	CLIErrConfigFileMissingSuggestCreate  = "cli.err.config-file-missing.suggest-create"
+	CLIErrConfigFileMissingSuggestDefault = "cli.err.config-file-missing.suggest-default"
+
+	CLIErrOnlyEmpty   = "cli.err.only-empty"
+	CLIErrExceptEmpty = "cli.err.except-empty"
+
+	CLIErrUnknownProvider            = "cli.err.unknown-provider"
+	CLIErrUnknownProviderSuggestList = "cli.err.unknown-provider.suggest-list"
+	CLIErrProfileNotConfigured       = "cli.err.profile-not-configured"
+
+	CLIErrSudoAcquisitionFailed                    = "cli.err.sudo-acquisition-failed"
+	CLIErrSudoAcquisitionFailedSuggestReenter      = "cli.err.sudo-acquisition-failed.suggest-reenter"
+	CLIErrSudoAcquisitionFailedSuggestPasswordless = "cli.err.sudo-acquisition-failed.suggest-passwordless" //nolint:gosec // G101: message-key constant
+	CLIErrSudoAcquisitionFailedSuggestFilter       = "cli.err.sudo-acquisition-failed.suggest-filter"
+
+	CLIErrInterrupted               = "cli.err.interrupted"
+	CLIErrInterruptedSuggestInspect = "cli.err.interrupted.suggest-inspect"
+	CLIErrInterruptedSuggestRerun   = "cli.err.interrupted.suggest-rerun"
+
+	// ---- Apply extra status lines (dev-style) ----.
+
+	ApplyExecutionOrderHeader               = "apply.execution-order-header"
+	ApplyBootstrapDryRun                    = "apply.bootstrap-dry-run"
+	ApplyNoProvidersStateOnly               = "apply.no-providers-state-only"
+	ApplyNoProvidersFiltered                = "apply.no-providers-filtered"
+	ApplyNoProvidersOnlyMissing             = "apply.no-providers-only-missing"
+	ApplyNoProvidersProfileLine             = "apply.no-providers-profile-line"
+	ApplyNoProvidersSuggestInstall          = "apply.no-providers-suggest-install"
+	ApplyNoProvidersProfileDirMissing       = "apply.no-providers-profile-dir-missing"
+	ApplyNoProvidersAvailableProfiles       = "apply.no-providers-available-profiles"
+	ApplyNoProvidersSuggestProfileFix       = "apply.no-providers-suggest-profile-fix"
+	ApplySummaryComplete                    = "apply.summary-complete"
+	ApplySummaryFailedWarning               = "apply.summary-failed-warning"
+	ApplySummaryFailedWarningSuggest        = "apply.summary-failed-warning.suggest"
+	ApplySummarySkippedWarning              = "apply.summary-skipped-warning"
+	ApplySummaryStateFailWarning            = "apply.summary-state-fail-warning"
+	ApplySummaryStateFailSuggest            = "apply.summary-state-fail-warning.suggest"
+	ApplySummaryPartialFailureErr           = "apply.summary-partial-failure-err"
+	ApplySummaryPartialFailureSuggestRetry  = "apply.summary-partial-failure-err.suggest-retry"
+	ApplySummaryPartialFailureSuggestDebug  = "apply.summary-partial-failure-err.suggest-debug"
+	ApplyDryRunNoChanges                    = "apply.dry-run-no-changes"
+	ApplyDryRunPerProviderHeader            = "apply.dry-run-per-provider-header"
+	ApplyDryRunNoChangesProvider            = "apply.dry-run-no-changes-provider"
+	ApplyDryRunUnchangedTail                = "apply.dry-run-unchanged-tail"
+	ApplyDryRunStateFailErr                 = "apply.dry-run-state-fail-err"
+	ApplyDryRunStateFailErrSuggestPerms     = "apply.dry-run-state-fail-err.suggest-perms"
+	ApplyDryRunStateFailErrSuggestNoRefresh = "apply.dry-run-state-fail-err.suggest-no-refresh"
+	ApplyDryRunSkippedErr                   = "apply.dry-run-skipped-err"
+	ApplyDryRunSkippedErrSuggestFix         = "apply.dry-run-skipped-err.suggest-fix"
+	ApplyStateFailDriftLine                 = "apply.state-fail-drift-line"
+	ApplyNotFoundProfile                    = "apply.not-found-profile"
+	ApplyProfileTagPrompt                   = "apply.profile-tag-prompt"
+	ApplyProfileMachineIDPrompt             = "apply.profile-machine-id-prompt"
+
+	// ---- Refresh extra status lines ----.
+
+	RefreshSummaryComplete               = "refresh.summary-complete"
+	RefreshSummaryCompleteWithSaveFails  = "refresh.summary-complete-with-save-fails"
+	RefreshSummaryCompleteWithProbeFails = "refresh.summary-complete-with-probe-fails"
+	RefreshSummarySaveFailWarning        = "refresh.summary-save-fail-warning"
+	RefreshInterrupted                   = "refresh.interrupted"
+	RefreshStateWrittenHeader            = "refresh.state-written-header"
+
+	// ---- Store commands ----.
+
+	StoreNothingToCommit        = "store.nothing-to-commit"
+	StoreStatusPathMissing      = "store.status.path-missing"
+	StoreStatusPathMissingLine1 = "store.status.path-missing.line1"
+	StoreStatusPathMissingLine2 = "store.status.path-missing.line2"
+	StoreStatusPath             = "store.status.path"
+	StoreStatusProfileTag       = "store.status.profile-tag"
+	StoreStatusMachineID        = "store.status.machine-id"
+	StoreStatusProfileDir       = "store.status.profile-dir"
+	StoreStatusStateDir         = "store.status.state-dir"
+	StoreStatusHamsfiles        = "store.status.hamsfiles"
+	StoreStatusHamsfilesMissing = "store.status.hamsfiles-missing"
+	StoreStatusGit              = "store.status.git"
+	StoreInitDryRunHeader       = "store.init.dry-run-header"
+	StoreInitDryRunProfileDir   = "store.init.dry-run-profile-dir"
+	StoreInitDryRunStateDir     = "store.init.dry-run-state-dir"
+	StoreInitDryRunConfigFile   = "store.init.dry-run-config-file"
+	StoreInitDryRunGitignore    = "store.init.dry-run-gitignore"
+	StoreInitDryRunPromptNotice = "store.init.dry-run-prompt-notice"
+	StoreInitDone               = "store.init.done"
+	StoreInitDoneProfileDir     = "store.init.done.profile-dir"
+	StoreInitDoneStateDir       = "store.init.done.state-dir"
+	StoreInitDoneGitignore      = "store.init.done.gitignore"
+	StorePullDryRun             = "store.pull.dry-run"
+	StoreCommitDryRun           = "store.commit.dry-run"
+
+	// ---- Config commands ----.
+
+	ConfigHomeLine             = "config.line.config-home"
+	ConfigDataHomeLine         = "config.line.data-home"
+	ConfigGlobalConfigLine     = "config.line.global-config"
+	ConfigLocalOverridesLine   = "config.line.local-overrides"
+	ConfigProfileTagLine       = "config.line.profile-tag"
+	ConfigMachineIDLine        = "config.line.machine-id"
+	ConfigStorePathLine        = "config.line.store-path"
+	ConfigStoreRepoLine        = "config.line.store-repo"
+	ConfigLLMCLILine           = "config.line.llm-cli"
+	ConfigProviderPriorityLine = "config.line.provider-priority"
+	ConfigSetDryRun            = "config.set.dry-run"
+	ConfigSetDone              = "config.set.done"
+	ConfigUnsetDryRun          = "config.unset.dry-run"
+	ConfigUnsetDone            = "config.unset.done"
+	ConfigOpenDryRun           = "config.open.dry-run"
+	ConfigOpenDryRunStub       = "config.open.dry-run.stub"
+
+	// ---- List commands ----.
+
+	ListNoResourcesFilter     = "list.no-resources-filter"
+	ListNoResourcesStatus     = "list.no-resources-status"
+	ListNoResourcesEmpty      = "list.no-resources-empty"
+	ListNoResourcesEmptyLine1 = "list.no-resources-empty.line1"
+	ListNoResourcesEmptyLine2 = "list.no-resources-empty.line2"
+	ListGroupHeader           = "list.group-header"
+
+	// ---- Self-upgrade ----.
+
+	UpgradeBrewDryRun      = "upgrade.brew.dry-run"
+	UpgradeBrewDetected    = "upgrade.brew.detected"
+	UpgradeAlreadyUpToDate = "upgrade.already-up-to-date"
+	UpgradeDryRun          = "upgrade.dry-run"
+	UpgradeDryRunAssetURL  = "upgrade.dry-run.asset-url"
+	UpgradeDownloading     = "upgrade.downloading"
+	UpgradeSuccess         = "upgrade.success"
+
+	// ---- Version ----.
+
+	VersionInfo = "version.info"
+
+	// ---- Provider shared errors (dev-style hyphenated keys) ----.
+
+	ProviderErrNoStore                       = "provider.err.no-store"
+	ProviderErrNoStoreSuggest                = "provider.err.no-store.suggest"
+	ProviderErrInstallNeedsPackage           = "provider.err.install-needs-package"
+	ProviderErrInstallNeedsPackageUsage      = "provider.err.install-needs-package.usage"
+	ProviderErrInstallNeedsPackageBulk       = "provider.err.install-needs-package.bulk"
+	ProviderErrInstallNeedsPackageAtLeastOne = "provider.err.install-needs-package.at-least-one"
+	ProviderErrRemoveNeedsPackage            = "provider.err.remove-needs-package"
+	ProviderErrRemoveNeedsPackageUsage       = "provider.err.remove-needs-package.usage"
+	ProviderErrRemoveNeedsPackageAtLeastOne  = "provider.err.remove-needs-package.at-least-one"
+	ProviderErrUnknownSubcommand             = "provider.err.unknown-subcommand"
+
+	// ---- Provider dry-run status lines ----.
+
+	ProviderStatusDryRunInstall = "provider.status.dry-run-install"
+	ProviderStatusDryRunRemove  = "provider.status.dry-run-remove"
+	ProviderStatusDryRunRun     = "provider.status.dry-run-run"
+
+	// ---- Provider list headers (dev-style) ----.
+
+	ProviderListHomebrewHeader = "provider.list.homebrew-header"
+	ProviderListGitCloneHeader = "provider.list.git-clone-header"
+	ProviderListGitCloneEmpty  = "provider.list.git-clone-empty"
+
+	// ---- git provider extras (dev-style) ----.
+
+	GitConfigSetDryRun   = "git.config.set-dry-run"
+	GitConfigUnsetDryRun = "git.config.unset-dry-run"
+	GitCloneDryRun       = "git.clone.dry-run"
+	GitCloneRemoveDryRun = "git.clone.remove-dry-run"
+
+	// ---- Sudo prompt ----.
+
+	SudoPrompt = "sudo.prompt"
+
+	// ---- TUI fallback ----.
+
+	TUIWarnNoTTY = "tui.warn-no-tty"
+
+	// ---- Bootstrap (repo clone) ----.
+
+	BootstrapCloneDryRun     = "bootstrap.clone-dry-run"
+	BootstrapDownloading     = "bootstrap.downloading"
+	BootstrapDownloadSuccess = "bootstrap.download-success"
+	BootstrapProfileNow      = "bootstrap.profile-now"
+
+	// ---- Errors rendering ----.
+
+	ErrorsPrefix           = "errors.prefix"
+	ErrorsSuggestionPrefix = "errors.suggestion-prefix"
+
+	// ---- Provider help ----.
+
+	ProviderHelpTitle      = "provider.help.title"
+	ProviderHelpUsage      = "provider.help.usage"
+	ProviderHelpUsageLine  = "provider.help.usage-line"
+	ProviderHelpDescribed  = "provider.help.described"
+	ProviderHelpHamsPrefix = "provider.help.hams-prefix"
+	ProviderHelpDoubleDash = "provider.help.double-dash"
 )

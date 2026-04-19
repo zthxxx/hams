@@ -112,6 +112,9 @@ func runRefresh(ctx context.Context, flags *provider.GlobalFlags, registry *prov
 			"Use --only to include specific providers, or --except to exclude them",
 		)
 	}
+	if tagErr := enforceTagProfileConsistency(flags); tagErr != nil {
+		return tagErr
+	}
 	paths := resolvePaths(flags)
 
 	// Mirror runApply: persist session logs to ${HAMS_DATA_HOME}/<YYYY-MM>/
@@ -499,6 +502,9 @@ func configCmd() *cli.Command {
 				Usage: "Show all configuration values",
 				Action: func(_ context.Context, cmd *cli.Command) error {
 					flags := globalFlags(cmd)
+					if tagErr := enforceTagProfileConsistency(flags); tagErr != nil {
+						return tagErr
+					}
 					paths := resolvePaths(flags)
 					cfg, loadErr := config.Load(paths, flags.Store, flags.Profile)
 					if loadErr != nil {
@@ -568,6 +574,9 @@ func configCmd() *cli.Command {
 						)
 					}
 					flags := globalFlags(cmd)
+					if tagErr := enforceTagProfileConsistency(flags); tagErr != nil {
+						return tagErr
+					}
 					paths := resolvePaths(flags)
 					cfg, loadErr := config.Load(paths, flags.Store, flags.Profile)
 					if loadErr != nil {
@@ -1018,6 +1027,9 @@ func printConfigKeyMode(cfg *config.Config, paths config.Paths, storePath, key s
 func storeCmd() *cli.Command {
 	storeStatusAction := func(ctx context.Context, cmd *cli.Command) error {
 		flags := globalFlags(cmd)
+		if tagErr := enforceTagProfileConsistency(flags); tagErr != nil {
+			return tagErr
+		}
 		paths := resolvePaths(flags)
 		cfg, err := config.Load(paths, flags.Store, flags.Profile)
 		if err != nil {
@@ -1152,6 +1164,9 @@ func storeCmd() *cli.Command {
 				Usage: "Initialize a new store directory structure",
 				Action: func(_ context.Context, cmd *cli.Command) error {
 					flags := globalFlags(cmd)
+					if tagErr := enforceTagProfileConsistency(flags); tagErr != nil {
+						return tagErr
+					}
 					paths := resolvePaths(flags)
 					cfg, err := config.Load(paths, flags.Store, flags.Profile)
 					if err != nil {
@@ -1270,6 +1285,9 @@ func storeCmd() *cli.Command {
 				},
 				Action: func(ctx context.Context, cmd *cli.Command) error {
 					flags := globalFlags(cmd)
+					if tagErr := enforceTagProfileConsistency(flags); tagErr != nil {
+						return tagErr
+					}
 					paths := resolvePaths(flags)
 					cfg, err := config.Load(paths, flags.Store, flags.Profile)
 					if err != nil {
@@ -1315,6 +1333,9 @@ func storeCmd() *cli.Command {
 				Usage: "Pull latest store changes from the remote repository",
 				Action: func(ctx context.Context, cmd *cli.Command) error {
 					flags := globalFlags(cmd)
+					if tagErr := enforceTagProfileConsistency(flags); tagErr != nil {
+						return tagErr
+					}
 					paths := resolvePaths(flags)
 					cfg, err := config.Load(paths, flags.Store, flags.Profile)
 					if err != nil {
@@ -1429,6 +1450,9 @@ func listCmd(registry *provider.Registry) *cli.Command {
 				)
 			}
 			flags := globalFlags(cmd)
+			if tagErr := enforceTagProfileConsistency(flags); tagErr != nil {
+				return tagErr
+			}
 			paths := resolvePaths(flags)
 			cfg, err := config.Load(paths, flags.Store, flags.Profile)
 			if err != nil {
