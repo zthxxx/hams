@@ -91,6 +91,14 @@ get_latest_version() {
   fi
 }
 
+TMPDIR=""
+cleanup() {
+  if [ -n "${TMPDIR}" ] && [ -d "${TMPDIR}" ]; then
+    rm -rf "${TMPDIR}"
+  fi
+}
+trap cleanup EXIT
+
 download_binary() {
   local version="$1" platform="$2" install_dir="$3"
   local os="${platform%/*}"
@@ -100,23 +108,21 @@ download_binary() {
 
   echo "Downloading hams ${version} for ${os}/${arch}..."
 
-  local tmpdir
-  tmpdir="$(mktemp -d)"
-  trap 'rm -rf "${tmpdir}"' EXIT
+  TMPDIR="$(mktemp -d)"
 
   if command -v curl &>/dev/null; then
-    curl -fsSL "${url}" -o "${tmpdir}/hams"
+    curl -fsSL "${url}" -o "${TMPDIR}/hams"
   else
-    wget -qO "${tmpdir}/hams" "${url}"
+    wget -qO "${TMPDIR}/hams" "${url}"
   fi
 
-  chmod +x "${tmpdir}/hams"
+  chmod +x "${TMPDIR}/hams"
 
   echo "Installing to ${install_dir}/hams..."
   if [ -w "${install_dir}" ]; then
-    mv "${tmpdir}/hams" "${install_dir}/hams"
+    mv "${TMPDIR}/hams" "${install_dir}/hams"
   else
-    sudo mv "${tmpdir}/hams" "${install_dir}/hams"
+    sudo mv "${TMPDIR}/hams" "${install_dir}/hams"
   fi
 }
 
