@@ -14,7 +14,7 @@ It wraps existing package managers (Homebrew, pnpm, npm, apt, etc.) to **automat
 
 ```bash
 # One-line install (downloads latest release binary)
-bash -c "$(curl -fsSL https://github.com/zthxxx/hams/raw/master/scripts/install.sh)"
+bash -c "$(curl -fsSL https://github.com/zthxxx/hams/raw/main/scripts/install.sh)"
 
 # Or via Homebrew
 brew install zthxxx/tap/hams

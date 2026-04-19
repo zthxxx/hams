@@ -11,7 +11,7 @@ import { Callout, Steps, Tabs } from 'nextra/components'
 <Tabs items={['curl（推荐）', 'Homebrew', 'GitHub Releases']}>
   <Tabs.Tab>
 ```bash
-bash -c "$(curl -fsSL https://github.com/zthxxx/hams/raw/master/scripts/install.sh)"
+bash -c "$(curl -fsSL https://github.com/zthxxx/hams/raw/main/scripts/install.sh)"
 ```
 
 脚本会识别你的平台（darwin/arm64、linux/amd64、linux/arm64），下最新版的二进制放到 `/usr/local/bin/hams`，
@@ -29,13 +29,13 @@ brew install zthxxx/tap/hams
 
 | 平台 | 架构 | 文件 |
 |------|------|------|
-| macOS | Apple Silicon（M 系列） | `hams_darwin_arm64` |
-| Linux | x86-64 | `hams_linux_amd64` |
-| Linux | ARM64 | `hams_linux_arm64` |
+| macOS | Apple Silicon（M 系列） | `hams-darwin-arm64` |
+| Linux | x86-64 | `hams-linux-amd64` |
+| Linux | ARM64 | `hams-linux-arm64` |
 
 ```bash
 # 以 macOS Apple Silicon 为例
-curl -Lo hams https://github.com/zthxxx/hams/releases/latest/download/hams_darwin_arm64
+curl -Lo hams https://github.com/zthxxx/hams/releases/latest/download/hams-darwin-arm64
 chmod +x hams
 sudo mv hams /usr/local/bin/hams
 ```
@@ -85,7 +85,7 @@ hams git config --global user.email "you@example.com"
 ### 先把 hams 自己装上
 
 ```bash
-bash -c "$(curl -fsSL https://github.com/zthxxx/hams/raw/master/scripts/install.sh)"
+bash -c "$(curl -fsSL https://github.com/zthxxx/hams/raw/main/scripts/install.sh)"
 ```
 
 hams 二进制里内置了 go-git，所以哪怕这机器连 git 命令都还没有也没关系。

@@ -3,7 +3,7 @@
 # hams installer — downloads the latest release binary for the current platform.
 #
 # Usage:
-#   bash -c "$(curl -fsSL https://github.com/zthxxx/hams/raw/master/scripts/install.sh)"
+#   bash -c "$(curl -fsSL https://github.com/zthxxx/hams/raw/main/scripts/install.sh)"
 #
 set -euo pipefail
 

@@ -14,7 +14,7 @@
 
 ```bash
 # 一行安装（下载最新 release 二进制）
-bash -c "$(curl -fsSL https://github.com/zthxxx/hams/raw/master/scripts/install.sh)"
+bash -c "$(curl -fsSL https://github.com/zthxxx/hams/raw/main/scripts/install.sh)"
 
 # 或通过 Homebrew
 brew install zthxxx/tap/hams

@@ -11,7 +11,7 @@ Pick whichever fits your habits:
 <Tabs items={['curl (recommended)', 'Homebrew', 'GitHub Releases']}>
   <Tabs.Tab>
 ```bash
-bash -c "$(curl -fsSL https://github.com/zthxxx/hams/raw/master/scripts/install.sh)"
+bash -c "$(curl -fsSL https://github.com/zthxxx/hams/raw/main/scripts/install.sh)"
 ```
 
 The script figures out your platform (darwin/arm64, linux/amd64, linux/arm64), drops the latest
@@ -31,13 +31,13 @@ Grab the binary for your platform from [GitHub Releases](https://github.com/zthx
 
 | Platform | Architecture | File |
 |----------|-------------|------|
-| macOS | Apple Silicon (M-series) | `hams_darwin_arm64` |
-| Linux | x86-64 | `hams_linux_amd64` |
-| Linux | ARM64 | `hams_linux_arm64` |
+| macOS | Apple Silicon (M-series) | `hams-darwin-arm64` |
+| Linux | x86-64 | `hams-linux-amd64` |
+| Linux | ARM64 | `hams-linux-arm64` |
 
 ```bash
 # Example, macOS Apple Silicon
-curl -Lo hams https://github.com/zthxxx/hams/releases/latest/download/hams_darwin_arm64
+curl -Lo hams https://github.com/zthxxx/hams/releases/latest/download/hams-darwin-arm64
 chmod +x hams
 sudo mv hams /usr/local/bin/hams
 ```
@@ -88,7 +88,7 @@ This is where hams earns its keep. On a brand-new machine:
 ### First, install hams itself
 
 ```bash
-bash -c "$(curl -fsSL https://github.com/zthxxx/hams/raw/master/scripts/install.sh)"
+bash -c "$(curl -fsSL https://github.com/zthxxx/hams/raw/main/scripts/install.sh)"
 ```
 
 hams bundles go-git, so you don't need to install `git` first. Classic chicken-and-egg dodged.
