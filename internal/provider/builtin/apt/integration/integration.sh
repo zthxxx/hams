@@ -27,6 +27,13 @@ echo ""
 export HAMS_STORE=/tmp/test-apt-store
 export HAMS_MACHINE_ID=e2e-apt
 export HAMS_CONFIG_HOME=/tmp/test-apt-config
+# Isolate the rolling log directory so assert_log_contains /
+# assert_log_records_session do not pick up stale records from a
+# previous run or from the host's real `~/.local/share/hams/`.
+# (Imported from origin/dev's per-script HAMS_DATA_HOME convention
+# in 2026-04-19-i18n-and-log-assertion-expansion.)
+export HAMS_DATA_HOME=/tmp/test-apt-data
+mkdir -p "$HAMS_DATA_HOME"
 
 mkdir -p "$HAMS_STORE/test" "$HAMS_STORE/.state/$HAMS_MACHINE_ID" "$HAMS_CONFIG_HOME"
 cat > "$HAMS_CONFIG_HOME/hams.config.yaml" <<YAML
@@ -343,6 +350,21 @@ else
   fi
   echo "  ok: state has exactly one row keyed on the bare 'jq' name"
 fi
+
+echo ""
+echo "--- File-based log assertions (canonical reference) ---"
+# Imported from origin/dev's per-provider log-assertion fanout in
+# 2026-04-19-i18n-and-log-assertion-expansion. apt is the canonical
+# reference for both stderr-based (already in standard_cli_flow) AND
+# file-based assertions. The two together cover:
+#   - "user sees the slog line on stderr" (immediate UX)
+#   - "the slog line landed in the rolling log file" (`hams logs`
+#     read-back path; catches handler regressions where stderr
+#     emits but the file write silently fails).
+# Trigger an apply so SetupLogging fires + writes to the rolling log.
+hams --store="$HAMS_STORE" apply --only=apt >/dev/null 2>&1 || true
+assert_log_records_session "apt integration"
+assert_log_contains "apt provider records applied actions" "apt"
 
 echo ""
 echo "=== apt integration test passed ==="
