@@ -332,7 +332,7 @@ func (p *Provider) HandleCommand(ctx context.Context, args []string, hamsFlags m
 	default:
 		// Passthrough to brew.
 		slog.Debug("passthrough to brew", "args", args)
-		return provider.WrapExecPassthrough(ctx, "brew", args, nil)
+		return provider.Passthrough(ctx, "brew", args, flags)
 	}
 }
 

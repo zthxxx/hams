@@ -138,7 +138,7 @@ func (p *Provider) HandleCommand(ctx context.Context, args []string, hamsFlags m
 		// wants to know what hams is tracking.
 		return provider.HandleListCmd(ctx, p, p.effectiveConfig(flags))
 	default:
-		return provider.WrapExecPassthrough(ctx, cliName, args, nil)
+		return provider.Passthrough(ctx, cliName, args, flags)
 	}
 }
 

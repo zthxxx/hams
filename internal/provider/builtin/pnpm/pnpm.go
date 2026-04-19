@@ -208,7 +208,7 @@ func (p *Provider) HandleCommand(ctx context.Context, args []string, hamsFlags m
 		// recorded packages.
 		return provider.HandleListCmd(ctx, p, p.effectiveConfig(flags))
 	default:
-		return provider.WrapExecPassthrough(ctx, "pnpm", args, nil)
+		return provider.Passthrough(ctx, "pnpm", args, flags)
 	}
 }
 

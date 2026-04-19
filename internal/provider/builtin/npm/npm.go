@@ -192,7 +192,7 @@ func (p *Provider) HandleCommand(ctx context.Context, args []string, hamsFlags m
 		// dependency tree, not hams's recorded packages.
 		return provider.HandleListCmd(ctx, p, p.effectiveConfig(flags))
 	default:
-		return provider.WrapExecPassthrough(ctx, "npm", args, nil)
+		return provider.Passthrough(ctx, "npm", args, flags)
 	}
 }
 

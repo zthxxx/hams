@@ -26,20 +26,6 @@ func WrapExec(ctx context.Context, command string, args []string, autoInject map
 	return output, nil
 }
 
-// WrapExecPassthrough runs a wrapped CLI command with stdin/stdout/stderr connected.
-// Used when the wrapped command needs interactive output (e.g., brew install progress).
-func WrapExecPassthrough(ctx context.Context, command string, args []string, autoInject map[string]string) error {
-	finalArgs := injectFlags(args, autoInject)
-
-	slog.Debug("executing wrapped command (passthrough)", "command", command, "args", finalArgs)
-	cmd := exec.CommandContext(ctx, command, finalArgs...) //nolint:gosec // provider wraps user-configured CLI tools
-	cmd.Stdin = os.Stdin
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-
-	return cmd.Run()
-}
-
 // injectFlags adds auto-inject flags if they're not already present.
 // autoInject maps flag names to their values (empty string for boolean flags).
 // Example: {"--global": "", "-y": ""} for pnpm and apt respectively.

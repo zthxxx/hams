@@ -158,7 +158,7 @@ func (p *Provider) HandleCommand(ctx context.Context, args []string, hamsFlags m
 		// `uv tool`, not the hams-tracked diff against the hamsfile.
 		return provider.HandleListCmd(ctx, p, p.effectiveConfig(flags))
 	default:
-		return provider.WrapExecPassthrough(ctx, "uv", args, nil)
+		return provider.Passthrough(ctx, "uv", args, flags)
 	}
 }
 

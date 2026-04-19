@@ -186,7 +186,7 @@ func (p *Provider) HandleCommand(ctx context.Context, args []string, hamsFlags m
 		// produced a cryptic VS Code error.
 		return provider.HandleListCmd(ctx, p, p.effectiveConfig(flags))
 	default:
-		return provider.WrapExecPassthrough(ctx, "code", args, nil)
+		return provider.Passthrough(ctx, "code", args, flags)
 	}
 }
 
