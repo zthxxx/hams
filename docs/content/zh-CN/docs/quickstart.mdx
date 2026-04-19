@@ -49,6 +49,21 @@ hams --version
 # hams v0.1.0 (commit: abc1234, built: 2026-04-12)
 ```
 
+### Agent skill（可选，面向 Claude Code / Codex）
+
+如果你平时用 Claude Code、Codex 之类的 agent 陪着写代码，可以顺手把 hams 自带的
+skill 装上。装了之后，agent 在涉及"要把这个包装进来"或"把这台机器配起来"之类
+的任务时，会更自然地去用 `hams <provider>`，而不是直接调底下的 `brew`、`pnpm`
+等。对于希望长期持续维护的环境状态，这样的差别会比较明显：
+
+```bash
+npx skills add https://github.com/zthxxx/hams --skill system-packages-maintenance-hams
+```
+
+Skill 本身只是一份说明文档 —— 列清 14 个内置 provider 分别包装了什么、什么时候
+用 `hams` 合适、什么时候用裸命令更合适，并指引 agent 去 `hams <command> --help`
+查 flag 细节。没有运行时开销，只是让 agent 的默认行为更贴近 hams 的设计意图。
+
 ## 装点东西试试
 
 用法很朴素 —— 把原来的命令前面加一个 `hams` 就行：

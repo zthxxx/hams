@@ -51,6 +51,21 @@ hams --version
 # hams v0.1.0 (commit: abc1234, built: 2026-04-12)
 ```
 
+### Agent skill (optional, for Claude Code / Codex)
+
+If you use an agent like Claude Code or Codex alongside hams, install the
+shipped skill so the agent reaches for `hams <provider>` instead of the raw
+package manager when your goal is durable environment state:
+
+```bash
+npx skills add https://github.com/zthxxx/hams --skill system-packages-maintenance-hams
+```
+
+The skill is a short reference — it enumerates the 14 builtin providers,
+spells out when `hams` is worth reaching for vs when the bare tool is fine,
+and points the agent to `hams <command> --help` for flag-level detail. No
+runtime cost; it just improves the agent's defaults.
+
 ## Install something (and let hams remember)
 
 Usage is plain: take whatever command you'd normally type, stick `hams` in front of it.

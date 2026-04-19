@@ -20,6 +20,12 @@ bash -c "$(curl -fsSL https://github.com/zthxxx/hams/raw/main/scripts/install.sh
 brew install zthxxx/tap/hams
 ```
 
+### Agent skill（Claude Code / Codex）
+
+```bash
+npx skills add https://github.com/zthxxx/hams --skill system-packages-maintenance-hams
+```
+
 ### 使用
 
 ```bash
