@@ -245,9 +245,9 @@ Tradeoffs:
 | Asserts template interpolation actually produces a non-key string | ✅ | ❌ (only checks `id:` presence) |
 | Requires manual upkeep of a test-side constant list | ❌ | ✅ |
 
-The ideal is **both**: dev's exhaustive coverage + loop's dynamic-parity
-+ loop's template-interpolation check. Neither branch has all three,
-but `local/loop` has the two sharper ones (parity + interpolation).
+The ideal is **both**: dev's exhaustive coverage plus loop's dynamic-parity
+plus loop's template-interpolation check. Neither branch has all three,
+but `local/loop` has the two sharper ones (parity and interpolation).
 
 ### 4.3 Lookup API and fallback
 
@@ -711,25 +711,25 @@ bounded scope.
 
 ### 9.2 Nice-to-have
 
-5. **Extract a `baseprovider` helper package** with
+1. **Extract a `baseprovider` helper package** with
    `EffectiveConfig`, `HamsfilePath`, `LoadOrCreateHamsfile` and
    migrate providers to it. This replaces ~30 lines of per-provider
    boilerplate. Lower priority because the closure-variant
    dispatcher already lifts the highest-value duplication.
 
-6. **Extract `internal/cli/autoinit.go`** out of `apply.go` /
+2. **Extract `internal/cli/autoinit.go`** out of `apply.go` /
    `commands.go` / `provider_cmd.go`. Functional parity with current
    behaviour; improves SRP and makes the auto-init feature
    grep-locatable by name.
 
-7. **Finer-grained storeinit DI seams** — switch from
+3. **Finer-grained storeinit DI seams** — switch from
    `ExecGitInit`/`GoGitInit` functions to
    `LookPathGit`/`ExecCommandContext`/`GitInitTimeout` vars. Lets
    tests simulate "PATH lookup fails" without replacing the whole
    exec path. Minor win; the E0 integration test already covers the
    real path.
 
-8. **Broaden `--tag`/`--profile` conflict validation** to the three
+4. **Broaden `--tag`/`--profile` conflict validation** to the three
    additional call sites in `commands.go` (upgrade, config, refresh
    short-paths). The validator and its error message already exist
    — just invoke it earlier.
