@@ -46,7 +46,7 @@ import (
 // helper + its dedicated autoinit_test.go.
 func ensureProfileConfigured(paths config.Paths, storePath string, cfg *config.Config, flags *provider.GlobalFlags) error {
 	cliTag, _ := config.ResolveCLITagOverride(flags.Tag, flags.Profile) //nolint:errcheck // ambiguity already checked upstream
-	globalConfigPresent, _ := statFile(paths.GlobalConfigPath())
+	globalConfigPresent := statFile(paths.GlobalConfigPath())
 	if cliTag != "" && !globalConfigPresent {
 		cfg.ProfileTag = cliTag
 		if writeErr := config.WriteConfigKey(paths, storePath, "profile_tag", cliTag); writeErr != nil {
@@ -104,19 +104,36 @@ func ensureProfileConfigured(paths config.Paths, storePath string, cfg *config.C
 	)
 }
 
-// statFile returns (exists, path) for a regular-file check. Used by
+// enforceTagProfileConsistency surfaces the same `--tag X --profile Y`
+// conflict error that `runApply` already raises, but for the
+// non-apply command entry points (refresh, list, config, upgrade,
+// store-status, store-push, …). Without this, those commands would
+// silently use --profile and ignore --tag.
+//
+// Returns nil when either flag is empty or both equal, otherwise the
+// localized UsageError minted by config.ResolveCLITagOverride. Callers
+// SHOULD invoke this before the first config.Load.
+func enforceTagProfileConsistency(flags *provider.GlobalFlags) error {
+	if flags == nil {
+		return nil
+	}
+	_, err := config.ResolveCLITagOverride(flags.Tag, flags.Profile)
+	return err
+}
+
+// statFile returns true when path is a regular file. Used by
 // ensureProfileConfigured to detect "first run" state. Directories
 // and permission-denied errors are conservatively treated as "exists"
 // so auto-init never fires when the path is present-but-unreadable.
-func statFile(path string) (exists bool, checkedPath string) {
+func statFile(path string) bool {
 	info, err := os.Stat(path)
 	if err == nil && !info.IsDir() {
-		return true, path
+		return true
 	}
 	if errors.Is(err, fs.ErrNotExist) {
-		return false, path
+		return false
 	}
 	// Any other error (permission denied, broken symlink, etc.) →
 	// treat as present so we don't auto-init over it.
-	return true, path
+	return true
 }

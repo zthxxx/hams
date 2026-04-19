@@ -198,9 +198,14 @@ func TestEnsureProfileConfigured_AutoInitSkippedWhenConfigExists(t *testing.T) {
 	// Function will fall through to the non-TTY error branch (test
 	// runner stdin is not a terminal). That error is expected — what
 	// we assert is that the persisted config was NOT touched.
-	_ = ensureProfileConfigured(paths, "", cfg, flags)
+	if err := ensureProfileConfigured(paths, "", cfg, flags); err == nil {
+		t.Log("ensureProfileConfigured returned nil — unexpected but acceptable; assertion below is the gate")
+	}
 
-	got, _ := os.ReadFile(filepath.Join(configHome, "hams.config.yaml"))
+	got, err := os.ReadFile(filepath.Join(configHome, "hams.config.yaml"))
+	if err != nil {
+		t.Fatalf("read persisted config: %v", err)
+	}
 	if string(got) != pre {
 		t.Errorf("global config mutated by auto-init when it should have been skipped:\nwant: %q\ngot:  %q", pre, string(got))
 	}
@@ -270,7 +275,9 @@ func TestEnsureProfileConfigured_TagProfileConflictRejected(t *testing.T) {
 	// caller is responsible for surfacing it. So here we just assert
 	// the function does not seed cfg with a wrong value.
 	flags := &provider.GlobalFlags{Tag: "macOS", Profile: "linux"}
-	_ = ensureProfileConfigured(paths, "", cfg, flags)
+	if err := ensureProfileConfigured(paths, "", cfg, flags); err != nil {
+		t.Logf("ensureProfileConfigured returned err (expected for non-TTY): %v", err)
+	}
 	if cfg.ProfileTag == "macOS" || cfg.ProfileTag == "linux" {
 		t.Errorf("conflict should not silently seed ProfileTag; got %q", cfg.ProfileTag)
 	}
@@ -281,7 +288,7 @@ func TestEnsureProfileConfigured_TagProfileConflictRejected(t *testing.T) {
 // TestStatFile_MissingReportsFalse asserts the not-exist branch.
 func TestStatFile_MissingReportsFalse(t *testing.T) {
 	t.Parallel()
-	got, _ := statFile(filepath.Join(t.TempDir(), "nonexistent.yaml"))
+	got := statFile(filepath.Join(t.TempDir(), "nonexistent.yaml"))
 	if got {
 		t.Error("statFile of missing path = true, want false")
 	}
@@ -295,7 +302,7 @@ func TestStatFile_PresentReportsTrue(t *testing.T) {
 	if err := os.WriteFile(path, []byte("x: 1\n"), 0o600); err != nil {
 		t.Fatalf("seed: %v", err)
 	}
-	got, _ := statFile(path)
+	got := statFile(path)
 	if !got {
 		t.Error("statFile of present file = false, want true")
 	}
@@ -307,8 +314,41 @@ func TestStatFile_PresentReportsTrue(t *testing.T) {
 func TestStatFile_DirectoryReportsTrue(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
-	got, _ := statFile(dir)
+	got := statFile(dir)
 	if !got {
 		t.Error("statFile of directory = false, want true (conservative)")
+	}
+}
+
+// --- enforceTagProfileConsistency coverage ---
+
+// TestEnforceTagProfileConsistency_TableDriven covers the four shapes:
+// nil flags, empty flags, equal Tag/Profile, conflicting Tag/Profile.
+func TestEnforceTagProfileConsistency_TableDriven(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name    string
+		flags   *provider.GlobalFlags
+		wantErr bool
+	}{
+		{name: "nil flags", flags: nil, wantErr: false},
+		{name: "empty flags", flags: &provider.GlobalFlags{}, wantErr: false},
+		{name: "tag only", flags: &provider.GlobalFlags{Tag: "macOS"}, wantErr: false},
+		{name: "profile only", flags: &provider.GlobalFlags{Profile: "macOS"}, wantErr: false},
+		{name: "matching tag and profile", flags: &provider.GlobalFlags{Tag: "macOS", Profile: "macOS"}, wantErr: false},
+		{name: "conflicting tag and profile", flags: &provider.GlobalFlags{Tag: "macOS", Profile: "linux"}, wantErr: true},
+	}
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got := enforceTagProfileConsistency(tc.flags)
+			if tc.wantErr && got == nil {
+				t.Errorf("expected error, got nil")
+			}
+			if !tc.wantErr && got != nil {
+				t.Errorf("expected nil, got %v", got)
+			}
+		})
 	}
 }
