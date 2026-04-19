@@ -5,3 +5,4 @@ globs:
   - "!**/openspec/**"
   - "!**/.claude/**"
   - "!**/.specstory/**"
+  - "!**/.logs/**"
