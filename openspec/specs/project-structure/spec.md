@@ -26,7 +26,6 @@ hams/
   e2e/                    # Docker Compose + Dockerfiles for end-to-end testing
   examples/               # Dev-sandbox example projects (per dev-sandbox spec)
   scripts/                # Build/install/release helper scripts (bash)
-  Formula/                # Homebrew tap formula (hams.rb) for distribution
   .github/                # GitHub Actions workflows, issue templates, PR templates
   openspec/               # OpenSpec specification artifacts
   bin/                    # Build output (.gitignore'd)
