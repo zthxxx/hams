@@ -1,9 +1,26 @@
 #!/usr/bin/env bash
 #
-# hams installer — downloads the latest release binary for the current platform.
+# hams installer — downloads a release binary for the current platform.
 #
 # Usage:
+#   # latest stable release (default)
 #   bash -c "$(curl -fsSL https://github.com/zthxxx/hams/raw/main/scripts/install.sh)"
+#
+#   # pin to a specific version (accepts alpha/beta/rc pre-release tags too)
+#   bash -c "$(curl -fsSL https://github.com/zthxxx/hams/raw/main/scripts/install.sh)" -- --version v0.1.0
+#   HAMS_VERSION=v0.1.0-beta.2 bash -c "$(curl -fsSL https://github.com/zthxxx/hams/raw/main/scripts/install.sh)"
+#
+# Flags:
+#   --version <tag>    Install the given release tag (with or without the
+#                      `v` prefix). Takes precedence over HAMS_VERSION.
+#   --version=<tag>    Same, = form.
+#   -h, --help         Print this help.
+#
+# Env vars:
+#   HAMS_VERSION       Release tag to install (fallback when --version is
+#                      omitted). Useful for `curl | bash` flows where
+#                      passing argv through bash -s is awkward.
+#   HAMS_INSTALL_DIR   Explicit install directory; bypasses PATH detection.
 #
 # Design note — WHY no api.github.com:
 #   GitHub's Releases API (api.github.com) rate-limits anonymous clients to
@@ -15,7 +32,10 @@
 #
 #     1. HEAD https://github.com/<repo>/releases/latest
 #          → 302 Location: https://github.com/<repo>/releases/tag/<tag>
-#        We parse the tag out of the final URL. No JSON, no API call.
+#        We parse the tag out of the final URL. No JSON, no API call. The
+#        redirect target is the latest **non-prerelease** release — the
+#        release workflow marks alpha/beta/rc tags with `prerelease: true`,
+#        so they are skipped here by GitHub itself (not by regex in bash).
 #
 #     2. Deterministic asset URLs:
 #          https://github.com/<repo>/releases/download/<tag>/<filename>
@@ -26,6 +46,10 @@ set -euo pipefail
 
 REPO="zthxxx/hams"
 GITHUB_RELEASES_URL="https://github.com/${REPO}/releases"
+
+# Explicit version — set via --version flag or HAMS_VERSION env var.
+# Empty → falls back to /releases/latest.
+HAMS_VERSION="${HAMS_VERSION:-}"
 
 # Determine install directory with priority-based detection.
 # Priority: HAMS_INSTALL_DIR > ~/.local/bin > /usr/local/bin > /usr/bin > /bin > shortest $PATH entry.
@@ -56,7 +80,7 @@ resolve_install_dir() {
   local shortest_len=9999
   IFS=':' read -ra path_dirs <<< "${PATH}"
   for dir in "${path_dirs[@]}"; do
-    if [ -d "${dir}" ] && [ ${#dir} -lt ${shortest_len} ]; then
+    if [ -d "${dir}" ] && [ "${#dir}" -lt "${shortest_len}" ]; then
       shortest="${dir}"
       shortest_len=${#dir}
     fi
@@ -223,7 +247,64 @@ download_binary() {
   fi
 }
 
+show_help() {
+  sed -n '2,/^$/p' "$0" | sed 's/^# \{0,1\}//'
+}
+
+# Normalize a user-supplied version string to the canonical `vX.Y.Z[-...]`
+# tag form. Accepts both "0.1.0" and "v0.1.0".
+normalize_version() {
+  local v="$1"
+  if [ -z "${v}" ]; then
+    echo ""
+    return
+  fi
+  printf 'v%s' "${v#v}"
+}
+
+parse_args() {
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --version=*)
+        HAMS_VERSION="${1#*=}"
+        if [ -z "${HAMS_VERSION}" ]; then
+          echo "Error: --version= requires a value" >&2
+          exit 1
+        fi
+        shift
+        ;;
+      --version)
+        if [ $# -lt 2 ] || [ -z "${2:-}" ]; then
+          echo "Error: --version requires a value" >&2
+          exit 1
+        fi
+        HAMS_VERSION="$2"
+        shift 2
+        ;;
+      -h|--help)
+        show_help
+        exit 0
+        ;;
+      --)
+        shift
+        break
+        ;;
+      -*)
+        echo "Error: unknown flag '$1'" >&2
+        echo "Run with --help for usage." >&2
+        exit 1
+        ;;
+      *)
+        echo "Error: unexpected positional argument '$1' — use --version <tag>" >&2
+        exit 1
+        ;;
+    esac
+  done
+}
+
 main() {
+  parse_args "$@"
+
   echo "hams installer"
   echo ""
 
@@ -234,12 +315,17 @@ main() {
   install_dir="$(resolve_install_dir)"
   echo "Install directory: ${install_dir}"
 
-  version="$(get_latest_version)"
-  if [ -z "${version}" ]; then
-    echo "Error: could not determine latest version. Check ${GITHUB_RELEASES_URL}" >&2
-    exit 1
+  if [ -n "${HAMS_VERSION}" ]; then
+    version="$(normalize_version "${HAMS_VERSION}")"
+    echo "Pinned version: ${version}"
+  else
+    version="$(get_latest_version)"
+    if [ -z "${version}" ]; then
+      echo "Error: could not determine latest version. Check ${GITHUB_RELEASES_URL}" >&2
+      exit 1
+    fi
+    echo "Latest version: ${version}"
   fi
-  echo "Latest version: ${version}"
 
   download_binary "${version}" "${platform}" "${install_dir}"
 
