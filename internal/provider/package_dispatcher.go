@@ -38,6 +38,17 @@ type PackageDispatchOpts struct {
 	// HamsTag is the tag under which records are recorded in the
 	// hamsfile. Conventionally "cli".
 	HamsTag string
+
+	// IntroFn, when non-nil, is called for each successfully-installed
+	// package to fetch a short human-readable description that is
+	// then written to the hamsfile's `intro:` field. Providers that
+	// have a cheap native metadata source (brew's `desc`, apt's
+	// description, npm's `description`, ...) SHOULD populate this so
+	// users get a self-explanatory Hamsfile instead of bare `- app:`
+	// entries. Errors MUST be swallowed inside the closure — a
+	// failed lookup falls back to "" and the install still succeeds.
+	// An empty return is the documented "no intro available" signal.
+	IntroFn func(ctx context.Context, pkg string) string
 }
 
 // AutoRecordInstall is the shared package-provider install flow.
@@ -110,7 +121,11 @@ func AutoRecordInstall(
 		sf = loaded
 	}
 	for _, pkg := range pkgs {
-		hf.AddApp(opts.HamsTag, pkg, "")
+		intro := ""
+		if opts.IntroFn != nil {
+			intro = opts.IntroFn(ctx, pkg)
+		}
+		hf.AddApp(opts.HamsTag, pkg, intro)
 		sf.SetResource(pkg, state.StateOK)
 	}
 	if writeErr := hf.Write(); writeErr != nil {
@@ -180,7 +195,11 @@ func AutoRecordInstallFn(
 		sf = loaded
 	}
 	for _, pkg := range pkgs {
-		hf.AddApp(opts.HamsTag, pkg, "")
+		intro := ""
+		if opts.IntroFn != nil {
+			intro = opts.IntroFn(ctx, pkg)
+		}
+		hf.AddApp(opts.HamsTag, pkg, intro)
 		sf.SetResource(pkg, state.StateOK)
 	}
 	if writeErr := hf.Write(); writeErr != nil {

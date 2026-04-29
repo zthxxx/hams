@@ -15,6 +15,7 @@ type FakeCmdRunner struct {
 	formulae        map[string]string // formula name → version
 	casks           map[string]string // cask token → version
 	taps            map[string]bool
+	descriptions    map[string]string // pkg name → desc (formula or cask)
 	calls           []fakeCall
 	installErrors   map[string]error
 	uninstallErrors map[string]error
@@ -22,6 +23,7 @@ type FakeCmdRunner struct {
 	formulaeErr     error
 	casksErr        error
 	tapsErr         error
+	describeErr     error
 }
 
 type fakeCall struct {
@@ -38,6 +40,7 @@ const (
 	fakeOpUninstall    = "uninstall"
 	fakeOpTap          = "tap"
 	fakeOpUntap        = "untap"
+	fakeOpDescribe     = "describe"
 )
 
 // NewFakeCmdRunner returns a fresh FakeCmdRunner.
@@ -46,6 +49,7 @@ func NewFakeCmdRunner() *FakeCmdRunner {
 		formulae:        make(map[string]string),
 		casks:           make(map[string]string),
 		taps:            make(map[string]bool),
+		descriptions:    make(map[string]string),
 		installErrors:   make(map[string]error),
 		uninstallErrors: make(map[string]error),
 		tapErrors:       make(map[string]error),
@@ -73,6 +77,29 @@ func (f *FakeCmdRunner) SeedTap(repo string) *FakeCmdRunner {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.taps[repo] = true
+	return f
+}
+
+// SeedDescription seeds the `desc` returned by Describe for name.
+// Used to simulate what `brew info --json=v2` would return for a
+// formula/cask manifest. The same map serves both formulae and casks
+// because the real `brew info` responds to whichever form the
+// `--cask` flag selects — the fake keeps it simple with one
+// namespace.
+func (f *FakeCmdRunner) SeedDescription(name, desc string) *FakeCmdRunner {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.descriptions[name] = desc
+	return f
+}
+
+// WithDescribeError makes Describe return err for ALL queries.
+// Models the "brew is broken / offline" case — the intro flow
+// must gracefully fall back to "".
+func (f *FakeCmdRunner) WithDescribeError(err error) *FakeCmdRunner {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.describeErr = err
 	return f
 }
 
@@ -182,6 +209,19 @@ func (f *FakeCmdRunner) Install(_ context.Context, name string, isCask bool) err
 		f.formulae[name] = "fake-1.0.0"
 	}
 	return nil
+}
+
+// Describe implements CmdRunner. Returns the seeded description for
+// name, or ("", nil) if no seed exists (so tests that don't care
+// about descriptions can ignore the method).
+func (f *FakeCmdRunner) Describe(_ context.Context, name string, isCask bool) (string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.calls = append(f.calls, fakeCall{op: fakeOpDescribe, name: name, isCask: isCask})
+	if f.describeErr != nil {
+		return "", f.describeErr
+	}
+	return f.descriptions[name], nil
 }
 
 // Uninstall implements CmdRunner. Removes from whichever set the name

@@ -34,6 +34,16 @@ type CmdRunner interface {
 	// casks cellar.
 	Install(ctx context.Context, name string, isCask bool) error
 
+	// Describe runs `brew info --json=v2 [--cask] <name>` and returns
+	// the short human-readable description — Homebrew's canonical
+	// `desc` field from the formula/cask manifest. Zero network
+	// round-trip: brew reads the tap data that was already synced
+	// before the install. Returns ("", nil) when the tool responded
+	// but the desc field is empty — the caller decides whether to
+	// fall back; non-nil error means we couldn't talk to brew at all
+	// (which the intro-record flow swallows to stay best-effort).
+	Describe(ctx context.Context, name string, isCask bool) (string, error)
+
 	// Uninstall runs `brew uninstall <name>`.
 	Uninstall(ctx context.Context, name string) error
 
@@ -102,6 +112,20 @@ func (r *realCmdRunner) Install(ctx context.Context, name string, isCask bool) e
 	return nil
 }
 
+func (r *realCmdRunner) Describe(ctx context.Context, name string, isCask bool) (string, error) {
+	args := []string{"info", "--json=v2"}
+	if isCask {
+		args = append(args, "--cask")
+	}
+	args = append(args, name)
+	cmd := exec.CommandContext(ctx, "brew", args...)
+	output, err := cmd.Output()
+	if err != nil {
+		return "", fmt.Errorf("brew info %s: %w", name, err)
+	}
+	return parseBrewDescJSON(output)
+}
+
 func (r *realCmdRunner) Uninstall(ctx context.Context, name string) error {
 	cmd := exec.CommandContext(ctx, "brew", "uninstall", name) //nolint:gosec // name from hamsfile/state entries
 	cmd.Stdout = os.Stdout
@@ -165,4 +189,32 @@ func parseBrewInfoJSON(output []byte) (map[string]string, error) {
 		result[c.Token] = c.Version
 	}
 	return result, nil
+}
+
+// parseBrewDescJSON extracts the `desc` field from the output of
+// `brew info --json=v2 [--cask] <name>`. For a formula query, the
+// response has shape `{"formulae":[{...}], "casks":[]}` — we take
+// formulae[0].desc. For a cask query it's `{"formulae":[], "casks":[{...}]}`.
+// Both arrays may be empty when `name` was not found in either set;
+// we return ("", nil) rather than error so the intro-record flow
+// can fall back silently. Exposed for unit testing.
+func parseBrewDescJSON(output []byte) (string, error) {
+	var data struct {
+		Formulae []struct {
+			Desc string `json:"desc"`
+		} `json:"formulae"`
+		Casks []struct {
+			Desc string `json:"desc"`
+		} `json:"casks"`
+	}
+	if err := json.Unmarshal(output, &data); err != nil {
+		return "", fmt.Errorf("parsing brew JSON: %w", err)
+	}
+	if len(data.Formulae) > 0 && data.Formulae[0].Desc != "" {
+		return data.Formulae[0].Desc, nil
+	}
+	if len(data.Casks) > 0 && data.Casks[0].Desc != "" {
+		return data.Casks[0].Desc, nil
+	}
+	return "", nil
 }

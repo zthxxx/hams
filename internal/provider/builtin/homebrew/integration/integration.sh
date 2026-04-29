@@ -66,6 +66,19 @@ assert_yaml_field_eq "Homebrew.state.yaml jq.state=ok after seed" \
   "$STATE_FILE" '.resources.jq.state' 'ok'
 FIRST_INSTALL=$(yq -r '.resources.jq.first_install_at' "$STATE_FILE")
 
+# The install flow populates `intro:` from `brew info --json=v2 jq` so
+# the Hamsfile is self-documenting right after install — no LLM pass
+# needed. Upstream's `desc` text may evolve over time; assert only that
+# the field is non-empty and non-null.
+HAMSFILE="$HAMS_STORE/test/Homebrew.hams.yaml"
+JQ_INTRO=$(sudo -u brew yq -r '.cli[] | select(.app == "jq") | .intro' "$HAMSFILE")
+if [ -z "${JQ_INTRO:-}" ] || [ "$JQ_INTRO" = "null" ]; then
+  echo "FAIL: jq entry missing intro field in $HAMSFILE"
+  sudo -u brew cat "$HAMSFILE"
+  exit 1
+fi
+echo "  ok: jq.intro populated from brew info: '$JQ_INTRO'"
+
 sleep 1
 
 # Step 2: re-install jq (no state assertion yet — folded into step 3).
@@ -101,7 +114,7 @@ fi
 
 # Step 5: hamsfile-delete + apply → state=removed (see provider_flow.sh
 # step 5 — imperative remove + apply double-executes brew uninstall).
-HAMSFILE="$HAMS_STORE/test/Homebrew.hams.yaml"
+# HAMSFILE was captured earlier (step 1) so we reuse it here.
 chown brew:brew "$HAMSFILE"
 sudo -u brew yq -i 'del(.cli[] | select(.app == "htop"))' "$HAMSFILE"
 assert_success "apply after hamsfile-delete transitions htop to removed" \

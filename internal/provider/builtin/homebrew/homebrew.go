@@ -600,6 +600,20 @@ func (p *Provider) handleInstall(ctx context.Context, args []string, hamsFlags m
 		hfPath, p.statePath(flags),
 		provider.PackageDispatchOpts{
 			CLIName: cliName, InstallVerb: "install", RemoveVerb: "uninstall", HamsTag: tag,
+			// Populate `intro:` from brew's canonical `desc` field so
+			// the Hamsfile is self-documenting right after install —
+			// no LLM pass required. Errors fall back to "" silently
+			// (debug-logged) so a flaky brew info never fails the
+			// install it was decorating.
+			IntroFn: func(ctx context.Context, pkg string) string {
+				desc, err := p.runner.Describe(ctx, pkg, isCask)
+				if err != nil {
+					slog.Debug("brew describe failed — recording without intro",
+						"package", pkg, "isCask", isCask, "error", err)
+					return ""
+				}
+				return desc
+			},
 		},
 	)
 }
