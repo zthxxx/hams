@@ -127,7 +127,7 @@ hams apply --bootstrap --from-repo=<your-username>/hams-store --tag=macOS
 **关于 bootstrap 确认。** 交互终端下 `--bootstrap` 不是必传 —— hams 跑到前置工具缺失的
 provider 时会主动弹 `[y/N/s]` 让你确认。CI / 脚本里记得显式传 `--bootstrap`（或
 `--no-bootstrap` 让它前置缺失时直接报错退出）。完整的 bootstrap 支持列表见
-[`apply` 命令页](./cli/apply)。
+[`apply` 命令页](../cli/apply)。
 
 ### 输 sudo 密码（如果需要）
 
@@ -186,9 +186,9 @@ hams store push
 
 ## 接下来看什么
 
-- [CLI 参考](./cli) —— 所有命令和 flag 的详解
-- [Providers](./providers) —— 14 个内置 provider 各自能干什么
-- [Schema 参考](./schema) —— Hamsfile 和配置 YAML 的字段说明
+- [CLI 参考](../cli) —— 所有命令和 flag 的详解
+- [Providers](../providers) —— 14 个内置 provider 各自能干什么
+- [Schema 参考](../schema) —— Hamsfile 和配置 YAML 的字段说明
 
 <Callout type="tip">
   改完 Hamsfile 不放心？`hams --dry-run apply` 会把 hams 即将做的事列出来但不真动手，确认无误再正式跑。

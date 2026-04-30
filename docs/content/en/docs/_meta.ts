@@ -1,7 +1,7 @@
 export default {
-  index: 'Why hams?',
+  index: 'Why Hams?',
   'why-hams': {
-    title: 'Why hams?',
+    title: 'Why Hams?',
     display: 'hidden',
   },
   quickstart: 'Quickstart',

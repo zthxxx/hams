@@ -24,5 +24,6 @@ export default {
     title: '中文',
     type: 'page',
     href: '/zh-CN/docs',
+    display: 'hidden',
   },
 }

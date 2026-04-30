@@ -1,7 +1,7 @@
 export default {
-  index: '为什么选择 hams？',
+  index: 'Why Hams?',
   'why-hams': {
-    title: '为什么选择 hams？',
+    title: 'Why Hams?',
     display: 'hidden',
   },
   quickstart: '快速开始',

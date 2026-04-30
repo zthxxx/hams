@@ -81,7 +81,7 @@ The site top navigation bar SHALL display a consistent set of links across all p
 
 WHEN a user views any page on the site
 THEN the top navigation bar SHALL contain, in order:
-1. Project name/logo "hams 🐹" (passed as `logo` prop, links to `/`)
+1. Project name/logo "Hams 🐹" (passed as `logo` prop, links to `/`)
 2. "Documentation" entry (links to `/en/docs`) — declared as an `en` page entry with `href: '/en/docs'` in `content/_meta.ts`
 3. A `zh-CN` page entry (links to `/zh-CN/docs`) — visually hidden from the navbar via CSS (see "Locale switcher" scenario) so language switching is driven solely by the `LanguageSwitcher` component
 4. Search input (Nextra built-in Pagefind/Flexsearch)

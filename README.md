@@ -1,4 +1,4 @@
-# hams 🐹
+# Hams 🐹
 
 [![CI](https://github.com/zthxxx/hams/actions/workflows/ci.yml/badge.svg)](https://github.com/zthxxx/hams/actions/workflows/ci.yml)
 [![Go Report Card](https://goreportcard.com/badge/github.com/zthxxx/hams)](https://goreportcard.com/report/github.com/zthxxx/hams)

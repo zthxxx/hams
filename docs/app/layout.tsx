@@ -8,23 +8,23 @@ import { LanguageSwitcher } from '../components/LanguageSwitcher'
 
 export const metadata = {
   title: {
-    default: 'hams',
-    template: '%s – hams',
+    default: 'Hams',
+    template: '%s – Hams',
   },
-  description: 'hams — Declarative IaC for your workstation',
+  description: 'Hams — Declarative IaC for your workstation',
 }
 
 export default async function RootLayout({ children }: { children: ReactNode }) {
   const pageMap = await getPageMap()
   const navbar = (
     <Navbar
-      logo={<span style={{ fontWeight: 800 }}>hams 🐹</span>}
+      logo={<span style={{ fontWeight: 800 }}>Hams 🐹</span>}
       projectLink="https://github.com/zthxxx/hams"
     >
       <LanguageSwitcher />
     </Navbar>
   )
-  const footer = <Footer>hams — Declarative IaC for workstations</Footer>
+  const footer = <Footer>Hams — Declarative IaC for workstations</Footer>
   return (
     <html lang="en" dir="ltr" suppressHydrationWarning>
       <Head />

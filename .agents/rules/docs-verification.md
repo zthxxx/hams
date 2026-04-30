@@ -30,7 +30,19 @@ Use `playwright-cli` skill to verify each page category. For each page:
 4. At least one provider page — content, breadcrumbs
 5. Any locale variants if i18n is enabled
 
-**Link verification**: Confirm no double-prefix URLs (e.g., `/docs/docs/...`). With `basePath: '/docs'`, all internal MDX links must omit the `/docs` prefix — Nextra adds it automatically.
+## Link Conventions
+
+Internal MDX links MUST always be relative. Never write locale-rooted absolute paths like `/en/docs/...` or `/zh-CN/docs/...` — they bake the locale into the source and break the symmetry between `en/` and `zh-CN/` content. Examples:
+
+- Sibling page: `[Quickstart](./quickstart)` (or `../quickstart` from a sub-folder).
+- Cross-section: `[apply](../cli/apply)` from `quickstart.mdx`; `[apply](../../cli/apply/#anchor)` from `providers/<name>.mdx`.
+
+Two non-obvious mechanics that follow from `next.config.mjs` having `trailingSlash: true`:
+
+1. **A non-index `name.mdx` serves at `/parent/name/`.** A bare relative `./sibling` from such a page resolves under `/parent/name/sibling/` (browser RFC 3986 rules), which is almost always wrong. Use `../sibling` to land at `/parent/sibling/`.
+2. **Anchored links must have a trailing slash before `#`.** `../cli/apply#anchor` 308-redirects to `../cli/apply/`, which strips the fragment. Always write `../cli/apply/#anchor`.
+
+**Link verification during dev**: confirm no link resolves to a 404 by clicking through it via `playwright-cli`. Confirm anchored links keep their fragment after navigation (`window.location.hash` non-empty).
 
 ### 3. Record Issues
 
