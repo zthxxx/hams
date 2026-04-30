@@ -167,13 +167,7 @@ func (p *Provider) HandleCommand(ctx context.Context, args []string, hamsFlags m
 		return p.handleSet(ctx, args[0], hamsFlags, flags)
 	}
 
-	if flags.DryRun {
-		provider.DryRunRun(flags, "duti "+strings.Join(args, " "))
-		return nil
-	}
-
-	cmd := exec.CommandContext(ctx, "duti", args...) //nolint:gosec // duti args from CLI input
-	return cmd.Run()
+	return provider.Passthrough(ctx, cliName, args, flags)
 }
 
 // handleSet parses `<ext>=<bundle-id>`, runs the CmdRunner seam and

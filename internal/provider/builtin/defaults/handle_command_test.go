@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -304,18 +305,35 @@ func TestHandleCommand_U7_DeleteWithoutPriorWriteRecordsTombstone(t *testing.T) 
 	}
 }
 
-// U8 — `defaults read` passes through to exec (since no test harness
-// for exec passthrough, just assert we do NOT touch hamsfile/state).
+// U8 — unrecognized verbs (e.g., `defaults read`) route through
+// provider.Passthrough via the PassthroughExec DI seam and do NOT
+// auto-record. Pre-fix this branch ran the host's `defaults` binary
+// directly during unit tests, which on macOS leaked side effects to
+// the real user-defaults database.
 func TestHandleCommand_U8_ReadPassesThroughWithoutRecording(t *testing.T) {
 	h := newDefaultsHarness(t)
 
-	// `read` takes a different path (exec.CommandContext); in tests
-	// it'll fail (no defaults binary on Linux CI), which is fine —
-	// we only assert that the record path was NOT entered.
-	err := h.provider.HandleCommand(context.Background(),
-		[]string{"read", "com.apple.dock", "autohide"}, nil, h.flags)
-	_ = err // intentional: exec result is irrelevant; we check side-effects below
+	var gotTool string
+	var gotArgs []string
+	orig := provider.PassthroughExec
+	t.Cleanup(func() { provider.PassthroughExec = orig })
+	provider.PassthroughExec = func(_ context.Context, tool string, args []string) error {
+		gotTool = tool
+		gotArgs = append([]string(nil), args...)
+		return nil
+	}
 
+	wantArgs := []string{"read", "com.apple.dock", "autohide"}
+	if err := h.provider.HandleCommand(context.Background(), wantArgs, nil, h.flags); err != nil {
+		t.Fatalf("passthrough: %v", err)
+	}
+
+	if gotTool != "defaults" {
+		t.Errorf("PassthroughExec tool = %q, want defaults", gotTool)
+	}
+	if !slices.Equal(gotArgs, wantArgs) {
+		t.Errorf("PassthroughExec args = %v, want %v", gotArgs, wantArgs)
+	}
 	if apps := h.hamsfileApps(); len(apps) != 0 {
 		t.Errorf("read path wrote hamsfile apps = %v", apps)
 	}

@@ -5,7 +5,6 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"os/exec"
 	"strings"
 
 	"github.com/zthxxx/hams/internal/config"
@@ -141,12 +140,7 @@ func (p *Provider) HandleCommand(ctx context.Context, args []string, hamsFlags m
 		return p.handleDelete(ctx, args, hamsFlags, flags)
 	}
 
-	if flags.DryRun {
-		provider.DryRunRun(flags, "defaults "+strings.Join(args, " "))
-		return nil
-	}
-	cmd := exec.CommandContext(ctx, cliName, args...) //nolint:gosec // defaults args from CLI input
-	return cmd.Run()
+	return provider.Passthrough(ctx, cliName, args, flags)
 }
 
 // handleWrite executes `defaults write` via the CmdRunner and records

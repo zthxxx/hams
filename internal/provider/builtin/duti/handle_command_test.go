@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 
 	"github.com/zthxxx/hams/internal/config"
@@ -235,18 +236,35 @@ func TestHandleCommand_U7_HamsLocalFlagRoutesToLocalFile(t *testing.T) {
 }
 
 // U8 — multi-arg invocation (e.g., raw duti flags like `-s <bundle>
-// .pdf all`) passes through to exec and does NOT auto-record. This
-// preserves escape-hatch access to the full duti CLI for power users.
+// .pdf all`) routes through provider.Passthrough via the
+// PassthroughExec DI seam and does NOT auto-record. This preserves
+// escape-hatch access to the full duti CLI for power users — and
+// crucially, the seam lets unit tests assert the call without ever
+// rebinding macOS LaunchServices defaults on the host.
 func TestHandleCommand_U8_MultiArgIsRawPassthrough(t *testing.T) {
 	h := newDutiHarness(t)
 
-	// Multi-arg form: `-s <bundle> .pdf all` — this flows through
-	// exec.CommandContext (no host duti), so we only check the
-	// auto-record side-effects didn't happen.
-	err := h.provider.HandleCommand(context.Background(),
-		[]string{"-s", "com.adobe.acrobat.pdf", ".pdf", "all"}, nil, h.flags)
-	_ = err // exec may fail (no duti in test container); irrelevant here
+	var gotTool string
+	var gotArgs []string
+	orig := provider.PassthroughExec
+	t.Cleanup(func() { provider.PassthroughExec = orig })
+	provider.PassthroughExec = func(_ context.Context, tool string, args []string) error {
+		gotTool = tool
+		gotArgs = append([]string(nil), args...)
+		return nil
+	}
 
+	wantArgs := []string{"-s", "com.adobe.acrobat.pdf", ".pdf", "all"}
+	if err := h.provider.HandleCommand(context.Background(), wantArgs, nil, h.flags); err != nil {
+		t.Fatalf("passthrough: %v", err)
+	}
+
+	if gotTool != "duti" {
+		t.Errorf("PassthroughExec tool = %q, want duti", gotTool)
+	}
+	if !slices.Equal(gotArgs, wantArgs) {
+		t.Errorf("PassthroughExec args = %v, want %v", gotArgs, wantArgs)
+	}
 	if apps := h.hamsfileApps(); len(apps) != 0 {
 		t.Errorf("raw-passthrough wrote hamsfile apps = %v", apps)
 	}
