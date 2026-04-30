@@ -20,7 +20,7 @@ USER brew
 WORKDIR /home/brew
 
 RUN NONINTERACTIVE=1 /bin/bash -c \
-    "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)" \
+    "$(curl -fsSL --retry 5 --retry-delay 2 --retry-all-errors https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)" \
  && echo 'eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"' >> /home/brew/.bashrc \
  && /home/linuxbrew/.linuxbrew/bin/brew --version
 

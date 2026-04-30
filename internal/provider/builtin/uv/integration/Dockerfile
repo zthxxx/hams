@@ -4,7 +4,8 @@
 ARG BASE=hams-itest-base:latest
 FROM ${BASE}
 
-RUN curl -LsSf https://astral.sh/uv/install.sh | sh \
+RUN curl -LsSf --retry 5 --retry-delay 2 --retry-all-errors \
+      https://astral.sh/uv/install.sh | sh \
  && /root/.local/bin/uv --version
 
 ENV PATH="/root/.local/bin:${PATH}"

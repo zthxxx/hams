@@ -7,7 +7,8 @@ FROM ${BASE}
 ARG GO_VERSION=1.26.0
 
 RUN ARCH="$(dpkg --print-architecture)" \
- && curl -fsSL "https://go.dev/dl/go${GO_VERSION}.linux-${ARCH}.tar.gz" \
+ && curl -fsSL --retry 5 --retry-delay 2 --retry-all-errors \
+      "https://go.dev/dl/go${GO_VERSION}.linux-${ARCH}.tar.gz" \
       | tar -C /usr/local -xz \
  && /usr/local/go/bin/go version
 
