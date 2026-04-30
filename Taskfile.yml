@@ -456,8 +456,8 @@ tasks:
   setup:
     desc: Install development tools
     cmds:
-      - pnpm install
-      - go install go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.11.4
+      - pnpm@10 install
+      - go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.11.4
       - go install golang.org/x/tools/cmd/goimports@latest
       - go install github.com/evilmartians/lefthook/v2@v2.1.5
       - lefthook install
