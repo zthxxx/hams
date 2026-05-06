@@ -240,6 +240,14 @@ tasks:
       - release/hams-*
       - release/checksums.txt
 
+  ci:release:bump-homebrew-tap:
+    desc: "CI — open a PR bumping hams Formula in zthxxx/homebrew-tap (usage: VERSION=v0.1.2 task ci:release:bump-homebrew-tap)"
+    cmds:
+      - ./scripts/ci/bump-homebrew-tap.sh "{{.VERSION}}"
+    requires:
+      vars:
+        - VERSION
+
   ci:integration:run:
     desc: CI integration — build Dockerfile and run go test -tags=integration inside it
     cmds:
